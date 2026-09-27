@@ -70,8 +70,6 @@ async fn interleaves_writes_and_reads_without_deadlock() {
 
     for i in 0..5 {
         sidecar.send_message(format!("msg-{i}")).await.unwrap();
-    }
-    for i in 0..5 {
         match sidecar.next_event().await.unwrap() {
             SidecarEvent::AssistantDelta { text } => assert_eq!(text, format!("echo:msg-{i}")),
             other => panic!("unexpected event: {other:?}"),
