@@ -313,3 +313,199 @@ as a required step rather than an optional nicety.
 
 App name: **Forge**. Chosen to avoid implying an official Anthropic
 product (no "Claude" in the name).
+
+## 12. Detailed Design: `forge-application` (Plan 2)
+
+§6 named `forge-application`'s use-cases and the three repository ports it
+needs but did not specify their shapes. This section fixes that, plus one
+Plan-1 follow-up.
+
+### 12.1 Closing a Plan 1 follow-up: mock visibility
+
+Plan 1's final review found that `MockSidecarPort` (in `forge-ports`) was
+gated behind a plain `#[cfg(test)]`, which is per-crate — `forge-application`
+cannot see it in its own tests. Fixed here: gate every `Mock*` type behind
+`#[cfg(any(test, feature = "mocks"))]` with a Cargo feature named `mocks`,
+and add `forge-ports = { path = "../forge-ports", features = ["mocks"] }`
+to `forge-application`'s `[dev-dependencies]`.
+
+### 12.2 New `forge-domain` types
+
+```rust
+pub struct SessionId(pub String);
+
+pub struct Session {
+    pub id: SessionId,
+    pub project_path: PathBuf,
+    pub title: Option<String>,
+    pub messages: Vec<Message>,
+    pub permission_mode: PermissionMode,
+}
+
+pub struct SessionSummary {          // for a project's session *list*, no full history
+    pub id: SessionId,
+    pub title: Option<String>,
+    pub updated_at: String,          // ISO 8601, as read from the transcript
+}
+
+pub enum MessageRole { User, Assistant }
+
+pub struct Message {
+    pub role: MessageRole,
+    pub content: String,             // grows as AssistantDelta events arrive
+    pub tool_calls: Vec<ToolCall>,
+}
+
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub input: serde_json::Value,
+    pub result: Option<ToolResult>,
+}
+pub struct ToolResult { pub output: String, pub is_error: bool }
+
+pub struct PermissionRequest {
+    pub id: String,
+    pub tool_name: String,
+    pub input: serde_json::Value,
+}
+
+pub struct SkillDefinition { pub name: String, pub path: PathBuf, pub description: Option<String> }
+pub struct PluginDefinition { pub name: String, pub marketplace: Option<String>, pub path: PathBuf }
+pub struct McpServerDefinition { pub name: String, pub config: serde_json::Value }
+
+pub struct AppConfig {
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub enabled_skills: Vec<String>,
+    pub enabled_plugins: Vec<String>,
+    pub enabled_mcp_servers: Vec<String>,
+}
+```
+
+`McpServerDefinition.config` is deliberately an opaque `serde_json::Value`
+rather than a fully-modeled stdio/sse/http union — nobody has verified the
+real `~/.claude.json`/`.mcp.json` `mcpServers` format firsthand yet. Plan 3
+(`forge-adapter-claude-fs`) must do its own firsthand file-format check
+(the same discipline as Task 3's SDK inspection) before this needs to get
+more specific.
+
+### 12.3 New `forge-ports` traits
+
+```rust
+#[async_trait]
+pub trait ConfigRepositoryPort: Send + Sync {
+    async fn load(&self) -> Result<AppConfig, ConfigError>;
+    async fn save(&self, config: &AppConfig) -> Result<(), ConfigError>;
+}
+
+#[async_trait]
+pub trait SessionRepositoryPort: Send + Sync {
+    async fn list_sessions(&self, project_path: &Path) -> Result<Vec<SessionSummary>, SessionRepositoryError>;
+    async fn load_session(&self, project_path: &Path, session_id: &SessionId) -> Result<Session, SessionRepositoryError>;
+}
+
+#[async_trait]
+pub trait SkillRepositoryPort: Send + Sync {
+    async fn list_skills(&self, project_path: &Path) -> Result<Vec<SkillDefinition>, SkillRepositoryError>;
+}
+
+#[async_trait]
+pub trait PluginRepositoryPort: Send + Sync {
+    async fn list_plugins(&self) -> Result<Vec<PluginDefinition>, PluginRepositoryError>;
+}
+
+#[async_trait]
+pub trait McpRegistryPort: Send + Sync {
+    async fn list_servers(&self, project_path: &Path) -> Result<Vec<McpServerDefinition>, McpRegistryError>;
+}
+```
+
+Each error type is its own small enum living beside its trait, matching
+`SidecarError`'s pattern from Plan 1. `ResumeSessionUseCase` (§12.5) touches
+two ports, so it gets its own combining error in `forge-application`:
+
+```rust
+pub enum ResumeSessionError {
+    SessionRepository(SessionRepositoryError),
+    Sidecar(SidecarError),
+}
+```
+
+**Credential injection happens outside `forge-application` entirely.**
+`SidecarPort::start_session`'s params (Plan 1) carry no `base_url`/`api_key`
+— a spawned sidecar gets credentials via environment variables set at
+process-spawn time. That is a concrete-adapter/composition-root concern
+(wiring `forge-adapter-sidecar`'s `spawn()`), invisible to
+`forge-application`. `ConfigRepositoryPort` is used only by the three
+`Toggle*UseCase`s below.
+
+### 12.4 Event application (not one of the named use-cases)
+
+`SidecarEvent` lives in `forge-ports`, so translating it into `Session`
+state can't live in `forge-domain` (which must depend on nothing). It's a
+plain function in `forge-application`, pure and I/O-free — pumping events
+isn't a user-initiated command the way the 8 named use-cases are:
+
+```rust
+pub enum SessionUpdate {
+    SessionStarted { session_id: SessionId },
+    MessageDelta { text: String },
+    ToolCallStarted { tool_call: ToolCall },
+    ToolCallCompleted { tool_call_id: String },
+    PermissionRequested(PermissionRequest),
+    TurnCompleted { input_tokens: u32, output_tokens: u32 },
+    Errored { message: String },
+    SessionEnded,
+}
+
+pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> SessionUpdate;
+```
+
+Behavior: an `AssistantDelta` appends to the session's last message if it's
+an in-progress `Assistant` message, else pushes a new one. `ToolUse` pushes
+a `ToolCall` onto the last `Assistant` message. `ToolResult` finds the
+matching `ToolCall` by id across the message list and attaches the result;
+an unmatched id is ignored, not an error. Fully pure — plain `#[test]`s, no
+mocks, covering at least: first delta creates a message, second delta
+appends, tool_use creates a call, tool_result attaches by id, unknown
+tool_result id is ignored without panicking.
+
+### 12.5 The 8 named use-cases
+
+Each holds `Arc<dyn Port>` (not borrowed references — friendlier to a
+long-lived Dioxus app context later, and what `mockall`'s `Arc<Mock...>`
+pattern expects):
+
+```rust
+StartSessionUseCase   { sidecar: Arc<dyn SidecarPort> }
+  .execute(cwd: String, permission_mode: PermissionMode, model: Option<String>) -> Result<(), SidecarError>
+
+ResumeSessionUseCase  { sidecar: Arc<dyn SidecarPort>, sessions: Arc<dyn SessionRepositoryPort> }
+  .execute(project_path: &Path, session_id: SessionId, permission_mode: PermissionMode) -> Result<Session, ResumeSessionError>
+  // loads history for display via SessionRepositoryPort, then starts the
+  // sidecar with resume_session_id set so the live agent reconnects
+
+SendMessageUseCase       { sidecar } .execute(text: String) -> Result<(), SidecarError>
+ApprovePermissionUseCase { sidecar } .execute(permission_request_id: String, decision: PermissionDecision) -> Result<(), SidecarError>
+InterruptTurnUseCase     { sidecar } .execute() -> Result<(), SidecarError>
+
+ToggleSkillUseCase      { config: Arc<dyn ConfigRepositoryPort> } .execute(name: &str) -> Result<AppConfig, ConfigError>
+TogglePluginUseCase     { config } .execute(name: &str) -> Result<AppConfig, ConfigError>
+ToggleMcpServerUseCase  { config } .execute(name: &str) -> Result<AppConfig, ConfigError>
+  // each: load config, flip membership of `name` in its own enabled_*
+  // list, save, return the new config
+```
+
+Kept as three separate small structs for the Toggle* trio rather than one
+generic `Toggle<T>` — YAGNI, and they may diverge later (e.g. toggling a
+plugin might also need to refresh its bundled skills).
+
+### 12.6 Testing
+
+Matches the Testing Strategy table in §8: `forge-domain` additions get
+plain unit tests; `apply_sidecar_event` gets plain unit tests (no mocks,
+per §12.4); the 8 use-cases get `mockall`-generated mocks of whichever
+port(s) they hold, verifying orchestration order and error propagation in
+isolation from real I/O — no concrete adapter exists yet, and none is
+needed for these tests to be meaningful.
