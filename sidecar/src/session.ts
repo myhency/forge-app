@@ -6,6 +6,19 @@ type PermissionResult =
   | { behavior: "allow"; updatedInput?: Record<string, unknown> }
   | { behavior: "deny"; message: string };
 
+function toSdkPermissionMode(mode: string): "default" | "acceptEdits" | "bypassPermissions" | "plan" {
+  switch (mode) {
+    case "accept_edits":
+      return "acceptEdits";
+    case "bypass_permissions":
+      return "bypassPermissions";
+    case "plan":
+      return "plan";
+    default:
+      return "default";
+  }
+}
+
 export class SidecarSession {
   private queuedMessages: unknown[] = [];
   private waitingResolvers: Array<(msg: unknown) => void> = [];
@@ -98,7 +111,7 @@ export class SidecarSession {
       options: {
         cwd: command.cwd,
         resume: command.resume_session_id ?? undefined,
-        permissionMode: command.permission_mode,
+        permissionMode: toSdkPermissionMode(command.permission_mode),
         model: command.model ?? undefined,
         abortController: this.abortController,
         canUseTool,

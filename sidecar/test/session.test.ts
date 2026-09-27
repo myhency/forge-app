@@ -153,6 +153,32 @@ describe("SidecarSession", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("translates the wire protocol's snake_case permission_mode into the SDK's camelCase PermissionMode", async () => {
+    let capturedPermissionMode: unknown;
+    const queryFn: QueryFn = (args) => {
+      capturedPermissionMode = (args.options as any).permissionMode;
+      return (async function* () {})();
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({ ...startCommand, permission_mode: "accept_edits" });
+
+    expect(capturedPermissionMode).toBe("acceptEdits");
+  });
+
+  it("translates a default permission_mode to the SDK's default", async () => {
+    let capturedPermissionMode: unknown;
+    const queryFn: QueryFn = (args) => {
+      capturedPermissionMode = (args.options as any).permissionMode;
+      return (async function* () {})();
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({ ...startCommand, permission_mode: "default" });
+
+    expect(capturedPermissionMode).toBe("default");
+  });
+
   it("delivers queued send_message commands to the prompt generator in order", async () => {
     const received: string[] = [];
     const queryFn: QueryFn = (args) =>
