@@ -385,7 +385,7 @@ pub struct AppConfig {
 
 `McpServerDefinition.config` is deliberately an opaque `serde_json::Value`
 rather than a fully-modeled stdio/sse/http union — nobody has verified the
-real `~/.claude.json`/`.mcp.json` `mcpServers` format firsthand yet. Plan 3
+real `~/.claude.json`/`.mcp.json` `mcpServers` format firsthand yet. Plan 4
 (`forge-adapter-claude-fs`) must do its own firsthand file-format check
 (the same discipline as Task 3's SDK inspection) before this needs to get
 more specific.
@@ -514,9 +514,9 @@ needed for these tests to be meaningful.
 
 The first concrete adapter. Implements `ConfigRepositoryPort` (§12.3) by
 reading/writing Forge's own private `config.json` (§4.1) via real file I/O.
-Plan 4 (not yet designed) covers `forge-adapter-claude-fs` — the much
-larger body of work parsing Claude Code's shared, externally-owned file
-formats (session transcripts, skill/plugin/MCP-server definitions).
+Plan 4 (§14) covers `forge-adapter-claude-fs` — the much larger body of
+work parsing Claude Code's shared, externally-owned file formats (session
+transcripts, skill/plugin/MCP-server definitions).
 
 ### 13.1 Firsthand format verification done before this plan
 
@@ -596,3 +596,185 @@ Integration tests against a real temp directory (never the real OS config
 location), per §8's testing table: missing-file load returns default;
 save-then-load round-trips; save creates missing parent directories;
 malformed JSON on disk produces `ConfigError::ParseFailed`.
+
+## 14. Detailed Design: `forge-adapter-claude-fs` (Plan 4)
+
+Implements the four remaining ports from §12.3 —
+`SessionRepositoryPort`, `SkillRepositoryPort`, `PluginRepositoryPort`,
+`McpRegistryPort` — by reading Claude Code's shared, externally-owned
+on-disk state (§4.2). All four are read-only in v1; nothing in the
+current use-case set (§12.5) writes through these ports. The error enums
+for all four already exist in `forge-ports` from Plan 2
+(`crates/forge-ports/src/session_port.rs`,
+`crates/forge-ports/src/extension_ports.rs`) — this plan implements
+against them, it does not redesign them.
+
+### 14.1 Firsthand format verification done before this plan
+
+§13.1 recorded a first pass at these formats during Plan 3. Before writing
+this plan, that pass was redone in more depth directly against a live
+`~/.claude/` installation with 29 registered projects, 18 real session
+directories, and 15 installed skills (30 real `SKILL.md` files counting
+nested ones) — the findings below supersede and extend §13.1 where they
+overlap:
+
+- **Skills**: `SKILL.md` files are **not** one level deep under
+  `~/.claude/skills/<name>/`. Real examples nest up to 3 levels
+  (`skills/document-skills/xlsx/SKILL.md`,
+  `skills/synced/<uuid>/deep-research/SKILL.md` — plugin-synced skill
+  copies). Listing must recursively walk for any file literally named
+  `SKILL.md`, not assume a fixed depth. Frontmatter across all 30 real
+  files is flat, single-line `key: value` pairs only — `name` and
+  `description` always present; other keys (`license` was the only one
+  observed) vary and are ignored.
+- **Plugins**: `installed_plugins.json`'s shape from §13.1
+  (`{version, plugins: {"<name>@<marketplace>": [{scope, installPath,
+  version, installedAt, lastUpdated, gitCommitSha}]}}`) reconfirmed
+  exactly against 9 real installed plugins. Every array on this machine
+  has exactly one entry, but nothing in the format forbids more (e.g. one
+  entry per install scope) — the design does not assume length 1.
+- **MCP servers**: no server is currently configured anywhere on this
+  machine (global `~/.claude.json`'s `mcpServers` is `{}`, no `.mcp.json`
+  file exists in any project directory found, and every one of the 29
+  registered projects' own `mcpServers` entry inside `~/.claude.json` is
+  also empty) — the two-shape finding from §13.1 (bare
+  `{"name": {...}}` vs. wrapped `{"mcpServers": {"name": {...}}}`) is
+  carried forward from that earlier verification rather than re-derived,
+  since no live example exists right now to re-check it against. Because
+  the per-project `~/.claude.json` entry has never been observed
+  populated, this plan does not read it — only the global `mcpServers`
+  key and a project-local `.mcp.json` file are merged (project-local wins
+  on name collision).
+- **Session directory escaping**: confirmed by reverse-mapping all 18
+  real session directories under `~/.claude/projects/` back to their
+  registered project paths in `~/.claude.json`'s `projects` map — the
+  rule is "replace every `/` and every `.` in the absolute project path
+  with `-`" (e.g. `/Users/james/.claude` → `-Users-james--claude`, note
+  the doubled dash from the leading `.` of `.claude`). A session's
+  transcript directory is independent of whether that path is registered
+  in `~/.claude.json`'s `projects` map at all — several real directories
+  (worktrees, `/private/tmp` scratch dirs) have transcripts with no
+  corresponding `projects` entry. `list_sessions`/`load_session` therefore
+  never need to read `~/.claude.json`'s `projects` map — the escaped
+  directory is computed directly from the `project_path` parameter.
+- **Session transcript line types**: a real transcript contains far more
+  top-level `type` values than §13.1's original content-block-only
+  finding: `user`, `assistant`, `system`, `ai-title`, `mode`,
+  `permission-mode`, `atis-latch`, `attachment`, `last-prompt`,
+  `cost-state` were all observed in a single real file. Of these:
+  - `attachment` is hook-execution output (`command`, `stdout`, `stderr`,
+    `exitCode`, a nested `type` like `hook_success`) — nothing to do with
+    user file attachments despite the name.
+  - `user` messages have **two** content shapes: a plain string (real
+    user text) or a list of content blocks that, in every real example
+    found, contains only `tool_result` blocks (the harness's injected
+    tool-execution feedback) — never both, and never other block types.
+  - `assistant` message content blocks seen: `thinking`, `text`,
+    `tool_use` — matching the Agent SDK shapes Plan 1 Task 3 already
+    confirmed, since transcripts are serialized `SDKMessage` records.
+  - A `permission-mode` line's value on this machine was `"auto"` (Claude
+    Code's Auto Mode) — a value with **no** corresponding variant in
+    `forge-domain`'s existing `PermissionMode` enum
+    (`Default`/`AcceptEdits`/`BypassPermissions`/`Plan`, already shipped
+    in Plan 2 and used by the sidecar wire protocol in §5). This plan
+    does not extend that enum; unrecognized values fall back to
+    `PermissionMode::Default`.
+  - No line with `isSidechain: true` was found in any of the 7 real
+    session files inspected (each Task-tool/subagent dispatch in this
+    project's own workflow produced its own separate top-level session
+    file rather than an inline sidechain line) — the field is still
+    checked defensively (skip if `true`) since its absence from every
+    real example is not proof it is never populated by other flows.
+  - Only `ai-title` was observed carrying a session title;
+    `custom-title` (mentioned in §13.1) was not found in any of the 7
+    files inspected, so its exact field name is carried forward from that
+    earlier finding rather than re-verified.
+
+### 14.2 Design
+
+```rust
+pub fn default_claude_home() -> Option<PathBuf> {
+    directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".claude"))
+}
+
+pub struct ClaudeSessionAdapter { claude_home: PathBuf }
+pub struct ClaudeSkillAdapter { claude_home: PathBuf }
+pub struct ClaudePluginAdapter { claude_home: PathBuf }
+pub struct ClaudeMcpAdapter { claude_home: PathBuf }
+```
+
+One struct per port (no shared state between them), each constructed with
+an explicit `claude_home: PathBuf` — never resolving `~/.claude` itself,
+mirroring `ConfigFileAdapter`'s `path`/`default_config_path()` split in
+§13.2. This keeps every adapter testable against a temp directory that
+never touches the real `~/.claude/`.
+
+**`ClaudeSessionAdapter`** (`sessions.rs`):
+- Escaping helper: replace `/` and `.` with `-` (§14.1) to compute
+  `claude_home/projects/<escaped>/`.
+- `list_sessions`: if the escaped directory doesn't exist, `Ok(vec![])`.
+  Otherwise one `SessionSummary` per `*.jsonl` file: `id` from the
+  filename stem, `updated_at` from the file's mtime (`tokio::fs::metadata`
+  — one stat call, not a full parse) formatted as ISO 8601, `title` from
+  the last `ai-title`/`custom-title` line seen when scanning the file
+  (`None` if absent). Any I/O failure reading the directory →
+  `SessionRepositoryError::ListFailed`.
+- `load_session`: missing file → `SessionRepositoryError::NotFound`. Parse
+  line by line per §14.1's rules: `user` (string) → new `Message{role:
+  User, ...}`; `user` (list) → merge into the open `ToolCall` matching its
+  `tool_use_id`; `assistant` → new `Message{role: Assistant, content:
+  <concatenated text blocks>, tool_calls: <one per tool_use block>}`;
+  track the last `permission-mode` value, mapped through the existing
+  snake_case `PermissionMode` deserialization with an unrecognized-value
+  fallback to `Default`; track the last title line. Any other `type` is
+  ignored. Any I/O or line-parse failure →
+  `SessionRepositoryError::LoadFailed`.
+
+**`ClaudeSkillAdapter`** (`skills.rs`):
+- `list_skills(project_path)`: recursively walk `claude_home/skills/` and
+  `project_path/.claude/skills/` (either missing → contributes zero
+  entries) for files named `SKILL.md`. For each, parse frontmatter with a
+  hand-rolled parser: strip the leading `---` line, read lines until the
+  next `---`, split each on the first `:`, trim key/value. Missing `---`
+  delimiters, or a missing `name`/`description` key, skips that one file
+  — never fails the whole listing. `SkillDefinition.path` is the file's
+  parent directory. `ListFailed` is reserved for a failure to read the
+  root directories themselves (e.g. permission denied).
+
+**`ClaudePluginAdapter`** (`plugins.rs`):
+- `list_plugins()`: parse `claude_home/plugins/installed_plugins.json`.
+  Missing file → `Ok(vec![])`. For each `"<name>@<marketplace>"` key,
+  `split_once('@')` (no `@` found → whole key as `name`, `marketplace:
+  None`); emit one `PluginDefinition` per array entry, using its
+  `installPath` as `path`. Malformed top-level JSON →
+  `PluginRepositoryError::ListFailed`.
+
+**`ClaudeMcpAdapter`** (`mcp.rs`):
+- `list_servers(project_path)`: deserialize only the `mcpServers` field out
+  of `claude_home/.claude.json` via a narrow struct
+  (`#[serde(default, rename = "mcpServers")] HashMap<String,
+  serde_json::Value>`) — every other key in that ~100-key file is never
+  touched or exposed. Merge with `project_path/.mcp.json` if present,
+  normalizing both the bare and `{"mcpServers": {...}}`-wrapped shapes to
+  the same flat map; project-local entries win on name collision. Either
+  source missing contributes zero entries. Malformed top-level JSON in
+  either file → `McpRegistryError::ListFailed`.
+
+### 14.3 Testing
+
+Every test builds a real temp directory tree — never the real
+`~/.claude/` — mirroring the exact shapes found in §14.1:
+
+- Nested `SKILL.md` fixtures (including one 3 levels deep and one missing
+  `description`, proving it's skipped rather than failing the listing).
+- A synthetic `installed_plugins.json` with a multi-entry install array
+  for one plugin.
+- Both `.mcp.json` shapes (bare and wrapped), plus a global/project-local
+  name collision proving project-local precedence.
+- Synthetic `.jsonl` transcripts covering: a plain user/assistant turn, a
+  `tool_use`→`tool_result` round trip, an `ai-title` line, a
+  `permission-mode: "auto"` line (proving the `Default` fallback), and the
+  ignorable line types (`mode`, `attachment`, `cost-state`) interleaved to
+  prove they don't break parsing. A missing-directory `list_sessions`
+  call and a missing-file `load_session` call (`NotFound`) are both
+  covered.
