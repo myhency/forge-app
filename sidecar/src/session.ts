@@ -1,10 +1,19 @@
-import type { SidecarCommand, SidecarEvent } from "./protocol.js";
+import type { SidecarCommand, SidecarEvent, WirePermissionDecision } from "./protocol.js";
 
-export type QueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => AsyncIterable<any>;
+export type QueryHandle = AsyncIterable<unknown> & {
+  interrupt: () => Promise<unknown>;
+};
+
+export type QueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => QueryHandle;
 
 type PermissionResult =
-  | { behavior: "allow"; updatedInput?: Record<string, unknown> }
+  | { behavior: "allow"; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[] }
   | { behavior: "deny"; message: string };
+
+interface PendingPermission {
+  resolve: (result: PermissionResult) => void;
+  suggestions?: unknown[];
+}
 
 function toSdkPermissionMode(mode: string): "default" | "acceptEdits" | "bypassPermissions" | "plan" {
   switch (mode) {
@@ -19,12 +28,25 @@ function toSdkPermissionMode(mode: string): "default" | "acceptEdits" | "bypassP
   }
 }
 
+function decisionToResult(decision: WirePermissionDecision, suggestions: unknown[] | undefined): PermissionResult {
+  if (decision === "deny") {
+    return { behavior: "deny", message: "Denied by user" };
+  }
+  if (decision === "allow_always") {
+    return { behavior: "allow", updatedPermissions: suggestions };
+  }
+  return { behavior: "allow" };
+}
+
 export class SidecarSession {
   private queuedMessages: unknown[] = [];
   private waitingResolvers: Array<(msg: unknown) => void> = [];
-  private pendingPermissions = new Map<string, (result: PermissionResult) => void>();
+  private pendingPermissions = new Map<string, PendingPermission>();
   private abortController = new AbortController();
   private started = false;
+  private shuttingDown = false;
+  private activeQuery: QueryHandle | null = null;
+  private sessionEndedPromise: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly queryFn: QueryFn,
@@ -40,27 +62,30 @@ export class SidecarSession {
         this.pushUserMessage(command.text);
         return;
       case "permission_response": {
-        const resolver = this.pendingPermissions.get(command.permission_request_id);
-        if (!resolver) return;
-        resolver(
-          command.decision === "deny"
-            ? { behavior: "deny", message: "Denied by user" }
-            : { behavior: "allow" },
-        );
+        const pending = this.pendingPermissions.get(command.permission_request_id);
+        if (!pending) return;
+        pending.resolve(decisionToResult(command.decision, pending.suggestions));
         this.pendingPermissions.delete(command.permission_request_id);
         return;
       }
       case "interrupt":
-        this.abortController.abort();
+        if (this.activeQuery) {
+          await this.activeQuery.interrupt();
+        }
         return;
       case "shutdown":
+        this.shuttingDown = true;
         this.abortController.abort();
-        for (const resolver of this.pendingPermissions.values()) {
-          resolver({ behavior: "deny", message: "Sidecar is shutting down" });
+        for (const pending of this.pendingPermissions.values()) {
+          pending.resolve({ behavior: "deny", message: "Sidecar is shutting down" });
         }
         this.pendingPermissions.clear();
         return;
     }
+  }
+
+  async waitUntilEnded(): Promise<void> {
+    await this.sessionEndedPromise;
   }
 
   private async *userMessages(): AsyncGenerator<unknown> {
@@ -92,7 +117,7 @@ export class SidecarSession {
     const canUseTool = async (
       toolName: string,
       input: Record<string, unknown>,
-      options: { requestId: string; [key: string]: unknown },
+      options: { requestId: string; signal: AbortSignal; suggestions?: unknown[]; [key: string]: unknown },
     ): Promise<PermissionResult> => {
       const permissionRequestId = options.requestId;
       this.emit({
@@ -102,11 +127,22 @@ export class SidecarSession {
         input,
       });
       return new Promise<PermissionResult>((resolve) => {
-        this.pendingPermissions.set(permissionRequestId, resolve);
+        this.pendingPermissions.set(permissionRequestId, { resolve, suggestions: options.suggestions });
+        // The real SDK always supplies `signal`; the optional chain only tolerates test doubles that omit it.
+        options.signal?.addEventListener(
+          "abort",
+          () => {
+            if (this.pendingPermissions.has(permissionRequestId)) {
+              this.pendingPermissions.delete(permissionRequestId);
+              resolve({ behavior: "deny", message: "Interrupted" });
+            }
+          },
+          { once: true },
+        );
       });
     };
 
-    const stream = this.queryFn({
+    const query = this.queryFn({
       prompt: this.userMessages(),
       options: {
         cwd: command.cwd,
@@ -115,17 +151,27 @@ export class SidecarSession {
         model: command.model ?? undefined,
         abortController: this.abortController,
         canUseTool,
+        includePartialMessages: true,
       },
     });
+    this.activeQuery = query;
 
-    try {
-      for await (const message of stream) {
-        this.forwardMessage(message);
+    this.sessionEndedPromise = (async () => {
+      try {
+        for await (const message of query) {
+          this.forwardMessage(message);
+        }
+        this.emit({ type: "session_ended" });
+      } catch (err) {
+        if (this.shuttingDown) {
+          this.emit({ type: "session_ended" });
+        } else {
+          this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+        }
       }
-      this.emit({ type: "session_ended" });
-    } catch (err) {
-      this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
-    }
+    })();
+
+    await this.sessionEndedPromise;
   }
 
   private forwardMessage(message: any): void {

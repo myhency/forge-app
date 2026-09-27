@@ -14,9 +14,17 @@ const session = new SidecarSession(query as unknown as QueryFn, emit);
 readCommands(
   process.stdin,
   (command) => {
-    void session.handle(command).catch((err) => {
-      emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
-    });
+    void session
+      .handle(command)
+      .catch((err) => {
+        emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+      })
+      .then(async () => {
+        if (command.type === "shutdown") {
+          await session.waitUntilEnded();
+          process.exit(0);
+        }
+      });
   },
   (err) => {
     emit({ type: "error", message: `failed to parse command: ${err.message}` });

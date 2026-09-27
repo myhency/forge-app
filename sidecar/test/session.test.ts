@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { SidecarSession, type QueryFn } from "../src/session.js";
 import type { SidecarCommand, SidecarEvent } from "../src/protocol.js";
 
+function toQueryHandle(gen: AsyncGenerator<unknown>): ReturnType<QueryFn> {
+  return Object.assign(gen, { interrupt: async () => undefined });
+}
+
 const startCommand: SidecarCommand = {
   type: "start_session",
   id: "1",
@@ -15,13 +19,13 @@ describe("SidecarSession", () => {
   it("forwards a session init and a streamed text delta as sidecar events, then session_ended", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>
-      (async function* () {
+      toQueryHandle((async function* () {
         yield { type: "system", subtype: "init", session_id: "s-1" };
         yield {
           type: "stream_event",
           event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hello" } },
         };
-      })();
+      })());
 
     const session = new SidecarSession(queryFn, (e) => events.push(e));
     await session.handle(startCommand);
@@ -36,12 +40,12 @@ describe("SidecarSession", () => {
   it("forwards a tool_use content block from an assistant message", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>
-      (async function* () {
+      toQueryHandle((async function* () {
         yield {
           type: "assistant",
           message: { content: [{ type: "tool_use", id: "t-1", name: "Bash", input: { command: "ls" } }] },
         };
-      })();
+      })());
 
     const session = new SidecarSession(queryFn, (e) => events.push(e));
     await session.handle(startCommand);
@@ -52,14 +56,14 @@ describe("SidecarSession", () => {
   it("forwards a tool_result content block from a synthesized user message", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>
-      (async function* () {
+      toQueryHandle((async function* () {
         yield {
           type: "user",
           message: {
             content: [{ type: "tool_result", tool_use_id: "t-1", content: [{ type: "text", text: "done" }], is_error: false }],
           },
         };
-      })();
+      })());
 
     const session = new SidecarSession(queryFn, (e) => events.push(e));
     await session.handle(startCommand);
@@ -70,9 +74,9 @@ describe("SidecarSession", () => {
   it("forwards a result message as turn_complete", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>
-      (async function* () {
+      toQueryHandle((async function* () {
         yield { type: "result", subtype: "success", usage: { input_tokens: 12, output_tokens: 34 } };
-      })();
+      })());
 
     const session = new SidecarSession(queryFn, (e) => events.push(e));
     await session.handle(startCommand);
@@ -85,7 +89,7 @@ describe("SidecarSession", () => {
     let capturedCanUseTool: any;
     const queryFn: QueryFn = (args) => {
       capturedCanUseTool = (args.options as any).canUseTool;
-      return (async function* () {
+      return toQueryHandle((async function* () {
         const result = await capturedCanUseTool("Bash", { command: "ls" }, { requestId: "req-1" });
         yield {
           type: "stream_event",
@@ -95,7 +99,7 @@ describe("SidecarSession", () => {
             delta: { type: "text_delta", text: result.behavior === "allow" ? "approved" : "denied" },
           },
         };
-      })();
+      })());
     };
 
     const session = new SidecarSession(queryFn, (e) => events.push(e));
@@ -118,7 +122,7 @@ describe("SidecarSession", () => {
     let capturedCanUseTool: any;
     const queryFn: QueryFn = (args) => {
       capturedCanUseTool = (args.options as any).canUseTool;
-      return (async function* () {
+      return toQueryHandle((async function* () {
         const result = await capturedCanUseTool("Bash", { command: "rm -rf /" }, { requestId: "req-2" });
         yield {
           type: "stream_event",
@@ -128,7 +132,7 @@ describe("SidecarSession", () => {
             delta: { type: "text_delta", text: result.behavior === "deny" ? result.message : "should not happen" },
           },
         };
-      })();
+      })());
     };
 
     const session = new SidecarSession(queryFn, (e) => events.push(e));
@@ -145,7 +149,7 @@ describe("SidecarSession", () => {
 
   it("ignores a permission_response for an unknown permission_request_id", async () => {
     const events: SidecarEvent[] = [];
-    const queryFn: QueryFn = () => (async function* () {})();
+    const queryFn: QueryFn = () => toQueryHandle((async function* () {})());
     const session = new SidecarSession(queryFn, (e) => events.push(e));
 
     await expect(
@@ -157,7 +161,7 @@ describe("SidecarSession", () => {
     let capturedPermissionMode: unknown;
     const queryFn: QueryFn = (args) => {
       capturedPermissionMode = (args.options as any).permissionMode;
-      return (async function* () {})();
+      return toQueryHandle((async function* () {})());
     };
 
     const session = new SidecarSession(queryFn, () => {});
@@ -170,7 +174,7 @@ describe("SidecarSession", () => {
     let capturedPermissionMode: unknown;
     const queryFn: QueryFn = (args) => {
       capturedPermissionMode = (args.options as any).permissionMode;
-      return (async function* () {})();
+      return toQueryHandle((async function* () {})());
     };
 
     const session = new SidecarSession(queryFn, () => {});
@@ -182,12 +186,12 @@ describe("SidecarSession", () => {
   it("delivers queued send_message commands to the prompt generator in order", async () => {
     const received: string[] = [];
     const queryFn: QueryFn = (args) =>
-      (async function* () {
+      toQueryHandle((async function* () {
         for await (const msg of args.prompt as AsyncIterable<{ message: { content: string } }>) {
           received.push(msg.message.content);
           if (received.length === 2) return;
         }
-      })();
+      })());
 
     const session = new SidecarSession(queryFn, () => {});
     const startPromise = session.handle(startCommand);
@@ -196,5 +200,67 @@ describe("SidecarSession", () => {
     await startPromise;
 
     expect(received).toEqual(["first", "second"]);
+  });
+
+  it("passes includePartialMessages: true to the SDK options", async () => {
+    let capturedOptions: any;
+    const queryFn: QueryFn = (args) => {
+      capturedOptions = args.options;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle(startCommand);
+
+    expect(capturedOptions.includePartialMessages).toBe(true);
+  });
+
+  it("interrupt calls the query's own interrupt() method instead of aborting the whole session", async () => {
+    let interruptCalled = false;
+    const queryFn: QueryFn = () => {
+      const gen = (async function* () {
+        // yield forever so the session stays "active" until interrupted
+        while (true) {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          yield { type: "result", subtype: "success", usage: { input_tokens: 0, output_tokens: 0 } };
+        }
+      })();
+      return Object.assign(gen, {
+        interrupt: async () => {
+          interruptCalled = true;
+        },
+      });
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    void session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    await session.handle({ type: "interrupt", id: "2" });
+
+    expect(interruptCalled).toBe(true);
+  });
+
+  it("allow_always returns the SDK's suggested permission updates as updatedPermissions", async () => {
+    const events: SidecarEvent[] = [];
+    let capturedResult: any;
+    const suggestions = [{ type: "addRules", rules: [{ toolName: "Bash" }] }];
+    const queryFn: QueryFn = (args) => {
+      const canUseTool = (args.options as any).canUseTool;
+      return toQueryHandle(
+        (async function* () {
+          capturedResult = await canUseTool("Bash", { command: "ls" }, { requestId: "req-3", suggestions });
+        })(),
+      );
+    };
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    const startPromise = session.handle(startCommand);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await session.handle({ type: "permission_response", id: "4", permission_request_id: "req-3", decision: "allow_always" });
+    await startPromise;
+
+    expect(capturedResult).toEqual({ behavior: "allow", updatedPermissions: suggestions });
   });
 });
