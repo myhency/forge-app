@@ -750,6 +750,7 @@ forge-domain = { path = "../forge-domain" }
 forge-ports = { path = "../forge-ports" }
 async-trait = "0.1"
 serde_json = "1"
+thiserror = "1"
 
 [dev-dependencies]
 forge-ports = { path = "../forge-ports", features = ["mocks"] }
@@ -1049,7 +1050,7 @@ pub use event::{apply_sidecar_event, SessionUpdate};
 - [ ] **Step 4: Run the tests**
 
 Run: `cargo test -p forge-application`
-Expected: all 13 tests pass.
+Expected: all 12 tests pass.
 
 - [ ] **Step 5: Commit**
 
@@ -1208,7 +1209,7 @@ pub use use_cases::{ApprovePermissionUseCase, InterruptTurnUseCase, SendMessageU
 - [ ] **Step 4: Run the tests**
 
 Run: `cargo test -p forge-application`
-Expected: 4 new tests pass alongside the 13 from Task 7 (17 total).
+Expected: 4 new tests pass alongside the 12 from Task 7 (16 total).
 
 - [ ] **Step 5: Commit**
 
@@ -1434,7 +1435,7 @@ pub use use_cases::{
 - [ ] **Step 4: Run the tests**
 
 Run: `cargo test -p forge-application`
-Expected: 4 new tests pass alongside the 17 from Task 8 (21 total).
+Expected: 4 new tests pass alongside the 16 from Task 8 (20 total).
 
 - [ ] **Step 5: Commit**
 
@@ -1649,7 +1650,7 @@ pub use use_cases::{
 - [ ] **Step 4: Run the full workspace test suite**
 
 Run: `cargo test --workspace`
-Expected: every test in the workspace passes — `forge-domain` (10), `forge-ports` (6), `forge-application` (27), plus Plan 1's `forge-adapter-sidecar` tests (9) — 52 total.
+Expected: every test in the workspace passes — `forge-domain` (10), `forge-ports` (6), `forge-application` (26), plus Plan 1's `forge-adapter-sidecar` tests (7: 2 lib + 5 contract) — 49 total.
 
 - [ ] **Step 5: Commit**
 
