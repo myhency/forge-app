@@ -1,0 +1,16 @@
+[package]
+name = "forge-adapter-config"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+forge-domain = { path = "../forge-domain" }
+forge-ports = { path = "../forge-ports" }
+async-trait = "0.1"
+serde_json = "1"
+tokio = { version = "1", features = ["fs"] }
+directories = "6.0.0"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["fs", "macros", "rt"] }
+tempfile = "3"
