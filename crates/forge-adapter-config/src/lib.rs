@@ -31,8 +31,17 @@ impl ConfigRepositoryPort for ConfigFileAdapter {
         }
     }
 
-    async fn save(&self, _config: &AppConfig) -> Result<(), ConfigError> {
-        unimplemented!("implemented in Task 2")
+    async fn save(&self, config: &AppConfig) -> Result<(), ConfigError> {
+        if let Some(parent) = self.path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
+        }
+        let json = serde_json::to_string_pretty(config)
+            .map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
+        tokio::fs::write(&self.path, json)
+            .await
+            .map_err(|e| ConfigError::WriteFailed(e.to_string()))
     }
 }
 
@@ -82,5 +91,58 @@ mod tests {
         let path = default_config_path().expect("a config dir should be resolvable on this platform");
         assert_eq!(path.file_name().unwrap(), "config.json");
         assert!(path.to_string_lossy().contains("Forge") || path.to_string_lossy().contains("forge"));
+    }
+
+    #[tokio::test]
+    async fn save_then_load_round_trips_a_fully_populated_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let adapter = ConfigFileAdapter::new(dir.path().join("config.json"));
+        let config = AppConfig {
+            base_url: Some("https://api.anthropic.com".to_string()),
+            api_key: Some("sk-ant-test".to_string()),
+            enabled_skills: vec!["brainstorming".to_string()],
+            enabled_plugins: vec!["playwright@marketplace".to_string()],
+            enabled_mcp_servers: vec!["playwright-mcp".to_string()],
+        };
+
+        adapter.save(&config).await.unwrap();
+        let loaded = adapter.load().await.unwrap();
+
+        assert_eq!(loaded, config);
+    }
+
+    #[tokio::test]
+    async fn save_creates_missing_parent_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("does").join("not").join("exist").join("config.json");
+        let adapter = ConfigFileAdapter::new(path.clone());
+
+        adapter.save(&AppConfig::default()).await.unwrap();
+
+        assert!(path.exists());
+    }
+
+    #[tokio::test]
+    async fn save_overwrites_an_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let adapter = ConfigFileAdapter::new(dir.path().join("config.json"));
+
+        adapter
+            .save(&AppConfig {
+                enabled_skills: vec!["old-skill".to_string()],
+                ..AppConfig::default()
+            })
+            .await
+            .unwrap();
+        adapter
+            .save(&AppConfig {
+                enabled_skills: vec!["new-skill".to_string()],
+                ..AppConfig::default()
+            })
+            .await
+            .unwrap();
+
+        let loaded = adapter.load().await.unwrap();
+        assert_eq!(loaded.enabled_skills, vec!["new-skill".to_string()]);
     }
 }
