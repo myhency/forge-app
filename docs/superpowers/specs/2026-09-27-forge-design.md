@@ -278,6 +278,37 @@ close to free. If they diverge, this spec's session-sharing section will
 need a revision (a thin adapter converting between formats) before Tier 1
 work proceeds.
 
+### Resolved 2026-09-27
+
+**Confirmed compatible.** Ran the sidecar (via `forge-adapter-sidecar`'s
+`SidecarProcess`, driving the real `@anthropic-ai/claude-agent-sdk@0.3.283`)
+against a scratch directory with the prompt "Say hello and create a file
+named hello.txt with the text 'hi' in it.", then ran the equivalent prompt
+through the real `claude` CLI (`--permission-mode acceptEdits`) in a
+separate scratch directory. Both wrote to
+`~/.claude/projects/<escaped-cwd>/<session-id>.jsonl` in the expected
+location. Comparing the two transcripts' `type` sequence and per-type field
+sets (ignoring content/timestamps/IDs) found them structurally identical:
+same event types in the same order (`queue-operation` ×2, `attachment`
+×many, `user`, `atis-latch`, `last-prompt`, `ai-title`, `assistant` ×N,
+`user`, `system`, `last-prompt`, `cost-state`), same field names per type.
+Session sharing (§4.2) proceeds as designed — no adapter needed for
+transcript format.
+
+**Bonus finding from the same spike run**: the first attempt failed before
+producing any transcript at all, with the sidecar's Node process erroring
+out at CLI-argument-validation time. Root cause: the sidecar's translation
+layer was passing Forge's own wire-protocol `permission_mode` string
+(snake_case: `default`/`accept_edits`/`bypass_permissions`/`plan`) straight
+through as the SDK's `options.permissionMode`, but the real SDK's
+`PermissionMode` type (`sdk.d.ts:2481`) is a different, camelCase value set
+(`'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' |
+'auto'`). Fixed by adding an explicit translation function in the sidecar's
+session driver. This is exactly the class of integration bug static review
+and unit tests (which mock the SDK) cannot catch — only running the real
+thing end-to-end surfaced it, which is the whole reason this spike exists
+as a required step rather than an optional nicety.
+
 ## 11. Naming
 
 App name: **Forge**. Chosen to avoid implying an official Anthropic
