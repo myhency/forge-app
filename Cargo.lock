@@ -66,6 +66,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-application"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "forge-domain",
+ "forge-ports",
+ "mockall",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "forge-domain"
 version = "0.1.0"
 dependencies = [
