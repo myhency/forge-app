@@ -57,7 +57,7 @@ impl ResumeSessionUseCase {
         session_id: SessionId,
         permission_mode: PermissionMode,
     ) -> Result<Session, ResumeSessionError> {
-        let session = self.sessions.load_session(project_path, &session_id).await?;
+        let mut session = self.sessions.load_session(project_path, &session_id).await?;
 
         self.sidecar
             .start_session(StartSessionParams {
@@ -68,6 +68,7 @@ impl ResumeSessionUseCase {
             })
             .await?;
 
+        session.permission_mode = permission_mode;
         Ok(session)
     }
 }
@@ -166,5 +167,30 @@ mod tests {
             .await;
 
         assert!(matches!(result, Err(ResumeSessionError::Sidecar(_))));
+    }
+
+    #[tokio::test]
+    async fn resume_session_use_case_overwrites_the_returned_session_permission_mode() {
+        let mut sessions_mock = MockSessionRepositoryPort::new();
+        sessions_mock.expect_load_session().times(1).returning(|_, id| {
+            Ok(Session {
+                id: id.clone(),
+                project_path: PathBuf::from("/tmp/project"),
+                title: None,
+                messages: Vec::new(),
+                permission_mode: PermissionMode::Plan,
+            })
+        });
+
+        let mut sidecar_mock = MockSidecarPort::new();
+        sidecar_mock.expect_start_session().times(1).returning(|_| Ok(()));
+
+        let use_case = ResumeSessionUseCase::new(Arc::new(sidecar_mock), Arc::new(sessions_mock));
+        let result = use_case
+            .execute(&PathBuf::from("/tmp/project"), SessionId("s-1".to_string()), PermissionMode::AcceptEdits)
+            .await
+            .unwrap();
+
+        assert_eq!(result.permission_mode, PermissionMode::AcceptEdits);
     }
 }

@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use forge_domain::PermissionDecision;
+use forge_domain::{PermissionDecision, Session};
 use forge_ports::{SidecarError, SidecarPort};
+
+use crate::event::push_user_message;
 
 pub struct SendMessageUseCase {
     sidecar: Arc<dyn SidecarPort>,
@@ -12,7 +14,8 @@ impl SendMessageUseCase {
         Self { sidecar }
     }
 
-    pub async fn execute(&self, text: String) -> Result<(), SidecarError> {
+    pub async fn execute(&self, session: &mut Session, text: String) -> Result<(), SidecarError> {
+        push_user_message(session, text.clone());
         self.sidecar.send_message(text).await
     }
 }
@@ -54,6 +57,16 @@ mod tests {
     use super::*;
     use forge_ports::MockSidecarPort;
 
+    fn empty_session() -> Session {
+        Session {
+            id: forge_domain::SessionId("s-1".to_string()),
+            project_path: std::path::PathBuf::from("/tmp/project"),
+            title: None,
+            messages: Vec::new(),
+            permission_mode: forge_domain::PermissionMode::Default,
+        }
+    }
+
     #[tokio::test]
     async fn send_message_use_case_delegates_to_the_sidecar_port() {
         let mut mock = MockSidecarPort::new();
@@ -63,7 +76,11 @@ mod tests {
             .returning(|_| Ok(()));
 
         let use_case = SendMessageUseCase::new(Arc::new(mock));
-        assert!(use_case.execute("hello".to_string()).await.is_ok());
+        let mut session = empty_session();
+        assert!(use_case.execute(&mut session, "hello".to_string()).await.is_ok());
+        assert_eq!(session.messages.len(), 1);
+        assert_eq!(session.messages[0].role, forge_domain::MessageRole::User);
+        assert_eq!(session.messages[0].content, "hello");
     }
 
     #[tokio::test]
@@ -72,8 +89,9 @@ mod tests {
         mock.expect_send_message().returning(|_| Err(SidecarError::ProcessExited));
 
         let use_case = SendMessageUseCase::new(Arc::new(mock));
+        let mut session = empty_session();
         assert!(matches!(
-            use_case.execute("hi".to_string()).await,
+            use_case.execute(&mut session, "hi".to_string()).await,
             Err(SidecarError::ProcessExited)
         ));
     }

@@ -13,6 +13,14 @@ pub enum SessionUpdate {
     SessionEnded,
 }
 
+pub fn push_user_message(session: &mut Session, text: String) {
+    session.messages.push(Message {
+        role: MessageRole::User,
+        content: text,
+        tool_calls: Vec::new(),
+    });
+}
+
 pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> SessionUpdate {
     match event {
         SidecarEvent::SessionStarted { session_id } => SessionUpdate::SessionStarted {
@@ -201,9 +209,36 @@ mod tests {
         let mut session = empty_session();
         apply_sidecar_event(
             &mut session,
+            &SidecarEvent::ToolUse { tool_call_id: "t-1".to_string(), name: "Bash".to_string(), input: serde_json::json!({}) },
+        );
+        apply_sidecar_event(
+            &mut session,
             &SidecarEvent::ToolResult { tool_call_id: "does-not-exist".to_string(), output: "ignored".to_string(), is_error: false },
         );
-        assert!(session.messages.is_empty());
+        assert!(session.messages[0].tool_calls[0].result.is_none());
+    }
+
+    #[test]
+    fn push_user_message_appends_a_user_message() {
+        let mut session = empty_session();
+        push_user_message(&mut session, "hello".to_string());
+
+        assert_eq!(session.messages.len(), 1);
+        assert_eq!(session.messages[0].role, MessageRole::User);
+        assert_eq!(session.messages[0].content, "hello");
+    }
+
+    #[test]
+    fn push_user_message_ends_the_previous_assistant_message_so_the_next_delta_starts_fresh() {
+        let mut session = empty_session();
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "first answer".to_string() });
+        push_user_message(&mut session, "second question".to_string());
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "second answer".to_string() });
+
+        assert_eq!(session.messages.len(), 3);
+        assert_eq!(session.messages[0].content, "first answer");
+        assert_eq!(session.messages[1].role, MessageRole::User);
+        assert_eq!(session.messages[2].content, "second answer");
     }
 
     #[test]
