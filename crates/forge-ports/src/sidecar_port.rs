@@ -3,7 +3,7 @@ use forge_domain::{PermissionDecision, PermissionMode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "mocks"))]
 use mockall::automock;
 
 pub type PermissionRequestId = String;
@@ -39,7 +39,7 @@ pub enum SidecarError {
     WriteFailed(String),
 }
 
-#[cfg_attr(test, automock)]
+#[cfg_attr(any(test, feature = "mocks"), automock)]
 #[async_trait]
 pub trait SidecarPort: Send + Sync {
     async fn start_session(&self, params: StartSessionParams) -> Result<(), SidecarError>;
