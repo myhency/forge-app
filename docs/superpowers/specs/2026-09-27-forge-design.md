@@ -509,3 +509,90 @@ per §12.4); the 8 use-cases get `mockall`-generated mocks of whichever
 port(s) they hold, verifying orchestration order and error propagation in
 isolation from real I/O — no concrete adapter exists yet, and none is
 needed for these tests to be meaningful.
+
+## 13. Detailed Design: `forge-adapter-config` (Plan 3)
+
+The first concrete adapter. Implements `ConfigRepositoryPort` (§12.3) by
+reading/writing Forge's own private `config.json` (§4.1) via real file I/O.
+Plan 4 (not yet designed) covers `forge-adapter-claude-fs` — the much
+larger body of work parsing Claude Code's shared, externally-owned file
+formats (session transcripts, skill/plugin/MCP-server definitions).
+
+### 13.1 Firsthand format verification done before this plan
+
+Before designing this adapter, real files on a machine with an active
+Claude Code installation were inspected directly (not guessed), the same
+discipline Task 3 applied to the Agent SDK's types in Plan 1:
+
+- **Skills**: `~/.claude/skills/<name>/SKILL.md` — YAML frontmatter with
+  `name`/`description` keys, then a markdown body.
+- **Plugins**: `~/.claude/plugins/installed_plugins.json` — the
+  authoritative registry, shape `{version, plugins: {"<name>@<marketplace>":
+  [{scope, installPath, version, installedAt, lastUpdated, gitCommitSha}]}}`.
+- **MCP servers**: `.mcp.json` files exist in **two different shapes** in
+  the wild — a bare `{"<name>": {"command": ..., "args": [...]}}` with no
+  wrapper key, and a `{"mcpServers": {"<name>": {"type": "http", "url":
+  ..., "headers": {...}}}}` wrapped form. This confirms §12.2's decision to
+  keep `McpServerDefinition.config` an opaque `serde_json::Value` was
+  correct — a rigid typed shape would have been wrong for at least one of
+  these two real examples.
+- **Session transcripts**: confirmed the content-block vocabulary
+  (`text`, `thinking`, `tool_use{id,name,input}`,
+  `tool_result{tool_use_id,content}`) matches the Agent SDK's own message
+  shapes (Plan 1, Task 3's findings) — transcripts are serialized
+  `SDKMessage` records. Found dedicated `custom-title`/`ai-title` line
+  types carrying a session's display title, separate from the
+  `user`/`assistant` message lines.
+
+This plan (config only) doesn't need the session/skill/plugin/MCP findings
+directly, but they retire risk for Plan 4 and are recorded here so that
+plan doesn't have to re-derive them.
+
+### 13.2 Design
+
+```rust
+pub fn default_config_path() -> Option<PathBuf> {
+    directories::ProjectDirs::from("", "", "Forge")
+        .map(|dirs| dirs.config_dir().join("config.json"))
+}
+
+pub struct ConfigFileAdapter {
+    path: PathBuf,
+}
+
+impl ConfigFileAdapter {
+    pub fn new(path: PathBuf) -> Self { ... }
+}
+
+#[async_trait]
+impl ConfigRepositoryPort for ConfigFileAdapter {
+    async fn load(&self) -> Result<AppConfig, ConfigError> { ... }
+    async fn save(&self, config: &AppConfig) -> Result<(), ConfigError> { ... }
+}
+```
+
+- `ConfigFileAdapter` takes an explicit `path`, never resolving the OS
+  config directory itself — `default_config_path()` is a separate free
+  function the future composition root (`forge-app`, a later plan) calls
+  to get the real path before constructing the adapter. This keeps the
+  adapter trivially testable against any temp path, never the real
+  `~/Library/Application Support/Forge/config.json` (or platform
+  equivalent) location.
+- `load()` on a missing file returns `Ok(AppConfig::default())` (first-run
+  behavior) rather than an error — a config file that doesn't exist yet is
+  not a failure.
+- `save()` creates parent directories as needed (`create_dir_all`) before
+  writing, since the OS config directory may not exist on first run.
+- Uses `tokio::fs` (not `std::fs`) for the actual reads/writes, consistent
+  with the rest of the codebase's async I/O, and to avoid blocking the
+  async runtime thread even though config files are small.
+- No atomic-write-via-temp-file-then-rename for `save()` in this plan —
+  YAGNI for v1; flagged here as a reasonable future hardening, not a
+  requirement.
+
+### 13.3 Testing
+
+Integration tests against a real temp directory (never the real OS config
+location), per §8's testing table: missing-file load returns default;
+save-then-load round-trips; save creates missing parent directories;
+malformed JSON on disk produces `ConfigError::ParseFailed`.
