@@ -603,6 +603,8 @@ git commit -m "feat: add sidecar wire protocol types and line-delimited JSON io"
 
 ### Task 5: Sidecar session driver (`session.ts`) + `index.ts` wiring
 
+> **Revised after Task 3.** Task 3's firsthand inspection of `sdk.d.ts` (v0.3.283) found the original version of this task assumed `SDKMessage` variant names (`session_start`, `text_delta`, `tool_use`, `tool_result`) that do not exist, and a `canUseTool` signature that doesn't match the real `CanUseTool` type. See `sidecar/docs/sdk-types-notes.md` for the full firsthand citations (file:line quotes from `sdk.d.ts`) this revision is based on. The wire protocol to our own Rust side (Task 4's `SidecarCommand`/`SidecarEvent`) is unaffected — only the *translation* from real SDK messages to that protocol changes.
+
 **Files:**
 - Create: `sidecar/src/session.ts`
 - Modify: `sidecar/src/index.ts`
@@ -612,7 +614,17 @@ git commit -m "feat: add sidecar wire protocol types and line-delimited JSON io"
 - Consumes: `SidecarCommand`, `SidecarEvent`, `readCommands`, `writeEvent` (Task 4)
 - Produces: `SidecarSession` class with `constructor(queryFn: QueryFn, emit: (event: SidecarEvent) => void)` and `async handle(command: SidecarCommand): Promise<void>` — this is the piece Task 8's spike drives indirectly through the real `query` from `@anthropic-ai/claude-agent-sdk`
 
-**Note on `Options.resume`:** the `start()` method below passes `resume: command.resume_session_id ?? undefined`, assuming `resume` accepts a session-id string. Before writing this task's code, check `sidecar/docs/sdk-types-notes.md` from Task 3; if `resume` is boolean-only in the installed version, change the `options` object to use `resume: command.resume_session_id !== null` instead and note the loss of arbitrary-session resume as a follow-up for a later plan.
+**Confirmed facts from `sidecar/docs/sdk-types-notes.md` (Task 3), read before writing this task's code:**
+- `Options.resume` is `string` (an arbitrary session id to resume) — the code below's `resume: command.resume_session_id ?? undefined` is correct as written, no adjustment needed.
+- The real `SDKMessage` union has ~38 variants. The ones this task needs: `SDKSystemMessage` (`type:'system', subtype:'init'`, carries `session_id`), `SDKPartialAssistantMessage` (`type:'stream_event'`, carries a nested Anthropic `event` whose `event.delta.type === 'text_delta'` gives streamed text), `SDKAssistantMessage` (`type:'assistant'`, whose `message.content` is an array of content blocks including `{type:'tool_use', id, name, input}`), `SDKUserMessage` (`type:'user'`, whose `message.content` may contain `{type:'tool_result', tool_use_id, content, is_error}` blocks — the CLI synthesizes these to feed tool results back to the model), and `SDKResultMessage` (`type:'result'`, discriminated by `subtype: 'success'|'error_...'`, carrying `usage`).
+- `CanUseTool`'s real signature is `(toolName: string, input: Record<string, unknown>, options: { requestId: string; toolUseID: string; signal: AbortSignal; ...more }) => Promise<PermissionResult | null>`, where `PermissionResult` is `{behavior:'allow', ...} | {behavior:'deny', message: string, ...}`. The real API already hands you a `requestId` — use it directly as the wire protocol's `permission_request_id` instead of maintaining your own counter.
+- A `SDKUserMessage` requires `parent_tool_use_id: string | null` (not optional) — pass `null` for a top-level user turn, or the real SDK may reject the message at runtime even though this codebase's loosely-typed `QueryFn` won't catch it at compile time.
+
+**Two details `sidecar/docs/sdk-types-notes.md` didn't pin down exactly — verify these yourself before finalizing Step 3, by grepping the installed `sdk.d.ts`:**
+1. `grep -n "NonNullableUsage\|interface.*Usage" node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts` — confirm the exact field names on the `usage` object (this task assumes `input_tokens`/`output_tokens`, matching the public Anthropic Messages API convention; adjust the `forwardMessage` code below if the installed version differs).
+2. `grep -n "abortController" node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts` — confirm `Options.abortController` is the real field name and accepts a plain `AbortController` (this task assumes so; adjust if different).
+
+If either differs from what's written below, adjust the code accordingly and note the correction in your report — the same way Task 3 flagged its findings, don't silently force reality to match this text.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -632,12 +644,15 @@ const startCommand: SidecarCommand = {
 };
 
 describe("SidecarSession", () => {
-  it("forwards session_start and text_delta as sidecar events, then session_ended", async () => {
+  it("forwards a session init and a streamed text delta as sidecar events, then session_ended", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>
       (async function* () {
-        yield { type: "session_start", sessionId: "s-1" };
-        yield { type: "text_delta", delta: "Hello" };
+        yield { type: "system", subtype: "init", session_id: "s-1" };
+        yield {
+          type: "stream_event",
+          event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hello" } },
+        };
       })();
 
     const session = new SidecarSession(queryFn, (e) => events.push(e));
@@ -650,13 +665,70 @@ describe("SidecarSession", () => {
     ]);
   });
 
-  it("emits permission_request and resumes the turn after permission_response", async () => {
+  it("forwards a tool_use content block from an assistant message", async () => {
     const events: SidecarEvent[] = [];
-    const queryFn: QueryFn = (args) =>
+    const queryFn: QueryFn = () =>
       (async function* () {
-        const decision = await (args.options.canUseTool as any)({ toolName: "Bash", toolInput: { command: "ls" } });
-        yield { type: "text_delta", delta: decision.approved ? "approved" : "denied" };
+        yield {
+          type: "assistant",
+          message: { content: [{ type: "tool_use", id: "t-1", name: "Bash", input: { command: "ls" } }] },
+        };
       })();
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events).toContainEqual({ type: "tool_use", tool_call_id: "t-1", name: "Bash", input: { command: "ls" } });
+  });
+
+  it("forwards a tool_result content block from a synthesized user message", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      (async function* () {
+        yield {
+          type: "user",
+          message: {
+            content: [{ type: "tool_result", tool_use_id: "t-1", content: [{ type: "text", text: "done" }], is_error: false }],
+          },
+        };
+      })();
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events).toContainEqual({ type: "tool_result", tool_call_id: "t-1", output: "done", is_error: false });
+  });
+
+  it("forwards a result message as turn_complete", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      (async function* () {
+        yield { type: "result", subtype: "success", usage: { input_tokens: 12, output_tokens: 34 } };
+      })();
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events).toContainEqual({ type: "turn_complete", input_tokens: 12, output_tokens: 34 });
+  });
+
+  it("emits permission_request using the SDK's own requestId and resolves after permission_response (allow)", async () => {
+    const events: SidecarEvent[] = [];
+    let capturedCanUseTool: any;
+    const queryFn: QueryFn = (args) => {
+      capturedCanUseTool = (args.options as any).canUseTool;
+      return (async function* () {
+        const result = await capturedCanUseTool("Bash", { command: "ls" }, { requestId: "req-1" });
+        yield {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: result.behavior === "allow" ? "approved" : "denied" },
+          },
+        };
+      })();
+    };
 
     const session = new SidecarSession(queryFn, (e) => events.push(e));
     const startPromise = session.handle(startCommand);
@@ -665,11 +737,42 @@ describe("SidecarSession", () => {
     const permissionEvent = events.find((e) => e.type === "permission_request");
     expect(permissionEvent).toBeDefined();
     const requestId = (permissionEvent as { permission_request_id: string }).permission_request_id;
+    expect(requestId).toBe("req-1");
 
     await session.handle({ type: "permission_response", id: "2", permission_request_id: requestId, decision: "allow_once" });
     await startPromise;
 
     expect(events.some((e) => e.type === "assistant_delta" && e.text === "approved")).toBe(true);
+  });
+
+  it("resolves with a PermissionResult deny (with a message) when the decision is deny", async () => {
+    const events: SidecarEvent[] = [];
+    let capturedCanUseTool: any;
+    const queryFn: QueryFn = (args) => {
+      capturedCanUseTool = (args.options as any).canUseTool;
+      return (async function* () {
+        const result = await capturedCanUseTool("Bash", { command: "rm -rf /" }, { requestId: "req-2" });
+        yield {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: result.behavior === "deny" ? result.message : "should not happen" },
+          },
+        };
+      })();
+    };
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    const startPromise = session.handle(startCommand);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await session.handle({ type: "permission_response", id: "3", permission_request_id: "req-2", decision: "deny" });
+    await startPromise;
+
+    const delta = events.find((e) => e.type === "assistant_delta") as { text: string } | undefined;
+    expect(delta?.text).toBeTruthy();
+    expect(delta?.text).not.toBe("should not happen");
   });
 
   it("ignores a permission_response for an unknown permission_request_id", async () => {
@@ -716,10 +819,14 @@ import type { SidecarCommand, SidecarEvent } from "./protocol.js";
 
 export type QueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => AsyncIterable<any>;
 
+type PermissionResult =
+  | { behavior: "allow"; updatedInput?: Record<string, unknown> }
+  | { behavior: "deny"; message: string };
+
 export class SidecarSession {
   private queuedMessages: unknown[] = [];
   private waitingResolvers: Array<(msg: unknown) => void> = [];
-  private pendingPermissions = new Map<string, (decision: { approved: boolean }) => void>();
+  private pendingPermissions = new Map<string, (result: PermissionResult) => void>();
   private abortController = new AbortController();
   private started = false;
 
@@ -739,7 +846,11 @@ export class SidecarSession {
       case "permission_response": {
         const resolver = this.pendingPermissions.get(command.permission_request_id);
         if (!resolver) return;
-        resolver({ approved: command.decision !== "deny" });
+        resolver(
+          command.decision === "deny"
+            ? { behavior: "deny", message: "Denied by user" }
+            : { behavior: "allow" },
+        );
         this.pendingPermissions.delete(command.permission_request_id);
         return;
       }
@@ -749,7 +860,7 @@ export class SidecarSession {
       case "shutdown":
         this.abortController.abort();
         for (const resolver of this.pendingPermissions.values()) {
-          resolver({ approved: false });
+          resolver({ behavior: "deny", message: "Sidecar is shutting down" });
         }
         this.pendingPermissions.clear();
         return;
@@ -769,7 +880,7 @@ export class SidecarSession {
   }
 
   private pushUserMessage(text: string): void {
-    const message = { type: "user", message: { role: "user", content: text } };
+    const message = { type: "user", message: { role: "user", content: text }, parent_tool_use_id: null };
     const resolver = this.waitingResolvers.shift();
     if (resolver) {
       resolver(message);
@@ -782,16 +893,19 @@ export class SidecarSession {
     if (this.started) return;
     this.started = true;
 
-    let permissionCounter = 0;
-    const canUseTool = async (request: { toolName: string; toolInput: unknown }) => {
-      const permissionRequestId = `perm-${++permissionCounter}`;
+    const canUseTool = async (
+      toolName: string,
+      input: Record<string, unknown>,
+      options: { requestId: string; [key: string]: unknown },
+    ): Promise<PermissionResult> => {
+      const permissionRequestId = options.requestId;
       this.emit({
         type: "permission_request",
         permission_request_id: permissionRequestId,
-        tool_name: request.toolName,
-        input: request.toolInput,
+        tool_name: toolName,
+        input,
       });
-      return new Promise<{ approved: boolean }>((resolve) => {
+      return new Promise<PermissionResult>((resolve) => {
         this.pendingPermissions.set(permissionRequestId, resolve);
       });
     };
@@ -820,28 +934,48 @@ export class SidecarSession {
 
   private forwardMessage(message: any): void {
     switch (message.type) {
-      case "session_start":
-        this.emit({ type: "session_started", session_id: message.sessionId });
+      case "system":
+        if (message.subtype === "init") {
+          this.emit({ type: "session_started", session_id: message.session_id });
+        }
         return;
-      case "text_delta":
-        this.emit({ type: "assistant_delta", text: message.delta });
+      case "stream_event": {
+        const event = message.event;
+        if (event?.type === "content_block_delta" && event.delta?.type === "text_delta") {
+          this.emit({ type: "assistant_delta", text: event.delta.text });
+        }
         return;
-      case "tool_use":
-        this.emit({ type: "tool_use", tool_call_id: message.id, name: message.toolName, input: message.toolInput });
+      }
+      case "assistant": {
+        const blocks = message.message?.content;
+        if (!Array.isArray(blocks)) return;
+        for (const block of blocks) {
+          if (block?.type === "tool_use") {
+            this.emit({ type: "tool_use", tool_call_id: block.id, name: block.name, input: block.input });
+          }
+        }
         return;
-      case "tool_result":
-        this.emit({
-          type: "tool_result",
-          tool_call_id: message.toolUseId,
-          output: extractTextContent(message.content),
-          is_error: Boolean(message.isError),
-        });
+      }
+      case "user": {
+        const blocks = message.message?.content;
+        if (!Array.isArray(blocks)) return;
+        for (const block of blocks) {
+          if (block?.type === "tool_result") {
+            this.emit({
+              type: "tool_result",
+              tool_call_id: block.tool_use_id,
+              output: extractTextContent(block.content),
+              is_error: Boolean(block.is_error),
+            });
+          }
+        }
         return;
+      }
       case "result":
         this.emit({
           type: "turn_complete",
-          input_tokens: message.usage?.inputTokens ?? 0,
-          output_tokens: message.usage?.outputTokens ?? 0,
+          input_tokens: message.usage?.input_tokens ?? 0,
+          output_tokens: message.usage?.output_tokens ?? 0,
         });
         return;
       default:
@@ -851,6 +985,7 @@ export class SidecarSession {
 }
 
 function extractTextContent(content: unknown): string {
+  if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content
     .filter((block): block is { type: "text"; text: string } => typeof block === "object" && block !== null && (block as { type?: unknown }).type === "text")
@@ -890,7 +1025,7 @@ readCommands(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run test/session.test.ts`
-Expected: all 4 tests pass.
+Expected: all 8 tests pass.
 
 - [ ] **Step 5: Build and typecheck the whole sidecar**
 
