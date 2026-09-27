@@ -23,11 +23,10 @@ impl ConfigFileAdapter {
 impl ConfigRepositoryPort for ConfigFileAdapter {
     async fn load(&self) -> Result<AppConfig, ConfigError> {
         match tokio::fs::read_to_string(&self.path).await {
-            Ok(contents) => {
-                serde_json::from_str(&contents).map_err(|e| ConfigError::ParseFailed(e.to_string()))
-            }
+            Ok(contents) => serde_json::from_str(&contents)
+                .map_err(|e| ConfigError::ParseFailed(format!("{}: {}", self.path.display(), e))),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(AppConfig::default()),
-            Err(e) => Err(ConfigError::ReadFailed(e.to_string())),
+            Err(e) => Err(ConfigError::ReadFailed(format!("{}: {}", self.path.display(), e))),
         }
     }
 
@@ -35,13 +34,24 @@ impl ConfigRepositoryPort for ConfigFileAdapter {
         if let Some(parent) = self.path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
+                .map_err(|e| ConfigError::WriteFailed(format!("{}: {}", self.path.display(), e)))?;
         }
         let json = serde_json::to_string_pretty(config)
-            .map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
+            .map_err(|e| ConfigError::WriteFailed(format!("{}: {}", self.path.display(), e)))?;
         tokio::fs::write(&self.path, json)
             .await
-            .map_err(|e| ConfigError::WriteFailed(e.to_string()))
+            .map_err(|e| ConfigError::WriteFailed(format!("{}: {}", self.path.display(), e)))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let permissions = std::fs::Permissions::from_mode(0o600);
+            tokio::fs::set_permissions(&self.path, permissions)
+                .await
+                .map_err(|e| ConfigError::WriteFailed(format!("{}: {}", self.path.display(), e)))?;
+        }
+
+        Ok(())
     }
 }
 
@@ -144,5 +154,38 @@ mod tests {
 
         let loaded = adapter.load().await.unwrap();
         assert_eq!(loaded.enabled_skills, vec!["new-skill".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn save_sets_file_permissions_to_owner_only_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let adapter = ConfigFileAdapter::new(dir.path().join("config.json"));
+
+        adapter.save(&AppConfig::default()).await.unwrap();
+
+        let metadata = tokio::fs::metadata(dir.path().join("config.json")).await.unwrap();
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn save_tightens_permissions_on_an_already_existing_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        tokio::fs::write(&path, "{}").await.unwrap();
+        tokio::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).await.unwrap();
+
+        let adapter = ConfigFileAdapter::new(path.clone());
+        adapter.save(&AppConfig::default()).await.unwrap();
+
+        let metadata = tokio::fs::metadata(&path).await.unwrap();
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 }

@@ -6,7 +6,7 @@
 
 **Architecture:** A single new crate, `forge-adapter-config`, depending on `forge-domain` + `forge-ports` (implementing `ConfigRepositoryPort`) plus `tokio` (async file I/O) and `directories` (OS-appropriate config path resolution). The adapter itself takes an explicit file path at construction time — it never resolves the OS config directory internally — so it's trivially testable against a temp directory. A separate free function, `default_config_path()`, resolves the real OS-appropriate location for whoever constructs the adapter in production (a later plan's composition root).
 
-**Tech Stack:** Rust (`tokio` with the `fs` feature, `directories`, `async-trait`, `serde_json` — no new testing dependencies beyond what's already in the workspace).
+**Tech Stack:** Rust (`tokio` with the `fs` feature, `directories`, `async-trait`, `serde_json`, plus `tempfile` as a new dev-dependency for filesystem-based tests, not previously used in this workspace).
 
 **Spec:** `docs/superpowers/specs/2026-09-27-forge-design.md` (§13, "Detailed Design: `forge-adapter-config`")
 
@@ -21,7 +21,7 @@
 ## Review Focus
 
 - `save()` must create missing parent directories before writing, not fail when the OS config directory doesn't exist yet on a fresh install — covered by Task 2's `save_creates_missing_parent_directories`.
-- Malformed JSON already on disk (e.g. from a future version writing a field this version doesn't understand yet, or manual corruption) must produce `ConfigError::ParseFailed`, not panic or silently return a default — covered by Task 1's `load_returns_parse_failed_for_malformed_json`.
+- Malformed JSON already on disk (e.g. from manual corruption, a truncated write, or any invalid syntax) must produce `ConfigError::ParseFailed`, not panic or silently return a default — covered by Task 1's `load_returns_parse_failed_for_malformed_json`. (Note: a config file with an *unknown but syntactically valid* extra field is NOT covered by this — `AppConfig` has no `deny_unknown_fields`, so serde silently ignores unrecognized fields rather than erroring. This is fine for now; if `AppConfig` ever needs strict versioning, revisit.)
 - A `load()` immediately after a `save()` of a non-default config (all five fields populated, not just one) must round-trip every field exactly — covered by Task 2's `save_then_load_round_trips_a_fully_populated_config`, not just a partially-populated one that could hide a forgotten field.
 
 ---
