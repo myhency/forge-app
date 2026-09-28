@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use forge_domain::{Session, SessionId, SessionSummary};
+use forge_domain::{
+    Message, MessageRole, PermissionMode, Session, SessionId, SessionSummary, ToolCall, ToolResult,
+};
 use forge_ports::{SessionRepositoryError, SessionRepositoryPort};
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
@@ -96,6 +98,155 @@ async fn read_title(path: &Path) -> std::io::Result<Option<String>> {
     Ok(title)
 }
 
+fn parse_permission_mode(raw: &str) -> PermissionMode {
+    match raw {
+        "acceptEdits" => PermissionMode::AcceptEdits,
+        "bypassPermissions" => PermissionMode::BypassPermissions,
+        "plan" => PermissionMode::Plan,
+        _ => PermissionMode::Default,
+    }
+}
+
+fn flatten_tool_result_content(content: Option<&Value>) -> String {
+    match content {
+        Some(Value::String(text)) => text.clone(),
+        Some(Value::Array(blocks)) => blocks
+            .iter()
+            .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|block| block.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    }
+}
+
+fn push_user_message(session: &mut Session, text: String) {
+    session.messages.push(Message {
+        role: MessageRole::User,
+        content: text,
+        tool_calls: Vec::new(),
+    });
+}
+
+fn attach_tool_result(session: &mut Session, block: &Value) {
+    let Some(tool_use_id) = block.get("tool_use_id").and_then(Value::as_str) else {
+        return;
+    };
+    let result = ToolResult {
+        output: flatten_tool_result_content(block.get("content")),
+        is_error: block
+            .get("is_error")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    };
+    'search: for message in session.messages.iter_mut().rev() {
+        for tool_call in message.tool_calls.iter_mut() {
+            if tool_call.id == tool_use_id {
+                tool_call.result = Some(result);
+                break 'search;
+            }
+        }
+    }
+}
+
+fn apply_user_line(session: &mut Session, line: &Value) {
+    let Some(content) = line.pointer("/message/content") else {
+        return;
+    };
+    match content {
+        Value::String(text) => push_user_message(session, text.clone()),
+        Value::Array(blocks) => {
+            let mut texts: Vec<&str> = Vec::new();
+            for block in blocks {
+                match block.get("type").and_then(Value::as_str) {
+                    Some("tool_result") => attach_tool_result(session, block),
+                    Some("text") => {
+                        if let Some(text) = block.get("text").and_then(Value::as_str) {
+                            texts.push(text);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if !texts.is_empty() {
+                push_user_message(session, texts.join("\n"));
+            }
+        }
+        _ => {}
+    }
+}
+
+fn apply_assistant_line(session: &mut Session, line: &Value) {
+    let Some(blocks) = line.pointer("/message/content").and_then(Value::as_array) else {
+        return;
+    };
+    let mut texts: Vec<&str> = Vec::new();
+    let mut tool_calls: Vec<ToolCall> = Vec::new();
+    for block in blocks {
+        match block.get("type").and_then(Value::as_str) {
+            Some("text") => {
+                if let Some(text) = block.get("text").and_then(Value::as_str) {
+                    texts.push(text);
+                }
+            }
+            Some("tool_use") => {
+                if let (Some(id), Some(name)) = (
+                    block.get("id").and_then(Value::as_str),
+                    block.get("name").and_then(Value::as_str),
+                ) {
+                    tool_calls.push(ToolCall {
+                        id: id.to_string(),
+                        name: name.to_string(),
+                        input: block.get("input").cloned().unwrap_or(Value::Null),
+                        result: None,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let text = texts.join("\n\n");
+    if text.is_empty() && tool_calls.is_empty() {
+        return;
+    }
+    if !matches!(session.messages.last(), Some(m) if m.role == MessageRole::Assistant) {
+        session.messages.push(Message::new(MessageRole::Assistant));
+    }
+    let message = session
+        .messages
+        .last_mut()
+        .expect("an assistant message was just ensured");
+    if !text.is_empty() {
+        if !message.content.is_empty() {
+            message.content.push_str("\n\n");
+        }
+        message.content.push_str(&text);
+    }
+    message.tool_calls.extend(tool_calls);
+}
+
+fn apply_line(session: &mut Session, line: &Value) {
+    if line.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+        return;
+    }
+    match line.get("type").and_then(Value::as_str) {
+        Some("user") => apply_user_line(session, line),
+        Some("assistant") => apply_assistant_line(session, line),
+        Some("permission-mode") => {
+            if let Some(mode) = line.get("permissionMode").and_then(Value::as_str) {
+                session.permission_mode = parse_permission_mode(mode);
+            }
+        }
+        Some("ai-title") | Some("custom-title") => {
+            if let Some(title) = title_from_value(line) {
+                session.title = Some(title);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[async_trait]
 impl SessionRepositoryPort for ClaudeSessionAdapter {
     async fn list_sessions(
@@ -159,10 +310,59 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
 
     async fn load_session(
         &self,
-        _project_path: &Path,
-        _session_id: &SessionId,
+        project_path: &Path,
+        session_id: &SessionId,
     ) -> Result<Session, SessionRepositoryError> {
-        unimplemented!("implemented in Task 2")
+        let id = &session_id.0;
+        if id.is_empty() || id.contains(['/', '\\']) || id.contains("..") {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+
+        let path = self.project_dir(project_path).join(format!("{id}.jsonl"));
+        let file = match tokio::fs::File::open(&path).await {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(SessionRepositoryError::NotFound(session_id.clone()))
+            }
+            Err(e) => {
+                return Err(SessionRepositoryError::LoadFailed(format!(
+                    "{}: {}",
+                    path.display(),
+                    e
+                )))
+            }
+        };
+
+        let mut session = Session {
+            id: session_id.clone(),
+            project_path: project_path.to_path_buf(),
+            title: None,
+            messages: Vec::new(),
+            permission_mode: PermissionMode::Default,
+        };
+        let mut lines = BufReader::new(file).lines();
+        let mut malformed_line: Option<usize> = None;
+        let mut line_number = 0usize;
+        while let Some(line) = lines.next_line().await.map_err(|e| {
+            SessionRepositoryError::LoadFailed(format!("{}: {}", path.display(), e))
+        })? {
+            line_number += 1;
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Some(bad_line) = malformed_line {
+                return Err(SessionRepositoryError::LoadFailed(format!(
+                    "{}: malformed JSON on line {}",
+                    path.display(),
+                    bad_line
+                )));
+            }
+            match serde_json::from_str::<Value>(&line) {
+                Ok(value) => apply_line(&mut session, &value),
+                Err(_) => malformed_line = Some(line_number),
+            }
+        }
+        Ok(session)
     }
 }
 
@@ -197,6 +397,20 @@ mod tests {
         let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
         file.set_modified(UNIX_EPOCH + Duration::from_secs(seconds_since_epoch))
             .unwrap();
+    }
+
+    fn assistant_block(block: Value) -> Value {
+        json!({"type": "assistant", "isSidechain": false, "message": {"role": "assistant", "content": [block]}})
+    }
+
+    fn user_blocks(blocks: Value) -> Value {
+        json!({"type": "user", "isSidechain": false, "message": {"role": "user", "content": blocks}})
+    }
+
+    async fn load(home: &Path, id: &str) -> Result<Session, SessionRepositoryError> {
+        ClaudeSessionAdapter::new(home.to_path_buf())
+            .load_session(&project(), &SessionId(id.to_string()))
+            .await
     }
 
     #[test]
@@ -406,5 +620,302 @@ mod tests {
         let sessions = adapter.list_sessions(&project()).await.unwrap();
 
         assert_eq!(sessions[0].title, None);
+    }
+
+    #[tokio::test]
+    async fn load_session_returns_not_found_for_a_missing_file() {
+        let home = tempfile::tempdir().unwrap();
+
+        let result = load(home.path(), "nope").await;
+
+        assert!(matches!(result, Err(SessionRepositoryError::NotFound(id)) if id.0 == "nope"));
+    }
+
+    #[tokio::test]
+    async fn load_session_rejects_ids_that_could_escape_the_project_directory() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "legit", &[user_text("hi")]);
+        std::fs::write(
+            home.path().join("projects").join("outside.jsonl"),
+            format!("{}\n", user_text("secret")),
+        )
+        .unwrap();
+
+        for bad_id in ["../outside", "a/b", "a\\b", "..", ""] {
+            let result = load(home.path(), bad_id).await;
+            assert!(
+                matches!(result, Err(SessionRepositoryError::NotFound(_))),
+                "id {bad_id:?} should be rejected, got {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn load_session_maps_a_plain_user_and_assistant_exchange() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[user_text("hi"), assistant_block(json!({"type": "text", "text": "hello"}))],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.id, SessionId("s1".to_string()));
+        assert_eq!(session.project_path, project());
+        assert_eq!(session.title, None);
+        assert_eq!(session.permission_mode, PermissionMode::Default);
+        assert_eq!(session.messages.len(), 2);
+        assert_eq!(session.messages[0].role, MessageRole::User);
+        assert_eq!(session.messages[0].content, "hi");
+        assert_eq!(session.messages[1].role, MessageRole::Assistant);
+        assert_eq!(session.messages[1].content, "hello");
+        assert!(session.messages[1].tool_calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn load_session_merges_an_assistant_response_split_one_block_per_line() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("read it"),
+                assistant_block(json!({"type": "thinking", "thinking": "hmm"})),
+                assistant_block(json!({"type": "text", "text": "Let me look."})),
+                assistant_block(json!({
+                    "type": "tool_use", "id": "t-1", "name": "Read",
+                    "input": {"path": "a.txt"}, "caller": {"type": "direct"}
+                })),
+                user_blocks(json!([{"type": "tool_result", "tool_use_id": "t-1", "content": "file body"}])),
+                assistant_block(json!({"type": "thinking", "thinking": "ok"})),
+                assistant_block(json!({"type": "text", "text": "Done."})),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.messages.len(), 2);
+        let assistant = &session.messages[1];
+        assert_eq!(assistant.role, MessageRole::Assistant);
+        assert_eq!(assistant.content, "Let me look.\n\nDone.");
+        assert_eq!(assistant.tool_calls.len(), 1);
+        assert_eq!(assistant.tool_calls[0].id, "t-1");
+        assert_eq!(assistant.tool_calls[0].name, "Read");
+        assert_eq!(assistant.tool_calls[0].input, json!({"path": "a.txt"}));
+        assert_eq!(
+            assistant.tool_calls[0].result,
+            Some(ToolResult { output: "file body".to_string(), is_error: false })
+        );
+    }
+
+    #[tokio::test]
+    async fn load_session_attaches_string_and_block_list_tool_results_and_defaults_is_error_to_false() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("go"),
+                assistant_block(json!({"type": "tool_use", "id": "t-1", "name": "Bash", "input": {}})),
+                assistant_block(json!({"type": "tool_use", "id": "t-2", "name": "Search", "input": {}})),
+                user_blocks(json!([
+                    {"type": "tool_result", "tool_use_id": "t-1", "content": "boom", "is_error": true},
+                    {"type": "tool_result", "tool_use_id": "t-2", "content": [
+                        {"type": "text", "text": "a"},
+                        {"type": "tool_reference", "tool_name": "X"},
+                        {"type": "text", "text": "b"}
+                    ]}
+                ])),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        let calls = &session.messages[1].tool_calls;
+        assert_eq!(
+            calls[0].result,
+            Some(ToolResult { output: "boom".to_string(), is_error: true })
+        );
+        assert_eq!(
+            calls[1].result,
+            Some(ToolResult { output: "a\nb".to_string(), is_error: false })
+        );
+    }
+
+    #[tokio::test]
+    async fn load_session_ignores_a_tool_result_with_an_unknown_id() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("go"),
+                assistant_block(json!({"type": "tool_use", "id": "t-1", "name": "Bash", "input": {}})),
+                user_blocks(json!([{"type": "tool_result", "tool_use_id": "missing", "content": "x"}])),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.messages.len(), 2);
+        assert!(session.messages[1].tool_calls[0].result.is_none());
+    }
+
+    #[tokio::test]
+    async fn load_session_turns_text_blocks_in_a_user_list_into_a_user_message() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[user_blocks(json!([
+                {"type": "text", "text": "one"},
+                {"type": "text", "text": "two"}
+            ]))],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.messages.len(), 1);
+        assert_eq!(session.messages[0].role, MessageRole::User);
+        assert_eq!(session.messages[0].content, "one\ntwo");
+    }
+
+    #[tokio::test]
+    async fn load_session_starts_a_new_assistant_message_after_a_user_message() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("q1"),
+                assistant_block(json!({"type": "text", "text": "a1"})),
+                user_text("q2"),
+                assistant_block(json!({"type": "text", "text": "a2"})),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        let roles: Vec<MessageRole> = session.messages.iter().map(|m| m.role).collect();
+        assert_eq!(
+            roles,
+            vec![MessageRole::User, MessageRole::Assistant, MessageRole::User, MessageRole::Assistant]
+        );
+        let contents: Vec<&str> = session.messages.iter().map(|m| m.content.as_str()).collect();
+        assert_eq!(contents, vec!["q1", "a1", "q2", "a2"]);
+    }
+
+    #[tokio::test]
+    async fn load_session_uses_the_last_permission_mode_and_falls_back_to_default() {
+        let home = tempfile::tempdir().unwrap();
+        let mode_line = |mode: &str| json!({"type": "permission-mode", "permissionMode": mode, "sessionId": "s"});
+        let cases = [
+            (vec![mode_line("acceptEdits")], PermissionMode::AcceptEdits),
+            (vec![mode_line("bypassPermissions")], PermissionMode::BypassPermissions),
+            (vec![mode_line("plan")], PermissionMode::Plan),
+            (vec![mode_line("default")], PermissionMode::Default),
+            (vec![mode_line("auto")], PermissionMode::Default),
+            (vec![mode_line("acceptEdits"), mode_line("plan")], PermissionMode::Plan),
+            (vec![user_text("no mode line")], PermissionMode::Default),
+        ];
+
+        for (index, (lines, expected)) in cases.iter().enumerate() {
+            let id = format!("case-{index}");
+            write_session(home.path(), &project(), &id, lines);
+            let session = load(home.path(), &id).await.unwrap();
+            assert_eq!(session.permission_mode, *expected, "case {index}");
+        }
+    }
+
+    #[tokio::test]
+    async fn load_session_reads_the_last_title() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "ai",
+            &[ai_title("First"), user_text("x"), ai_title("Second")],
+        );
+        write_session(
+            home.path(),
+            &project(),
+            "custom",
+            &[json!({"type": "custom-title", "customTitle": "Mine", "sessionId": "s"})],
+        );
+
+        assert_eq!(load(home.path(), "ai").await.unwrap().title, Some("Second".to_string()));
+        assert_eq!(load(home.path(), "custom").await.unwrap().title, Some("Mine".to_string()));
+    }
+
+    #[tokio::test]
+    async fn load_session_ignores_unrelated_line_types_blank_lines_and_sidechain_lines() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                json!({"type": "mode", "mode": "normal", "sessionId": "s"}),
+                json!({"type": "atis-latch", "atis": {}, "sessionId": "s"}),
+                user_text("real question"),
+                json!({"type": "attachment", "attachment": {"type": "hook_success"}, "sessionId": "s"}),
+                json!({"type": "system", "subtype": "hook", "sessionId": "s"}),
+                json!({"type": "user", "isSidechain": true, "message": {"role": "user", "content": "side thread"}}),
+                json!({"type": "last-prompt", "leafUuid": "u", "sessionId": "s"}),
+                assistant_block(json!({"type": "text", "text": "real answer"})),
+                json!({"type": "cost-state", "totalCostUSD": 0.1, "sessionId": "s"}),
+            ],
+        );
+        let mut body = std::fs::read_to_string(&path).unwrap();
+        body.push_str("\n   \n");
+        std::fs::write(&path, body).unwrap();
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.messages.len(), 2);
+        assert_eq!(session.messages[0].content, "real question");
+        assert_eq!(session.messages[1].content, "real answer");
+    }
+
+    #[tokio::test]
+    async fn load_session_ignores_a_malformed_final_line() {
+        let home = tempfile::tempdir().unwrap();
+        for (index, suffix) in ["{\"type\":\"assistant\",\"mess", "{\"type\":\"assistant\",\"mess\n \n"]
+            .iter()
+            .enumerate()
+        {
+            let id = format!("partial-{index}");
+            let path = write_session(home.path(), &project(), &id, &[user_text("hi")]);
+            let mut body = std::fs::read_to_string(&path).unwrap();
+            body.push_str(suffix);
+            std::fs::write(&path, body).unwrap();
+
+            let session = load(home.path(), &id).await.unwrap();
+
+            assert_eq!(session.messages.len(), 1, "suffix {index}");
+        }
+    }
+
+    #[tokio::test]
+    async fn load_session_fails_on_a_malformed_line_in_the_middle() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[]);
+        std::fs::write(&path, format!("{}\nnot json\n{}\n", user_text("a"), user_text("b"))).unwrap();
+
+        let result = load(home.path(), "s1").await;
+
+        match result {
+            Err(SessionRepositoryError::LoadFailed(message)) => {
+                assert!(message.contains("line 2"), "unexpected message: {message}");
+            }
+            other => panic!("expected LoadFailed, got {other:?}"),
+        }
     }
 }
