@@ -340,14 +340,21 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
             messages: Vec::new(),
             permission_mode: PermissionMode::Default,
         };
-        let mut lines = BufReader::new(file).lines();
+        let mut reader = BufReader::new(file);
+        let mut buffer = Vec::new();
         let mut malformed_line: Option<usize> = None;
         let mut line_number = 0usize;
-        while let Some(line) = lines.next_line().await.map_err(|e| {
-            SessionRepositoryError::LoadFailed(format!("{}: {}", path.display(), e))
-        })? {
+        loop {
+            buffer.clear();
+            let bytes_read = reader.read_until(b'\n', &mut buffer).await.map_err(|e| {
+                SessionRepositoryError::LoadFailed(format!("{}: {}", path.display(), e))
+            })?;
+            if bytes_read == 0 {
+                break;
+            }
             line_number += 1;
-            if line.trim().is_empty() {
+            let text = std::str::from_utf8(&buffer);
+            if matches!(text, Ok(line) if line.trim().is_empty()) {
                 continue;
             }
             if let Some(bad_line) = malformed_line {
@@ -357,9 +364,12 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
                     bad_line
                 )));
             }
-            match serde_json::from_str::<Value>(&line) {
-                Ok(value) => apply_line(&mut session, &value),
-                Err(_) => malformed_line = Some(line_number),
+            match text
+                .ok()
+                .and_then(|line| serde_json::from_str::<Value>(line).ok())
+            {
+                Some(value) => apply_line(&mut session, &value),
+                None => malformed_line = Some(line_number),
             }
         }
         Ok(session)
@@ -917,5 +927,62 @@ mod tests {
             }
             other => panic!("expected LoadFailed, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn load_session_ignores_a_final_line_cut_off_inside_a_multibyte_character() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[user_text("hi")]);
+        let mut bytes = std::fs::read(&path).unwrap();
+        bytes.extend_from_slice(b"{\"type\":\"user\",\"message\":{\"content\":\"");
+        // The first two bytes of a three-byte character: a write cut off mid-character.
+        bytes.extend_from_slice(&[0xE3, 0x81]);
+        std::fs::write(&path, bytes).unwrap();
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.messages.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn load_session_fails_on_an_invalid_utf8_line_in_the_middle() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[]);
+        let mut bytes = format!("{}\n", user_text("a")).into_bytes();
+        bytes.extend_from_slice(&[0xff, 0xfe, b'\n']);
+        bytes.extend_from_slice(format!("{}\n", user_text("b")).as_bytes());
+        std::fs::write(&path, bytes).unwrap();
+
+        let result = load(home.path(), "s1").await;
+
+        match result {
+            Err(SessionRepositoryError::LoadFailed(message)) => {
+                assert!(message.contains("line 2"), "unexpected message: {message}");
+            }
+            other => panic!("expected LoadFailed, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn load_session_adds_nothing_for_thinking_only_assistant_lines() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("q"),
+                assistant_block(json!({"type": "thinking", "thinking": "hmm"})),
+                user_text("q2"),
+                assistant_block(json!({"type": "thinking", "thinking": "more"})),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        let roles: Vec<MessageRole> = session.messages.iter().map(|m| m.role).collect();
+        assert_eq!(roles, vec![MessageRole::User, MessageRole::User]);
+        assert_eq!(session.messages[0].content, "q");
+        assert_eq!(session.messages[1].content, "q2");
     }
 }
