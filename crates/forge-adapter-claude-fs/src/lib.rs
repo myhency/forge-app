@@ -3,10 +3,12 @@ use std::path::PathBuf;
 mod sessions;
 mod skills;
 mod plugins;
+mod mcp;
 
 pub use sessions::ClaudeSessionAdapter;
 pub use skills::ClaudeSkillAdapter;
 pub use plugins::ClaudePluginAdapter;
+pub use mcp::ClaudeMcpAdapter;
 
 pub fn default_claude_home() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".claude"))
