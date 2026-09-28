@@ -666,19 +666,42 @@ overlap:
     `exitCode`, a nested `type` like `hook_success`) — nothing to do with
     user file attachments despite the name.
   - `user` messages have **two** content shapes: a plain string (real
-    user text) or a list of content blocks that, in every real example
-    found, contains only `tool_result` blocks (the harness's injected
-    tool-execution feedback) — never both, and never other block types.
+    user text) or a list of content blocks. Across all 66 real transcript
+    files on this machine (1,223 list-content `user` lines), 1,212 lists
+    contained only `tool_result` blocks (the harness's injected
+    tool-execution feedback) and 11 contained only `text` blocks (real
+    text, e.g. injected skill-loading content) — so a list is **not**
+    always tool feedback, and text blocks must not be dropped.
+  - A `tool_result` block's `content` is a **string** in 1,101 of 1,211
+    real blocks and a **list of blocks** in the other 110 (the observed
+    list contained `tool_reference` blocks, not `text`). Its `is_error`
+    key is present in only 519 of 1,211 blocks — absent means not an
+    error.
   - `assistant` message content blocks seen: `thinking`, `text`,
     `tool_use` — matching the Agent SDK shapes Plan 1 Task 3 already
     confirmed, since transcripts are serialized `SDKMessage` records.
-  - A `permission-mode` line's value on this machine was `"auto"` (Claude
-    Code's Auto Mode) — a value with **no** corresponding variant in
-    `forge-domain`'s existing `PermissionMode` enum
-    (`Default`/`AcceptEdits`/`BypassPermissions`/`Plan`, already shipped
-    in Plan 2 and used by the sidecar wire protocol in §5). This plan
-    does not extend that enum; unrecognized values fall back to
-    `PermissionMode::Default`.
+    **Every one of the 2,574 real `assistant` lines carries exactly one
+    content block**, and 1,242 of them share their `message.id` with the
+    preceding `assistant` line: one API response is split across several
+    lines, one block each. Loading one `Message` per line would produce a
+    garbled history full of empty messages (e.g. a `thinking`-only line).
+    The live path (§12.4's `apply_sidecar_event`) already merges
+    consecutive assistant content into the last `Assistant` message until
+    a user message intervenes; the loader follows the same rule so live
+    and loaded sessions have the same shape.
+  - A `permission-mode` line's value is in Claude Code's **camelCase**
+    vocabulary, not `forge-domain`'s snake_case serde form. Observed
+    across all 66 files: `"auto"` (584 lines), `"default"` (147),
+    `"acceptEdits"` (2). `"auto"` (Claude Code's Auto Mode) has **no**
+    corresponding variant in `forge-domain`'s `PermissionMode` enum
+    (`Default`/`AcceptEdits`/`BypassPermissions`/`Plan`, shipped in Plan 2
+    and used by the sidecar wire protocol in §5), and routing `"acceptEdits"`
+    through the enum's snake_case serde would wrongly fail to parse. So the
+    loader matches on the on-disk string explicitly (`"acceptEdits"`,
+    `"bypassPermissions"`, `"plan"` — the SDK vocabulary Plan 1
+    confirmed) and maps everything else, including `"default"` and
+    `"auto"`, to `PermissionMode::Default`. This plan does not extend the
+    enum.
   - No line with `isSidechain: true` was found in any of the 7 real
     session files inspected (each Task-tool/subagent dispatch in this
     project's own workflow produced its own separate top-level session
@@ -697,49 +720,86 @@ pub fn default_claude_home() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".claude"))
 }
 
+// NOT inside ~/.claude/: the global MCP/project registry file is a sibling
+// of that directory, at ~/.claude.json.
+pub fn default_claude_json_path() -> Option<PathBuf> {
+    directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".claude.json"))
+}
+
 pub struct ClaudeSessionAdapter { claude_home: PathBuf }
 pub struct ClaudeSkillAdapter { claude_home: PathBuf }
 pub struct ClaudePluginAdapter { claude_home: PathBuf }
-pub struct ClaudeMcpAdapter { claude_home: PathBuf }
+pub struct ClaudeMcpAdapter { claude_json_path: PathBuf }
 ```
 
 One struct per port (no shared state between them), each constructed with
-an explicit `claude_home: PathBuf` — never resolving `~/.claude` itself,
-mirroring `ConfigFileAdapter`'s `path`/`default_config_path()` split in
-§13.2. This keeps every adapter testable against a temp directory that
-never touches the real `~/.claude/`.
+an explicit root path — never resolving `~/.claude` or `~/.claude.json`
+itself, mirroring `ConfigFileAdapter`'s `path`/`default_config_path()`
+split in §13.2. The first three take the `~/.claude/` directory; the MCP
+adapter takes the path of the `~/.claude.json` file (a different location,
+see above). This keeps every adapter testable against a temp directory
+that never touches the real files.
 
 **`ClaudeSessionAdapter`** (`sessions.rs`):
 - Escaping helper: replace `/` and `.` with `-` (§14.1) to compute
-  `claude_home/projects/<escaped>/`.
+  `claude_home/projects/<escaped>/`. Verified on Unix-style paths only;
+  Windows path escaping is unverified and out of scope for this plan.
 - `list_sessions`: if the escaped directory doesn't exist, `Ok(vec![])`.
-  Otherwise one `SessionSummary` per `*.jsonl` file: `id` from the
-  filename stem, `updated_at` from the file's mtime (`tokio::fs::metadata`
-  — one stat call, not a full parse) formatted as ISO 8601, `title` from
-  the last `ai-title`/`custom-title` line seen when scanning the file
-  (`None` if absent). Any I/O failure reading the directory →
-  `SessionRepositoryError::ListFailed`.
-- `load_session`: missing file → `SessionRepositoryError::NotFound`. Parse
-  line by line per §14.1's rules: `user` (string) → new `Message{role:
-  User, ...}`; `user` (list) → merge into the open `ToolCall` matching its
-  `tool_use_id`; `assistant` → new `Message{role: Assistant, content:
-  <concatenated text blocks>, tool_calls: <one per tool_use block>}`;
-  track the last `permission-mode` value, mapped through the existing
-  snake_case `PermissionMode` deserialization with an unrecognized-value
-  fallback to `Default`; track the last title line. Any other `type` is
-  ignored. Any I/O or line-parse failure →
-  `SessionRepositoryError::LoadFailed`.
+  Otherwise one `SessionSummary` per `*.jsonl` file (other entries — real
+  project directories also hold e.g. a `memory/` subdirectory — are
+  ignored): `id` from the filename stem, `updated_at` from the file's
+  mtime (`tokio::fs::metadata` — one stat call, not a full parse)
+  formatted as RFC 3339 (a strict profile of ISO 8601), `title` from the
+  last `ai-title`/`custom-title` line seen when scanning the file
+  (`None` if absent; a cheap substring check skips full JSON parsing of
+  every non-title line, since real transcripts reach 13 MB). Results are
+  sorted newest-first by mtime (ties broken by id, for deterministic
+  output). A failure reading the directory itself →
+  `SessionRepositoryError::ListFailed`; a failure on one individual file
+  (vanished between listing and stat, unreadable, invalid UTF-8) degrades
+  that file (skipped if its mtime can't be read; `title: None` if only
+  the scan failed) instead of failing the whole listing.
+- `load_session`: a session id that could escape the project directory
+  (empty, containing `/` or `\`, or `..`) → `SessionRepositoryError::
+  NotFound`, without touching the filesystem; missing file → `NotFound`.
+  Parse line by line, skipping blank lines and any line with
+  `isSidechain: true`: `user` (string) → new `Message{role: User, ...}`;
+  `user` (list) → each `tool_result` block fills the `result` of the
+  `ToolCall` with the matching `tool_use_id` (searching backward, like
+  `apply_sidecar_event`), its `content` flattened to a string (a string
+  as-is; a block list → its `text` blocks joined with `\n`, other block
+  types ignored), `is_error` defaulting to `false`, and any `text` blocks
+  in the list become a new `User` message; `assistant` → its `text` blocks
+  and `tool_use` blocks are merged into the last message if that is an
+  `Assistant` message (text appended, separated by `\n\n` from any
+  existing text), else a new `Assistant` message — a line yielding neither
+  text nor tool calls (e.g. `thinking` only) adds nothing; track the last
+  `permission-mode` value (explicit camelCase match, §14.1, unrecognized
+  → `Default`); track the last title line. Any other `type` is ignored.
+  Because the transcript may be mid-append by a running Claude Code
+  (sessions are shared, §4.2), a malformed **final** line is ignored,
+  while a malformed line followed by any further non-blank line is real
+  corruption → `SessionRepositoryError::LoadFailed`, as is any I/O error.
 
 **`ClaudeSkillAdapter`** (`skills.rs`):
 - `list_skills(project_path)`: recursively walk `claude_home/skills/` and
   `project_path/.claude/skills/` (either missing → contributes zero
-  entries) for files named `SKILL.md`. For each, parse frontmatter with a
-  hand-rolled parser: strip the leading `---` line, read lines until the
-  next `---`, split each on the first `:`, trim key/value. Missing `---`
-  delimiters, or a missing `name`/`description` key, skips that one file
-  — never fails the whole listing. `SkillDefinition.path` is the file's
-  parent directory. `ListFailed` is reserved for a failure to read the
-  root directories themselves (e.g. permission denied).
+  entries) for files named `SKILL.md`. Symlinked directories are followed
+  (users commonly symlink a skill from a checkout) with a visited set of
+  canonical paths so a symlink loop terminates. For each file, parse
+  frontmatter with a hand-rolled parser: tolerate a leading UTF-8 BOM and
+  CRLF line endings, require a first line of `---`, read lines until the
+  next `---`, consider only top-level keys (lines with no leading
+  whitespace), split each on the first `:`, trim key/value, and strip one
+  pair of matching surrounding quotes from the value. A file with no
+  frontmatter or no `name` is skipped, never failing the whole listing;
+  a missing `description` is **not** a skip — `SkillDefinition.description`
+  is `Option<String>` (§12.2), so it becomes `None`. YAML block scalars
+  (`description: >-` plus indented lines) are not supported — a known
+  limitation of the hand-rolled parser accepted in brainstorming.
+  `SkillDefinition.path` is the file's parent directory. `ListFailed` is
+  reserved for a failure to read a root directory that exists (e.g.
+  permission denied).
 
 **`ClaudePluginAdapter`** (`plugins.rs`):
 - `list_plugins()`: parse `claude_home/plugins/installed_plugins.json`.
@@ -751,7 +811,7 @@ never touches the real `~/.claude/`.
 
 **`ClaudeMcpAdapter`** (`mcp.rs`):
 - `list_servers(project_path)`: deserialize only the `mcpServers` field out
-  of `claude_home/.claude.json` via a narrow struct
+  of the file at `claude_json_path` (`~/.claude.json`) via a narrow struct
   (`#[serde(default, rename = "mcpServers")] HashMap<String,
   serde_json::Value>`) — every other key in that ~100-key file is never
   touched or exposed. Merge with `project_path/.mcp.json` if present,
@@ -765,16 +825,24 @@ never touches the real `~/.claude/`.
 Every test builds a real temp directory tree — never the real
 `~/.claude/` — mirroring the exact shapes found in §14.1:
 
-- Nested `SKILL.md` fixtures (including one 3 levels deep and one missing
-  `description`, proving it's skipped rather than failing the listing).
+- Nested `SKILL.md` fixtures (including one 3 levels deep, one with no
+  `name` proving it's skipped rather than failing the listing, one with no
+  `description` proving it's kept with `None`, plus CRLF/BOM/quoted-value
+  variants, a symlinked skill directory and a symlink loop).
 - A synthetic `installed_plugins.json` with a multi-entry install array
   for one plugin.
 - Both `.mcp.json` shapes (bare and wrapped), plus a global/project-local
   name collision proving project-local precedence.
 - Synthetic `.jsonl` transcripts covering: a plain user/assistant turn, a
-  `tool_use`→`tool_result` round trip, an `ai-title` line, a
-  `permission-mode: "auto"` line (proving the `Default` fallback), and the
-  ignorable line types (`mode`, `attachment`, `cost-state`) interleaved to
-  prove they don't break parsing. A missing-directory `list_sessions`
-  call and a missing-file `load_session` call (`NotFound`) are both
-  covered.
+  `tool_use`→`tool_result` round trip (string-content and block-list
+  `tool_result`s, with and without `is_error`), an assistant response
+  split one-block-per-line (a `thinking`-only line must add nothing), a
+  `user` list carrying a `text` block, an `ai-title` line, `permission-mode`
+  lines (`"acceptEdits"` mapped, `"auto"` falling back to `Default`), and
+  the ignorable line types (`mode`, `attachment`, `cost-state`)
+  interleaved to prove they don't break parsing. A missing-directory
+  `list_sessions` call, a missing-file `load_session` call (`NotFound`),
+  a path-traversal session id (`NotFound`), a malformed final line
+  (ignored) versus a malformed mid-file line (`LoadFailed`), and
+  newest-first ordering with one corrupt transcript that must not blank
+  the listing are all covered.
