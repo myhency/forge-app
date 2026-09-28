@@ -24,12 +24,48 @@ impl ClaudeSessionAdapter {
     }
 }
 
+const MAX_ESCAPED_LEN: usize = 200;
+
+// Mirrors Claude Code's own project-directory naming: every character that is not an ASCII
+// letter or digit becomes '-', and names over 200 characters are cut and given a hash suffix.
 fn escape_project_path(project_path: &Path) -> String {
-    project_path
-        .to_string_lossy()
-        .chars()
-        .map(|c| if c == '/' || c == '.' { '-' } else { c })
-        .collect()
+    let original = project_path.to_string_lossy();
+    let escaped: String = original
+        .encode_utf16()
+        .map(|unit| match u8::try_from(unit) {
+            Ok(byte) if byte.is_ascii_alphanumeric() => char::from(byte),
+            _ => '-',
+        })
+        .collect();
+    if escaped.len() <= MAX_ESCAPED_LEN {
+        return escaped;
+    }
+    format!(
+        "{}-{}",
+        &escaped[..MAX_ESCAPED_LEN],
+        to_base36(string_hash(&original).unsigned_abs())
+    )
+}
+
+fn string_hash(text: &str) -> i32 {
+    text.encode_utf16().fold(0i32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(i32::from(unit))
+    })
+}
+
+fn to_base36(mut value: u32) -> String {
+    if value == 0 {
+        return "0".to_string();
+    }
+    let mut digits = Vec::new();
+    while value > 0 {
+        digits.push(
+            char::from_digit(value % 36, 36)
+                .expect("a remainder below 36 is a valid base-36 digit"),
+        );
+        value /= 36;
+    }
+    digits.iter().rev().collect()
 }
 
 fn title_from_value(value: &Value) -> Option<String> {
@@ -179,6 +215,79 @@ mod tests {
             )),
             "-Users-james-Developer-forge--claude-worktrees-forge-adapter-config"
         );
+    }
+
+    #[test]
+    fn escape_project_path_replaces_every_non_alphanumeric_character() {
+        assert_eq!(
+            escape_project_path(Path::new("/Users/james/my_project")),
+            "-Users-james-my-project"
+        );
+        assert_eq!(
+            escape_project_path(Path::new(
+                "/Users/james/Library/Mobile Documents/com~apple~CloudDocs/notes"
+            )),
+            "-Users-james-Library-Mobile-Documents-com-apple-CloudDocs-notes"
+        );
+        assert_eq!(
+            escape_project_path(Path::new("/Users/james/Documents/프로젝트")),
+            "-Users-james-Documents-----"
+        );
+        // A character outside the BMP is two UTF-16 units, so it becomes two dashes.
+        assert_eq!(
+            escape_project_path(Path::new("/Users/test/emoji😀dir")),
+            "-Users-test-emoji--dir"
+        );
+    }
+
+    #[test]
+    fn escape_project_path_caps_at_200_characters_and_appends_a_hash_of_the_original_path() {
+        let exactly_200 = format!("/{}", "a".repeat(199));
+        assert_eq!(
+            escape_project_path(Path::new(&exactly_200)),
+            format!("-{}", "a".repeat(199))
+        );
+
+        let just_over = format!("/{}", "a".repeat(200));
+        assert_eq!(
+            escape_project_path(Path::new(&just_over)),
+            format!("-{}-b6ymvl", "a".repeat(199))
+        );
+
+        let long_ascii = format!("/{}", "a".repeat(250));
+        assert_eq!(
+            escape_project_path(Path::new(&long_ascii)),
+            format!("-{}-feo44x", "a".repeat(199))
+        );
+
+        // The hash is over the original path's UTF-16 units, not its sanitized form.
+        let long_hangul = format!("/{}/{}", "가".repeat(120), "b".repeat(100));
+        assert_eq!(
+            escape_project_path(Path::new(&long_hangul)),
+            format!("{}{}-fmkleo", "-".repeat(122), "b".repeat(78))
+        );
+        let long_emoji = format!("/{}{}", "😀".repeat(60), "x".repeat(100));
+        assert_eq!(
+            escape_project_path(Path::new(&long_emoji)),
+            format!("{}{}-pt4f1", "-".repeat(121), "x".repeat(79))
+        );
+    }
+
+    #[tokio::test]
+    async fn list_sessions_finds_transcripts_for_a_project_path_with_underscores_and_spaces() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("projects").join("-Users-test-my-project-x");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("s1.jsonl"), format!("{}\n", user_text("hi"))).unwrap();
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let sessions = adapter
+            .list_sessions(Path::new("/Users/test/my_project x"))
+            .await
+            .unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, SessionId("s1".to_string()));
     }
 
     #[tokio::test]
