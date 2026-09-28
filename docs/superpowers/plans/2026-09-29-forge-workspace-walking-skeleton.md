@@ -38,9 +38,33 @@ The failure modes most likely to bite a person using this software. Each is pinn
 2. **The same Claude session opened twice must never get two sidecars** (two processes writing one transcript), even when both opens race → Task 6 `opening_an_already_open_session_returns_the_same_handle_without_loading_again` and `two_concurrent_opens_of_the_same_session_end_up_with_one_handle`.
 3. **A sidecar that dies or reports an error mid-turn must not wedge the session or leave a message that was never delivered in the history** → Task 5 `an_error_event_shuts_the_sidecar_down_clears_permissions_and_fails_the_session`, `sending_after_a_failure_respawns_and_resumes_with_the_known_session_id`, `a_failed_write_removes_the_undelivered_message_from_the_history`, `the_event_stream_ending_fails_the_session_without_asking_the_dead_process_to_shut_down`.
 4. **Project directory names are a lossy escape and transcripts are shared with a running Claude Code**: a path with spaces, underscores or Korean characters, a name over 200 characters, a `cwd` that is not on the first line, a half-written final line, invalid UTF-8 → Task 3 (`…_lossy_directory_name`, `…_200_character_cap`, `…_not_on_the_first_line`, `…_tolerates_invalid_utf8_and_a_partial_final_line`, `…_does_not_round_trip…`).
-5. **Pressing Enter to confirm a Korean (IME) syllable must not send the message** — a webview event, so **no automated test**; the spike logs `composing=` for exactly this (Task 1 Step 6) and Task 11's checklist repeats it. `SendMessageBox` and `NewSessionComposer` already check `is_composing()`.
+5. **Pressing Enter to confirm a Korean (IME) syllable must not send the message** — a webview event, so **no automated test**; the spike logs `composing=` for exactly this (Task 1 Step 6) and Task 11's checklist repeats it. `SendMessageBox` and `NewSessionComposer` already check `is_composing()`. **Amended by Task 1 (see Amendment A below): the spike found no working signal for this on macOS with Dioxus 0.7.10 — this is now a known, accepted gap, not a guard expected to work.**
 
-**Known limitations, accepted and not tested:** every published change and every render clones the whole conversation (fine for normal sessions; a multi-megabyte tool output will make typing sluggish — watch for it in Task 11); the message list does not auto-scroll while streaming; a fatal and a non-fatal sidecar `Error` cannot be told apart, so every `Error` ends the sidecar (spec §15.5); Windows and Linux are unverified; the sidebar reflects sessions created elsewhere only at start and when a session closes.
+**Known limitations, accepted and not tested:** every published change and every render clones the whole conversation (fine for normal sessions; a multi-megabyte tool output will make typing sluggish — watch for it in Task 11); the message list does not auto-scroll while streaming; a fatal and a non-fatal sidecar `Error` cannot be told apart, so every `Error` ends the sidecar (spec §15.5); Windows and Linux are unverified; the sidebar reflects sessions created elsewhere only at start and when a session closes. **(Added by Amendment A)** pressing Enter mid-Korean-IME-composition can send a half-typed message on macOS desktop — verified unfixable with this Dioxus version's public API, see Amendment A; a misconfigured `AppConfig` (bad key / unreachable base URL) does not fail fast — the SDK retries silently and the turn just hangs.
+
+## Amendment A (after Task 1)
+
+Written after running the Task 1 spike (findings in spec §15.10). Two outcomes change later tasks; everything else confirmed the plan as written (tokio-in-UI-handlers, the watch/Signal bridge, `session_started` timing, `ANTHROPIC_API_KEY`/`ANTHROPIC_BASE_URL`, and — contrary to the plan's own contingency — `interrupt` *is* followed by a `TurnComplete`, so Task 5's "no `turn_complete` after interrupt" code path is **not** applied).
+
+1. **⌘W closes the OS window, not just the active session (Task 10).** The
+   spike traced this to `dioxus::desktop`'s default menu bar, whose
+   "Window" submenu binds the platform accelerator (⌘W) to
+   `muda::PredefinedMenuItem::close_window`, independently of
+   `onkeydown`/`Workspace::on_key`. Task 10's `window_config()` must build
+   a custom menu (via the re-exported `dioxus::desktop::muda`) that omits
+   `close_window`, and pass it with `Config::with_menu(..)`, so ⌘W is
+   decided solely by `Workspace::on_key` (close the active session, never
+   the window). The traffic-light button and ⌘Q are unaffected.
+2. **The Enter/IME guard's fallback cannot be built (Tasks 8, 9).** Drop
+   the plan's "also ignore an Enter whose raw key code is 229" fallback:
+   `dioxus-html` 0.7.10's `SerializedKeyboardData.key_code` field is
+   private with no accessor, on desktop or otherwise. Keep the existing
+   `is_composing()` check in `SendMessageBox` and `NewSessionComposer`
+   exactly as the plan already has it (harmless, and it may work on
+   platforms other than macOS) — no code change to Tasks 8/9 beyond this
+   plan text. Review Focus item 5 and the "Known limitations" line above
+   are corrected accordingly; Task 11's manual checklist should note this
+   as an accepted gap when it reaches that item, not re-litigate it.
 
 ---
 
@@ -5921,6 +5945,7 @@ dioxus = { version = "=0.7.10", features = ["desktop"] }
 ```rust
 use std::sync::Arc;
 
+use dioxus::desktop::muda::{Menu, PredefinedMenuItem, Submenu};
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
 use forge_adapter_claude_fs::{default_claude_home, ClaudeProjectAdapter, ClaudeSessionAdapter};
@@ -5942,12 +5967,62 @@ fn main() {
         .launch(App);
 }
 
+// Amendment A (spec §15.10 (c)): Dioxus's default menu binds the platform's
+// standard accelerator (⌘W on macOS) to `close_window`, which closes the OS
+// window independently of `onkeydown` — Cmd+N and Ctrl+Tab/Ctrl+Shift+Tab
+// reach the page fine, but ⌘W does both, closing the window Workspace::on_key
+// was supposed to be the only thing deciding. This is the platform's default
+// menu (`dioxus_desktop::menubar::default_menu_bar`) with `close_window`
+// left out, so ⌘W is decided solely by `Workspace::on_key` (close the active
+// session, never the window); the traffic-light button and ⌘Q are unaffected.
+fn app_menu() -> Menu {
+    let menu = Menu::new();
+    let window_menu = Submenu::new("Window", true);
+    window_menu
+        .append_items(&[
+            &PredefinedMenuItem::fullscreen(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::hide(None),
+            &PredefinedMenuItem::hide_others(None),
+            &PredefinedMenuItem::show_all(None),
+            &PredefinedMenuItem::maximize(None),
+            &PredefinedMenuItem::minimize(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::quit(None),
+        ])
+        .expect("static menu items");
+
+    let edit_menu = Submenu::new("Edit", true);
+    edit_menu
+        .append_items(&[
+            &PredefinedMenuItem::undo(None),
+            &PredefinedMenuItem::redo(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::cut(None),
+            &PredefinedMenuItem::copy(None),
+            &PredefinedMenuItem::paste(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::select_all(None),
+        ])
+        .expect("static menu items");
+
+    menu.append_items(&[&window_menu, &edit_menu])
+        .expect("static menu items");
+
+    #[cfg(target_os = "macos")]
+    window_menu.set_as_windows_menu_for_nsapp();
+
+    menu
+}
+
 fn window_config() -> Config {
-    Config::new().with_window(
-        WindowBuilder::new()
-            .with_title("Forge")
-            .with_inner_size(LogicalSize::new(1200.0, 800.0)),
-    )
+    Config::new()
+        .with_window(
+            WindowBuilder::new()
+                .with_title("Forge")
+                .with_inner_size(LogicalSize::new(1200.0, 800.0)),
+        )
+        .with_menu(app_menu())
 }
 
 // The composition root: the only place that names concrete adapters.

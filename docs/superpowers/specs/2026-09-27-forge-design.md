@@ -1309,6 +1309,15 @@ plan (decided 2026-09-29).
 - §7: "multiple sessions open at once" moves from Tier 2 into this skeleton,
   as a sidebar list (not tabs); split panes stay Tier 2.
 - §12.3: `SidecarProcess::spawn` now takes an environment (§15.4).
+- §15.1 Review Focus item 5: corrected by the spike (§15.10 (c)) from "checked
+  by hand, expected to pass" to a **verified, currently unfixable gap**:
+  Dioxus desktop 0.7.10 on macOS (wry/WKWebView) exposes no signal —
+  `is_composing()`, composition events, or a raw key code — that
+  distinguishes an in-progress Korean IME composition from ordinary typing,
+  so pressing Enter mid-syllable can send a half-typed message. The
+  `is_composing()` check stays in `SendMessageBox`/`NewSessionComposer`
+  (harmless, may work on other platforms) but the plan's raw-key-code-229
+  fallback is dropped — §15.10 (c) has why.
 - Known limits: the marker style, folder-picker behaviour, lazy sidecar and
   close-while-running behaviour are own choices (§15.1, §15.5); a missing
   project folder cannot be resumed; the sidebar reflects sessions created
@@ -1318,4 +1327,117 @@ plan (decided 2026-09-29).
   megabyte tool output will make typing sluggish); the message list does not
   auto-scroll while streaming; every sidecar `Error` ends that sidecar (§15.5).
   The build prints one `block v0.1.6` future-incompatibility notice from the
-  Dioxus desktop dependency tree; it is not from this repository.
+  Dioxus desktop dependency tree; it is not from this repository. **Pressing
+  Enter mid-Korean-IME-composition can send a half-typed message on macOS
+  desktop** — confirmed by the Task 1 spike (§15.10 (c)), not fixable with
+  Dioxus 0.7.10's public API. A misconfigured `AppConfig` (bad key or
+  unreachable base URL) does not fail fast: the SDK retries silently and a
+  turn just hangs from the UI's point of view (§15.10 (d)).
+
+### 15.10 Spike findings (Task 1)
+
+Run 2026-09-29 in the `plan-5` worktree, `crates/forge-spike` (throwaway,
+deleted after this write-up), against the real sidecar built from this
+repository. `dx serve -p forge-spike --platform desktop` works (build ~53 s
+cold, ~3 s incremental) — **(e)**. The user gave consent for the two calls
+that would touch the real API (§15.8 Step 7) before they were made.
+
+- **(a) tokio runtime in UI event handlers — yes.** Every `start`/`send`
+  closure (invoked from a button `onclick`, i.e. the Dioxus UI thread) saw
+  `tokio::runtime::Handle::try_current().is_ok() == true`, and
+  `SidecarProcess::spawn`, `tokio::spawn` and `next_event().await` all ran
+  directly from there, across four separate runs (`dx serve`, `cargo run`,
+  two `open -n` runs of the built `.app`). No dedicated runtime/handle
+  plumbing is needed; Tasks 4–6 and 10 can call these directly from UI code.
+- **(b) real stream → watch → Signal, window stays responsive — yes.**
+  With the user's consent, a real turn ("count 1 to 100") streamed 25
+  `AssistantDelta` events between 105.34 s and 106.44 s of the run,
+  followed by `TurnComplete`; a 100 ms heartbeat running as a second
+  Dioxus-local task never gapped past 123 ms across the whole ~140 s
+  scripted run (idle or streaming). The bridge in §15.6 works as designed.
+- **(c) keyboard and IME — mixed, one new finding, one design gap that
+  cannot be closed with this stack.**
+  - ⌘N, Ctrl+Tab and Ctrl+Shift+Tab reach `onkeydown` (logged with the
+    right modifiers). ⌘⇧N was not confirmed in the log on the one run
+    that tried it; it is not one of the app's actual shortcuts (§15.6), so
+    this is not pursued further.
+  - **⌘W reaches `onkeydown` *and* the native default menu still closes
+    the OS window** — worse than the plan's outcome table anticipated
+    (which only considered "swallowed silently" vs. "reaches the page").
+    Traced to `dioxus::desktop`'s `default_menu_bar()`
+    (`menubar.rs`), whose "Window" submenu includes
+    `muda::PredefinedMenuItem::close_window(None)`, bound to the
+    platform's standard accelerator (⌘W on macOS) independently of the
+    webview's event handling. **Amendment (applies to Task 10):** build a
+    custom menu with `dioxus::desktop::muda` — the default items minus
+    `close_window` — and pass it via `Config::with_menu(..)`, so only
+    `Workspace::on_key` decides what ⌘W does (close the active session,
+    never the window). The window's own chrome (red traffic-light button,
+    ⌘Q) still closes/quits normally; that is unaffected and fine.
+  - **Enter mid-Korean-IME-composition: `is_composing()` reports `false`
+    throughout, on two separate runs**, including on the very `Enter`
+    that follows six Hangul jamo keydowns
+    (`ㅇㅏㄴㄴㅕㅇ`) typed via the OS's built-in Korean input source.
+    Added `oncompositionstart`/`oncompositionupdate`/`oncompositionend`
+    handlers to the spike's textarea as a second signal (Dioxus does wire
+    these — `dioxus-html`'s `convert_composition_data` — to the browser's
+    real `compositionstart`/`update`/`end`): **none of the three fired at
+    all**, on a repeat of the same test. The plan's proposed fallback (a
+    raw key code of 229) is also **not reachable**: `serialize.ts` does
+    capture `event.keyCode` into `SerializedKeyboardData.key_code`, but
+    every field of that struct is private in `dioxus-html` 0.7.10 with no
+    accessor, and `key_code`/`code_point` are not part of the
+    `HasKeyboardData` trait — there is no public API path to it, downcast
+    or otherwise. **Finding: on this stack (Dioxus desktop 0.7.10 /
+    wry / WKWebView, macOS), there is no signal visible to application
+    code that distinguishes an in-progress Korean IME composition from
+    ordinary typing.** This is a platform/library gap, not a bug in this
+    spike's code. **Amendment (applies to Task 8/9 and Review Focus
+    item 5):** keep the `is_composing()` check in `SendMessageBox` and
+    `NewSessionComposer` as written (it is free and correct wherever the
+    underlying platform does report it, e.g. it may differ on Linux/
+    Windows or in a future Dioxus release) but drop the raw-key-code
+    fallback from the plan — it cannot be built. Move "Enter mid-IME-
+    composition can send a half-typed message on macOS desktop" from
+    Review Focus item 5's "checked by hand, expected to pass" framing
+    into **Known limitations** below: it is a verified, currently
+    unfixable gap in this stack, not an unverified risk.
+- **(d) `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` — both honoured, and
+  precisely confirmed.** Driving the sidecar against a local fake HTTP
+  server (`127.0.0.1:8765`) with `ANTHROPIC_BASE_URL` pointed at it and
+  `ANTHROPIC_API_KEY=sk-ant-spike-invalid-key` showed the outbound
+  `POST /v1/messages` carrying `x-api-key: sk-ant-spike-invalid-key` (the
+  exact injected value, no `Authorization` header) against the injected
+  base URL. Separately: pointing `ANTHROPIC_BASE_URL` at an unreachable
+  address (`http://127.0.0.1:9`) or setting only an invalid
+  `ANTHROPIC_API_KEY` against the real API produced **no `Error` event and
+  no `TurnComplete` within 30 s** in either case — the SDK retries a bad
+  credential/unreachable host silently rather than failing fast. Worth
+  knowing for Tasks 4–5: a misconfigured `AppConfig` does not surface as
+  an immediate, visible failure; the turn just hangs from the UI's point
+  of view. No plan change forced by this (out of scope for the skeleton),
+  noted as a known limitation.
+- **(f) `session_started` timing — only after the first message, confirmed
+  three times.** Zero `SessionStarted` events appeared in a 15 s idle
+  window after `start_session` with nothing sent; it arrived 0.07–0.8 s
+  after the first `send_message` in every run that sent one. Matches the
+  plan's default assumption (§15.8 outcome table); no change needed.
+- **(g) events after `interrupt` — a `TurnComplete` *does* follow.**
+  Interrupting ~50 ms after `send_message` (before any `AssistantDelta`
+  had arrived) returned `Ok(())` from `interrupt()` and was followed
+  ~50 ms later by `TurnComplete { input_tokens: 0, output_tokens: 0 }`.
+  **The Task 5 "no `turn_complete` after `interrupt`" amendment in the
+  plan's outcome table is therefore not applied** — the default design
+  (the actor returns to `Idle` on `TurnComplete`, spec §15.5's table) is
+  what Task 5 implements, unmodified. `shutdown` was independently
+  confirmed to always end the event stream with `SessionEnded`.
+
+**Amendments made to this spec and the plan as a result (recorded, not
+merely proposed, since they change what Tasks 8–10 build):**
+1. Task 10's `window_config()` gains a custom menu (§15.10 (c), ⌘W).
+2. Review Focus item 5 and the "Known limitations" paragraph (§15.1) are
+   corrected: the IME-composing guard is confirmed non-functional on
+   macOS with this Dioxus version, not merely untested — see the plan's
+   own Amendment A for the exact wording.
+No other question changed a task: (a), (b), (d) (no code change forced),
+(f) and (g) confirm the plan's existing design.
