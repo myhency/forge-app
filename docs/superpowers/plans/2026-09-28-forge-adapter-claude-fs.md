@@ -42,6 +42,12 @@ Task 1 was implemented and reviewed clean exactly as written below. Afterwards t
 
 ---
 
+## Amendment B (after Task 2's review, before Task 3)
+
+Task 2 was implemented and reviewed as written below; its review found two Important issues, both fixed in **fix round 1**: (1) `load_session` read lines through tokio's UTF-8-validating line reader, so a transcript cut off *inside a multi-byte character* (a running Claude Code mid-append) produced `LoadFailed` instead of being ignored like any other partial final line — the loop now reads raw bytes with `read_until(b'\n', ...)` and treats invalid UTF-8 as a malformed line, so the only-if-final rule covers it (the spec's rule, spec §14.2, is unchanged; the plan's code under-implemented it); (2) the "a `thinking`-only assistant line adds nothing" rule had no test that fails without its early return — one was added (verified by mutation: with the early return deleted, only that test fails). Three tests were added: `load_session_ignores_a_final_line_cut_off_inside_a_multibyte_character`, `load_session_fails_on_an_invalid_utf8_line_in_the_middle`, `load_session_adds_nothing_for_thinking_only_assistant_lines`. **As built, Task 2 ends at 29 crate tests / 90 workspace tests.** Amendment A's counts for Tasks 3-5 are superseded: Task 3 → 42 / 103, Task 4 → 49 / 110, Task 5 → 59 / 120. Task 2's text below is kept as executed; where it disagrees with this amendment, the amendment wins.
+
+---
+
 ## File Structure
 
 ```
@@ -1509,10 +1515,10 @@ Replace the `list_skills` stub (whole method) with:
 - [ ] **Step 5: Run the tests to verify green**
 
 Run: `PATH="$HOME/.cargo/bin:$PATH" cargo test -p forge-adapter-claude-fs`
-Expected: **39 passed; 0 failed** (26 + 13), no compiler warnings.
+Expected: **42 passed; 0 failed** (29 + 13), no compiler warnings.
 
 Run: `PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace 2>&1 | grep -E "^test result|warning"`
-Expected: all `ok`, **100 tests in total**, no warnings.
+Expected: all `ok`, **103 tests in total**, no warnings.
 
 - [ ] **Step 6: Commit**
 
@@ -1805,10 +1811,10 @@ Replace the `list_plugins` stub (whole method) with:
 - [ ] **Step 5: Run the tests to verify green**
 
 Run: `PATH="$HOME/.cargo/bin:$PATH" cargo test -p forge-adapter-claude-fs`
-Expected: **46 passed; 0 failed** (39 + 7), no compiler warnings.
+Expected: **49 passed; 0 failed** (42 + 7), no compiler warnings.
 
 Run: `PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace 2>&1 | grep -E "^test result|warning"`
-Expected: all `ok`, **107 tests in total**, no warnings.
+Expected: all `ok`, **110 tests in total**, no warnings.
 
 - [ ] **Step 6: Commit**
 
@@ -2140,10 +2146,10 @@ Replace the `list_servers` stub (whole method) with:
 - [ ] **Step 5: Run the tests to verify green**
 
 Run: `PATH="$HOME/.cargo/bin:$PATH" cargo test -p forge-adapter-claude-fs`
-Expected: **56 passed; 0 failed** (46 + 10), no compiler warnings.
+Expected: **59 passed; 0 failed** (49 + 10), no compiler warnings.
 
 Run: `PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace 2>&1 | grep -E "^test result|warning"`
-Expected: all `ok`, **117 tests in total**, no warnings.
+Expected: all `ok`, **120 tests in total**, no warnings.
 
 - [ ] **Step 6: Commit**
 
@@ -2156,7 +2162,7 @@ git commit -m "feat: implement McpRegistryPort merging global and project-local 
 
 ## Acceptance check against real data (controller-run, read-only, never committed)
 
-Before this plan was handed off, its final-state code was assembled in a scratch workspace and every red/green stage was run: the per-task test counts and "no warnings" claims above are measured, not estimated (10 → 23 → 36 → 43 → 53 crate tests as first written; 13 → 26 → 39 → 46 → 56 after Amendment A). The same assembled code was then run **read-only against the author's real `~/.claude`** and produced: 18 project directories, 66 sessions listed (56 with titles), **66/66 loaded with 0 failures** (the largest transcript, 13.6 MB, loaded in 53 ms in a release build), 453 messages with **0 empty assistant messages**, 1,233 tool calls (2 without a result), 30 skills (matching the 30 `SKILL.md` files on disk), 9 plugins, 0 MCP servers.
+Before this plan was handed off, its final-state code was assembled in a scratch workspace and every red/green stage was run: the per-task test counts and "no warnings" claims above are measured, not estimated (10 → 23 → 36 → 43 → 53 crate tests as first written; 13 → 29 → 42 → 49 → 59 after Amendments A and B). The same assembled code was then run **read-only against the author's real `~/.claude`** and produced: 18 project directories, 66 sessions listed (56 with titles), **66/66 loaded with 0 failures** (the largest transcript, 13.6 MB, loaded in 53 ms in a release build), 453 messages with **0 empty assistant messages**, 1,233 tool calls (2 without a result), 30 skills (matching the 30 `SKILL.md` files on disk), 9 plugins, 0 MCP servers.
 
 After Task 5 (and again after any final-review fix wave), the controller re-runs that check: temporarily add `crates/forge-adapter-claude-fs/examples/smoke.rs` in the worktree (do **not** commit it; delete it afterwards), run `PATH="$HOME/.cargo/bin:$PATH" cargo run --release -p forge-adapter-claude-fs --example smoke`, and confirm: `failed: 0`, `empty assistant msgs: 0`, skills count equals `find ~/.claude/skills -name SKILL.md | wc -l` (plus any project-local skills for the chosen project), plugins count equals the number of install entries in `~/.claude/plugins/installed_plugins.json`.
 
