@@ -643,17 +643,24 @@ overlap:
   also empty) — the two-shape finding from §13.1 (bare
   `{"name": {...}}` vs. wrapped `{"mcpServers": {"name": {...}}}`) is
   carried forward from that earlier verification rather than re-derived,
-  since no live example exists right now to re-check it against. Because
-  the per-project `~/.claude.json` entry has never been observed
-  populated, this plan does not read it — only the global `mcpServers`
-  key and a project-local `.mcp.json` file are merged (project-local wins
-  on name collision). **Open question found afterwards:** the installed
-  Claude Code 2.1.283 binary shows that `claude mcp add` defaults to
-  `--scope local` ("Local config (private to you in this project)"),
-  stored per project inside `~/.claude.json` — exactly the entry this plan
-  does not read, so servers added the default way do not appear until
-  that scope is decided (brainstorming chose the narrower option on the
-  "never observed populated" evidence above).
+  since no live example exists right now to re-check it against. Brainstorming
+  first chose to read only the global `mcpServers` key and a
+  project-local `.mcp.json` file, because the per-project
+  `~/.claude.json` entry had never been observed populated on this
+  machine. **Reversed after the final review, by the human:** the
+  installed Claude Code 2.1.283 binary shows that `claude mcp add`
+  defaults to `--scope local` ("Local config (private to you in this
+  project)"), stored per project inside `~/.claude.json`
+  (`projects[<key>].mcpServers`) — so the most common way to add a server
+  would never have appeared. The per-project entry is now read too (Task
+  6). Its key is the project's NFC-normalised, symlink-resolved working
+  directory (the binary's `MTe()`: `O$(xn(We(cwd)))` with `xn` =
+  `normalize("NFC")` — note this is NFC, whereas the transcript directory
+  name uses the on-disk form); for a git worktree Claude Code keys by the
+  main repository root, which this adapter does not resolve (callers pass
+  the main repository path). Scope precedence on a name collision is
+  local > project `.mcp.json` > global, per Claude Code's documented
+  behaviour (not verified in the binary).
 - **Session directory escaping**: reverse-mapping all 18 real session
   directories under `~/.claude/projects/` back to their registered project
   paths in `~/.claude.json`'s `projects` map first suggested "replace
@@ -859,9 +866,18 @@ that never touches the real files.
   serde_json::Value>`) — every other key in that ~100-key file is never
   touched or exposed. Merge with `project_path/.mcp.json` if present,
   normalizing both the bare and `{"mcpServers": {...}}`-wrapped shapes to
-  the same flat map; project-local entries win on name collision. Either
-  source missing contributes zero entries. Malformed top-level JSON in
-  either file → `McpRegistryError::ListFailed`.
+  the same flat map; `.mcp.json` entries win over global ones on name
+  collision. Then merge the **local-scope** servers — `projects[<key>].
+  mcpServers` in the same `~/.claude.json`, where `<key>` is the
+  NFC-normalised form of the project path resolved like the transcript
+  directory (§14.1: canonicalize, falling back to the path as given; both
+  forms are tried, the resolved one first) — which win over both. The
+  `projects` map is read in a second, isolated, best-effort parse that
+  captures only each entry's `mcpServers` as a raw value: a malformed
+  `projects` value or entry can never fail the global listing (it just
+  means no local-scope servers), and no other project's servers or fields
+  are used. Either source missing contributes zero entries. Malformed
+  top-level JSON in either file → `McpRegistryError::ListFailed`.
 
 ### 14.3 Testing
 

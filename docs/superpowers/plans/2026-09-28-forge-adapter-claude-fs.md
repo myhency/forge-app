@@ -18,7 +18,7 @@
 - The global MCP file is `~/.claude.json`, a **sibling** of `~/.claude/`, not inside it — `ClaudeMcpAdapter` takes that file's path; the other three take the `~/.claude/` directory.
 - Tests build real temp directories (`tempfile`) and never touch the real `~/.claude/` or `~/.claude.json` (§14.3).
 - Error strings include the offending path: `format!("{}: {}", path.display(), e)` (convention from Plan 3's final review).
-- Dependency pins: `directories = "6.0.0"`, `time = { version = "0.3.55", features = ["formatting"] }`, `tokio` with `fs` + `io-util`. Task 1 writes the crate's whole `Cargo.toml`; Tasks 2-5 add **no** dependencies.
+- Dependency pins: `directories = "6.0.0"`, `time = { version = "0.3.55", features = ["formatting"] }`, `tokio` with `fs` + `io-util`. Task 1 writes the crate's whole `Cargo.toml`; Tasks 2-5 add **no** dependencies; Task 6 (Amendment D) adds `unicode-normalization = "0.1.25"`.
 - Session-directory escaping rule (amended after Task 1's review — see Amendment A): Claude Code's own directory-name rule, read out of the installed binary — every UTF-16 unit that is not an ASCII letter or digit becomes `-`; a result longer than 200 characters is cut to its first 200 characters plus `-` plus the base-36 form of the absolute value of a Java-style 32-bit hash of the **original** path (§14.1). The plan as first written used "replace `/` and `.` only", which is wrong for `_`, spaces, `~` and non-ASCII.
 - Environment: `cargo` is not on `PATH` in a fresh shell — prefix commands with `PATH="$HOME/.cargo/bin:$PATH"`. Baseline before this plan: 61 workspace tests passing.
 
@@ -51,6 +51,12 @@ Task 2 was implemented and reviewed as written below; its review found two Impor
 ## Amendment C (after the final whole-branch review)
 
 The final review (opus) returned "With fixes": 0 Critical, 4 Important, closed by ONE fix wave (commit after `fb53a91`). (1) `project_dir` now canonicalizes the caller's project path (falling back to it as given) before escaping — Claude Code names the transcript directory from its *resolved* working directory, so symlinked paths, `/tmp/...` and Unicode-normal-form differences (an NFD Korean folder opened by its NFC name on APFS) listed no sessions. (2) `isMeta: true` transcript lines are skipped like `isSidechain` lines — harness-injected skill bodies, `<local-command-caveat>` text and scheduled-wakeup prompts had been loaded as user messages (33 string + 9 text-list real lines). (3) `read_title` reads raw bytes (skipping non-UTF-8 lines, keeping the title found so far on a read error) and returns `Option<String>`. (4) YAML block-scalar descriptions (`>`, `|-`, ...) are folded into one line instead of leaking the marker (3 real `SKILL.md` files use `description: >`; this overturns the brainstorming premise that every real example is single-line). Five sessions tests and two skills tests were added (one skills test replaced): **as built the crate ends at 66 tests, the workspace at 127.** The task bodies below stay as executed; where they disagree with the amendments, the amendments win. Still an open decision for the human, not changed by this plan: MCP servers added with the default `claude mcp add` (scope `local`) live in `~/.claude.json`'s per-project `mcpServers`, which the adapter deliberately does not read (spec §14.1).
+
+---
+
+## Amendment D (Task 6, added after the final review at the human's request)
+
+The final review noted, and the installed Claude Code binary confirmed, that `claude mcp add` defaults to `--scope local`, which stores servers per project in `~/.claude.json` (`projects[<key>].mcpServers`) — an entry the adapter deliberately did not read (brainstorming chose "Global + project .mcp.json" on the evidence that no per-project entry was populated on the author's machine). The human decided to add it before merging, so **Task 6** (below, after Task 5) reads it. It is the only task that adds a dependency: `unicode-normalization = "0.1.25"` (Claude Code keys projects by the NFC-normalised path; verified: `cargo search` → 0.1.25, API `UnicodeNormalization::nfc`). Expected counts after Task 6: crate 72 tests, workspace 133 (66 / 127 after Amendment C, +6). Global Constraints' "Tasks 2-5 add no dependencies" therefore does not cover Task 6.
 
 ---
 
@@ -2162,6 +2168,282 @@ Expected: all `ok`, **120 tests in total**, no warnings.
 ```bash
 git add crates/forge-adapter-claude-fs/src/lib.rs crates/forge-adapter-claude-fs/src/mcp.rs
 git commit -m "feat: implement McpRegistryPort merging global and project-local MCP servers"
+```
+
+### Task 6: Local-scope MCP servers (per-project entries in `~/.claude.json`)
+
+**Files:**
+- Modify: `crates/forge-adapter-claude-fs/Cargo.toml` (one dependency line)
+- Modify: `crates/forge-adapter-claude-fs/src/mcp.rs`
+
+**Interfaces:**
+- Consumes (from Task 5, same file): `ClaudeMcpAdapter { claude_json_path }`, `GlobalClaudeJson`, `failed`, `read_optional`, `normalize_project_servers`, and the `mod tests` helpers `Fixture`, `fixture()`, `list(&Fixture)`, `server(name, config)`.
+- Produces: private `ProjectEntry`, `ProjectsClaudeJson`, `async fn project_keys(project_path: &Path) -> Vec<String>`, `async fn local_servers(contents: &str, project_path: &Path) -> HashMap<String, Value>`; `list_servers` now merges, lowest to highest precedence: global `mcpServers` < project `.mcp.json` < local-scope `projects[<key>].mcpServers`.
+
+Design (spec §14.1/§14.2): Claude Code's default `claude mcp add` scope, "local", is stored under the project's key in `~/.claude.json`. The key is the NFC-normalised, symlink-resolved working directory; `project_keys` returns that key for the resolved path and for the path as given (deduplicated, resolved first). The `projects` map is read in a second, isolated, best-effort parse capturing only each entry's `mcpServers` as a raw `Value`, so a malformed `projects` value can never break the global listing, and no other project's data is used. A git worktree is keyed by the main repository root in Claude Code — not resolved here (callers pass the main repository path).
+
+- [ ] **Step 1: Add the dependency**
+
+In `crates/forge-adapter-claude-fs/Cargo.toml`, under `[dependencies]`, add after the `time` line:
+
+```toml
+unicode-normalization = "0.1.25"
+```
+
+- [ ] **Step 2: Add the failing tests**
+
+Append these helpers and tests inside `mcp.rs`'s `mod tests` (after the existing tests):
+
+```rust
+    fn write_claude_json(fixture: &Fixture, global: serde_json::Value, projects: serde_json::Map<String, serde_json::Value>) {
+        std::fs::write(
+            &fixture.claude_json,
+            json!({"mcpServers": global, "projects": projects}).to_string(),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_servers_reads_local_scope_servers_for_the_project_path() {
+        let fixture = fixture();
+        let mut projects = serde_json::Map::new();
+        projects.insert(
+            fixture.project.to_string_lossy().into_owned(),
+            json!({"allowedTools": [], "mcpServers": {"mine": {"command": "npx"}}}),
+        );
+        write_claude_json(&fixture, json!({}), projects);
+
+        let servers = list(&fixture).await.unwrap();
+
+        assert_eq!(servers, vec![server("mine", json!({"command": "npx"}))]);
+    }
+
+    #[tokio::test]
+    async fn local_scope_overrides_project_mcp_json_which_overrides_global_by_name() {
+        let fixture = fixture();
+        let mut projects = serde_json::Map::new();
+        projects.insert(
+            fixture.project.to_string_lossy().into_owned(),
+            json!({"mcpServers": {"c": {"from": "local"}, "d": {"from": "local"}}}),
+        );
+        write_claude_json(
+            &fixture,
+            json!({"a": {"from": "global"}, "b": {"from": "global"}, "c": {"from": "global"}}),
+            projects,
+        );
+        std::fs::write(
+            fixture.project.join(".mcp.json"),
+            r#"{"b": {"from": "project"}, "c": {"from": "project"}}"#,
+        )
+        .unwrap();
+
+        let servers = list(&fixture).await.unwrap();
+
+        assert_eq!(
+            servers,
+            vec![
+                server("a", json!({"from": "global"})),
+                server("b", json!({"from": "project"})),
+                server("c", json!({"from": "local"})),
+                server("d", json!({"from": "local"})),
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn local_scope_is_found_under_the_resolved_path_of_a_symlinked_project() {
+        let fixture = fixture();
+        let link = fixture.project.parent().unwrap().join("linked-project");
+        std::os::unix::fs::symlink(&fixture.project, &link).unwrap();
+        // Claude Code keys the entry by the resolved working directory.
+        let resolved = std::fs::canonicalize(&fixture.project).unwrap();
+        let mut projects = serde_json::Map::new();
+        projects.insert(
+            resolved.to_string_lossy().into_owned(),
+            json!({"mcpServers": {"resolved": {"command": "x"}}}),
+        );
+        write_claude_json(&fixture, json!({}), projects);
+
+        let servers = ClaudeMcpAdapter::new(fixture.claude_json.clone())
+            .list_servers(&link)
+            .await
+            .unwrap();
+
+        assert_eq!(servers, vec![server("resolved", json!({"command": "x"}))]);
+    }
+
+    #[tokio::test]
+    async fn project_keys_are_nfc_normalised_because_claude_code_keys_projects_that_way() {
+        // Claude Code stores the project key NFC-normalised, while a folder created by Finder is
+        // on disk in decomposed (NFD) form and a directory listing hands that form back.
+        let decomposed = "\u{1111}\u{1173}\u{1105}\u{1169}\u{110C}\u{1166}\u{11A8}\u{1110}\u{1173}";
+        let composed = "프로젝트";
+        assert_ne!(decomposed, composed);
+
+        let keys = project_keys(Path::new(&format!("/nonexistent/{decomposed}"))).await;
+
+        assert_eq!(keys, vec![format!("/nonexistent/{composed}")]);
+    }
+
+    #[tokio::test]
+    async fn local_scope_ignores_other_projects_and_odd_entries() {
+        let fixture = fixture();
+        let mut projects = serde_json::Map::new();
+        projects.insert(
+            fixture.project.to_string_lossy().into_owned(),
+            json!({"mcpServers": {"mine": {"command": "npx"}, "junk": 5}}),
+        );
+        projects.insert("/some/other/project".to_string(), json!({"mcpServers": {"leak": {"command": "x"}}, "secret": "s3cr3t"}));
+        projects.insert("/broken/project".to_string(), json!({"mcpServers": [1, 2]}));
+        projects.insert("/null/project".to_string(), json!({"mcpServers": null}));
+        write_claude_json(&fixture, json!({}), projects);
+
+        let servers = list(&fixture).await.unwrap();
+
+        assert_eq!(servers, vec![server("mine", json!({"command": "npx"}))]);
+    }
+
+    #[tokio::test]
+    async fn a_malformed_projects_map_does_not_break_the_global_listing() {
+        let fixture = fixture();
+        std::fs::write(
+            &fixture.claude_json,
+            r#"{"mcpServers": {"global": {"command": "g"}}, "projects": [1, 2]}"#,
+        )
+        .unwrap();
+
+        let servers = list(&fixture).await.unwrap();
+
+        assert_eq!(servers, vec![server("global", json!({"command": "g"}))]);
+    }
+```
+
+- [ ] **Step 3: Run the tests to verify the red state**
+
+Run: `PATH="$HOME/.cargo/bin:$PATH" cargo test -p forge-adapter-claude-fs list_servers`
+Expected: **compile error** "error[E0425]: cannot find function project_keys in this scope" (the new tests reference `project_keys`, which does not exist yet). That is the red state.
+
+- [ ] **Step 4: Implement**
+
+In `mcp.rs`:
+
+(a) Add the import below `use serde_json::Value;`:
+
+```rust
+use unicode_normalization::UnicodeNormalization;
+```
+
+(b) Insert these items directly above the `#[async_trait]` line of `impl McpRegistryPort for ClaudeMcpAdapter`:
+
+```rust
+// Only the per-project `mcpServers` (Claude Code's default "local" scope) is captured; kept as a raw
+// `Value` so an odd shape in one entry cannot fail the parse.
+#[derive(Deserialize)]
+struct ProjectEntry {
+    #[serde(default, rename = "mcpServers")]
+    mcp_servers: Option<Value>,
+}
+
+#[derive(Deserialize)]
+struct ProjectsClaudeJson {
+    #[serde(default)]
+    projects: HashMap<String, ProjectEntry>,
+}
+
+// Claude Code keys a project by its NFC-normalised, symlink-resolved working directory (for a git
+// worktree it uses the main repository root, which is not resolved here).
+async fn project_keys(project_path: &Path) -> Vec<String> {
+    let resolved = tokio::fs::canonicalize(project_path)
+        .await
+        .unwrap_or_else(|_| project_path.to_path_buf());
+    let mut keys: Vec<String> = Vec::new();
+    for path in [resolved.as_path(), project_path] {
+        let key: String = path.to_string_lossy().nfc().collect();
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    keys
+}
+
+// Best-effort by design: a malformed `projects` value must never break the global listing, so a
+// parse failure here simply means "no local-scope servers".
+async fn local_servers(contents: &str, project_path: &Path) -> HashMap<String, Value> {
+    let Ok(parsed) = serde_json::from_str::<ProjectsClaudeJson>(contents) else {
+        return HashMap::new();
+    };
+    let mut projects = parsed.projects;
+    for key in project_keys(project_path).await {
+        if let Some(entry) = projects.remove(&key) {
+            return match entry.mcp_servers {
+                Some(Value::Object(servers)) => servers.into_iter().collect(),
+                _ => HashMap::new(),
+            };
+        }
+    }
+    HashMap::new()
+}
+```
+
+(c) In `list_servers`, replace
+
+```rust
+        let mut servers: HashMap<String, Value> = HashMap::new();
+
+        if let Some(contents) = read_optional(&self.claude_json_path).await? {
+            let parsed: GlobalClaudeJson = serde_json::from_str(&contents)
+                .map_err(|e| failed(&self.claude_json_path, e))?;
+            servers.extend(parsed.mcp_servers);
+        }
+```
+
+with
+
+```rust
+        let mut servers: HashMap<String, Value> = HashMap::new();
+        let mut local: HashMap<String, Value> = HashMap::new();
+
+        if let Some(contents) = read_optional(&self.claude_json_path).await? {
+            let parsed: GlobalClaudeJson = serde_json::from_str(&contents)
+                .map_err(|e| failed(&self.claude_json_path, e))?;
+            servers.extend(parsed.mcp_servers);
+            local = local_servers(&contents, project_path).await;
+        }
+```
+
+(d) In `list_servers`, replace
+
+```rust
+            servers.extend(project_servers);
+        }
+
+        let mut servers: Vec<McpServerDefinition>
+```
+
+with
+
+```rust
+            servers.extend(project_servers);
+        }
+        servers.extend(local);
+
+        let mut servers: Vec<McpServerDefinition>
+```
+
+- [ ] **Step 5: Run the tests to verify green**
+
+Run: `PATH="$HOME/.cargo/bin:$PATH" cargo test -p forge-adapter-claude-fs`
+Expected: **72 passed; 0 failed** (66 + 6), no compiler warnings.
+
+Run: `PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace 2>&1 | grep -E "^test result|^warning:"`
+Expected: all `ok`, **133 tests in total**, no `warning:` lines.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add Cargo.lock crates/forge-adapter-claude-fs/Cargo.toml crates/forge-adapter-claude-fs/src/mcp.rs
+git commit -m "feat: read local-scope MCP servers from the per-project entry in ~/.claude.json"
 ```
 
 ---
