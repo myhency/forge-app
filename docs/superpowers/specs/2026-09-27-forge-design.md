@@ -1049,7 +1049,8 @@ pub trait SidecarFactoryPort: Send + Sync {
 ```
 
 `exists` is computed by the adapter so `forge-application` performs no
-filesystem I/O. `SidecarPort` itself is **unchanged**: it stays
+filesystem I/O. `forge_domain::SessionId` also gains `Hash` (the sidebar
+de-duplicates sessions by id). `SidecarPort` itself is **unchanged**: it stays
 single-session (§3, one sidecar per session), which is what makes concurrent
 sessions cheap — the isolation already exists.
 
@@ -1074,15 +1075,20 @@ spelling); the sidebar merge (§15.6) therefore de-duplicates sessions by id.
 
 **`forge-adapter-sidecar`**
 - `SidecarProcess::spawn(node_binary, script_path, env: &[(String, String)])`
-  applies `env` on top of the inherited environment. The Plan 1 contract-test
-  call sites pass an empty slice.
+  applies `env` on top of the inherited environment. The Plan 1 call sites
+  (the contract tests and the `spike_drive_sidecar` example) pass an empty slice.
 - `SidecarProcessFactory::new(node_binary, script_path, config:
   Arc<dyn ConfigRepositoryPort>)` implements `SidecarFactoryPort`. Each
   `spawn()` loads `AppConfig` afresh (config edits apply to the next session
   opened) and sets `ANTHROPIC_API_KEY` from `api_key` and
   `ANTHROPIC_BASE_URL` from `base_url` **only when `Some` and non-empty**;
   otherwise the parent environment is inherited. The variable names are the
-  expected SDK ones and are verified by the spike (§15.8 d).
+  expected SDK ones and are verified by the spike (§15.8 d). A missing config
+  file is not an error (the config adapter returns `AppConfig::default()`, so
+  nothing is injected); a config that cannot be loaded is
+  `SidecarError::SpawnFailed("failed to load the Forge config: …")`, so a
+  broken config is reported instead of silently ignored. The config is never
+  formatted anywhere (its `Debug` output contains the API key).
 - Node path and sidecar script path come from `FORGE_NODE` (default `node`)
   and `FORGE_SIDECAR_SCRIPT` (default `sidecar/dist/index.js`) in the
   composition root. Bundled resolution is packaging's job (§9), out of scope.
@@ -1098,12 +1104,17 @@ tokio runtime — is accepted and pinned by the spike (§15.8 a).
 `SessionId` is unknown for a brand-new session until the sidecar reports
 `session_started`, so it cannot be the key.
 
-**Ownership: an actor.** One tokio task per `LiveSession` owns the `Session`
-exclusively and `select!`s between the command channel and
-`sidecar.next_event()` (only while a sidecar exists). No locks; the existing
-`SendMessageUseCase`'s `&mut Session` fits directly. The actor publishes its
-state through a `tokio::sync::watch` channel using `send_modify` (mutate in
-place); consumers clone only when they read, so bursts of deltas coalesce.
+**Ownership: an actor.** One tokio task per `LiveSession` owns its
+`LiveSessionView` (including the `Session`) exclusively and `select!`s, in
+priority order (`biased`), between the command channel, `sidecar.next_event()`
+(only while a sidecar exists) and publishing. No locks; the existing
+`SendMessageUseCase`'s `&mut Session` fits directly. The actor publishes a
+clone of its view through a `tokio::sync::watch` channel (`send_replace`), and
+only when neither a command nor a sidecar event is immediately ready, so a
+burst of events is applied first and published once — no timer is needed.
+(An earlier draft published with `send_modify` and let consumers clone on
+read; that cannot work because the use-case holds `&mut Session` across an
+`.await`.)
 
 ```rust
 pub struct LiveSessionId(pub u64);
@@ -1140,7 +1151,12 @@ behaviour).** `open_existing` calls `load_session` for a read-only view
 (`phase = Idle`, no process). The **first `Send`** spawns a sidecar via the
 factory, sends `start_session` (with `resume_session_id` for an existing
 session, using the loaded `permission_mode`), then sends the message through
-`SendMessageUseCase`. `open_new` is the same without a resume id.
+`SendMessageUseCase`. `start_session` is called directly on `SidecarPort`
+because `StartSessionUseCase` cannot carry a resume id and
+`ResumeSessionUseCase` loads history eagerly; the actor uses the Send,
+Approve and Interrupt use-cases. `SendMessageUseCase` records a message
+*before* writing it, so a failed write removes the message again.
+`open_new` is the same without a resume id.
 `ResumeSessionUseCase` (which starts the sidecar eagerly) is left in place
 and unused by the sidebar. `open_existing` for a Claude session id that a
 live handle already holds returns that handle with `already_open = true` —
@@ -1157,8 +1173,8 @@ its turn (own choice).
 | Situation | Result |
 |---|---|
 | spawn or `start_session` fails | `Failed`, `last_error` set; the user message is **not** added to history (the UI keeps the input text) |
-| write to sidecar fails (`ProcessExited`, `WriteFailed`) | sidecar dropped, `Failed` |
-| `Error` event | `shutdown` + drop the sidecar (its query is over and `start_session` cannot be re-sent), `Failed` |
+| write to sidecar fails (`ProcessExited`, `WriteFailed`) | sidecar dropped, `Failed`; a message that was recorded but never delivered is removed from the history |
+| `Error` event | `shutdown` + drop the sidecar (its query is over and `start_session` cannot be re-sent), `Failed`. The protocol cannot tell a fatal error from a non-fatal one (the adapter even reports an unparseable line as `Error`), so every `Error` is treated as fatal |
 | `next_event()` returns `None` | process gone, `Failed`; stop polling |
 | unexpected `SessionEnded` | `Failed("session ended")` |
 | `Send` while `Failed` | respawn; resume with the known Claude session id, or start fresh if none was reported yet |
@@ -1185,8 +1201,11 @@ and the two repositories and injects them with `use_context_provider`.
 (2) `use_workspace()` owns the sidebar's past sessions (`list_projects`, then
 `list_sessions` per project, merged and **de-duplicated by session id**), the
 open sessions, and the active item. A past session that has a live handle is
-drawn from the live entry. The past list is reloaded at start and when a
-session is closed; there is no file watching. (3) **Send ↔ !Send bridge:**
+drawn from the live entry. The sidebar is built from a small `LiveSummary` per
+open session (id, project path, Claude session id, title, first message,
+marker, `can_send`), never from whole views, so drawing it does not clone a
+conversation. The past list is reloaded at start and when a session is
+closed; there is no file watching. (3) **Send ↔ !Send bridge:**
 each actor runs under `tokio::spawn`; for each handle the hook `spawn`s a
 Dioxus-local task that awaits `watch::Receiver::changed()`, clones the value
 out (no borrow held across an `.await`), and `set`s that session's `Signal`.
@@ -1197,9 +1216,12 @@ c) shows the native menu swallows any of them, they move to native menu
 accelerators through the desktop `Config`.
 
 Sidebar markers (own choice, not verified against the real app): `●`
-running, `○` idle, and a distinct "needs approval" marker when
-`pending_permissions` is non-empty. A folder-less (missing) project shows its
-history but a disabled input reading that the folder no longer exists.
+running, `○` idle, and a distinct "needs attention" marker when
+`pending_permissions` is non-empty or the session `Failed`. A folder-less
+(missing) project shows its history but no message box, only a note that the
+folder no longer exists. The message boxes ignore an Enter that confirms an
+IME composition (`is_composing()`), so typing Korean does not send half a
+syllable; this cannot be unit-tested and is checked by hand (§15.8 c, §15.7).
 
 ### 15.7 Testing
 
@@ -1218,8 +1240,10 @@ Per §8; the frontend crates have **no rendering tests** in this plan.
   case (a fixture script that echoes an environment variable); the factory is
   tested with a mock `ConfigRepositoryPort` for: both values set, `None`,
   empty string, and a config load failure.
-- **`LiveSession` / `SessionRegistry`** — `MockSidecarPort`,
-  `MockSidecarFactoryPort`, `MockSessionRepositoryPort`; one test per row of
+- **`LiveSession` / `SessionRegistry`** — `MockSidecarFactoryPort` and
+  `MockSessionRepositoryPort`, plus a small fake sidecar driven through a
+  control (`MockSidecarPort` cannot script a sidecar that is alive but quiet,
+  i.e. a `next_event` that stays pending); one test per row of
   the §15.5 table, plus: no spawn on `open_existing`; the first `Send` orders
   spawn → `start_session` → `send_message`; resume id present for an existing
   session and absent for a new one; respawn after `Failed`; duplicate open
@@ -1241,8 +1265,11 @@ Risk first, then the testable core, then the UI. Task 6 is a checkpoint (the
 core is complete and the workspace tests are green); the plan stays a single
 plan (decided 2026-09-29).
 
-1. **Spike (throwaway, not committed).** A scratch `dx serve` desktop
-   window driving the real sidecar. Questions:
+1. **Spike (throwaway, not committed).** A scratch desktop window, added as
+   a temporary workspace member `crates/forge-spike` and run with
+   `dx serve -p forge-spike --platform desktop` (the flags exist in
+   `dx` 0.7.10; that they work in this workspace is question e), driving the
+   real sidecar. Questions:
    (a) do `tokio::spawn` and `tokio::process` work inside the Dioxus
    desktop runtime;
    (b) does real sidecar stream → `watch` → local task → `Signal` render live;
@@ -1252,9 +1279,16 @@ plan (decided 2026-09-29).
    (e) how to run a workspace-member desktop binary with `dx serve`;
    (f) when `session_started` arrives relative to the first user message;
    (g) which events follow an `interrupt` (does `turn_complete` arrive?).
-   Prerequisite: `npm ci && npm run build` in `sidecar/`. (b), (d), (f), (g)
-   make **one real API call**; ask before making it. Output is findings and a
-   recommendation, as for §10.
+   Prerequisite: `npm ci && npm run build` in `sidecar/` (verified to work:
+   `dist/index.js` results and the sidecar's 18 tests pass). Questions (a),
+   (c), (d) and (f) are meant to cost nothing: (d) is checked with an invalid
+   key and an unreachable base URL, and starting a session is expected not to
+   call the API (unverified). Only (b) and (g) make a real API call with the
+   user's credentials — ask before making it; if the SDK ignores an
+   environment variable that (d) sets, that check itself becomes a real
+   one-word call, which is the finding. Output is findings (recorded as
+   §15.10) and a recommendation, as for §10. The implementation plan is
+   `docs/superpowers/plans/2026-09-29-forge-workspace-walking-skeleton.md`.
 2. `ProjectSummary` and the two ports, with mocks.
 3. `ClaudeProjectAdapter`, plus the read-only real-`~/.claude` smoke run.
 4. `spawn` env parameter and `SidecarProcessFactory`.
@@ -1280,3 +1314,8 @@ plan (decided 2026-09-29).
   project folder cannot be resumed; the sidebar reflects sessions created
   elsewhere only at start and on close; `ResumeSessionUseCase` is unused by
   the UI; the model selector offers only `default`; Windows is unverified.
+  Every publish and every render clones the whole conversation (a multi-
+  megabyte tool output will make typing sluggish); the message list does not
+  auto-scroll while streaming; every sidecar `Error` ends that sidecar (§15.5).
+  The build prints one `block v0.1.6` future-incompatibility notice from the
+  Dioxus desktop dependency tree; it is not from this repository.
