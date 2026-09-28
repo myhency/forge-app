@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::PermissionMode;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SessionId(pub String);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -75,6 +75,14 @@ mod tests {
         assert_eq!(message.role, MessageRole::Assistant);
         assert_eq!(message.content, "");
         assert!(message.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn session_id_can_key_a_hash_set() {
+        let mut seen = std::collections::HashSet::new();
+        assert!(seen.insert(SessionId("s-1".to_string())));
+        assert!(!seen.insert(SessionId("s-1".to_string())));
+        assert!(seen.insert(SessionId("s-2".to_string())));
     }
 
     #[test]
