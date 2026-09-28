@@ -48,6 +48,12 @@ Task 2 was implemented and reviewed as written below; its review found two Impor
 
 ---
 
+## Amendment C (after the final whole-branch review)
+
+The final review (opus) returned "With fixes": 0 Critical, 4 Important, closed by ONE fix wave (commit after `fb53a91`). (1) `project_dir` now canonicalizes the caller's project path (falling back to it as given) before escaping — Claude Code names the transcript directory from its *resolved* working directory, so symlinked paths, `/tmp/...` and Unicode-normal-form differences (an NFD Korean folder opened by its NFC name on APFS) listed no sessions. (2) `isMeta: true` transcript lines are skipped like `isSidechain` lines — harness-injected skill bodies, `<local-command-caveat>` text and scheduled-wakeup prompts had been loaded as user messages (33 string + 9 text-list real lines). (3) `read_title` reads raw bytes (skipping non-UTF-8 lines, keeping the title found so far on a read error) and returns `Option<String>`. (4) YAML block-scalar descriptions (`>`, `|-`, ...) are folded into one line instead of leaking the marker (3 real `SKILL.md` files use `description: >`; this overturns the brainstorming premise that every real example is single-line). Five sessions tests and two skills tests were added (one skills test replaced): **as built the crate ends at 66 tests, the workspace at 127.** The task bodies below stay as executed; where they disagree with the amendments, the amendments win. Still an open decision for the human, not changed by this plan: MCP servers added with the default `claude mcp add` (scope `local`) live in `~/.claude.json`'s per-project `mcpServers`, which the adapter deliberately does not read (spec §14.1).
+
+---
+
 ## File Structure
 
 ```
@@ -2162,7 +2168,7 @@ git commit -m "feat: implement McpRegistryPort merging global and project-local 
 
 ## Acceptance check against real data (controller-run, read-only, never committed)
 
-Before this plan was handed off, its final-state code was assembled in a scratch workspace and every red/green stage was run: the per-task test counts and "no warnings" claims above are measured, not estimated (10 → 23 → 36 → 43 → 53 crate tests as first written; 13 → 29 → 42 → 49 → 59 after Amendments A and B). The same assembled code was then run **read-only against the author's real `~/.claude`** and produced: 18 project directories, 66 sessions listed (56 with titles), **66/66 loaded with 0 failures** (the largest transcript, 13.6 MB, loaded in 53 ms in a release build), 453 messages with **0 empty assistant messages**, 1,233 tool calls (2 without a result), 30 skills (matching the 30 `SKILL.md` files on disk), 9 plugins, 0 MCP servers.
+Before this plan was handed off, its final-state code was assembled in a scratch workspace and every red/green stage was run: the per-task test counts and "no warnings" claims above are measured, not estimated (10 → 23 → 36 → 43 → 53 crate tests as first written; 13 → 29 → 42 → 49 → 59 after Amendments A and B, 66 after the final fix wave (Amendment C)). The same assembled code was then run **read-only against the author's real `~/.claude`** and produced: 18 project directories, 66 sessions listed (56 with titles), **66/66 loaded with 0 failures** (the largest transcript, 13.6 MB, loaded in 53 ms in a release build), 453 messages with **0 empty assistant messages**, 1,233 tool calls (2 without a result), 30 skills (matching the 30 `SKILL.md` files on disk), 9 plugins, 0 MCP servers.
 
 After Task 5 (and again after any final-review fix wave), the controller re-runs that check: temporarily add `crates/forge-adapter-claude-fs/examples/smoke.rs` in the worktree (do **not** commit it; delete it afterwards), run `PATH="$HOME/.cargo/bin:$PATH" cargo run --release -p forge-adapter-claude-fs --example smoke`, and confirm: `failed: 0`, `empty assistant msgs: 0`, skills count equals `find ~/.claude/skills -name SKILL.md | wc -l` (plus any project-local skills for the chosen project), plugins count equals the number of install entries in `~/.claude/plugins/installed_plugins.json`.
 
