@@ -19,10 +19,16 @@ impl ClaudeSessionAdapter {
         Self { claude_home }
     }
 
-    fn project_dir(&self, project_path: &Path) -> PathBuf {
+    // Claude Code names the directory after its resolved working directory (symlinks resolved,
+    // on-disk Unicode form), so resolve the caller's path the same way; a path that no longer
+    // exists is used as given.
+    async fn project_dir(&self, project_path: &Path) -> PathBuf {
+        let resolved = tokio::fs::canonicalize(project_path)
+            .await
+            .unwrap_or_else(|_| project_path.to_path_buf());
         self.claude_home
             .join("projects")
-            .join(escape_project_path(project_path))
+            .join(escape_project_path(&resolved))
     }
 }
 
@@ -86,16 +92,23 @@ fn title_from_line(line: &str) -> Option<String> {
     title_from_value(&serde_json::from_str::<Value>(line).ok()?)
 }
 
-async fn read_title(path: &Path) -> std::io::Result<Option<String>> {
-    let file = tokio::fs::File::open(path).await?;
-    let mut lines = BufReader::new(file).lines();
+async fn read_title(path: &Path) -> Option<String> {
+    let file = tokio::fs::File::open(path).await.ok()?;
+    let mut reader = BufReader::new(file);
+    let mut buffer = Vec::new();
     let mut title = None;
-    while let Some(line) = lines.next_line().await? {
-        if let Some(found) = title_from_line(&line) {
+    loop {
+        buffer.clear();
+        // A read error keeps the title found so far; an invalid-UTF-8 line is skipped.
+        match reader.read_until(b'\n', &mut buffer).await {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        if let Some(found) = std::str::from_utf8(&buffer).ok().and_then(title_from_line) {
             title = Some(found);
         }
     }
-    Ok(title)
+    title
 }
 
 fn parse_permission_mode(raw: &str) -> PermissionMode {
@@ -227,7 +240,8 @@ fn apply_assistant_line(session: &mut Session, line: &Value) {
 }
 
 fn apply_line(session: &mut Session, line: &Value) {
-    if line.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+    let flagged = |key: &str| line.get(key).and_then(Value::as_bool) == Some(true);
+    if flagged("isSidechain") || flagged("isMeta") {
         return;
     }
     match line.get("type").and_then(Value::as_str) {
@@ -253,7 +267,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         &self,
         project_path: &Path,
     ) -> Result<Vec<SessionSummary>, SessionRepositoryError> {
-        let dir = self.project_dir(project_path);
+        let dir = self.project_dir(project_path).await;
         let mut entries = match tokio::fs::read_dir(&dir).await {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -293,7 +307,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
             let Ok(updated_at) = time::OffsetDateTime::from(modified).format(&Rfc3339) else {
                 continue;
             };
-            let title = read_title(&path).await.unwrap_or(None);
+            let title = read_title(&path).await;
             found.push((
                 modified,
                 SessionSummary {
@@ -318,7 +332,10 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
             return Err(SessionRepositoryError::NotFound(session_id.clone()));
         }
 
-        let path = self.project_dir(project_path).join(format!("{id}.jsonl"));
+        let path = self
+            .project_dir(project_path)
+            .await
+            .join(format!("{id}.jsonl"));
         let file = match tokio::fs::File::open(&path).await {
             Ok(file) => file,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -984,5 +1001,111 @@ mod tests {
         assert_eq!(roles, vec![MessageRole::User, MessageRole::User]);
         assert_eq!(session.messages[0].content, "q");
         assert_eq!(session.messages[1].content, "q2");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn sessions_are_found_through_a_symlinked_project_path() {
+        let home = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let real = workspace.path().join("real-project");
+        std::fs::create_dir(&real).unwrap();
+        let link = workspace.path().join("linked-project");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        // Claude Code stores transcripts under the resolved path of the directory it ran in.
+        let resolved = std::fs::canonicalize(&real).unwrap();
+        write_session(home.path(), &resolved, "s1", &[user_text("hi")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let listed = adapter.list_sessions(&link).await.unwrap();
+        let loaded = adapter
+            .load_session(&link, &SessionId("s1".to_string()))
+            .await
+            .unwrap();
+
+        assert_eq!(listed.len(), 1);
+        assert_eq!(loaded.messages.len(), 1);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn sessions_are_found_when_the_caller_passes_a_differently_normalised_path() {
+        // APFS keeps a folder's name in the Unicode form it was created with (Finder writes the
+        // decomposed form) but finds it by either form, and Claude Code names the transcript
+        // directory from the on-disk form that getcwd/realpath report.
+        let decomposed = "\u{1111}\u{1173}\u{1105}\u{1169}\u{110C}\u{1166}\u{11A8}\u{1110}\u{1173}";
+        let composed = "프로젝트";
+        assert_ne!(decomposed, composed);
+        let home = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        std::fs::create_dir(workspace.path().join(decomposed)).unwrap();
+        let on_disk = std::fs::canonicalize(workspace.path().join(decomposed)).unwrap();
+        write_session(home.path(), &on_disk, "s1", &[user_text("hi")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let listed = adapter
+            .list_sessions(&workspace.path().join(composed))
+            .await
+            .unwrap();
+
+        assert_eq!(listed.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn load_session_skips_harness_injected_meta_lines() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("real question"),
+                json!({"type": "user", "isMeta": true, "message": {"role": "user", "content":
+                    "<local-command-caveat>Caveat: The messages below were generated by the user while running local commands.</local-command-caveat>"}}),
+                json!({"type": "user", "isMeta": true, "message": {"role": "user", "content":
+                    [{"type": "text", "text": "Base directory for this skill: /x/skills/foo\n\n# Foo"}]}}),
+                json!({"type": "user", "isMeta": false, "message": {"role": "user", "content": "second question"}}),
+                assistant_block(json!({"type": "text", "text": "real answer"})),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        let contents: Vec<&str> = session.messages.iter().map(|m| m.content.as_str()).collect();
+        assert_eq!(contents, vec!["real question", "second question", "real answer"]);
+    }
+
+    #[tokio::test]
+    async fn list_sessions_keeps_the_title_of_a_transcript_whose_tail_is_cut_off_mid_character() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(
+            home.path(),
+            &project(),
+            "live",
+            &[ai_title("Live title"), user_text("hi")],
+        );
+        let mut bytes = std::fs::read(&path).unwrap();
+        bytes.extend_from_slice(b"{\"type\":\"user\",\"message\":{\"content\":\"");
+        bytes.extend_from_slice(&[0xE3, 0x81]);
+        std::fs::write(&path, bytes).unwrap();
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let sessions = adapter.list_sessions(&project()).await.unwrap();
+
+        assert_eq!(sessions[0].title, Some("Live title".to_string()));
+    }
+
+    #[tokio::test]
+    async fn list_sessions_skips_an_invalid_utf8_line_and_still_finds_a_later_title() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[]);
+        let mut bytes = vec![0xff, 0xfe, b'\n'];
+        bytes.extend_from_slice(format!("{}\n", ai_title("Found after garbage")).as_bytes());
+        std::fs::write(&path, bytes).unwrap();
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let sessions = adapter.list_sessions(&project()).await.unwrap();
+
+        assert_eq!(sessions[0].title, Some("Found after garbage".to_string()));
     }
 }

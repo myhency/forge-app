@@ -27,6 +27,11 @@ fn unquote(value: &str) -> &str {
     value
 }
 
+fn is_block_scalar_marker(value: &str) -> bool {
+    let mut chars = value.chars();
+    matches!(chars.next(), Some('>' | '|')) && chars.all(|c| matches!(c, '+' | '-' | '0'..='9'))
+}
+
 fn parse_frontmatter(contents: &str) -> Option<HashMap<String, String>> {
     let contents = contents.strip_prefix('\u{feff}').unwrap_or(contents);
     let mut lines = contents.lines();
@@ -34,15 +39,34 @@ fn parse_frontmatter(contents: &str) -> Option<HashMap<String, String>> {
         return None;
     }
     let mut fields = HashMap::new();
+    // A key whose value is a YAML block scalar (`>`, `|-`, ...) collects the indented lines that
+    // follow it, folded into one line.
+    let mut block: Option<(String, Vec<&str>)> = None;
     for line in lines {
-        if line.trim_end() == "---" {
-            return Some(fields);
-        }
-        if line.starts_with(char::is_whitespace) {
+        let closing = line.trim_end() == "---";
+        let continues_block =
+            !closing && (line.trim().is_empty() || line.starts_with(char::is_whitespace));
+        if continues_block {
+            if let Some((_, parts)) = block.as_mut() {
+                if !line.trim().is_empty() {
+                    parts.push(line.trim());
+                }
+            }
             continue;
         }
+        if let Some((key, parts)) = block.take() {
+            fields.insert(key, parts.join(" "));
+        }
+        if closing {
+            return Some(fields);
+        }
         if let Some((key, value)) = line.split_once(':') {
-            fields.insert(key.trim().to_string(), unquote(value.trim()).to_string());
+            let value = value.trim();
+            if is_block_scalar_marker(value) {
+                block = Some((key.trim().to_string(), Vec::new()));
+            } else {
+                fields.insert(key.trim().to_string(), unquote(value).to_string());
+            }
         }
     }
     None
@@ -268,7 +292,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_skills_ignores_indented_lines_inside_frontmatter() {
+    async fn list_skills_keeps_indented_block_scalar_lines_out_of_the_top_level_keys() {
         let home = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
         write_skill(
@@ -280,6 +304,41 @@ mod tests {
         let skills = list(home.path(), project.path()).await;
 
         assert_eq!(names(&skills), vec!["real-name"]);
+        assert_eq!(skills[0].description.as_deref(), Some("name: fake-name continued text"));
+    }
+
+    #[tokio::test]
+    async fn list_skills_folds_a_block_scalar_description_into_one_line() {
+        let home = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        write_skill(
+            &home.path().join("skills"),
+            "folded",
+            "---\nname: folded\ndescription: >\n  First line of the description\n  and its continuation.\nlicense: MIT\n---\n",
+        );
+
+        let skills = list(home.path(), project.path()).await;
+
+        assert_eq!(names(&skills), vec!["folded"]);
+        assert_eq!(
+            skills[0].description.as_deref(),
+            Some("First line of the description and its continuation.")
+        );
+    }
+
+    #[tokio::test]
+    async fn list_skills_folds_a_literal_block_scalar_that_ends_at_the_closing_delimiter() {
+        let home = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        write_skill(
+            &home.path().join("skills"),
+            "literal",
+            "---\nname: literal\ndescription: |-\n  Line one\n\n  Line two\n---\n",
+        );
+
+        let skills = list(home.path(), project.path()).await;
+
+        assert_eq!(skills[0].description.as_deref(), Some("Line one Line two"));
     }
 
     #[tokio::test]
