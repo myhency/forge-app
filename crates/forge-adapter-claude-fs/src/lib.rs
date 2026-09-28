@@ -4,11 +4,13 @@ mod sessions;
 mod skills;
 mod plugins;
 mod mcp;
+mod projects;
 
 pub use sessions::ClaudeSessionAdapter;
 pub use skills::ClaudeSkillAdapter;
 pub use plugins::ClaudePluginAdapter;
 pub use mcp::ClaudeMcpAdapter;
+pub use projects::ClaudeProjectAdapter;
 
 pub fn default_claude_home() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".claude"))

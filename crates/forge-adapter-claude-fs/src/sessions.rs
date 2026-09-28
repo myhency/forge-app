@@ -22,7 +22,7 @@ impl ClaudeSessionAdapter {
     // Claude Code names the directory after its resolved working directory (symlinks resolved,
     // on-disk Unicode form), so resolve the caller's path the same way; a path that no longer
     // exists is used as given.
-    async fn project_dir(&self, project_path: &Path) -> PathBuf {
+    pub(crate) async fn project_dir(&self, project_path: &Path) -> PathBuf {
         let resolved = tokio::fs::canonicalize(project_path)
             .await
             .unwrap_or_else(|_| project_path.to_path_buf());
