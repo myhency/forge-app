@@ -26,6 +26,11 @@ rl.on("line", (line) => {
         emit({ type: "tool_result", tool_call_id: "t-1", output: "x".repeat(200000), is_error: false });
         return;
       }
+      if (command.text.startsWith("TRIGGER_ENV:")) {
+        const name = command.text.slice("TRIGGER_ENV:".length);
+        emit({ type: "assistant_delta", text: `env:${process.env[name] ?? "<unset>"}` });
+        return;
+      }
       emit({ type: "assistant_delta", text: `echo:${command.text}` });
       return;
     case "permission_response":

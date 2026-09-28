@@ -18,9 +18,14 @@ pub struct SidecarProcess {
 }
 
 impl SidecarProcess {
-    pub fn spawn(node_binary: &str, script_path: &str) -> Result<Self, SidecarError> {
+    pub fn spawn(
+        node_binary: &str,
+        script_path: &str,
+        env: &[(String, String)],
+    ) -> Result<Self, SidecarError> {
         let mut child = Command::new(node_binary)
             .arg(script_path)
+            .envs(env.iter().map(|(name, value)| (name.as_str(), value.as_str())))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())

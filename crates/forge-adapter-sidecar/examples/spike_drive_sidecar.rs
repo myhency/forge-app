@@ -12,7 +12,7 @@ async fn main() {
         .next()
         .expect("usage: spike_drive_sidecar <path-to-sidecar/dist/index.js> <cwd>");
 
-    let sidecar = SidecarProcess::spawn("node", &sidecar_script).expect("failed to spawn sidecar");
+    let sidecar = SidecarProcess::spawn("node", &sidecar_script, &[]).expect("failed to spawn sidecar");
 
     sidecar
         .start_session(StartSessionParams {

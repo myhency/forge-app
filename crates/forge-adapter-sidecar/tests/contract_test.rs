@@ -21,7 +21,7 @@ fn default_params() -> StartSessionParams {
 
 #[tokio::test]
 async fn start_session_and_send_message_round_trip() {
-    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path()).unwrap();
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &[]).unwrap();
 
     sidecar.start_session(default_params()).await.unwrap();
     let started = sidecar.next_event().await.unwrap();
@@ -36,7 +36,7 @@ async fn start_session_and_send_message_round_trip() {
 
 #[tokio::test]
 async fn recovers_from_a_malformed_line_without_dropping_the_connection() {
-    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path()).unwrap();
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &[]).unwrap();
     sidecar.start_session(default_params()).await.unwrap();
     sidecar.next_event().await.unwrap();
 
@@ -51,7 +51,7 @@ async fn recovers_from_a_malformed_line_without_dropping_the_connection() {
 
 #[tokio::test]
 async fn handles_a_very_large_event_payload() {
-    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path()).unwrap();
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &[]).unwrap();
     sidecar.start_session(default_params()).await.unwrap();
     sidecar.next_event().await.unwrap();
 
@@ -64,7 +64,7 @@ async fn handles_a_very_large_event_payload() {
 
 #[tokio::test]
 async fn interleaves_writes_and_reads_without_deadlock() {
-    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path()).unwrap();
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &[]).unwrap();
     sidecar.start_session(default_params()).await.unwrap();
     sidecar.next_event().await.unwrap();
 
@@ -79,11 +79,40 @@ async fn interleaves_writes_and_reads_without_deadlock() {
 
 #[tokio::test]
 async fn next_event_returns_none_after_the_process_exits() {
-    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path()).unwrap();
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &[]).unwrap();
     sidecar.start_session(default_params()).await.unwrap();
     sidecar.next_event().await.unwrap();
 
     sidecar.shutdown().await.unwrap();
     sidecar.next_event().await.unwrap(); // session_ended
     assert!(sidecar.next_event().await.is_none());
+}
+
+#[tokio::test]
+async fn spawn_applies_the_given_environment_variables() {
+    let env = vec![("FORGE_TEST_VALUE".to_string(), "from-spawn".to_string())];
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &env).unwrap();
+    sidecar.start_session(default_params()).await.unwrap();
+    sidecar.next_event().await.unwrap();
+
+    sidecar.send_message("TRIGGER_ENV:FORGE_TEST_VALUE".to_string()).await.unwrap();
+
+    match sidecar.next_event().await.unwrap() {
+        SidecarEvent::AssistantDelta { text } => assert_eq!(text, "env:from-spawn"),
+        other => panic!("unexpected event: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn spawn_without_extra_environment_leaves_the_variable_unset() {
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &[]).unwrap();
+    sidecar.start_session(default_params()).await.unwrap();
+    sidecar.next_event().await.unwrap();
+
+    sidecar.send_message("TRIGGER_ENV:FORGE_TEST_UNSET_VALUE".to_string()).await.unwrap();
+
+    match sidecar.next_event().await.unwrap() {
+        SidecarEvent::AssistantDelta { text } => assert_eq!(text, "env:<unset>"),
+        other => panic!("unexpected event: {other:?}"),
+    }
 }
