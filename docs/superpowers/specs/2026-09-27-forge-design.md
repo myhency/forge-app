@@ -94,7 +94,9 @@ OS-keychain integration in v1.
 
 - **Session transcripts**: `~/.claude/projects/<escaped-cwd>/*.jsonl` and the
   project registry inside `~/.claude.json`. Sessions started in either tool
-  are visible and resumable in both.
+  are visible and resumable in both. *(Correction, §15.2: the UI's project
+  list is derived from the transcript directories, not from the
+  `~/.claude.json` registry, which omits most projects that have sessions.)*
 - **Skill/plugin definitions**: read from `~/.claude/skills/` and
   `~/.claude/plugins/` (and project-local equivalents). Forge does not fork
   or copy this content — it reads the same files Claude Code reads.
@@ -156,6 +158,7 @@ dependency direction is enforced by the compiler, not just code review.
 - `forge-ports` — trait interfaces only, depends only on `forge-domain`:
   `SidecarPort`, `SessionRepositoryPort`, `ConfigRepositoryPort`,
   `SkillRepositoryPort`, `PluginRepositoryPort`, `McpRegistryPort`.
+  *(§15 adds `ProjectRepositoryPort` and `SidecarFactoryPort`.)*
 - `forge-application` — use-cases (`StartSessionUseCase`,
   `SendMessageUseCase`, `ApprovePermissionUseCase`, `ToggleSkillUseCase`,
   `TogglePluginUseCase`, `ToggleMcpServerUseCase`, `ResumeSessionUseCase`,
@@ -905,3 +908,375 @@ Every test builds a real temp directory tree — never the real
   (ignored) versus a malformed mid-file line (`LoadFailed`), and
   newest-first ordering with one corrupt transcript that must not blank
   the listing are all covered.
+
+## 15. Detailed Design: workspace walking skeleton (Plan 5)
+
+Plan 5 is the first Dioxus-facing plan. It is a **vertical walking
+skeleton**: the thinnest end-to-end slice that runs the real adapters
+(Plans 1, 3, 4) and the Plan 2 use-cases inside a real desktop window, with
+**several sessions running at once**. Its purpose is to retire the
+integration risk (Dioxus runtime ↔ sidecar event stream) before the rest of
+Tier 1 is built on top. It adds six frontend crates, two ports, one adapter
+and a session controller in `forge-application`, and it changes the
+signature of `forge-adapter-sidecar`'s `spawn`.
+
+### 15.1 Scope, and the Claude Code desktop reference
+
+§1 requires a UI equivalent to Claude Code desktop, so the layout follows
+what that app actually does. Checked against its documentation on
+2026-09-29 (`code.claude.com/docs/en/desktop`,
+`claude.com/blog/claude-code-desktop-redesign`):
+
+- Sessions are listed in a **sidebar** ("The sidebar lists your sessions and
+  lets you run several in parallel"), active and recent together, groupable
+  by project. It is **not** a tab bar.
+- **+ New session** / Cmd+N starts one; Ctrl+Tab / Ctrl+Shift+Tab cycle
+  through sessions; Cmd+W closes one. Archiving is a separate action.
+- Before the first message a new session's prompt area chooses environment,
+  **project folder**, **model** and **permission mode**.
+- Cmd-clicking a sidebar session opens it in a second pane (split view);
+  after the redesign every pane is drag-and-drop.
+- Desktop also lists sessions started from the CLI.
+
+The docs do **not** specify how the project folder is chosen or what marks a
+running / awaiting-approval session in the sidebar. Those are this design's
+own choices and are labelled as such below; they are not parity claims.
+Earlier text in §7 ("tabs or multiple windows") is superseded: multiple
+sessions are a sidebar list with one main pane; split panes are deferred.
+
+**In scope:** a sidebar of sessions grouped by project (live and past
+together); read-only viewing of a past session; a new-session panel (folder
+from the known projects that still exist on disk, model, permission mode);
+chat with streaming text, one-line tool-call display, sending and
+interrupting; permission prompts (allow once / allow always / deny); any
+number of sessions running concurrently; Cmd+N, Ctrl+Tab, Cmd+W.
+
+**Out of scope (deferred, not forgotten):** split panes and the
+drag-and-drop grid; folder-open dialog; settings UI (credentials come from
+hand-edited `config.json`); model list (the model selector offers only
+`default`, i.e. `None` — no port lists models and how the SDK exposes them
+was not verified); markdown, syntax highlighting, diff viewer; terminal /
+preview / side chat; environment selector (Local only); filters, archive;
+file watching; packaging (`build/`); visual parity with Claude Code desktop
+(the theme is neutral); Windows.
+
+Layout (main pane shows one session; the others keep running):
+
+```
+┌────────────────────────┬────────────────────────────────────────────────────┐
+│ [+ New session]   ⌘N   │ forge · Wire adapters into the app                 │
+│ ▾ forge                │ You / Claude messages, streaming text              │
+│   ● Wire adapters      │   ▸ Read  docs/…/forge-design.md   (tool call)     │
+│   ○ MCP local scope    │ ┌─ Permission ─────────────────────────┐           │
+│ ▾ dotfiles             │ │ Bash: cargo test  [Allow][Always][Deny]│         │
+│   ○ zsh setup          │ └──────────────────────────────────────┘           │
+│ ● running  ○ idle      │ [ Message…            Mode ▾ Model ▾   [Send] ]    │
+└────────────────────────┴────────────────────────────────────────────────────┘
+```
+
+### 15.2 Firsthand verification done before this design
+
+Run 2026-09-29 against a live `~/.claude/` (read-only; counts, not
+contents). Findings that shaped or corrected the design:
+
+- **The `~/.claude.json` `projects` map is not a usable project list.**
+  29 entries; 22 point at paths no longer on disk; 26 have no transcripts;
+  only 2 carry `lastSessionModified` and 23 carry `lastSessionId` (a first
+  pass reported these keys as present "on every entry" — that was a union of
+  keys, wrong). Meanwhile `~/.claude/projects/` holds 87 transcripts in 12
+  directories, and only 3 of those 12 directories (10 of the 87 sessions)
+  correspond to a registry entry. The missing 9 are git worktrees,
+  a directory Claude Code was launched in but never registered, and
+  `/private/tmp` spike directories. A registry-driven sidebar would hide
+  ~88% of sessions. §4.2's "project registry inside `~/.claude.json`" does
+  not hold for this purpose; that file remains the source of per-project
+  MCP servers (§14) only.
+- **The real project path is recoverable from the transcripts.** Directory
+  names are a lossy escape of the path (§14.1) and cannot be reversed, but
+  transcript lines carry a `cwd` field (not every line does — the first line
+  of a transcript may be one without it). For all 12 transcript-bearing
+  directories a `cwd` was found within the first 60 lines of every
+  transcript (0 files without one), each
+  directory had exactly one distinct `cwd`, and applying Claude Code's own
+  escape rule (§14.1) to that `cwd` reproduced the directory name in all 12.
+  Not yet observed here: a directory holding several distinct `cwd`s, or a
+  200-character-capped name; §15.4 handles both defensively.
+- **`SidecarProcess::spawn(node_binary, script_path)` takes no environment.**
+  §12.3 says credentials are injected through environment variables at
+  spawn time as a composition-root concern, but the current `spawn` has no
+  parameter for them (`Command` inherits the parent environment).
+- **Sidecar behaviour read from `sidecar/src/session.ts` and `index.ts`**
+  (read, not run): `start_session` is ignored after the first call (a
+  `started` flag); a thrown query emits `error` and **not** `session_ended`;
+  the process exits only on a `shutdown` command; `session_started` is
+  emitted from the SDK's `system`/`init` message; a `canUseTool` request
+  auto-denies on abort. Whether `init` arrives before or after the first
+  user message, and what events follow an `interrupt`, was **not** run and is
+  a spike question (§15.8).
+- **This worktree has no built sidecar** (`sidecar/node_modules`,
+  `sidecar/dist` absent): `npm ci && npm run build` is a prerequisite for
+  anything that runs the real sidecar.
+- **Dioxus 0.7.10** (docs, not run): async event handlers, `spawn`,
+  `use_future`, `use_context_provider`/`use_context` exist; signals are
+  `Copy` and must not be held across `.await`; `onkeydown` exposes modifier
+  keys and `prevent_default`; the desktop `Config` exposes `WindowBuilder`
+  customization and a raw `custom_event_handler`. **Not** confirmed by docs:
+  that the desktop runtime enables `tokio::process`, and whether the macOS
+  native default menu swallows Cmd+W / Cmd+N before the webview.
+
+### 15.3 New domain type and ports
+
+```rust
+// forge-domain
+pub struct ProjectSummary {
+    pub path: PathBuf,        // real project path, recovered from a transcript's cwd
+    pub last_active: String,  // RFC 3339, mtime of the newest transcript
+    pub session_count: usize,
+    pub exists: bool,         // `path` is a directory on disk right now
+}
+
+// forge-ports (each with `#[cfg_attr(any(test, feature = "mocks"), automock)]`)
+#[async_trait]
+pub trait ProjectRepositoryPort: Send + Sync {
+    async fn list_projects(&self) -> Result<Vec<ProjectSummary>, ProjectRepositoryError>;
+}
+pub enum ProjectRepositoryError { ListFailed(String) }
+
+#[async_trait]
+pub trait SidecarFactoryPort: Send + Sync {
+    async fn spawn(&self) -> Result<Arc<dyn SidecarPort>, SidecarError>;
+}
+```
+
+`exists` is computed by the adapter so `forge-application` performs no
+filesystem I/O. `SidecarPort` itself is **unchanged**: it stays
+single-session (§3, one sidecar per session), which is what makes concurrent
+sessions cheap — the isolation already exists.
+
+### 15.4 Adapter changes
+
+**`forge-adapter-claude-fs` — `ClaudeProjectAdapter::new(claude_home)`**
+implements `ProjectRepositoryPort`. Read-only, same tolerance rules as §14.2:
+1. `read_dir(<home>/projects)`; a missing directory → empty list; another
+   error → `ListFailed("<path>: <error>")`.
+2. For each sub-directory, collect its `*.jsonl` files with mtimes; none →
+   directory skipped. `session_count` is the file count; `last_active` is the
+   newest mtime formatted like `list_sessions`'s `updated_at`.
+3. `path` is the first `cwd` found scanning transcripts **newest first**, at
+   most the first 60 lines of each, ignoring lines that do not parse (a
+   partial final line or invalid UTF-8 never fails the scan). No `cwd` in
+   any transcript → the directory is skipped, never an error.
+4. `exists` = the recovered path is a directory now.
+5. Sorted by `last_active` descending, ties broken by `path`.
+
+Two directories can recover the same `path` (a symlinked and a resolved
+spelling); the sidebar merge (§15.6) therefore de-duplicates sessions by id.
+
+**`forge-adapter-sidecar`**
+- `SidecarProcess::spawn(node_binary, script_path, env: &[(String, String)])`
+  applies `env` on top of the inherited environment. The Plan 1 contract-test
+  call sites pass an empty slice.
+- `SidecarProcessFactory::new(node_binary, script_path, config:
+  Arc<dyn ConfigRepositoryPort>)` implements `SidecarFactoryPort`. Each
+  `spawn()` loads `AppConfig` afresh (config edits apply to the next session
+  opened) and sets `ANTHROPIC_API_KEY` from `api_key` and
+  `ANTHROPIC_BASE_URL` from `base_url` **only when `Some` and non-empty**;
+  otherwise the parent environment is inherited. The variable names are the
+  expected SDK ones and are verified by the spike (§15.8 d).
+- Node path and sidecar script path come from `FORGE_NODE` (default `node`)
+  and `FORGE_SIDECAR_SCRIPT` (default `sidecar/dist/index.js`) in the
+  composition root. Bundled resolution is packaging's job (§9), out of scope.
+
+### 15.5 `forge-application`: `LiveSession` and `SessionRegistry`
+
+New normal dependency: `tokio` (`sync`, `rt`, `macros`). It is a runtime
+library, not an adapter, so §6's rule (no concrete adapter crate) holds; the
+coupling — `open_new`/first send call `tokio::spawn` and must run inside a
+tokio runtime — is accepted and pinned by the spike (§15.8 a).
+
+**Identity.** `LiveSessionId(u64)` is an app-local handle. Claude's
+`SessionId` is unknown for a brand-new session until the sidecar reports
+`session_started`, so it cannot be the key.
+
+**Ownership: an actor.** One tokio task per `LiveSession` owns the `Session`
+exclusively and `select!`s between the command channel and
+`sidecar.next_event()` (only while a sidecar exists). No locks; the existing
+`SendMessageUseCase`'s `&mut Session` fits directly. The actor publishes its
+state through a `tokio::sync::watch` channel using `send_modify` (mutate in
+place); consumers clone only when they read, so bursts of deltas coalesce.
+
+```rust
+pub struct LiveSessionId(pub u64);
+pub enum Phase { Idle, Running, Failed }     // Idle = no turn in flight
+
+pub struct LiveSessionView {
+    pub id: LiveSessionId,
+    pub project_path: PathBuf,
+    pub session: Session,                    // session.id is "" until known
+    pub claude_session_id: Option<SessionId>,
+    pub phase: Phase,
+    pub pending_permissions: VecDeque<PermissionRequest>, // parallel tool calls
+    pub last_error: Option<String>,
+    pub can_send: bool,                      // false when the folder is gone
+}
+
+pub enum LiveCommand { Send(String), Approve { id: String, decision: PermissionDecision },
+                       Interrupt, Close }
+
+#[derive(Clone)]
+pub struct LiveSessionHandle { /* id, command sender, watch::Receiver<LiveSessionView> */ }
+// send(text) / approve(id, decision) / interrupt() / close() are fire-and-forget;
+// subscribe() -> watch::Receiver<LiveSessionView>
+
+pub struct SessionRegistry { /* factory, sessions repo, handles */ }
+  .open_new(&ProjectSummary, PermissionMode, Option<String>) -> Result<LiveSessionHandle, OpenError>
+  .open_existing(&ProjectSummary, SessionId) -> Result<OpenOutcome{ handle, already_open }, OpenError>
+  .close(LiveSessionId)
+pub enum OpenError { ProjectMissing, Load(SessionRepositoryError) }
+```
+
+**Lazy sidecar (this design's choice, not a verified Claude Code
+behaviour).** `open_existing` calls `load_session` for a read-only view
+(`phase = Idle`, no process). The **first `Send`** spawns a sidecar via the
+factory, sends `start_session` (with `resume_session_id` for an existing
+session, using the loaded `permission_mode`), then sends the message through
+`SendMessageUseCase`. `open_new` is the same without a resume id.
+`ResumeSessionUseCase` (which starts the sidecar eagerly) is left in place
+and unused by the sidebar. `open_existing` for a Claude session id that a
+live handle already holds returns that handle with `already_open = true` —
+never a second sidecar on the same transcript. `open_new` on a missing
+folder → `OpenError::ProjectMissing`; `open_existing` on one succeeds
+read-only with `can_send = false`.
+
+`Close`: send `shutdown` if a sidecar exists, drop it (`kill_on_drop`), end
+the task; the registry forgets the handle. Closing a running session ends
+its turn (own choice).
+
+**Event and failure rules**
+
+| Situation | Result |
+|---|---|
+| spawn or `start_session` fails | `Failed`, `last_error` set; the user message is **not** added to history (the UI keeps the input text) |
+| write to sidecar fails (`ProcessExited`, `WriteFailed`) | sidecar dropped, `Failed` |
+| `Error` event | `shutdown` + drop the sidecar (its query is over and `start_session` cannot be re-sent), `Failed` |
+| `next_event()` returns `None` | process gone, `Failed`; stop polling |
+| unexpected `SessionEnded` | `Failed("session ended")` |
+| `Send` while `Failed` | respawn; resume with the known Claude session id, or start fresh if none was reported yet |
+| `SessionStarted` | set `claude_session_id` and `session.id` |
+| `PermissionRequested` | push on `pending_permissions`; `Approve` pops the matching id and calls `ApprovePermissionUseCase` |
+| `TurnCompleted` | `Idle` |
+| folder missing | history readable, `can_send = false` |
+
+### 15.6 Frontend crates and UI state
+
+Dependency direction is §6's, unchanged. Each crate is deliberately thin.
+
+| Crate | Plan 5 contents |
+|---|---|
+| `forge-shared` | theme (CSS variables), `Button`, `Select`, `TextArea`, `StatusDot` |
+| `forge-entities` | `MessageBubble` (text), `ToolCallLine` (name + running/done/error), `PermissionCard` (display only), `SidebarItem` (title, relative time, marker). Depends on `forge-domain` + `forge-shared` only, so the sidebar marker (`Idle`/`Running`/`NeedsAttention`) is a UI enum defined here and mapped from `Phase` by the widget |
+| `forge-features` | `use_workspace` (session store hook), send-message, approve-permission, interrupt-turn, open-session, new-session, close-session, keyboard-shortcuts hook |
+| `forge-widgets` | `Sidebar`, `ChatWindow`, `NewSessionPanel` |
+| `forge-pages` | `WorkspacePage` (sidebar + main pane + empty state) |
+| `forge-app` | adapter wiring, context injection, window config; the only crate enabling `dioxus/desktop` |
+
+**State flow.** (1) `forge-app` builds the adapters, the `SessionRegistry`
+and the two repositories and injects them with `use_context_provider`.
+(2) `use_workspace()` owns the sidebar's past sessions (`list_projects`, then
+`list_sessions` per project, merged and **de-duplicated by session id**), the
+open sessions, and the active item. A past session that has a live handle is
+drawn from the live entry. The past list is reloaded at start and when a
+session is closed; there is no file watching. (3) **Send ↔ !Send bridge:**
+each actor runs under `tokio::spawn`; for each handle the hook `spawn`s a
+Dioxus-local task that awaits `watch::Receiver::changed()`, clones the value
+out (no borrow held across an `.await`), and `set`s that session's `Signal`.
+The task ends when the actor drops its sender. (4) Shortcuts are handled by
+`onkeydown` on the workspace root: Cmd/Ctrl+N new session, Ctrl+Tab /
+Ctrl+Shift+Tab cycle, Cmd/Ctrl+W close the active session. If the spike (§15.8
+c) shows the native menu swallows any of them, they move to native menu
+accelerators through the desktop `Config`.
+
+Sidebar markers (own choice, not verified against the real app): `●`
+running, `○` idle, and a distinct "needs approval" marker when
+`pending_permissions` is non-empty. A folder-less (missing) project shows its
+history but a disabled input reading that the folder no longer exists.
+
+### 15.7 Testing
+
+Per §8; the frontend crates have **no rendering tests** in this plan.
+
+- **`ClaudeProjectAdapter`** — temp-dir fixtures (never the real `~/.claude`):
+  `cwd` recovery; several distinct `cwd`s in one directory (newest
+  transcript wins); a directory with no `.jsonl`; a transcript with no `cwd`
+  (directory skipped); a partial final line and invalid UTF-8 (tolerated); a
+  `cwd` on a later line than the first; sort order and tie-break; `exists`
+  true/false; missing `projects` directory (empty list); a 200-character-capped
+  directory name; round-trip with `ClaudeSessionAdapter::list_sessions` for the
+  recovered path. A read-only smoke run against the real `~/.claude` is a
+  manual verification step, not a committed test.
+- **`forge-adapter-sidecar`** — the contract test gains an env-passthrough
+  case (a fixture script that echoes an environment variable); the factory is
+  tested with a mock `ConfigRepositoryPort` for: both values set, `None`,
+  empty string, and a config load failure.
+- **`LiveSession` / `SessionRegistry`** — `MockSidecarPort`,
+  `MockSidecarFactoryPort`, `MockSessionRepositoryPort`; one test per row of
+  the §15.5 table, plus: no spawn on `open_existing`; the first `Send` orders
+  spawn → `start_session` → `send_message`; resume id present for an existing
+  session and absent for a new one; respawn after `Failed`; duplicate open
+  returns the existing handle; `Close` sends `shutdown`; permission queue
+  order; commands and events interleaved (`select!` cancel safety);
+  `ProjectMissing`.
+- **Frontend logic** — plain functions, unit-tested: phase→marker mapping,
+  sidebar merge / group / de-dup, Ctrl+Tab cycle order, relative time.
+- **Whole app** — manual `dx serve` checklist (Dioxus has no mature
+  automated desktop UI testing; stated, not claimed as covered): sidebar
+  lists the 12 projects / 87 sessions on the reference machine; a past
+  session opens read-only; Cmd+N starts a session in a scratch folder;
+  streaming text; a permission prompt each way; interrupt; two sessions
+  streaming at once; Cmd+W closes one and the other continues.
+
+### 15.8 Task order and the spike
+
+Risk first, then the testable core, then the UI. Task 6 is a checkpoint (the
+core is complete and the workspace tests are green); the plan stays a single
+plan (decided 2026-09-29).
+
+1. **Spike (throwaway, not committed).** A scratch `dx serve` desktop
+   window driving the real sidecar. Questions:
+   (a) do `tokio::spawn` and `tokio::process` work inside the Dioxus
+   desktop runtime;
+   (b) does real sidecar stream → `watch` → local task → `Signal` render live;
+   (c) do Cmd+N / Cmd+W / Ctrl+Tab reach `onkeydown` on macOS;
+   (d) does the SDK honour `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` from
+   the spawn environment, and what happens with neither;
+   (e) how to run a workspace-member desktop binary with `dx serve`;
+   (f) when `session_started` arrives relative to the first user message;
+   (g) which events follow an `interrupt` (does `turn_complete` arrive?).
+   Prerequisite: `npm ci && npm run build` in `sidecar/`. (b), (d), (f), (g)
+   make **one real API call**; ask before making it. Output is findings and a
+   recommendation, as for §10.
+2. `ProjectSummary` and the two ports, with mocks.
+3. `ClaudeProjectAdapter`, plus the read-only real-`~/.claude` smoke run.
+4. `spawn` env parameter and `SidecarProcessFactory`.
+5. `LiveSession` actor.
+6. `SessionRegistry` — **checkpoint**.
+7. `forge-shared`, `forge-entities`.
+8. `forge-features`.
+9. `forge-widgets`, `forge-pages`.
+10. `forge-app` composition root and window; first `dx serve` run.
+11. Manual checklist, §15 finalisation, final review.
+
+### 15.9 Corrections to earlier sections, and known limits
+
+- §4.2: the project list for the UI comes from the transcript directories
+  (§15.2), not from `~/.claude.json`.
+- §6: `forge-ports` gains `ProjectRepositoryPort` and `SidecarFactoryPort`;
+  `forge-application` gains a normal `tokio` dependency.
+- §7: "multiple sessions open at once" moves from Tier 2 into this skeleton,
+  as a sidebar list (not tabs); split panes stay Tier 2.
+- §12.3: `SidecarProcess::spawn` now takes an environment (§15.4).
+- Known limits: the marker style, folder-picker behaviour, lazy sidecar and
+  close-while-running behaviour are own choices (§15.1, §15.5); a missing
+  project folder cannot be resumed; the sidebar reflects sessions created
+  elsewhere only at start and on close; `ResumeSessionUseCase` is unused by
+  the UI; the model selector offers only `default`; Windows is unverified.
