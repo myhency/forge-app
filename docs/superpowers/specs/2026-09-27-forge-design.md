@@ -1441,3 +1441,29 @@ merely proposed, since they change what Tasks 8–10 build):**
    own Amendment A for the exact wording.
 No other question changed a task: (a), (b), (d) (no code change forced),
 (f) and (g) confirm the plan's existing design.
+
+### 15.11 As built
+
+Plan 5 was built on branch `plan-5` and verified by hand on 2026-09-30 (macOS 26, Dioxus 0.7.10).
+
+**Test count.** 247 workspace tests (133 before Plan 5), no warnings other than the `block v0.1.6` future-incompatibility notice from the Dioxus desktop dependency tree. The sidecar's own 18 tests pass.
+
+**Manual checklist (Task 11), real `~/.claude`, real API turns.** Items 1–11, 13, 14, 15 passed as written. Item 12 (Korean IME) behaves as §15.10 (c) predicted: the first Enter sends. Details worth keeping:
+- 1: 22 project groups on this machine; deleted folders struck through.
+- 2/3: opening a past session spawns no process; the first send spawns exactly one `node` and the same transcript grows.
+- 5: Write requests show the card and Allow / Always allow / Deny all work; a pending request shows as a filled dot in the sidebar (idle is a hollow ring). `Bash echo`/`date` never prompted in default mode — SDK behaviour, not Forge.
+- 9: ⌘W closes the session only, its `node` process disappears and the window stays — the custom menu of §15.10 (c) works.
+- 13: `kill` of a streaming session's sidecar gives an error banner and the attention marker; resending respawns and resumes.
+- 14: a broken `config.json` gives the "failed to load the Forge config" banner; deleting it makes the next send work.
+- 15: typing stays responsive while a 246 KB file is printed (tool output is drawn as one line, so the conversation grows but little is rendered).
+
+**Runtime fixes** (the components had only been compiled before Task 10):
+1. `fix: pin the live-session signal bridge to the app's root scope` — `Workspace::attach` used `spawn`, which Dioxus cancels when the calling component unmounts. `NewSessionComposer` unmounts the moment `select` runs, so a brand-new session never rendered anything. Now `dioxus::core::spawn_forever`. No automated test (needs a live window). One earlier theory — subscribing before spawning — was wrong (a cloned `watch::Receiver` keeps the original's version) and was left in only because it is harmless.
+2. `fix: keep the text of a message that could not be sent` — spec §15.5 says the UI keeps the input text on a failed send, but the box was cleared immediately. `LiveSessionView` gained `unsent` and `failed_sends`; `SendMessageBox` restores the text. Three actor tests.
+
+**Where the built system differs from §15 (new).**
+- `Workspace::attach` runs its bridge in the root scope (above); `LiveSessionView` has two more fields.
+- The Folder dropdown only offers folders that already have Claude Code history, so a brand-new empty folder cannot be chosen (no folder picker, §15.1). Task 11 item 4 says "pick the scratch folder", which only works after running `claude` once there.
+- The sidebar markers are hard to tell apart: "running" and "needs attention" are both small warm filled dots (8 px). Verified correct in data, weak visually — a design-polish item (§15.1 puts visual polish out of scope).
+- Testing note: this machine runs Claude Code under the Orca terminal, whose global `PermissionRequest` hook is driven by `ORCA_AGENT_HOOK_*` variables. Stripping them was tried; it did not change the results above, so they are not the cause of anything recorded here.
+- Killing the app and its sidecars repeatedly while debugging left one session that reported `AbortError: Stream closed` on writes. It did not reproduce on a clean session and is treated as a debugging artifact.
