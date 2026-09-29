@@ -1,0 +1,14 @@
+[package]
+name = "forge-app"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+forge-adapter-claude-fs = { path = "../forge-adapter-claude-fs" }
+forge-adapter-config = { path = "../forge-adapter-config" }
+forge-adapter-sidecar = { path = "../forge-adapter-sidecar" }
+forge-application = { path = "../forge-application" }
+forge-features = { path = "../forge-features" }
+forge-pages = { path = "../forge-pages" }
+forge-shared = { path = "../forge-shared" }
+dioxus = { version = "=0.7.10", features = ["desktop"] }
