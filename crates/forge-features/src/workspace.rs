@@ -250,13 +250,21 @@ impl Workspace {
     // Adds the session to the store and starts the task that copies its published state into a
     // signal. The session runs under tokio; this task runs on the UI thread, which is why the
     // state crosses through a `watch` channel instead of the session touching a signal itself.
+    //
+    // Both the signal and this bridging task are pinned to the app's root scope
+    // (`dioxus::prelude::spawn` cancels its task when the *calling* component unmounts, and
+    // `start_new`'s caller, `NewSessionComposer`, unmounts the instant `select()` below switches
+    // the active view — killing the bridging task before it is ever polled once, so no update is
+    // ever seen). `open_past`'s caller, `Sidebar`, never unmounts, which is why that path worked
+    // without this fix. `dioxus::core::spawn_forever` runs the task in `ScopeId::ROOT` instead, so
+    // it survives whichever component happened to call `attach`.
     fn attach(&self, handle: LiveSessionHandle) -> LiveSessionId {
         let id = handle.id();
         let mut view = Signal::new_in_scope(handle.snapshot(), ScopeId::APP);
         let mut live = self.live;
         live.write().push(LiveEntry { handle: handle.clone(), view });
-        spawn(async move {
-            let mut updates = handle.subscribe();
+        let mut updates = handle.subscribe();
+        dioxus::core::spawn_forever(async move {
             while updates.changed().await.is_ok() {
                 let latest = updates.borrow_and_update().clone();
                 view.set(latest);
