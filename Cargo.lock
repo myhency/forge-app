@@ -695,6 +695,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-features"
+version = "0.1.0"
+dependencies = [
+ "dioxus",
+ "forge-application",
+ "forge-domain",
+ "forge-entities",
+ "forge-ports",
+ "forge-shared",
+ "serde_json",
+]
+
+[[package]]
 name = "forge-ports"
 version = "0.1.0"
 dependencies = [
