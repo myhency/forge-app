@@ -47,7 +47,7 @@ pub fn Sidebar() -> Element {
                     }
                     for entry in group.entries.iter() {
                         SidebarItem {
-                            key: "{entry.title}-{entry.session_id:?}-{entry.updated_at:?}",
+                            key: "{entry.key.dom_key()}",
                             title: entry.title.clone(),
                             subtitle: entry
                                 .updated_at

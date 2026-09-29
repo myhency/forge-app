@@ -15,6 +15,17 @@ pub enum EntryKey {
     Past { project: PathBuf, session: SessionId },
 }
 
+impl EntryKey {
+    /// A key that is unique among a sidebar's entries, for the renderer's keyed diff (two entries
+    /// can share a title, and a new session has neither an id nor a time).
+    pub fn dom_key(&self) -> String {
+        match self {
+            EntryKey::Live(id) => format!("live-{}", id.0),
+            EntryKey::Past { project, session } => format!("past-{}-{}", project.display(), session.0),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SidebarEntry {
     pub key: EntryKey,
@@ -459,6 +470,22 @@ mod tests {
     fn cycling_with_nothing_open_is_none() {
         assert_eq!(cycle_target(&[], None, true), None);
         assert_eq!(cycle_target(&[], Some(LiveSessionId(1)), false), None);
+    }
+
+    #[test]
+    fn every_entry_gets_its_own_dom_key_even_when_titles_and_ids_repeat() {
+        // Two brand-new sessions in one folder whose first send failed: same title, no ids, no times.
+        let groups = merge_sidebar(
+            &[],
+            &[open(1, "/work/a", None, SessionMarker::Idle), open(2, "/work/a", None, SessionMarker::Idle)],
+        );
+
+        let keys: Vec<String> = groups[0].entries.iter().map(|entry| entry.key.dom_key()).collect();
+
+        assert_eq!(keys.len(), 2);
+        assert_ne!(keys[0], keys[1]);
+        let past = EntryKey::Past { project: PathBuf::from("/work/a"), session: SessionId("s-1".to_string()) };
+        assert_ne!(past.dom_key(), EntryKey::Live(LiveSessionId(1)).dom_key());
     }
 
     #[test]

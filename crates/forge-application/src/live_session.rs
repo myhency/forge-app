@@ -536,6 +536,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_completed_turn_drops_permission_requests_that_can_no_longer_be_answered() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("run it".to_string());
+        control.push(permission_request("p-1"));
+        wait_for(&mut view, "a queued request", |v| !v.pending_permissions.is_empty()).await;
+
+        // Stop: the sidecar denies the open request itself and the turn ends.
+        control.push(turn_complete());
+        let seen = wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle).await;
+
+        assert!(seen.pending_permissions.is_empty(), "a stale card would hide the next request");
+    }
+
+    #[tokio::test]
     async fn the_event_stream_ending_fails_the_session_without_asking_the_dead_process_to_shut_down() {
         let (sidecar, control) = fake_sidecar();
         let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);

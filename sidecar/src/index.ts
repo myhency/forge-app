@@ -29,4 +29,11 @@ readCommands(
   (err) => {
     emit({ type: "error", message: `failed to parse command: ${err.message}` });
   },
+  () => {
+    // stdin ended: the parent is gone. Stop the query (which ends the `claude` child) and exit.
+    void session
+      .handle({ type: "shutdown", id: "stdin-closed" })
+      .then(() => session.waitUntilEnded())
+      .finally(() => process.exit(0));
+  },
 );
