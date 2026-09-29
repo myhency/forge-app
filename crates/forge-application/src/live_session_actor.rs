@@ -88,6 +88,7 @@ impl Actor {
         }
         if self.sidecar.is_none() {
             if let Err(message) = self.start_sidecar().await {
+                self.keep_unsent(text);
                 self.fail(message, false).await;
                 return;
             }
@@ -97,19 +98,28 @@ impl Actor {
         };
 
         let history_len = self.view.session.messages.len();
-        match SendMessageUseCase::new(sidecar).execute(&mut self.view.session, text).await {
+        match SendMessageUseCase::new(sidecar).execute(&mut self.view.session, text.clone()).await {
             Ok(()) => {
                 self.view.phase = Phase::Running;
                 self.view.last_error = None;
+                self.view.unsent = None;
                 self.dirty = true;
             }
             Err(error) => {
                 // The use-case records the message before writing it; a message that was never
                 // delivered must not stay in the history.
                 self.view.session.messages.truncate(history_len);
+                self.keep_unsent(text);
                 self.fail(error.to_string(), false).await;
             }
         }
+    }
+
+    // The message never reached the sidecar: hand its text back through the view so the UI can put
+    // it in the message box again instead of losing what the person typed.
+    fn keep_unsent(&mut self, text: String) {
+        self.view.unsent = Some(text);
+        self.view.failed_sends += 1;
     }
 
     // Spawns a sidecar and starts (or resumes) the session on it. The sidecar is only kept once

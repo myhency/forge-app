@@ -36,6 +36,11 @@ pub struct LiveSessionView {
     pub last_error: Option<String>,
     /// `false` when the project folder no longer exists: the history is readable only.
     pub can_send: bool,
+    /// The text of the last message that could not be delivered, so the UI can put it back in the
+    /// message box. Cleared by the next send that succeeds.
+    pub unsent: Option<String>,
+    /// How many sends have failed so far. The UI restores `unsent` when this number changes.
+    pub failed_sends: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -121,6 +126,8 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         pending_permissions: VecDeque::new(),
         last_error: None,
         can_send: init.can_send,
+        unsent: None,
+        failed_sends: 0,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
     let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -477,6 +484,55 @@ mod tests {
 
         assert_eq!(seen.session.messages.len(), 1, "only the earlier history remains");
         assert_eq!(seen.session.messages[0].content, "earlier");
+    }
+
+    #[tokio::test]
+    async fn a_spawn_failure_keeps_the_unsent_text_so_the_ui_can_put_it_back() {
+        let (factory, _spawns) = factory_returning(vec![Err(SidecarError::SpawnFailed("no node".to_string()))]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("my long message".to_string());
+        let seen = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        assert_eq!(seen.unsent, Some("my long message".to_string()));
+        assert_eq!(seen.failed_sends, 1);
+    }
+
+    #[tokio::test]
+    async fn a_failed_write_keeps_the_unsent_text_and_counts_the_failure() {
+        let (sidecar, control) = fake_sidecar();
+        control.fail_send();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("lost?".to_string());
+        let seen = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        assert_eq!(seen.unsent, Some("lost?".to_string()));
+        assert_eq!(seen.failed_sends, 1);
+    }
+
+    #[tokio::test]
+    async fn a_successful_send_after_a_failure_clears_the_unsent_text_but_keeps_the_count() {
+        let (first, _first_control) = fake_sidecar();
+        let (second, _second_control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![
+            Err(SidecarError::SpawnFailed("no node".to_string())),
+            Ok(second),
+        ]);
+        let _ = first;
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("one".to_string());
+        wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        handle.send("one".to_string());
+        let seen = wait_for(&mut view, "the retry to start", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(seen.unsent, None);
+        assert_eq!(seen.failed_sends, 1);
     }
 
     #[tokio::test]

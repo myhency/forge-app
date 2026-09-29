@@ -279,6 +279,8 @@ mod tests {
             pending_permissions: VecDeque::from(vec![request; pending]),
             last_error: None,
             can_send: true,
+            unsent: None,
+            failed_sends: 0,
         }
     }
 
