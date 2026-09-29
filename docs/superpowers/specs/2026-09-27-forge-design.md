@@ -1467,3 +1467,13 @@ Plan 5 was built on branch `plan-5` and verified by hand on 2026-09-30 (macOS 26
 - The sidebar markers are hard to tell apart: "running" and "needs attention" are both small warm filled dots (8 px). Verified correct in data, weak visually — a design-polish item (§15.1 puts visual polish out of scope).
 - Testing note: this machine runs Claude Code under the Orca terminal, whose global `PermissionRequest` hook is driven by `ORCA_AGENT_HOOK_*` variables. Stripping them was tried; it did not change the results above, so they are not the cause of anything recorded here.
 - Killing the app and its sidecars repeatedly while debugging left one session that reported `AbortError: Stream closed` on writes. It did not reproduce on a clean session and is treated as a debugging artifact.
+
+### 15.12 Final review of Plan 5
+
+A fresh reviewer read the whole branch. No Critical findings. Fixed (each with a test that failed first): a finished turn now drops its pending permission requests; sidebar entries have a unique DOM key; the sidecar exits when its stdin closes (no orphaned `node`/`claude` after quitting Forge). Test count is now 249 (+ sidecar 19).
+
+**Not fixed, on purpose**
+- *Lossy directory names can resume a session in the wrong folder* (`/work/my_app` and `/work/my-app` share one Claude directory; the project shows the newest `cwd`, and resuming an older session uses it). Needs each session to carry its own `cwd` through the port and an existence check for it; that is a change to §14/§15.3, not a fix. Rare (needs colliding names), and edits still go through permission prompts in the default mode. **Follow-up.**
+- *Graceful shutdown before dropping the sidecar* (reviewer's guess that `kill_on_drop` beats the queued `shutdown`). Checked with `ps` after ⌘W mid-turn and after `kill`: no `node` or `claude` process was left. Revisit only if a leftover is ever seen.
+
+**Deferred minors.** Closed sessions keep their signal (memory) until exit; a Folder that disappears makes Start do nothing silently; `exists`/`can_send` are snapshots until the next reload; a message can stay in the history if the sidecar dies between two events; after a failure before `SessionStarted` the retry starts a fresh Claude session while the view still shows the first message; `biased` batching could delay publishing under a very fast event stream.
