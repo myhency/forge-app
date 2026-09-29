@@ -708,6 +708,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-pages"
+version = "0.1.0"
+dependencies = [
+ "dioxus",
+ "forge-features",
+ "forge-widgets",
+]
+
+[[package]]
 name = "forge-ports"
 version = "0.1.0"
 dependencies = [
@@ -725,6 +734,18 @@ name = "forge-shared"
 version = "0.1.0"
 dependencies = [
  "dioxus",
+]
+
+[[package]]
+name = "forge-widgets"
+version = "0.1.0"
+dependencies = [
+ "dioxus",
+ "forge-application",
+ "forge-entities",
+ "forge-features",
+ "forge-shared",
+ "time",
 ]
 
 [[package]]
