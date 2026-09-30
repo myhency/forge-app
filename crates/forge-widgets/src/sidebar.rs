@@ -2,7 +2,7 @@ use std::path::Path;
 
 use dioxus::prelude::*;
 use forge_entities::{relative_time, SidebarItem};
-use forge_features::{use_workspace, Active, EntryKey};
+use forge_features::{use_settings, use_workspace, Active, EntryKey};
 use forge_shared::{Button, ButtonKind};
 use time::OffsetDateTime;
 
@@ -18,6 +18,7 @@ pub fn project_label(path: &Path) -> String {
 #[component]
 pub fn Sidebar() -> Element {
     let workspace = use_workspace();
+    let settings = use_settings();
     let groups = workspace.sidebar();
     let active = workspace.active();
     let notice = workspace.notice();
@@ -40,10 +41,23 @@ pub fn Sidebar() -> Element {
             }
             for group in groups {
                 div { key: "{group.project.path.display()}",
-                    div {
-                        class: if group.project.exists { "sidebar-group-title" } else { "sidebar-group-title missing" },
-                        title: "{group.project.path.display()}",
-                        "{project_label(&group.project.path)}"
+                    div { class: "sidebar-group-header",
+                        div {
+                            class: if group.project.exists { "sidebar-group-title" } else { "sidebar-group-title missing" },
+                            title: "{group.project.path.display()}",
+                            "{project_label(&group.project.path)}"
+                        }
+                        if group.project.exists {
+                            button {
+                                class: "group-add",
+                                title: "New session in this folder",
+                                onclick: {
+                                    let path = group.project.path.clone();
+                                    move |_| workspace.show_new_session_in(path.clone())
+                                },
+                                "+"
+                            }
+                        }
                     }
                     for entry in group.entries.iter() {
                         SidebarItem {
@@ -71,6 +85,13 @@ pub fn Sidebar() -> Element {
                             },
                         }
                     }
+                }
+            }
+            div { class: "sidebar-footer",
+                button { class: "sidebar-footer-button", onclick: move |_| settings.open(),
+                    span { "⚙" }
+                    span { "Settings" }
+                    span { class: "keys", "⌘," }
                 }
             }
         }
