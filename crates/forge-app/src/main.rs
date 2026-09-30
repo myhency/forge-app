@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 use forge_adapter_claude_fs::{default_claude_home, ClaudeProjectAdapter, ClaudeSessionAdapter};
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
-use forge_application::SessionRegistry;
+use forge_application::{SessionRegistry, SettingsUseCase};
 use forge_features::WorkspaceServices;
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
@@ -88,11 +88,12 @@ fn build_services() -> WorkspaceServices {
     let script = std::env::var("FORGE_SIDECAR_SCRIPT").unwrap_or_else(|_| DEFAULT_SIDECAR_SCRIPT.to_string());
 
     let config = Arc::new(ConfigFileAdapter::new(config_path));
-    let factory = Arc::new(SidecarProcessFactory::new(node, script, config));
+    let factory = Arc::new(SidecarProcessFactory::new(node, script, config.clone()));
+    let settings = Arc::new(SettingsUseCase::new(config));
     let sessions = Arc::new(ClaudeSessionAdapter::new(claude_home.clone()));
     let projects = Arc::new(ClaudeProjectAdapter::new(claude_home));
     let registry = Arc::new(SessionRegistry::new(factory, sessions.clone()));
-    WorkspaceServices { registry, projects, sessions }
+    WorkspaceServices { registry, projects, sessions, settings }
 }
 
 #[component]

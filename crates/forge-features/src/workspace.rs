@@ -1,7 +1,8 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use dioxus::prelude::*;
-use forge_application::{LiveSessionHandle, LiveSessionId, LiveSessionView, SessionRegistry};
+use forge_application::{LiveSessionHandle, LiveSessionId, LiveSessionView, SessionRegistry, SettingsUseCase};
 use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SessionId, SessionSummary};
 use forge_ports::{ProjectRepositoryPort, SessionRepositoryPort};
 
@@ -14,6 +15,7 @@ pub struct WorkspaceServices {
     pub registry: Arc<SessionRegistry>,
     pub projects: Arc<dyn ProjectRepositoryPort>,
     pub sessions: Arc<dyn SessionRepositoryPort>,
+    pub settings: Arc<SettingsUseCase>,
 }
 
 /// What the main pane shows.
@@ -38,6 +40,7 @@ pub struct Workspace {
     live: Signal<Vec<LiveEntry>>,
     active: Signal<Active>,
     notice: Signal<Option<String>>,
+    new_folder: Signal<Option<PathBuf>>,
 }
 
 /// Creates the workspace, provides it to every descendant and loads the sidebar once. Call it in
@@ -50,6 +53,7 @@ pub fn use_workspace_provider() -> Workspace {
         live: Signal::new(Vec::new()),
         active: Signal::new(Active::NewSession),
         notice: Signal::new(None),
+        new_folder: Signal::new(None),
     });
     use_context_provider(move || workspace);
     use_hook(move || workspace.reload_past());
@@ -117,6 +121,22 @@ impl Workspace {
         active.set(Active::NewSession);
     }
 
+    /// The folder chosen in the new-session panel (`None`: the first one offered).
+    pub fn new_folder(&self) -> Option<PathBuf> {
+        self.new_folder.read().clone()
+    }
+
+    pub fn set_new_folder(&self, folder: Option<PathBuf>) {
+        let mut current = self.new_folder;
+        current.set(folder);
+    }
+
+    /// Shows the new-session panel with `folder` preselected (the `+` beside a project).
+    pub fn show_new_session_in(&self, folder: PathBuf) {
+        self.set_new_folder(Some(folder));
+        self.show_new_session();
+    }
+
     pub fn select(&self, id: LiveSessionId) {
         let mut active = self.active;
         active.set(Active::Live(id));
@@ -157,11 +177,18 @@ impl Workspace {
         });
     }
 
-    /// Opens a new session in `project` and sends its first message.
-    pub fn start_new(&self, project: ProjectSummary, mode: PermissionMode, model: Option<String>, text: String) {
+    /// Opens a new session in `project`, on the saved default model, and sends its first message.
+    pub fn start_new(&self, project: ProjectSummary, mode: PermissionMode, text: String) {
         let this = *self;
         let services = (*self.services.peek()).clone();
         spawn(async move {
+            let model = match services.settings.saved_model().await {
+                Ok(model) => model,
+                Err(error) => {
+                    this.report(format!("failed to load the Forge config: {error}"));
+                    return;
+                }
+            };
             match services.registry.open_new(&project, mode, model) {
                 Ok(handle) => {
                     let id = this.attach(handle.clone());
@@ -208,19 +235,7 @@ impl Workspace {
 
     /// Handles the session shortcuts; returns whether the key press was one of them.
     pub fn on_key(&self, event: &KeyboardEvent) -> bool {
-        let key = match event.key() {
-            Key::Tab => "Tab".to_string(),
-            Key::Character(text) => text,
-            _ => return false,
-        };
-        let modifiers = event.modifiers();
-        let Some(shortcut) = shortcut_for(
-            &key,
-            modifiers.ctrl(),
-            modifiers.meta(),
-            modifiers.shift(),
-            cfg!(target_os = "macos"),
-        ) else {
+        let Some(shortcut) = shortcut_from_event(event) else {
             return false;
         };
         match shortcut {
@@ -274,6 +289,17 @@ impl Workspace {
         });
         id
     }
+}
+
+/// The shortcut a key press is, if any (platform-aware: Cmd on macOS, Ctrl elsewhere).
+pub(crate) fn shortcut_from_event(event: &KeyboardEvent) -> Option<Shortcut> {
+    let key = match event.key() {
+        Key::Tab => "Tab".to_string(),
+        Key::Character(text) => text,
+        _ => return None,
+    };
+    let modifiers = event.modifiers();
+    shortcut_for(&key, modifiers.ctrl(), modifiers.meta(), modifiers.shift(), cfg!(target_os = "macos"))
 }
 
 // Every known project with its sessions. A project whose listing fails is kept (empty) and the
