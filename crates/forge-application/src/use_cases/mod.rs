@@ -1,7 +1,9 @@
 mod session_lifecycle;
+mod settings;
 mod sidecar_commands;
 mod toggles;
 
 pub use session_lifecycle::{ResumeSessionError, ResumeSessionUseCase, StartSessionUseCase};
+pub use settings::SettingsUseCase;
 pub use sidecar_commands::{ApprovePermissionUseCase, InterruptTurnUseCase, SendMessageUseCase};
 pub use toggles::{ToggleMcpServerUseCase, TogglePluginUseCase, ToggleSkillUseCase};

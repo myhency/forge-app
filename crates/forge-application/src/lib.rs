@@ -14,6 +14,6 @@ pub use live_session::{
 pub use registry::{OpenError, OpenOutcome, SessionRegistry};
 pub use use_cases::{
     ApprovePermissionUseCase, InterruptTurnUseCase, ResumeSessionError, ResumeSessionUseCase,
-    SendMessageUseCase, StartSessionUseCase, ToggleMcpServerUseCase, TogglePluginUseCase,
+    SendMessageUseCase, SettingsUseCase, StartSessionUseCase, ToggleMcpServerUseCase, TogglePluginUseCase,
     ToggleSkillUseCase,
 };
