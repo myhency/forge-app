@@ -4,7 +4,7 @@
 
 **Goal:** Make the `enabled_skills` / `enabled_plugins` / `enabled_mcp_servers` lists real: three settings tabs manage them, and every session started afterwards runs with exactly the skills, plugins and MCP servers that are switched on — and with nothing inherited from `~/.claude/settings.json`.
 
-**Architecture:** `forge-domain` gets `ActiveExtensions` (what a session starts with) and a pure `select` that filters definitions by the config's enabled lists. `forge-application` gets `ExtensionsUseCase` (resolve at session start, list definitions for the tabs, toggle). The live-session actor resolves the set right before it spawns a sidecar and puts it in `StartSessionParams`; the wire protocol carries it as `skills` / `plugins` / `mcp_servers`; the Node sidecar maps it to SDK options with `settingSources: ['project']` and `strictMcpConfig`. The settings overlay gets Skills / Plugins / MCP servers tabs over pure row builders in `forge-entities`.
+**Architecture:** `forge-domain` gets `ActiveExtensions` (what a session starts with) and a pure `select` that filters definitions by the config's enabled lists. `forge-application` gets `ExtensionsUseCase` (resolve at session start, list definitions for the tabs, toggle). The live-session actor resolves the set right before it spawns a sidecar and puts it in `StartSessionParams`; the wire protocol carries it as `skills` / `plugins` / `mcp_servers`; the Node sidecar maps it to SDK options with `settingSources: ['project']` and `strictMcpConfig`. Because the spike (spec §17.7) showed that user skills are not discovered under `['project']` and that `['user','project']` leaks the user's plugins, enabled skills are delivered through a per-session generated local plugin `forge-skills` (symlinks to each enabled skill's directory) that the sidecar builds and removes. The settings overlay gets Skills / Plugins / MCP servers tabs over pure row builders in `forge-entities`.
 
 **Tech Stack:** Rust 2021, Dioxus 0.7.10 desktop, tokio, mockall; Node 22.22.1, TypeScript, vitest, `@anthropic-ai/claude-agent-sdk` 0.3.283.
 
@@ -15,6 +15,7 @@
 - Hexagonal crate graph is enforced by `Cargo.toml` dependencies: `forge-domain` depends on nothing of ours; `forge-application` on domain + ports only; `forge-features` / `forge-widgets` / `forge-pages` must not name a concrete adapter. Only `forge-app/src/main.rs` names adapters.
 - Activation state is Forge's own: `enabled_*` lists in Forge's `config.json`, by name, global (spec §4.1, §4.3). Forge never reads or writes Claude Code's `enabledPlugins`.
 - A Forge session loads only the project settings source and only what Forge has enabled: `settingSources: ['project']`, `strictMcpConfig: true` (spec §17.1). Consequence to keep in the UI copy and docs: user-level hooks and permission rules from `~/.claude/settings.json` no longer apply.
+- Skills reach the SDK only through the generated `forge-skills` plugin, listed as `forge-skills:<name>` (spec §17.3, §17.7). A skill name that is not one safe path component (empty, `.`, `..`, or containing `/`, `\` or NUL) is skipped. The temporary plugin directory is removed when the session ends and removing it must never touch the skill directories it links to.
 - An empty active list is sent as `[]` / `{}`, never omitted — the SDK treats an omitted `skills` as "CLI defaults", not "off" (spec §17.2).
 - Toggles apply to sessions started afterwards; a running session keeps what it started with. Every tab says: "Sessions that are already open keep what they started with; a change applies to the next new session." (spec §17.4).
 - A reader failure while something is enabled fails the session start with the existing notice mechanism — a session never starts with fewer tools than switched on (spec §17.3).
@@ -33,7 +34,8 @@ Inputs the spec implies but that are easy to get wrong, most likely first. Each 
 2. Nothing enabled → the sidecar still receives `skills: []`, `plugins: []`, `mcp_servers: {}` and passes empty values to the SDK, so Claude Code's own defaults do not come back (Tasks 3 and 4).
 3. A definition reader fails while an extension is enabled → the session does not start, no process is spawned, the typed text comes back to the box (Task 6). With nothing enabled, a broken reader must not block sessions (Task 5).
 4. Two definitions with the same name (a user skill and a project skill; a plugin installed under two scopes) → listed once in the tab, sent once to the SDK (Tasks 2 and 7).
-5. An MCP server with neither `command` nor `url` → its row is still shown, with an empty detail, and can be toggled (Task 7).
+5. A skill whose name is not a safe path component (for example `../evil`) → skipped by the sidecar, nothing is created outside the temp plugin directory; and ending a session deletes the temp plugin directory but not the real skill directories behind its symlinks (Task 4).
+6. An MCP server with neither `command` nor `url` → its row is still shown, with an empty detail, and can be toggled (Task 7).
 
 ---
 
@@ -48,6 +50,7 @@ Inputs the spec implies but that are easy to get wrong, most likely first. Each 
 | `crates/forge-adapter-sidecar/tests/fixtures/fake_sidecar.js` | remembers the start command, echoes its extension fields |
 | `crates/forge-adapter-sidecar/tests/contract_test.rs` | extension round-trip test |
 | `sidecar/src/protocol.ts`, `sidecar/src/session.ts` | wire type, SDK option mapping |
+| `sidecar/src/skills_plugin.ts` | **new** builds/removes the per-session `forge-skills` plugin directory |
 | `sidecar/test/session.test.ts` | option mapping tests |
 | `crates/forge-application/src/use_cases/extensions.rs` | **new** `ExtensionsUseCase`, `ExtensionsError` |
 | `crates/forge-application/src/{live_session,live_session_actor,registry,test_support}.rs` | resolve at sidecar start |
@@ -69,7 +72,7 @@ Inputs the spec implies but that are easy to get wrong, most likely first. Each 
 
 **Interfaces:**
 - Consumes: the real `@anthropic-ai/claude-agent-sdk` 0.3.283 and the real `~/.claude`.
-- Produces: §17.7 findings that Tasks 3–4 rely on: (a) a user skill is discovered under `settingSources: ['project']`; (b) a plugin loads from its `installPath`; (c) both MCP config shapes are accepted; (d) nothing from `~/.claude/settings.json` leaks in. It also settles the `settingSources` value used in Task 4.
+- Produces: §17.7 findings that Tasks 3–4 rely on: (a) whether a user skill is discovered under `settingSources: ['project']` (it is not — see §17.7, which drives the generated-plugin design of Tasks 2–4); (b) a plugin loads from its `installPath`; (c) both MCP config shapes are accepted; (d) nothing from `~/.claude/settings.json` leaks in. It also settles the `settingSources` value used in Task 4.
 
 - [ ] **Step 1: Install the sidecar's dependencies**
 
@@ -167,7 +170,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 - Consumes: `AppConfig` (`enabled_skills`, `enabled_plugins`, `enabled_mcp_servers`), `SkillDefinition`, `PluginDefinition`, `McpServerDefinition`.
 - Produces:
   - `PluginDefinition::key(&self) -> String` — `name@marketplace`, or `name` when there is no marketplace (the string stored in `enabled_plugins`).
-  - `#[derive(Debug, Clone, PartialEq, Default)] pub struct ActiveExtensions { pub skills: Vec<String>, pub plugin_paths: Vec<PathBuf>, pub mcp_servers: BTreeMap<String, serde_json::Value> }`
+  - `#[derive(Debug, Clone, PartialEq, Default)] pub struct ActiveExtensions { pub skills: BTreeMap<String, PathBuf>, pub plugin_paths: Vec<PathBuf>, pub mcp_servers: BTreeMap<String, serde_json::Value> }` — `skills` maps an enabled skill's name to its directory
   - `ActiveExtensions::select(config: &AppConfig, skills: &[SkillDefinition], plugins: &[PluginDefinition], servers: &[McpServerDefinition]) -> ActiveExtensions`
 
 - [ ] **Step 1: Write the failing tests**
@@ -211,7 +214,8 @@ In `crates/forge-domain/src/extension.rs`, add to the `tests` module:
             &[plugin("hud", Some("official"), "/plugins/hud"), plugin("other", Some("official"), "/plugins/other")],
             &[server("files"), server("browser")],
         );
-        assert_eq!(active.skills, vec!["pdf".to_string()]);
+        assert_eq!(active.skills.keys().collect::<Vec<_>>(), vec!["pdf"]);
+        assert_eq!(active.skills["pdf"], PathBuf::from("/skills/pdf"));
         assert_eq!(active.plugin_paths, vec![PathBuf::from("/plugins/hud")]);
         assert_eq!(active.mcp_servers.keys().collect::<Vec<_>>(), vec!["files"]);
         assert_eq!(active.mcp_servers["files"]["command"], "files");
@@ -226,7 +230,7 @@ In `crates/forge-domain/src/extension.rs`, add to the `tests` module:
             ..AppConfig::default()
         };
         let active = ActiveExtensions::select(&config, &[skill("pdf")], &[], &[]);
-        assert_eq!(active.skills, vec!["pdf".to_string()]);
+        assert_eq!(active.skills.keys().collect::<Vec<_>>(), vec!["pdf"]);
         assert!(active.plugin_paths.is_empty());
         assert!(active.mcp_servers.is_empty());
     }
@@ -239,13 +243,16 @@ In `crates/forge-domain/src/extension.rs`, add to the `tests` module:
             enabled_mcp_servers: vec!["files".to_string()],
             ..AppConfig::default()
         };
+        let project_pdf =
+            SkillDefinition { name: "pdf".to_string(), path: PathBuf::from("/project/pdf"), description: None };
         let active = ActiveExtensions::select(
             &config,
-            &[skill("pdf"), skill("pdf")],
+            &[skill("pdf"), project_pdf],
             &[plugin("hud", Some("official"), "/a"), plugin("hud", Some("official"), "/b")],
             &[server("files"), server("files")],
         );
-        assert_eq!(active.skills, vec!["pdf".to_string()]);
+        assert_eq!(active.skills.len(), 1);
+        assert_eq!(active.skills["pdf"], PathBuf::from("/skills/pdf"), "the first definition wins");
         assert_eq!(active.plugin_paths, vec![PathBuf::from("/a")], "the first install wins");
         assert_eq!(active.mcp_servers.len(), 1);
     }
@@ -286,8 +293,8 @@ impl PluginDefinition {
     }
 }
 
-/// What a session is started with: the enabled skills (by name), the enabled plugins (by install
-/// path) and the enabled MCP servers (name to the server's config, as read).
+/// What a session is started with: the enabled skills (name to directory), the enabled plugins (by
+/// install path) and the enabled MCP servers (name to the server's config, as read).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ActiveExtensions {
     pub skills: Vec<String>,
@@ -307,8 +314,8 @@ impl ActiveExtensions {
     ) -> Self {
         let mut active = ActiveExtensions::default();
         for skill in skills {
-            if config.enabled_skills.contains(&skill.name) && !active.skills.contains(&skill.name) {
-                active.skills.push(skill.name.clone());
+            if config.enabled_skills.contains(&skill.name) {
+                active.skills.entry(skill.name.clone()).or_insert_with(|| skill.path.clone());
             }
         }
         let mut seen_plugins: Vec<String> = Vec::new();
@@ -364,11 +371,11 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 - Consumes: `forge_domain::ActiveExtensions` (Task 2).
 - Produces:
   - `StartSessionParams { …existing, pub extensions: ActiveExtensions }`
-  - the JSON `start_session` command gains `"skills": [..]`, `"plugins": [..]` (absolute path strings) and `"mcp_servers": {name: config}`, always present.
+  - the JSON `start_session` command gains `"skills": {name: directory}` (path strings), `"plugins": [..]` (absolute path strings) and `"mcp_servers": {name: config}`, always present.
 
 - [ ] **Step 1: Write the failing tests**
 
-In `crates/forge-adapter-sidecar/src/protocol.rs`, update the existing test's `StartSessionParams` literal to include `extensions: ActiveExtensions::default(),`, its expected JSON to add `"skills": [], "plugins": [], "mcp_servers": {}`, add these imports to the `tests` module (`use forge_domain::ActiveExtensions; use std::collections::BTreeMap; use std::path::PathBuf;`), and add:
+In `crates/forge-adapter-sidecar/src/protocol.rs`, update the existing test's `StartSessionParams` literal to include `extensions: ActiveExtensions::default(),`, its expected JSON to add `"skills": {}, "plugins": [], "mcp_servers": {}`, add these imports to the `tests` module (`use forge_domain::ActiveExtensions; use std::collections::BTreeMap; use std::path::PathBuf;`), and add:
 
 ```rust
     #[test]
@@ -383,7 +390,7 @@ In `crates/forge-adapter-sidecar/src/protocol.rs`, update the existing test's `S
                 permission_mode: PermissionMode::Default,
                 model: None,
                 extensions: ActiveExtensions {
-                    skills: vec!["pdf".to_string()],
+                    skills: BTreeMap::from([("pdf".to_string(), PathBuf::from("/skills/pdf"))]),
                     plugin_paths: vec![PathBuf::from("/plugins/hud")],
                     mcp_servers,
                 },
@@ -391,7 +398,7 @@ In `crates/forge-adapter-sidecar/src/protocol.rs`, update the existing test's `S
         );
 
         let json = serde_json::to_value(&command).unwrap();
-        assert_eq!(json["skills"], serde_json::json!(["pdf"]));
+        assert_eq!(json["skills"], serde_json::json!({"pdf": "/skills/pdf"}));
         assert_eq!(json["plugins"], serde_json::json!(["/plugins/hud"]));
         assert_eq!(json["mcp_servers"], serde_json::json!({"files": {"command": "npx", "args": ["files-mcp"]}}));
     }
@@ -405,7 +412,7 @@ async fn start_session_delivers_the_active_extensions_to_the_sidecar() {
     let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &[]).unwrap();
     let mut params = default_params();
     params.extensions = ActiveExtensions {
-        skills: vec!["pdf".to_string()],
+        skills: BTreeMap::from([("pdf".to_string(), PathBuf::from("/skills/pdf"))]),
         plugin_paths: vec![PathBuf::from("/plugins/hud")],
         mcp_servers: BTreeMap::from([("files".to_string(), serde_json::json!({"command": "npx"}))]),
     };
@@ -419,7 +426,7 @@ async fn start_session_delivers_the_active_extensions_to_the_sidecar() {
             assert_eq!(
                 seen,
                 serde_json::json!({
-                    "skills": ["pdf"],
+                    "skills": {"pdf": "/skills/pdf"},
                     "plugins": ["/plugins/hud"],
                     "mcp_servers": {"files": {"command": "npx"}}
                 })
@@ -439,7 +446,7 @@ async fn a_session_without_extensions_still_sends_empty_lists() {
     match sidecar.next_event().await.unwrap() {
         SidecarEvent::AssistantDelta { text } => {
             let seen: serde_json::Value = serde_json::from_str(&text).unwrap();
-            assert_eq!(seen, serde_json::json!({"skills": [], "plugins": [], "mcp_servers": {}}));
+            assert_eq!(seen, serde_json::json!({"skills": {}, "plugins": [], "mcp_servers": {}}));
         }
         other => panic!("unexpected event: {other:?}"),
     }
@@ -497,7 +504,7 @@ pub struct StartSessionParams {
         resume_session_id: Option<String>,
         permission_mode: WireMode,
         model: Option<String>,
-        skills: Vec<String>,
+        skills: BTreeMap<String, String>,
         plugins: Vec<String>,
         mcp_servers: BTreeMap<String, serde_json::Value>,
     },
@@ -511,7 +518,12 @@ pub struct StartSessionParams {
             resume_session_id: params.resume_session_id,
             permission_mode: params.permission_mode.into(),
             model: params.model,
-            skills: params.extensions.skills,
+            skills: params
+                .extensions
+                .skills
+                .into_iter()
+                .map(|(name, dir)| (name, dir.to_string_lossy().to_string()))
+                .collect(),
             plugins: params
                 .extensions
                 .plugin_paths
@@ -541,20 +553,23 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ---
 
-### Task 4: Sidecar — map the fields to SDK options
+### Task 4: Sidecar — map the fields to SDK options and build the `forge-skills` plugin
 
 **Files:**
+- Create: `sidecar/src/skills_plugin.ts`
 - Modify: `sidecar/src/protocol.ts`
 - Modify: `sidecar/src/session.ts`
 - Modify: `sidecar/test/session.test.ts`, `sidecar/test/protocol.test.ts`
 
 **Interfaces:**
-- Consumes: the `start_session` JSON of Task 3; the `settingSources` value recorded in spec §17.7 (below written as `["project"]`; if the spike chose `["user", "project"]`, use that in both the code and the first test).
-- Produces: `query()` options `settingSources`, `strictMcpConfig: true`, `skills`, `plugins: [{type: "local", path}]`, `mcpServers` — always present.
+- Consumes: the `start_session` JSON of Task 3 (`skills` is `{name: directory}`); spec §17.7: `settingSources: ["project"]`, and user skills reach the session through a generated local plugin (a user skill is not discovered under `["project"]`; `["user","project"]` leaks the user's plugins).
+- Produces:
+  - `skills_plugin.ts`: `SKILLS_PLUGIN_NAME = "forge-skills"`, `isSafeSkillName(name: string): boolean`, `buildSkillsPlugin(skills: Record<string, string>): Promise<SkillsPlugin | null>` where `SkillsPlugin = { path: string; skills: string[]; cleanup: () => Promise<void> }` (`skills` are the `forge-skills:<name>` entries; `null` when no safe skill is given).
+  - `query()` options `settingSources`, `strictMcpConfig: true`, `skills`, `plugins`, `mcpServers` — always present.
 
 - [ ] **Step 1: Write the failing tests**
 
-In `sidecar/test/session.test.ts` update `startCommand` to include the new fields, and add tests inside `describe("SidecarSession", …)`:
+In `sidecar/test/session.test.ts` add imports `import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs"; import { tmpdir } from "node:os"; import { join } from "node:path";`, update `startCommand` to include the new fields, and add the tests inside `describe("SidecarSession", …)`:
 
 ```ts
 const startCommand: SidecarCommand = {
@@ -564,10 +579,17 @@ const startCommand: SidecarCommand = {
   resume_session_id: null,
   permission_mode: "default",
   model: null,
-  skills: [],
+  skills: {},
   plugins: [],
   mcp_servers: {},
 };
+
+function makeSkillDir(name: string): string {
+  const dir = join(mkdtempSync(join(tmpdir(), "forge-test-skill-")), name);
+  mkdirSync(dir);
+  writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: test\n---\n`);
+  return dir;
+}
 ```
 
 ```ts
@@ -581,7 +603,6 @@ const startCommand: SidecarCommand = {
     const session = new SidecarSession(queryFn, () => {});
     await session.handle({
       ...startCommand,
-      skills: ["pdf"],
       plugins: ["/plugins/hud"],
       mcp_servers: { files: { command: "npx", args: ["files-mcp"] } },
     });
@@ -589,7 +610,7 @@ const startCommand: SidecarCommand = {
     expect(captured).toMatchObject({
       settingSources: ["project"],
       strictMcpConfig: true,
-      skills: ["pdf"],
+      skills: [],
       plugins: [{ type: "local", path: "/plugins/hud" }],
       mcpServers: { files: { command: "npx", args: ["files-mcp"] } },
     });
@@ -616,13 +637,73 @@ const startCommand: SidecarCommand = {
       captured = options;
       return toQueryHandle((async function* () {})());
     };
-    const { skills: _s, plugins: _p, mcp_servers: _m, ...oldCommand } = startCommand as Extract<SidecarCommand, { type: "start_session" }>;
+    const oldCommand = { type: "start_session", id: "1", cwd: "/tmp", resume_session_id: null, permission_mode: "default", model: null };
 
     const session = new SidecarSession(queryFn, () => {});
-    await session.handle(oldCommand as SidecarCommand);
+    await session.handle(oldCommand as unknown as SidecarCommand);
 
     expect(captured?.skills).toEqual([]);
+    expect(captured?.plugins).toEqual([]);
     expect(captured?.mcpServers).toEqual({});
+  });
+
+  it("delivers enabled skills through a generated forge-skills plugin and removes it when the session ends", async () => {
+    const pdfDir = makeSkillDir("pdf");
+    let pluginPath = "";
+    let seen: { manifest: string; link: string } | undefined;
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      const plugins = options.plugins as { type: string; path: string }[];
+      pluginPath = plugins[plugins.length - 1].path;
+      seen = {
+        manifest: readFileSync(join(pluginPath, ".claude-plugin", "plugin.json"), "utf8"),
+        link: readlinkSync(join(pluginPath, "skills", "pdf")),
+      };
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({ ...startCommand, skills: { pdf: pdfDir }, plugins: ["/plugins/hud"] });
+
+    expect(captured?.skills).toEqual(["forge-skills:pdf"]);
+    expect((captured?.plugins as { path: string }[])[0].path).toBe("/plugins/hud");
+    expect(JSON.parse(seen!.manifest)).toEqual({ name: "forge-skills" });
+    expect(seen!.link).toBe(pdfDir);
+    expect(existsSync(pluginPath)).toBe(false);
+    expect(existsSync(join(pdfDir, "SKILL.md"))).toBe(true);
+  });
+
+  it("skips a skill whose name is not a safe path component", async () => {
+    const okDir = makeSkillDir("ok");
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({
+      ...startCommand,
+      skills: { "../evil": okDir, "a/b": okDir, "..": okDir, ok: okDir },
+    });
+
+    expect(captured?.skills).toEqual(["forge-skills:ok"]);
+  });
+
+  it("generates no plugin when every skill name is unsafe", async () => {
+    const okDir = makeSkillDir("ok");
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({ ...startCommand, skills: { "../evil": okDir } });
+
+    expect(captured?.skills).toEqual([]);
+    expect(captured?.plugins).toEqual([]);
   });
 ```
 
@@ -637,24 +718,75 @@ In `sidecar/test/protocol.test.ts` add to `describe("parseCommand", …)`:
       resume_session_id: null,
       permission_mode: "default",
       model: null,
-      skills: ["pdf"],
+      skills: { pdf: "/skills/pdf" },
       plugins: ["/plugins/hud"],
       mcp_servers: { files: { command: "npx" } },
     });
     expect(parseCommand(line)).toMatchObject({
-      skills: ["pdf"],
+      skills: { pdf: "/skills/pdf" },
       plugins: ["/plugins/hud"],
       mcp_servers: { files: { command: "npx" } },
     });
   });
 ```
 
+(`lstatSync` in the import list is only needed if the implementer uses it; drop unused imports so `npm run typecheck` stays clean.)
+
 - [ ] **Step 2: Run the tests to see them fail**
 
 Run: `cd sidecar && npm test`
-Expected: FAIL — `captured` has no `settingSources`; TypeScript may also flag the new fields (vitest does not typecheck, so failures are the assertions).
+Expected: FAIL — `captured` has no `settingSources`; there is no generated plugin.
 
 - [ ] **Step 3: Implement**
+
+Create `sidecar/src/skills_plugin.ts`:
+
+```ts
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+export const SKILLS_PLUGIN_NAME = "forge-skills";
+
+export interface SkillsPlugin {
+  /** The generated plugin directory, to pass to the SDK as a local plugin. */
+  path: string;
+  /** The `forge-skills:<name>` entries for the SDK's `skills` option. */
+  skills: string[];
+  /** Removes the generated directory (the symlinks, never what they point to). */
+  cleanup: () => Promise<void>;
+}
+
+// A name becomes a directory entry, so it must be exactly one safe path component.
+export function isSafeSkillName(name: string): boolean {
+  return name.length > 0 && name !== "." && name !== ".." && !/[\\/\0]/.test(name);
+}
+
+// The SDK does not discover user skills under settingSources ['project'], and ['user', 'project']
+// leaks the user's enabled plugins (spec §17.7). A local plugin is loaded either way, so the enabled
+// skills are gathered into one as symlinks. Returns null when there is nothing safe to gather.
+export async function buildSkillsPlugin(skills: Record<string, string>): Promise<SkillsPlugin | null> {
+  const names = Object.keys(skills).filter(isSafeSkillName);
+  if (names.length === 0) return null;
+  const root = await mkdtemp(join(tmpdir(), "forge-skills-"));
+  try {
+    await mkdir(join(root, ".claude-plugin"));
+    await writeFile(join(root, ".claude-plugin", "plugin.json"), JSON.stringify({ name: SKILLS_PLUGIN_NAME }));
+    await mkdir(join(root, "skills"));
+    for (const name of names) {
+      await symlink(skills[name], join(root, "skills", name), "dir");
+    }
+  } catch (err) {
+    await rm(root, { recursive: true, force: true });
+    throw err;
+  }
+  return {
+    path: root,
+    skills: names.map((name) => `${SKILLS_PLUGIN_NAME}:${name}`),
+    cleanup: () => rm(root, { recursive: true, force: true }),
+  };
+}
+```
 
 `sidecar/src/protocol.ts`: extend the `start_session` variant:
 
@@ -666,25 +798,35 @@ Expected: FAIL — `captured` has no `settingSources`; TypeScript may also flag 
       resume_session_id: string | null;
       permission_mode: WirePermissionMode;
       model: string | null;
-      skills: string[];
+      skills: Record<string, string>;
       plugins: string[];
       mcp_servers: Record<string, unknown>;
     }
 ```
 
-`sidecar/src/session.ts`: in the `options` object passed to `this.queryFn`, after `includePartialMessages: true,` add:
+`sidecar/src/session.ts`: `import { buildSkillsPlugin } from "./skills_plugin.js";`. In `start`, before `const query = this.queryFn(…)`, add
 
 ```ts
-        // Forge's toggles are the only source of truth (spec §17.1): no user-level settings, and
-        // only the servers passed here. `skills` is always passed — an omitted value means "the
-        // CLI's defaults", not "off". The `??` guards a command from an older parent that omits
-        // the fields: that must mean nothing enabled, never "defaults".
+    // Forge's toggles are the only source of truth (spec §17.1). The `??` guards a command from an
+    // older parent that omits the fields: that must mean nothing enabled, never the SDK's defaults.
+    const skillsPlugin = await buildSkillsPlugin(command.skills ?? {});
+    const plugins = [
+      ...(command.plugins ?? []).map((path) => ({ type: "local" as const, path })),
+      ...(skillsPlugin ? [{ type: "local" as const, path: skillsPlugin.path }] : []),
+    ];
+```
+
+add to the `options` object after `includePartialMessages: true,`:
+
+```ts
         settingSources: ["project"],
         strictMcpConfig: true,
-        skills: command.skills ?? [],
-        plugins: (command.plugins ?? []).map((path) => ({ type: "local", path })),
+        skills: skillsPlugin?.skills ?? [],
+        plugins,
         mcpServers: command.mcp_servers ?? {},
 ```
+
+and make the generated directory go away when the session ends: at the end of the `this.sessionEndedPromise = (async () => { try { … } catch (err) { … } })();` block add a `finally { await skillsPlugin?.cleanup(); }` after the `catch`. If `queryFn` itself throws synchronously, call `await skillsPlugin?.cleanup()` before rethrowing (wrap the `this.queryFn(…)` call in a try/catch that does that).
 
 - [ ] **Step 4: Run the tests and typecheck**
 
@@ -695,7 +837,7 @@ Expected: PASS, no type errors.
 
 ```bash
 git add sidecar
-git commit -m "feat: start SDK sessions with only Forge's enabled skills, plugins and MCP servers
+git commit -m "feat: start SDK sessions with only Forge's enabled extensions, skills via a generated plugin
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
@@ -787,7 +929,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(active.skills, vec!["pdf".to_string()]);
+        assert_eq!(active.skills.keys().collect::<Vec<_>>(), vec!["pdf"]);
         assert_eq!(active.plugin_paths, vec![PathBuf::from("/plugins/hud")]);
         assert_eq!(active.mcp_servers["files"]["command"], "npx");
     }
@@ -824,7 +966,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(active.skills, vec!["pdf".to_string()]);
+        assert_eq!(active.skills.keys().collect::<Vec<_>>(), vec!["pdf"]);
     }
 
     #[tokio::test]
@@ -1116,7 +1258,7 @@ pub(crate) fn failing_extensions() -> Arc<ExtensionsUseCase> {
 }
 ```
 
-In `crates/forge-application/src/live_session.rs` tests: import `no_extensions, extensions_with, failing_extensions` from `crate::test_support`, add `extensions: no_extensions(),` to `new_init`, `extensions: ActiveExtensions::default(),` to `start_params` (import `forge_domain::{ActiveExtensions, AppConfig, SkillDefinition}`), and add:
+In `crates/forge-application/src/live_session.rs` tests: import `no_extensions, extensions_with, failing_extensions` from `crate::test_support`, add `extensions: no_extensions(),` to `new_init`, `extensions: ActiveExtensions::default(),` to `start_params` (import `forge_domain::{ActiveExtensions, AppConfig, SkillDefinition}` and `std::collections::BTreeMap`), and add:
 
 ```rust
     #[tokio::test]
@@ -1137,7 +1279,10 @@ In `crates/forge-application/src/live_session.rs` tests: import `no_extensions, 
         wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
 
         let mut expected = start_params(None);
-        expected.extensions = ActiveExtensions { skills: vec!["pdf".to_string()], ..ActiveExtensions::default() };
+        expected.extensions = ActiveExtensions {
+            skills: BTreeMap::from([("pdf".to_string(), PathBuf::from("/skills/pdf"))]),
+            ..ActiveExtensions::default()
+        };
         assert_eq!(control.calls(), vec![Call::Start(expected), Call::Send("hello".to_string())]);
     }
 
@@ -1898,7 +2043,7 @@ Expected: the window opens. (Plan 6 drove the window with `cliclick` and System 
 
 1. `⌘,` → Skills, Plugins, MCP servers tabs list the real definitions of the active project (or "your global definitions" with none active); an empty kind says "Nothing found.".
 2. Switch a skill on; close the overlay, quit, start again → still on (open `config.json` and see `enabled_skills`).
-3. New session in a project; ask for the skill by name → it is used. Switch it off; a new session → it is not offered.
+3. New session in a project; ask for the skill by name → it is used (it is offered as `forge-skills:<name>`). Switch it off; a new session → it is not offered. A project-local skill (`<project>/.claude/skills`) behaves the same. While the session is open a `forge-skills-*` directory exists under the system temp dir; after closing the session it is gone and the real skill directory is untouched.
 4. Switch a plugin on; a new session offers that plugin's skill.
 5. Switch an MCP server on (add one first with `claude mcp add` in a scratch project if none exist) → a new session lists it; off → it does not.
 6. An older open session is unchanged by any of the above.

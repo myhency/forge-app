@@ -1699,11 +1699,13 @@ by name, global, as §4.1).
 
 ### 17.3 Protocol and session start
 
-- `start_session` gains `skills: string[]`, `plugins: string[]` (absolute
-  paths) and `mcp_servers: object` (name to config, as read). `StartSessionParams`
+- `start_session` gains `skills: object` (skill name to its directory),
+  `plugins: string[]` (absolute paths) and `mcp_servers: object` (name to
+  config, as read). `StartSessionParams`
   in `forge-ports` gains the same three fields; the Rust and TypeScript
   protocol types and the contract test change together.
-- `forge-domain` gets `ActiveExtensions { skills, plugin_paths, mcp_servers }`.
+- `forge-domain` gets `ActiveExtensions { skills, plugin_paths, mcp_servers }`;
+  `skills` maps each enabled skill's name to its directory.
 - `forge-application` gets a use-case that builds it: load the config, list
   the definitions for the session's project through the three existing ports,
   keep the definitions whose names are in the `enabled_*` lists. An enabled
@@ -1713,9 +1715,18 @@ by name, global, as §4.1).
   fewer tools than the user switched on.
 - Wherever the registry starts a sidecar (new session, and the lazy start of a
   resumed one) it passes the result in `StartSessionParams`.
-- Sidecar mapping: `settingSources: ['project']`, `strictMcpConfig: true`,
-  `skills`, `plugins: paths.map(path => ({type: 'local', path}))`, `mcpServers`.
-  Empty lists are sent as `[]` and `{}`.
+- Sidecar mapping (adjusted by the spike, §17.7): `settingSources: ['project']`,
+  `strictMcpConfig: true`, `mcpServers`, and `plugins` = the enabled plugin paths
+  plus one generated plugin. Enabled skills do **not** go to the SDK by name:
+  under `['project']` a user skill is not discovered, and `['user','project']`
+  leaks the user's plugins (§17.7). Instead the sidecar builds, per session, a
+  temporary local plugin `forge-skills` (`.claude-plugin/plugin.json` plus
+  `skills/<name>` symlinks to each enabled skill's directory), passes it in
+  `plugins`, and sets `skills` to `forge-skills:<name>` for each. A skill name
+  that is not a single safe path component (it contains `/`, `\`, is `.` or
+  `..`, or is empty) is skipped. With no enabled skills, no plugin is generated
+  and `skills` is `[]`. The temporary directory is removed when the session
+  ends. Empty values are sent as `[]` and `{}`.
 
 ### 17.4 Settings tabs
 
