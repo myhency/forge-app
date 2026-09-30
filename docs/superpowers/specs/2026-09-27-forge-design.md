@@ -1809,6 +1809,32 @@ settingSources for Task 4: NOT CHOSEN. `['project']` does not discover user skil
 example: copy or symlink enabled user skills into a per-session directory the SDK reads
 as project, or pass skill contents another way).
 
+**Round 2** (same date and SDK; bundled skills and plugins are not a leak, only
+things coming from `~/.claude` count). All with `strictMcpConfig: true`,
+`mcpServers: {}`.
+
+| variant | options | skills | plugins | mcp_servers |
+|---|---|---|---|---|
+| V1 | `['user','project']`, `skills: ['report-writer']`, `plugins: []`, `settings: {enabledPlugins: {}}` | all 13 user skills (the `skills` filter hides none), superpowers:*, frontend-design:*, anthropic-skills:*, bundled | claude-hud, context7, feature-dev, frontend-design, playwright, superpowers, rust-analyzer-lsp + bundled (LEAK) | none |
+| V2 | same, with `managedSettings: {enabledPlugins: {}}` instead of `settings` | identical to V1 | identical to V1 (LEAK) | none |
+| V3 | `['project']`, `skills: ['forge-user-skills:report-writer']`, `plugins: [{type:'local', path: <tmp>}]` | `forge-user-skills:report-writer` + bundled only | forge-user-skills + bundled | none |
+
+- V1 and V2 fail: neither `settings.enabledPlugins` nor `managedSettings.enabledPlugins`
+  overrides the user's enabled plugins, and the `skills` option does not hide the other
+  user skills or plugin skills.
+- V3 works. `<tmp>/.claude-plugin/plugin.json` = `{"name":"forge-user-skills"}` and
+  `<tmp>/skills/report-writer` a symlink to `~/.claude/skills/report-writer`. The skill
+  appears in init as `forge-user-skills:report-writer` (namespaced by the plugin name),
+  so the symlink is followed. Nothing else from `~/.claude` appears.
+
+**settingSources for Task 4: `['project']`.**
+
+How user skills reach a session: Forge generates a local plugin directory
+(`.claude-plugin/plugin.json` named `forge-user-skills`, plus `skills/<name>` symlinks to
+each enabled `~/.claude/skills/<name>`), passes it in `plugins` as
+`{type: 'local', path}` with `settingSources: ['project']`, and lists the skills as
+`forge-user-skills:<name>` in `skills`. User-level hooks and rules stay off.
+
 ### 17.8 As built
 
 *(filled in at the end, like §15.11 and §16.9)*
