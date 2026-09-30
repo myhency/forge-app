@@ -132,6 +132,7 @@ impl Actor {
                 resume_session_id: self.view.claude_session_id.as_ref().map(|id| id.0.clone()),
                 permission_mode: self.view.session.permission_mode,
                 model: self.model.clone(),
+                extensions: Default::default(),
             })
             .await
             .map_err(|e| e.to_string())?;

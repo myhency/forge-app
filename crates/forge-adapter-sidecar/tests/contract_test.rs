@@ -1,6 +1,8 @@
 use forge_adapter_sidecar::SidecarProcess;
-use forge_domain::PermissionMode;
+use forge_domain::{ActiveExtensions, PermissionMode};
 use forge_ports::{SidecarEvent, SidecarPort, StartSessionParams};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 fn fixture_path() -> String {
     concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fake_sidecar.js").to_string()
@@ -16,6 +18,7 @@ fn default_params() -> StartSessionParams {
         resume_session_id: None,
         permission_mode: PermissionMode::Default,
         model: None,
+        extensions: Default::default(),
     }
 }
 
@@ -113,6 +116,51 @@ async fn spawn_without_extra_environment_leaves_the_variable_unset() {
 
     match sidecar.next_event().await.unwrap() {
         SidecarEvent::AssistantDelta { text } => assert_eq!(text, "env:<unset>"),
+        other => panic!("unexpected event: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn start_session_delivers_the_active_extensions_to_the_sidecar() {
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &[]).unwrap();
+    let mut params = default_params();
+    params.extensions = ActiveExtensions {
+        skills: BTreeMap::from([("pdf".to_string(), PathBuf::from("/skills/pdf"))]),
+        plugin_paths: vec![PathBuf::from("/plugins/hud")],
+        mcp_servers: BTreeMap::from([("files".to_string(), serde_json::json!({"command": "npx"}))]),
+    };
+    sidecar.start_session(params).await.unwrap();
+    sidecar.next_event().await.unwrap();
+
+    sidecar.send_message("TRIGGER_EXTENSIONS".to_string()).await.unwrap();
+    match sidecar.next_event().await.unwrap() {
+        SidecarEvent::AssistantDelta { text } => {
+            let seen: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(
+                seen,
+                serde_json::json!({
+                    "skills": {"pdf": "/skills/pdf"},
+                    "plugins": ["/plugins/hud"],
+                    "mcp_servers": {"files": {"command": "npx"}}
+                })
+            );
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_session_without_extensions_still_sends_empty_lists() {
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &[]).unwrap();
+    sidecar.start_session(default_params()).await.unwrap();
+    sidecar.next_event().await.unwrap();
+
+    sidecar.send_message("TRIGGER_EXTENSIONS".to_string()).await.unwrap();
+    match sidecar.next_event().await.unwrap() {
+        SidecarEvent::AssistantDelta { text } => {
+            let seen: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(seen, serde_json::json!({"skills": {}, "plugins": [], "mcp_servers": {}}));
+        }
         other => panic!("unexpected event: {other:?}"),
     }
 }

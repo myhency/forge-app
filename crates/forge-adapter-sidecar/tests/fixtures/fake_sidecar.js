@@ -7,6 +7,8 @@ function emit(event) {
   process.stdout.write(JSON.stringify(event) + "\n");
 }
 
+let started = null;
+
 rl.on("line", (line) => {
   const trimmed = line.trim();
   if (trimmed.length === 0) return;
@@ -14,6 +16,7 @@ rl.on("line", (line) => {
 
   switch (command.type) {
     case "start_session":
+      started = command;
       emit({ type: "session_started", session_id: "fake-session-1" });
       return;
     case "send_message":
@@ -24,6 +27,13 @@ rl.on("line", (line) => {
       }
       if (command.text === "TRIGGER_LARGE") {
         emit({ type: "tool_result", tool_call_id: "t-1", output: "x".repeat(200000), is_error: false });
+        return;
+      }
+      if (command.text === "TRIGGER_EXTENSIONS") {
+        emit({
+          type: "assistant_delta",
+          text: JSON.stringify({ skills: started.skills, plugins: started.plugins, mcp_servers: started.mcp_servers }),
+        });
         return;
       }
       if (command.text.startsWith("TRIGGER_ENV:")) {

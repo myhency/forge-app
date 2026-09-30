@@ -20,6 +20,7 @@ async fn main() {
             resume_session_id: None,
             permission_mode: PermissionMode::AcceptEdits,
             model: None,
+            extensions: Default::default(),
         })
         .await
         .expect("failed to send start_session");

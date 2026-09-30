@@ -28,6 +28,7 @@ impl StartSessionUseCase {
                 resume_session_id: None,
                 permission_mode,
                 model,
+                extensions: Default::default(),
             })
             .await
     }
@@ -65,6 +66,7 @@ impl ResumeSessionUseCase {
                 resume_session_id: Some(session_id.0.clone()),
                 permission_mode,
                 model: None,
+                extensions: Default::default(),
             })
             .await?;
 

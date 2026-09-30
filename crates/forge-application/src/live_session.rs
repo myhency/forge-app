@@ -194,6 +194,7 @@ mod tests {
             resume_session_id: resume.map(str::to_string),
             permission_mode: PermissionMode::AcceptEdits,
             model: Some("model-x".to_string()),
+            extensions: Default::default(),
         }
     }
 

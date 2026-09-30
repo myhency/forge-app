@@ -26,6 +26,7 @@ async fn start(sidecar: &dyn SidecarPort) {
             resume_session_id: None,
             permission_mode: PermissionMode::Default,
             model: None,
+            extensions: Default::default(),
         })
         .await
         .unwrap();

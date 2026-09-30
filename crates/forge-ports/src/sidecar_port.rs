@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use forge_domain::{PermissionDecision, PermissionMode};
+use forge_domain::{ActiveExtensions, PermissionDecision, PermissionMode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -14,6 +14,8 @@ pub struct StartSessionParams {
     pub resume_session_id: Option<String>,
     pub permission_mode: PermissionMode,
     pub model: Option<String>,
+    /// The skills, plugins and MCP servers the session starts with.
+    pub extensions: ActiveExtensions,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,6 +74,7 @@ mod tests {
                 resume_session_id: None,
                 permission_mode: PermissionMode::Default,
                 model: None,
+                extensions: ActiveExtensions::default(),
             })
             .await;
 
