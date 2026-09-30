@@ -297,7 +297,7 @@ impl PluginDefinition {
 /// install path) and the enabled MCP servers (name to the server's config, as read).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ActiveExtensions {
-    pub skills: Vec<String>,
+    pub skills: BTreeMap<String, PathBuf>,
     pub plugin_paths: Vec<PathBuf>,
     pub mcp_servers: BTreeMap<String, serde_json::Value>,
 }
