@@ -33,6 +33,8 @@ pub(crate) enum Call {
 pub(crate) struct FakeControl {
     events: Arc<Mutex<Option<mpsc::UnboundedSender<SidecarEvent>>>>,
     calls: Arc<Mutex<Vec<Call>>>,
+    /// `shutdown` and the drop of the sidecar, in the order they happened.
+    lifecycle: Arc<Mutex<Vec<&'static str>>>,
     fail_start: Arc<AtomicBool>,
     fail_send: Arc<AtomicBool>,
 }
@@ -52,6 +54,10 @@ impl FakeControl {
 
     pub(crate) fn calls(&self) -> Vec<Call> {
         self.calls.lock().unwrap().clone()
+    }
+
+    pub(crate) fn lifecycle(&self) -> Vec<&'static str> {
+        self.lifecycle.lock().unwrap().clone()
     }
 
     pub(crate) fn fail_start(&self) {
@@ -77,6 +83,7 @@ pub(crate) fn fake_sidecar() -> (Arc<dyn SidecarPort>, FakeControl) {
     let control = FakeControl {
         events: Arc::new(Mutex::new(Some(events_tx))),
         calls: Arc::new(Mutex::new(Vec::new())),
+        lifecycle: Arc::new(Mutex::new(Vec::new())),
         fail_start: Arc::new(AtomicBool::new(false)),
         fail_send: Arc::new(AtomicBool::new(false)),
     };
@@ -85,6 +92,12 @@ pub(crate) fn fake_sidecar() -> (Arc<dyn SidecarPort>, FakeControl) {
         control: control.clone(),
     };
     (Arc::new(sidecar), control)
+}
+
+impl Drop for FakeSidecar {
+    fn drop(&mut self) {
+        self.control.lifecycle.lock().unwrap().push("dropped");
+    }
 }
 
 #[async_trait]
@@ -121,6 +134,7 @@ impl SidecarPort for FakeSidecar {
 
     async fn shutdown(&self) -> Result<(), SidecarError> {
         self.control.record(Call::Shutdown);
+        self.control.lifecycle.lock().unwrap().push("shutdown");
         Ok(())
     }
 
@@ -198,6 +212,29 @@ pub(crate) fn extensions_with(config: AppConfig, skills: Vec<SkillDefinition>) -
         Arc::new(MockMcpRegistryPort::new()),
         PathBuf::from("/home/me"),
     ))
+}
+
+/// A skill is enabled and found; the counter says how many times the config file was read.
+pub(crate) fn counting_extensions() -> (Arc<ExtensionsUseCase>, Arc<AtomicUsize>) {
+    let loads = Arc::new(AtomicUsize::new(0));
+    let counter = loads.clone();
+    let mut config_port = MockConfigRepositoryPort::new();
+    config_port.expect_load().returning(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Ok(AppConfig { enabled_skills: vec!["pdf".to_string()], ..AppConfig::default() })
+    });
+    let mut skill_port = MockSkillRepositoryPort::new();
+    skill_port.expect_list_skills().returning(|_| {
+        Ok(vec![SkillDefinition { name: "pdf".to_string(), path: PathBuf::from("/skills/pdf"), description: None }])
+    });
+    let use_case = Arc::new(ExtensionsUseCase::new(
+        Arc::new(config_port),
+        Arc::new(skill_port),
+        Arc::new(MockPluginRepositoryPort::new()),
+        Arc::new(MockMcpRegistryPort::new()),
+        PathBuf::from("/home/me"),
+    ));
+    (use_case, loads)
 }
 
 /// Nothing enabled, so no reader is ever called.

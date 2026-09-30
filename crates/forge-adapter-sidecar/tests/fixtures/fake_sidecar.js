@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as readline from "node:readline";
+import { writeFileSync } from "node:fs";
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 
@@ -50,6 +51,8 @@ rl.on("line", (line) => {
       emit({ type: "error", message: "interrupted" });
       return;
     case "shutdown":
+      if (process.env.FORGE_TEST_IGNORE_SHUTDOWN) return;
+      if (process.env.FORGE_TEST_EXIT_MARKER) writeFileSync(process.env.FORGE_TEST_EXIT_MARKER, "done");
       emit({ type: "session_ended" });
       process.exit(0);
   }

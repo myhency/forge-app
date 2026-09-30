@@ -1916,6 +1916,11 @@ Differences from §17:
 - A broken reader is shown in the window with the typed text kept in the message box and no
   process left running.
 - A skill name present both user-level and project-level shows once.
+- A switched-off project skill (`<project>/.claude/skills/<name>`) is not usable.
+- A plugin enabled only in `<project>/.claude/settings.json` does not load (if it does, that is
+  project behavior to document).
+- After closing a session in the app the `forge-skills-*` temp dir is gone.
+- An enabled plugin whose `installPath` no longer exists (SDK behavior unverified).
 
 Deferred Minor findings that matter to a user: the catalog is not reset when the overlay opens
 (a stale list shows until the listing returns); overlapping quick toggles can race; `reload()`
@@ -1925,9 +1930,12 @@ outcome.
 Found while verifying (none in shipped code): the sidecar tests
 (`sidecar/test/session.test.ts`, line 25) create `forge-test-skill-*` directories with
 `mkdtempSync` and never remove them, leaving three per `npm test` run in the system temp dir.
-A sidecar killed with SIGKILL cannot run `cleanup()`, so its `forge-skills-*` directory (only
-symlinks) is left behind; this is inherent to the design and was seen only after killing test
-runs by hand.
+The normal close path now shuts the sidecar down gracefully: `SidecarProcess::shutdown` sends
+the shutdown command and waits (bounded, 3 s) for the process to exit by itself, so `cleanup()`
+runs and the `forge-skills-*` directory is removed; `kill_on_drop` remains the backstop when the
+wait times out. A crash or SIGKILL of the whole app can still leave a `forge-skills-*` directory
+(only symlinks) in the system temp dir; sweeping directories of dead pids at startup is an
+accepted follow-up.
 
 ### 17.9 Task order
 

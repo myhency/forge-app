@@ -164,3 +164,42 @@ async fn a_session_without_extensions_still_sends_empty_lists() {
         other => panic!("unexpected event: {other:?}"),
     }
 }
+
+fn marker_path(name: &str) -> PathBuf {
+    let path = std::env::temp_dir().join(format!("forge-test-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    path
+}
+
+#[tokio::test]
+async fn shutdown_returns_only_after_the_process_has_exited_by_itself() {
+    let marker = marker_path("exit-marker");
+    let env = vec![("FORGE_TEST_EXIT_MARKER".to_string(), marker.to_string_lossy().to_string())];
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &env).unwrap();
+    sidecar.start_session(default_params()).await.unwrap();
+    sidecar.next_event().await.unwrap();
+
+    sidecar.shutdown().await.unwrap();
+
+    let exists = marker.exists();
+    let _ = std::fs::remove_file(&marker);
+    assert!(exists, "the sidecar must finish its shutdown work before shutdown() returns");
+}
+
+#[tokio::test]
+async fn shutdown_kills_a_sidecar_that_ignores_it_after_the_timeout() {
+    let env = vec![("FORGE_TEST_IGNORE_SHUTDOWN".to_string(), "1".to_string())];
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &env)
+        .unwrap()
+        .with_shutdown_timeout(std::time::Duration::from_millis(300));
+    sidecar.start_session(default_params()).await.unwrap();
+    sidecar.next_event().await.unwrap();
+
+    let started = std::time::Instant::now();
+    sidecar.shutdown().await.unwrap();
+
+    assert!(started.elapsed() >= std::time::Duration::from_millis(300));
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    // The process is gone, so its stdout has closed.
+    assert!(sidecar.next_event().await.is_none());
+}

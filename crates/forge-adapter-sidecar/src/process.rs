@@ -1,5 +1,6 @@
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_domain::PermissionDecision;
@@ -10,8 +11,13 @@ use tokio::sync::{mpsc, Mutex};
 
 use crate::protocol::SidecarCommand;
 
+/// How long `shutdown` waits for the sidecar to exit on its own (so it can remove its temp files)
+/// before the process is killed.
+pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+
 pub struct SidecarProcess {
-    _child: Mutex<Child>,
+    child: Mutex<Child>,
+    shutdown_timeout: Duration,
     stdin_tx: mpsc::UnboundedSender<String>,
     events_rx: Mutex<mpsc::UnboundedReceiver<SidecarEvent>>,
     next_id: AtomicU64,
@@ -83,11 +89,18 @@ impl SidecarProcess {
         });
 
         Ok(Self {
-            _child: Mutex::new(child),
+            child: Mutex::new(child),
+            shutdown_timeout: DEFAULT_SHUTDOWN_TIMEOUT,
             stdin_tx,
             events_rx: Mutex::new(events_rx),
             next_id: AtomicU64::new(1),
         })
+    }
+
+    /// Overrides how long `shutdown` waits for the process to exit before killing it.
+    pub fn with_shutdown_timeout(mut self, timeout: Duration) -> Self {
+        self.shutdown_timeout = timeout;
+        self
     }
 
     fn next_id(&self) -> String {
@@ -132,7 +145,14 @@ impl SidecarPort for SidecarProcess {
 
     async fn shutdown(&self) -> Result<(), SidecarError> {
         let id = self.next_id();
-        self.send_command(SidecarCommand::Shutdown { id })
+        self.send_command(SidecarCommand::Shutdown { id })?;
+        // Wait for the sidecar to finish its cleanup and exit by itself. `kill_on_drop` stays the
+        // backstop, and on a timeout the process is killed here so the caller never waits longer.
+        let mut child = self.child.lock().await;
+        if tokio::time::timeout(self.shutdown_timeout, child.wait()).await.is_err() {
+            let _ = child.kill().await;
+        }
+        Ok(())
     }
 
     async fn next_event(&self) -> Option<SidecarEvent> {

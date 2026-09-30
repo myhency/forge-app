@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 export const SKILLS_PLUGIN_NAME = "forge-skills";
 
@@ -22,7 +22,16 @@ export function isSafeSkillName(name: string): boolean {
 // leaks the user's enabled plugins (spec §17.7). A local plugin is loaded either way, so the enabled
 // skills are gathered into one as symlinks. Returns null when there is nothing safe to gather.
 export async function buildSkillsPlugin(skills: Record<string, string>): Promise<SkillsPlugin | null> {
-  const names = Object.keys(skills).filter(isSafeSkillName);
+  // Skip a relative target (the link would resolve against the plugin directory) and a name that
+  // only differs in case (a case-insensitive filesystem would fail the whole start with EEXIST).
+  const seen = new Set<string>();
+  const names = Object.keys(skills).filter((name) => {
+    if (!isSafeSkillName(name) || !isAbsolute(skills[name])) return false;
+    const folded = name.toLowerCase();
+    if (seen.has(folded)) return false;
+    seen.add(folded);
+    return true;
+  });
   if (names.length === 0) return null;
   const root = await mkdtemp(join(tmpdir(), "forge-skills-"));
   try {

@@ -1,7 +1,7 @@
 use std::future::pending;
 use std::sync::Arc;
 
-use forge_domain::PermissionDecision;
+use forge_domain::{ActiveExtensions, PermissionDecision};
 use forge_ports::{SidecarEvent, SidecarFactoryPort, SidecarPort, StartSessionParams};
 use tokio::sync::{mpsc, watch};
 
@@ -20,6 +20,9 @@ pub(crate) struct Actor {
     factory: Arc<dyn SidecarFactoryPort>,
     model: Option<String>,
     extensions: Arc<ExtensionsUseCase>,
+    /// What the first successful start resolved. An open session keeps it across restarts (spec
+    /// §17.4); a failed resolution is not stored, so the next start resolves again.
+    active: Option<ActiveExtensions>,
     sidecar: Option<Arc<dyn SidecarPort>>,
     /// The view changed since it was last published.
     dirty: bool,
@@ -41,6 +44,7 @@ impl Actor {
             factory,
             model,
             extensions,
+            active: None,
             sidecar: None,
             dirty: false,
         }
@@ -129,11 +133,14 @@ impl Actor {
     // Resolving comes first so a failing reader spawns no process. The sidecar is only kept once
     // both steps succeed; otherwise it is dropped, which ends its process.
     async fn start_sidecar(&mut self) -> Result<(), String> {
-        let extensions = self
-            .extensions
-            .resolve_active(&self.view.project_path)
-            .await
-            .map_err(|e| e.to_string())?;
+        let extensions = match &self.active {
+            Some(active) => active.clone(),
+            None => self
+                .extensions
+                .resolve_active(&self.view.project_path)
+                .await
+                .map_err(|e| e.to_string())?,
+        };
         let sidecar = self.factory.spawn().await.map_err(|e| e.to_string())?;
         sidecar
             .start_session(StartSessionParams {
@@ -141,10 +148,11 @@ impl Actor {
                 resume_session_id: self.view.claude_session_id.as_ref().map(|id| id.0.clone()),
                 permission_mode: self.view.session.permission_mode,
                 model: self.model.clone(),
-                extensions,
+                extensions: extensions.clone(),
             })
             .await
             .map_err(|e| e.to_string())?;
+        self.active = Some(extensions);
         self.sidecar = Some(sidecar);
         Ok(())
     }
@@ -191,7 +199,8 @@ impl Actor {
             // `Error` ends this sidecar: its query is over and `start_session` cannot be re-sent.
             SessionUpdate::Errored { message } => self.fail(message, true).await,
             SessionUpdate::SessionEnded => {
-                self.fail("the session ended unexpectedly".to_string(), false).await;
+                // The sidecar is still alive and cleaning up, so it is asked to exit and awaited.
+                self.fail("the session ended unexpectedly".to_string(), true).await;
             }
             SessionUpdate::MessageDelta { .. }
             | SessionUpdate::ToolCallStarted { .. }
@@ -201,7 +210,8 @@ impl Actor {
     }
 
     // Marks the session failed and drops its sidecar. Permission requests that can no longer be
-    // answered are cleared. `shutdown` asks a still-running sidecar to exit first.
+    // answered are cleared. `shutdown` asks a still-running sidecar to exit first; the port's
+    // `shutdown` waits (bounded) for it, so its cleanup runs before the process is dropped.
     async fn fail(&mut self, message: String, shutdown: bool) {
         self.discard_sidecar(shutdown).await;
         self.view.phase = Phase::Failed;

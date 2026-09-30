@@ -115,6 +115,17 @@ export class SidecarSession {
     if (this.started) return;
     this.started = true;
 
+    // Covers the whole start (building the skills plugin included), so a shutdown that arrives
+    // early still waits for the cleanup before the process exits.
+    const run = this.run(command);
+    this.sessionEndedPromise = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    await run;
+  }
+
+  private async run(command: Extract<SidecarCommand, { type: "start_session" }>): Promise<void> {
     const canUseTool = async (
       toolName: string,
       input: Record<string, unknown>,
@@ -146,6 +157,11 @@ export class SidecarSession {
     // Forge's toggles are the only source of truth (spec §17.1). The `??` guards a command from an
     // older parent that omits the fields: that must mean nothing enabled, never the SDK's defaults.
     const skillsPlugin = await buildSkillsPlugin(command.skills ?? {});
+    if (this.shuttingDown) {
+      await skillsPlugin?.cleanup().catch(() => {});
+      this.emit({ type: "session_ended" });
+      return;
+    }
     const plugins = [
       ...(command.plugins ?? []).map((path) => ({ type: "local" as const, path })),
       ...(skillsPlugin ? [{ type: "local" as const, path: skillsPlugin.path }] : []),
@@ -171,29 +187,26 @@ export class SidecarSession {
         },
       });
     } catch (err) {
-      await skillsPlugin?.cleanup();
+      await skillsPlugin?.cleanup().catch(() => {});
       throw err;
     }
     this.activeQuery = query;
 
-    this.sessionEndedPromise = (async () => {
-      try {
-        for await (const message of query) {
-          this.forwardMessage(message);
-        }
-        this.emit({ type: "session_ended" });
-      } catch (err) {
-        if (this.shuttingDown) {
-          this.emit({ type: "session_ended" });
-        } else {
-          this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
-        }
-      } finally {
-        await skillsPlugin?.cleanup();
+    try {
+      for await (const message of query) {
+        this.forwardMessage(message);
       }
-    })();
-
-    await this.sessionEndedPromise;
+      this.emit({ type: "session_ended" });
+    } catch (err) {
+      if (this.shuttingDown) {
+        this.emit({ type: "session_ended" });
+      } else {
+        this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+    } finally {
+      // A failing cleanup must not replace the session's real outcome.
+      await skillsPlugin?.cleanup().catch(() => {});
+    }
   }
 
   private forwardMessage(message: any): void {

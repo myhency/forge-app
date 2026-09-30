@@ -1,7 +1,8 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { isSafeSkillName } from "../src/skills_plugin.js";
 import { SidecarSession, type QueryFn } from "../src/session.js";
 import type { SidecarCommand, SidecarEvent } from "../src/protocol.js";
 
@@ -21,8 +22,20 @@ const startCommand: SidecarCommand = {
   mcp_servers: {},
 };
 
+const skillRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of skillRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+function forgeSkillsDirs(): string[] {
+  return readdirSync(tmpdir()).filter((entry) => entry.startsWith("forge-skills-"));
+}
+
 function makeSkillDir(name: string): string {
-  const dir = join(mkdtempSync(join(tmpdir(), "forge-test-skill-")), name);
+  const root = mkdtempSync(join(tmpdir(), "forge-test-skill-"));
+  skillRoots.push(root);
+  const dir = join(root, name);
   mkdirSync(dir);
   writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: test\n---\n`);
   return dir;
@@ -108,6 +121,70 @@ describe("SidecarSession", () => {
     expect(seen!.link).toBe(pdfDir);
     expect(existsSync(pluginPath)).toBe(false);
     expect(existsSync(join(pdfDir, "SKILL.md"))).toBe(true);
+  });
+
+  it("removes the generated plugin and rethrows the original error when queryFn throws synchronously", async () => {
+    const pdfDir = makeSkillDir("pdf");
+    let pluginPath = "";
+    const queryFn: QueryFn = ({ options }) => {
+      const plugins = options.plugins as { path: string }[];
+      pluginPath = plugins[plugins.length - 1].path;
+      throw new Error("sdk refused");
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await expect(session.handle({ ...startCommand, skills: { pdf: pdfDir } })).rejects.toThrow("sdk refused");
+
+    expect(pluginPath).not.toBe("");
+    expect(existsSync(pluginPath)).toBe(false);
+  });
+
+  it("does not start the SDK when shutdown arrives while the plugin is being built, and still cleans up", async () => {
+    const pdfDir = makeSkillDir("pdf");
+    const before = new Set(forgeSkillsDirs());
+    let called = false;
+    const queryFn: QueryFn = () => {
+      called = true;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    const starting = session.handle({ ...startCommand, skills: { pdf: pdfDir } });
+    const stopping = session.handle({ type: "shutdown", id: "2" });
+    await Promise.all([starting, stopping]);
+    await session.waitUntilEnded();
+
+    expect(called).toBe(false);
+    expect(forgeSkillsDirs().filter((entry) => !before.has(entry))).toEqual([]);
+  });
+
+  it("skips a skill whose target path is not absolute", async () => {
+    const okDir = makeSkillDir("ok");
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({ ...startCommand, skills: { rel: "skills/rel", ok: okDir } });
+
+    expect(captured?.skills).toEqual(["forge-skills:ok"]);
+  });
+
+  it("keeps one of two skills whose names differ only in case", async () => {
+    const upper = makeSkillDir("PDF");
+    const lower = makeSkillDir("pdf");
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({ ...startCommand, skills: { PDF: upper, pdf: lower } });
+
+    expect(captured?.skills).toEqual(["forge-skills:PDF"]);
   });
 
   it("skips a skill whose name is not a safe path component", async () => {
@@ -388,5 +465,20 @@ describe("SidecarSession", () => {
     await startPromise;
 
     expect(capturedResult).toEqual({ behavior: "allow", updatedPermissions: suggestions });
+  });
+});
+
+describe("isSafeSkillName", () => {
+  it.each([
+    ["", false],
+    [".", false],
+    ["..", false],
+    ["a/b", false],
+    ["a\\b", false],
+    ["a\0b", false],
+    ["pdf", true],
+    ["my-skill_2", true],
+  ])("%j -> %s", (name, expected) => {
+    expect(isSafeSkillName(name)).toBe(expected);
   });
 });

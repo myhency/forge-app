@@ -153,7 +153,7 @@ mod tests {
 
     use super::*;
     use crate::test_support::{
-        extensions_with, factory_returning, failing_extensions, fake_sidecar, no_extensions, wait_closed, wait_for, Call,
+        counting_extensions, extensions_with, factory_returning, failing_extensions, fake_sidecar, no_extensions, wait_closed, wait_for, Call,
     };
 
     fn empty_session() -> Session {
@@ -664,6 +664,62 @@ mod tests {
 
         assert!(control.calls().contains(&Call::Shutdown));
         assert!(handle.is_closed());
+    }
+
+    #[tokio::test]
+    async fn close_shuts_the_sidecar_down_before_dropping_it() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        handle.close();
+        wait_closed(&mut view).await;
+
+        assert_eq!(control.lifecycle(), vec!["shutdown", "dropped"]);
+    }
+
+    #[tokio::test]
+    async fn an_unexpected_session_ended_event_shuts_the_still_running_sidecar_down() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+
+        control.push(SidecarEvent::SessionEnded);
+        wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        assert_eq!(control.lifecycle(), vec!["shutdown", "dropped"]);
+    }
+
+    #[tokio::test]
+    async fn a_restarted_session_keeps_the_extensions_it_first_started_with() {
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let (extensions, loads) = counting_extensions();
+        let mut init = new_init(factory);
+        init.extensions = extensions;
+        let handle = spawn_live_session(init);
+        let mut view = handle.subscribe();
+        handle.send("one".to_string());
+        first_control.push(SidecarEvent::Error { message: "boom".to_string() });
+        wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second turn", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(loads.load(Ordering::SeqCst), 1, "the toggles are resolved once per open session");
+        let started = |calls: Vec<Call>| match calls.into_iter().next() {
+            Some(Call::Start(params)) => params.extensions,
+            other => panic!("expected a start, got {other:?}"),
+        };
+        let first_extensions = started(first_control.calls());
+        assert_eq!(first_extensions.skills.len(), 1);
+        assert_eq!(started(second_control.calls()), first_extensions);
     }
 
     #[tokio::test]

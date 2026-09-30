@@ -185,5 +185,8 @@ fn ExtensionSection(kind: ExtensionKind) -> Element {
         div { class: "hint", style: "margin-top: 12px;",
             "Sessions that are already open keep what they started with; a change applies to the next new session."
         }
+        div { class: "hint",
+            "Forge sessions do not use the hooks or permission rules from ~/.claude/settings.json; project settings still apply."
+        }
     }
 }
