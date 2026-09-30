@@ -145,3 +145,18 @@ pub fn SettingRow(title: String, #[props(default)] description: String, children
         }
     }
 }
+
+/// An on/off switch. Clicking asks for the opposite of the current state via `onchange`.
+#[component]
+pub fn Switch(on: bool, #[props(default)] disabled: bool, onchange: EventHandler<bool>) -> Element {
+    rsx! {
+        button {
+            class: if on { "switch on" } else { "switch" },
+            role: "switch",
+            "aria-checked": "{on}",
+            disabled,
+            onclick: move |_| onchange.call(!on),
+            span { class: "switch-knob" }
+        }
+    }
+}

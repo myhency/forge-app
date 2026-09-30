@@ -39,6 +39,8 @@ pub fn SettingsOverlay() -> Element {
                     match section {
                         SettingsSection::Connection => rsx! { ConnectionSection {} },
                         SettingsSection::Model => rsx! { ModelSection {} },
+                        // Temporary: Task 8 renders these tabs.
+                        SettingsSection::Skills | SettingsSection::Plugins | SettingsSection::McpServers => rsx! {},
                     }
                     StatusLine {}
                 }

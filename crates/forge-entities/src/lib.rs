@@ -1,3 +1,4 @@
+mod extension_rows;
 mod message;
 mod model_catalog;
 mod permission;
@@ -11,3 +12,4 @@ pub use permission::PermissionCard;
 pub use relative_time::relative_time;
 pub use sidebar_item::{SessionMarker, SidebarItem};
 pub use tool_summary::{tool_call_status, tool_input_summary, ToolCallStatus};
+pub use extension_rows::{mcp_rows, mcp_summary, plugin_rows, project_label, skill_rows, ExtensionRow};

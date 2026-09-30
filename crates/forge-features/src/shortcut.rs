@@ -26,6 +26,12 @@ pub fn shortcut_for(key: &str, ctrl: bool, meta: bool, shift: bool, mac: bool) -
     }
 }
 
+/// Whether `shortcut` may act while the settings overlay is open. Only opening settings does: the
+/// session shortcuts would change the session hidden behind the overlay (Plan 6 found ⌘W closing it).
+pub fn shortcut_allowed(shortcut: Shortcut, overlay_open: bool) -> bool {
+    !overlay_open || shortcut == Shortcut::OpenSettings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,5 +82,15 @@ mod tests {
         assert_eq!(shortcut_for(",", true, false, false, false), Some(Shortcut::OpenSettings));
         assert_eq!(shortcut_for(",", true, false, false, true), None, "Ctrl+, on a Mac");
         assert_eq!(shortcut_for(",", false, true, true, true), None, "Cmd+Shift+,");
+    }
+
+    #[test]
+    fn while_the_overlay_is_open_only_opening_settings_is_allowed() {
+        for shortcut in [Shortcut::NewSession, Shortcut::NextSession, Shortcut::PreviousSession, Shortcut::CloseSession] {
+            assert!(shortcut_allowed(shortcut, false), "{shortcut:?} with the overlay closed");
+            assert!(!shortcut_allowed(shortcut, true), "{shortcut:?} behind the overlay");
+        }
+        assert!(shortcut_allowed(Shortcut::OpenSettings, true));
+        assert!(shortcut_allowed(Shortcut::OpenSettings, false));
     }
 }

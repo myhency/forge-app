@@ -19,6 +19,9 @@ pub fn WorkspacePage() -> Element {
         );
     });
 
+    // The tabs list the definitions of the project the person is looking at.
+    use_effect(move || settings.set_project(workspace.context_project()));
+
     rsx! {
         div {
             class: "workspace",
@@ -28,7 +31,7 @@ pub fn WorkspacePage() -> Element {
                 let _ = mounted.set_focus(true).await;
             },
             onkeydown: move |event| {
-                if !workspace.on_key(&event) {
+                if !workspace.on_key(&event, settings.is_open()) {
                     settings.on_key(&event);
                 }
             },

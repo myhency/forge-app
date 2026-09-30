@@ -6,7 +6,7 @@ use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, Liv
 use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SessionId, SessionSummary};
 use forge_ports::{ProjectRepositoryPort, SessionRepositoryPort};
 
-use crate::shortcut::{shortcut_for, Shortcut};
+use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 use crate::sidebar::{cycle_target, merge_sidebar, open_order, LiveSummary, SidebarGroup};
 
 /// Everything the workspace needs from the outside, injected once by the composition root.
@@ -127,6 +127,17 @@ impl Workspace {
         self.new_folder.read().clone()
     }
 
+    /// The project the settings tabs describe: the active session's, or the one the new-session
+    /// panel would start in, or none.
+    pub fn context_project(&self) -> Option<PathBuf> {
+        match self.active() {
+            Active::Live(id) => self.live_view(id).map(|view| view.read().project_path.clone()),
+            Active::NewSession => self
+                .new_folder()
+                .or_else(|| self.new_session_projects().into_iter().next().map(|project| project.path)),
+        }
+    }
+
     pub fn set_new_folder(&self, folder: Option<PathBuf>) {
         let mut current = self.new_folder;
         current.set(folder);
@@ -236,11 +247,16 @@ impl Workspace {
         }
     }
 
-    /// Handles the session shortcuts; returns whether the key press was one of them.
-    pub fn on_key(&self, event: &KeyboardEvent) -> bool {
+    /// Handles the session shortcuts; returns whether the key press was one of them. While the
+    /// settings overlay is open they are swallowed (spec §17.5).
+    pub fn on_key(&self, event: &KeyboardEvent, overlay_open: bool) -> bool {
         let Some(shortcut) = shortcut_from_event(event) else {
             return false;
         };
+        if !shortcut_allowed(shortcut, overlay_open) {
+            event.prevent_default();
+            return true;
+        }
         match shortcut {
             // Opening settings belongs to `Settings::on_key`; the page offers it the event next.
             Shortcut::OpenSettings => return false,
