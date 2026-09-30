@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_features::{use_settings_provider, use_workspace_provider, Active};
-use forge_widgets::{ChatWindow, NewSessionPanel, Sidebar};
+use forge_widgets::{ChatWindow, NewSessionPanel, SettingsOverlay, Sidebar};
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
 /// the active session. The root also catches the session shortcuts.
@@ -27,6 +27,7 @@ pub fn WorkspacePage() -> Element {
                 Active::NewSession => rsx! { NewSessionPanel {} },
                 Active::Live(id) => rsx! { ChatWindow { key: "{id:?}", id } },
             }
+            SettingsOverlay {}
         }
     }
 }
