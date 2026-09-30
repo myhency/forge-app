@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use dioxus::prelude::*;
 use forge_features::{use_settings_provider, use_workspace_provider, Active};
 use forge_widgets::{ChatWindow, NewSessionPanel, SettingsOverlay, Sidebar};
@@ -10,17 +8,15 @@ use forge_widgets::{ChatWindow, NewSessionPanel, SettingsOverlay, Sidebar};
 pub fn WorkspacePage() -> Element {
     let settings = use_settings_provider();
     let workspace = use_workspace_provider();
-    let mut root = use_signal(|| None::<Rc<MountedData>>);
-    // The overlay's inputs and buttons vanish when it closes and take focus with them; key events
-    // only reach the root while something inside it has focus, so give it back.
+    // Key events only reach the root while something inside it has focus. Whenever the overlay
+    // closes or the main pane switches view, the focused input or button may have been removed
+    // and focus falls to <body>, which silences every shortcut until the next click. Give focus
+    // back to the root — but only if nothing has it, so a composer the person is typing in keeps it.
     use_effect(move || {
-        if !settings.is_open() {
-            if let Some(mounted) = root.read().clone() {
-                spawn(async move {
-                    let _ = mounted.set_focus(true).await;
-                });
-            }
-        }
+        let _ = (settings.is_open(), workspace.active());
+        document::eval(
+            "setTimeout(() => { const a = document.activeElement; if (!a || a === document.body) { document.querySelector('.workspace')?.focus(); } }, 0);",
+        );
     });
 
     rsx! {
@@ -28,8 +24,8 @@ pub fn WorkspacePage() -> Element {
             class: "workspace",
             tabindex: "0",
             // Key events only reach the root while something inside it has focus.
-            onmounted: move |mounted| {
-                root.set(Some(mounted.data()));
+            onmounted: move |mounted| async move {
+                let _ = mounted.set_focus(true).await;
             },
             onkeydown: move |event| {
                 if !workspace.on_key(&event) {
