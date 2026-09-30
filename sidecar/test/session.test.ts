@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SidecarSession, type QueryFn } from "../src/session.js";
 import type { SidecarCommand, SidecarEvent } from "../src/protocol.js";
@@ -13,9 +16,132 @@ const startCommand: SidecarCommand = {
   resume_session_id: null,
   permission_mode: "default",
   model: null,
+  skills: {},
+  plugins: [],
+  mcp_servers: {},
 };
 
+function makeSkillDir(name: string): string {
+  const dir = join(mkdtempSync(join(tmpdir(), "forge-test-skill-")), name);
+  mkdirSync(dir);
+  writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: test\n---\n`);
+  return dir;
+}
+
 describe("SidecarSession", () => {
+  it("starts the SDK with only the project settings source and exactly the enabled extensions", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({
+      ...startCommand,
+      plugins: ["/plugins/hud"],
+      mcp_servers: { files: { command: "npx", args: ["files-mcp"] } },
+    });
+
+    expect(captured).toMatchObject({
+      settingSources: ["project"],
+      strictMcpConfig: true,
+      skills: [],
+      plugins: [{ type: "local", path: "/plugins/hud" }],
+      mcpServers: { files: { command: "npx", args: ["files-mcp"] } },
+    });
+  });
+
+  it("passes empty lists instead of omitting them, so the SDK defaults do not come back", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle(startCommand);
+
+    expect(captured?.skills).toEqual([]);
+    expect(captured?.plugins).toEqual([]);
+    expect(captured?.mcpServers).toEqual({});
+  });
+
+  it("treats a command that lacks the extension fields as nothing enabled", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+    const oldCommand = { type: "start_session", id: "1", cwd: "/tmp", resume_session_id: null, permission_mode: "default", model: null };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle(oldCommand as unknown as SidecarCommand);
+
+    expect(captured?.skills).toEqual([]);
+    expect(captured?.plugins).toEqual([]);
+    expect(captured?.mcpServers).toEqual({});
+  });
+
+  it("delivers enabled skills through a generated forge-skills plugin and removes it when the session ends", async () => {
+    const pdfDir = makeSkillDir("pdf");
+    let pluginPath = "";
+    let seen: { manifest: string; link: string } | undefined;
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      const plugins = options.plugins as { type: string; path: string }[];
+      pluginPath = plugins[plugins.length - 1].path;
+      seen = {
+        manifest: readFileSync(join(pluginPath, ".claude-plugin", "plugin.json"), "utf8"),
+        link: readlinkSync(join(pluginPath, "skills", "pdf")),
+      };
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({ ...startCommand, skills: { pdf: pdfDir }, plugins: ["/plugins/hud"] });
+
+    expect(captured?.skills).toEqual(["forge-skills:pdf"]);
+    expect((captured?.plugins as { path: string }[])[0].path).toBe("/plugins/hud");
+    expect(JSON.parse(seen!.manifest)).toEqual({ name: "forge-skills" });
+    expect(seen!.link).toBe(pdfDir);
+    expect(existsSync(pluginPath)).toBe(false);
+    expect(existsSync(join(pdfDir, "SKILL.md"))).toBe(true);
+  });
+
+  it("skips a skill whose name is not a safe path component", async () => {
+    const okDir = makeSkillDir("ok");
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({
+      ...startCommand,
+      skills: { "../evil": okDir, "a/b": okDir, "..": okDir, ok: okDir },
+    });
+
+    expect(captured?.skills).toEqual(["forge-skills:ok"]);
+  });
+
+  it("generates no plugin when every skill name is unsafe", async () => {
+    const okDir = makeSkillDir("ok");
+    let captured: Record<string, unknown> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({ ...startCommand, skills: { "../evil": okDir } });
+
+    expect(captured?.skills).toEqual([]);
+    expect(captured?.plugins).toEqual([]);
+  });
+
   it("forwards a session init and a streamed text delta as sidecar events, then session_ended", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>

@@ -1,3 +1,4 @@
+import { buildSkillsPlugin } from "./skills_plugin.js";
 import type { SidecarCommand, SidecarEvent, WirePermissionDecision } from "./protocol.js";
 
 export type QueryHandle = AsyncIterable<unknown> & {
@@ -142,18 +143,37 @@ export class SidecarSession {
       });
     };
 
-    const query = this.queryFn({
-      prompt: this.userMessages(),
-      options: {
-        cwd: command.cwd,
-        resume: command.resume_session_id ?? undefined,
-        permissionMode: toSdkPermissionMode(command.permission_mode),
-        model: command.model ?? undefined,
-        abortController: this.abortController,
-        canUseTool,
-        includePartialMessages: true,
-      },
-    });
+    // Forge's toggles are the only source of truth (spec §17.1). The `??` guards a command from an
+    // older parent that omits the fields: that must mean nothing enabled, never the SDK's defaults.
+    const skillsPlugin = await buildSkillsPlugin(command.skills ?? {});
+    const plugins = [
+      ...(command.plugins ?? []).map((path) => ({ type: "local" as const, path })),
+      ...(skillsPlugin ? [{ type: "local" as const, path: skillsPlugin.path }] : []),
+    ];
+
+    let query: QueryHandle;
+    try {
+      query = this.queryFn({
+        prompt: this.userMessages(),
+        options: {
+          cwd: command.cwd,
+          resume: command.resume_session_id ?? undefined,
+          permissionMode: toSdkPermissionMode(command.permission_mode),
+          model: command.model ?? undefined,
+          abortController: this.abortController,
+          canUseTool,
+          includePartialMessages: true,
+          settingSources: ["project"],
+          strictMcpConfig: true,
+          skills: skillsPlugin?.skills ?? [],
+          plugins,
+          mcpServers: command.mcp_servers ?? {},
+        },
+      });
+    } catch (err) {
+      await skillsPlugin?.cleanup();
+      throw err;
+    }
     this.activeQuery = query;
 
     this.sessionEndedPromise = (async () => {
@@ -168,6 +188,8 @@ export class SidecarSession {
         } else {
           this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
         }
+      } finally {
+        await skillsPlugin?.cleanup();
       }
     })();
 

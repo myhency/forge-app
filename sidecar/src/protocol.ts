@@ -2,7 +2,17 @@ export type WirePermissionMode = "default" | "accept_edits" | "bypass_permission
 export type WirePermissionDecision = "allow_once" | "allow_always" | "deny";
 
 export type SidecarCommand =
-  | { type: "start_session"; id: string; cwd: string; resume_session_id: string | null; permission_mode: WirePermissionMode; model: string | null }
+  | {
+      type: "start_session";
+      id: string;
+      cwd: string;
+      resume_session_id: string | null;
+      permission_mode: WirePermissionMode;
+      model: string | null;
+      skills: Record<string, string>;
+      plugins: string[];
+      mcp_servers: Record<string, unknown>;
+    }
   | { type: "send_message"; id: string; text: string }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision }
   | { type: "interrupt"; id: string }

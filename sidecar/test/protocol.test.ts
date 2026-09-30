@@ -2,6 +2,25 @@ import { describe, expect, it } from "vitest";
 import { parseCommand, serializeEvent } from "../src/protocol.js";
 
 describe("parseCommand", () => {
+  it("keeps the extension fields of a start_session command", () => {
+    const line = JSON.stringify({
+      type: "start_session",
+      id: "1",
+      cwd: "/tmp",
+      resume_session_id: null,
+      permission_mode: "default",
+      model: null,
+      skills: { pdf: "/skills/pdf" },
+      plugins: ["/plugins/hud"],
+      mcp_servers: { files: { command: "npx" } },
+    });
+    expect(parseCommand(line)).toMatchObject({
+      skills: { pdf: "/skills/pdf" },
+      plugins: ["/plugins/hud"],
+      mcp_servers: { files: { command: "npx" } },
+    });
+  });
+
   it("parses a start_session command", () => {
     const line = JSON.stringify({
       type: "start_session",
