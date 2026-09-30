@@ -139,7 +139,9 @@ impl Settings {
         let base_url = self.base_url.peek().clone();
         let api_key = self.api_key.peek().clone();
         let this = *self;
-        spawn(async move {
+        // Pinned to the root scope: a plain `spawn` is cancelled when the calling component
+        // unmounts (switching tab, Esc), which could drop the save half-way (spec §15.11).
+        dioxus::core::spawn_forever(async move {
             match usecase.save_connection(&base_url, &api_key).await {
                 Ok(config) => this.after_save(config),
                 Err(error) => this.fail(error.to_string()),
@@ -151,7 +153,9 @@ impl Settings {
     pub fn choose_model(&self, value: String) {
         let usecase = (*self.usecase.peek()).clone();
         let this = *self;
-        spawn(async move {
+        // Pinned to the root scope: a plain `spawn` is cancelled when the calling component
+        // unmounts (switching tab, Esc), which could drop the save half-way (spec §15.11).
+        dioxus::core::spawn_forever(async move {
             match usecase.save_model(&value).await {
                 Ok(config) => this.after_save_model(config),
                 Err(error) => this.fail(error.to_string()),

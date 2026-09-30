@@ -181,7 +181,9 @@ impl Workspace {
     pub fn start_new(&self, project: ProjectSummary, mode: PermissionMode, text: String) {
         let this = *self;
         let services = (*self.services.peek()).clone();
-        spawn(async move {
+        // Pinned to the root scope: `NewSessionComposer` unmounts if the person clicks elsewhere
+        // while the saved model is being read, which would cancel a plain `spawn`.
+        dioxus::core::spawn_forever(async move {
             let model = match services.settings.saved_model().await {
                 Ok(model) => model,
                 Err(error) => {
