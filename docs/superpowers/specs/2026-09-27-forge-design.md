@@ -1773,7 +1773,41 @@ status line does not follow a tab change.
 
 ### 17.7 Spike findings
 
-*(filled in by Task 1)*
+2026-09-30, `@anthropic-ai/claude-agent-sdk` 0.3.283, real `~/.claude`. Skill under
+test: `report-writer` (a user skill in `~/.claude/skills`), passed as `skills: ["report-writer"]`.
+Observed from the `system`/`init` message (no API key needed to reach it).
+"Bundled" below means skills/plugins that appear in every case, including the
+fully isolated one: skills `design, design-sync, dataviz, update-config, verify, debug,
+code-review, simplify, batch, fewer-permission-prompts, doctor, loop, schedule,
+claude-api, run, run-skill-generator` and plugins `agents-md, telemetry`.
+
+| case | skills | plugins | mcp_servers |
+|---|---|---|---|
+| baseline (no options) | 3 user skills (frontend-design, internal-comms, webapp-testing) + plugin skills (superpowers:*, frontend-design:*, anthropic-skills:*) + bundled | claude-hud, context7, feature-dev, frontend-design, playwright, superpowers, rust-analyzer-lsp + bundled | plugin:context7, plugin:playwright, 5 claude.ai connectors |
+| isolated (`['project']`, strict, all empty) | bundled only | agents-md, telemetry (bundled) | none |
+| enabled (`['project']`, skills, 1 plugin path, 2 MCP) | `andrej-karpathy-skills:karpathy-guidelines` + bundled; `report-writer` is NOT present | andrej-karpathy-skills + bundled | `stdio_shape` failed/dynamic, `http_shape` failed/dynamic |
+| userSources (`['user','project']`, `plugins: []`) | all 13 `~/.claude/skills` incl. `report-writer`, plus superpowers:*, frontend-design:*, anthropic-skills:*, bundled | claude-hud, context7, feature-dev, frontend-design, playwright, superpowers, rust-analyzer-lsp + bundled | none |
+
+Answers:
+
+- (a) NOT met. Under `settingSources: ['project']` the user skill `report-writer` is
+  not discovered; the `skills` option did not add it. It appears only with `'user'` in
+  the sources.
+- (b) Met. A plugin passed as `{type: 'local', path: installPath}` loads and its skill
+  is namespaced (`andrej-karpathy-skills:karpathy-guidelines`).
+- (c) Met. Both the stdio shape and the `type: 'http'` shape are accepted (status
+  `failed`, source `dynamic`, as expected for fake servers).
+- (d) Partly. `strictMcpConfig` with `mcpServers: {}` removes all MCP servers, and
+  with `['project']` no user-level plugins or user skills leak. But the isolated case
+  is not empty: 16 bundled skills and 2 bundled plugins remain (they are SDK-provided,
+  not from `~/.claude`). With `['user','project']`, the user's enabled plugins (from
+  `~/.claude/settings.json` `enabledPlugins`) load even though `plugins: []` was
+  passed, so plugins DO leak there; MCP servers do not.
+
+settingSources for Task 4: NOT CHOSEN. `['project']` does not discover user skills;
+`['user','project']` leaks user plugins. Blocked pending a human decision (for
+example: copy or symlink enabled user skills into a per-session directory the SDK reads
+as project, or pass skill contents another way).
 
 ### 17.8 As built
 
