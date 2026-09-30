@@ -1477,3 +1477,159 @@ A fresh reviewer read the whole branch. No Critical findings. Fixed (each with a
 - *Graceful shutdown before dropping the sidecar* (reviewer's guess that `kill_on_drop` beats the queued `shutdown`). Checked with `ps` after ⌘W mid-turn and after `kill`: no `node` or `claude` process was left. Revisit only if a leftover is ever seen.
 
 **Deferred minors.** Closed sessions keep their signal (memory) until exit; a Folder that disappears makes Start do nothing silently; `exists`/`can_send` are snapshots until the next reload; a message can stay in the history if the sidecar dies between two events; after a failure before `SessionStarted` the retry starts a fresh Claude session while the view still shows the first message; `biased` batching could delay publishing under a very fast event stream.
+
+## 16. Detailed Design: design polish and the settings overlay (Plan 6)
+
+Plan 6 makes the Plan 5 skeleton look like a product and removes its most
+annoying rough edge: credentials no longer have to be typed into
+`config.json` by hand. It adds no new crate and no new port.
+
+### 16.1 Scope, and the Claude Code desktop reference
+
+Reference: screenshots of Claude Code desktop supplied by the user on
+2026-09-30 (not documentation; these are parity observations, re-check them
+against the docs before claiming more):
+
+- The window is one flat tone; the sidebar is only slightly darker than the
+  main pane. Dividers are rare, whitespace does the grouping.
+- A project group's title is small and muted, with a `+` at its right end that
+  starts a session in that folder.
+- The prompt is one rounded bordered box. A chip row above it names the
+  environment and folder; under it the model is shown in small text.
+- A menu at the bottom of the sidebar holds **Settings (⌘,)**.
+- Settings is a large overlay covering most of the window (the app behind it
+  is dimmed and blurred): a left navigation (search, grouped sections) and, on
+  the right, rows with the name and a one-line description on the left and the
+  control on the right.
+
+**Decisions of this design** (user-approved during brainstorming):
+
+- Visual tone: flat single background. Cards only for permission requests,
+  tool calls and the user's own messages; assistant text has no card.
+- Settings opens as the overlay above. Sections in this plan: **Connection**
+  and **Model**. No search box (two sections).
+- Connection fields are saved with a Save button; the model is saved the
+  moment it is chosen.
+- Saved settings apply to sessions started afterwards. A running session keeps
+  the environment it was spawned with (`SidecarProcessFactory` reads the config
+  on every spawn, and its test `factory_test.rs` already asserts that).
+
+**In scope:** theme rewrite (`theme.css`); sidebar group `+`, bottom Settings
+menu, distinguishable markers; settings overlay with Connection and Model;
+`AppConfig.model`; new sessions start with the saved model; `⌘,`.
+
+**Out of scope (deferred, not forgotten):** Skills / Plugins / MCP tabs and
+their definition readers (Plan 7 candidate); folder-open dialog; markdown,
+syntax highlighting, diff viewer; per-session model choice and changing the
+model mid-session; a theme chooser (the theme still follows
+`prefers-color-scheme`); settings search; the session-`cwd` collision of §15.12;
+split panes; session rename / delete.
+
+### 16.2 Domain and application
+
+- `AppConfig` gains `model: Option<String>` with `#[serde(default)]`. A
+  `config.json` without the key loads with `None`; `None` is written as
+  `null`. `forge-adapter-config` needs no change.
+- An empty or all-whitespace `base_url`, `api_key` or `model` is stored as
+  `None` (one normalising function in `forge-domain`, used by the settings
+  feature). The factory already skips empty values, so behaviour is the same
+  either way; `None` keeps the file tidy.
+- `forge-application` gets thin use-cases `load_settings` and `save_settings`
+  over `ConfigRepositoryPort` (§12.3), in `use_cases/`. `save_settings`
+  **loads the current config, replaces only the fields the UI owns
+  (`base_url`, `api_key`, `model`) and saves**, so `enabled_*` lists written by
+  hand or by a later plan are never erased.
+- `start_new` takes its model from the saved config: `Workspace` obtains the
+  repository handle through its existing services struct and reads the model
+  when a session starts. If the config cannot be loaded, the start fails with
+  the existing "failed to load the Forge config" notice (§15.11, item 14).
+
+### 16.3 `forge-features`: settings
+
+A `settings` feature module, following the shape of the other features
+(`use_settings()` returns a handle, state lives in signals):
+
+- `open` (bool) and `section` (`Connection` | `Model`).
+- A draft of the three fields, loaded from the config each time the overlay
+  opens, so Cancel / ✕ discards edits.
+- `save_connection()` writes `base_url` + `api_key`; `choose_model()` writes
+  `model` immediately. Both set `saved` on success or keep the draft and set
+  an `error` string on failure; a failed write never closes the overlay or
+  drops the text (same rule as the unsent message, §15.11).
+- `shortcut.rs` gains `Shortcut::OpenSettings` for `⌘,` (`Ctrl+,` off macOS).
+  `shortcut_for` already takes `key`, `ctrl`, `meta`, `shift`, `mac`; the new
+  arm matches `","`. Esc closes the overlay.
+- The new-session panel's Model `select` (today offering only "Default model",
+  §15.1) is replaced by a read-only line showing the saved model, or
+  "Default model" when `None`. Choosing is done in Settings.
+
+### 16.4 `forge-widgets` / `forge-pages`
+
+- `SettingsOverlay` widget: backdrop, panel, left navigation, a row component
+  (`SettingRow { title, description, children }`) in `forge-shared`.
+- Connection: Base URL (text), API key (password input with a show / hide
+  toggle), Save button (disabled until the draft differs), and the line
+  "Sessions that are already open use the old values until they are started
+  again."
+- Model: a list of `Default (chosen by the SDK)`, Fable 5.1 (`claude-fable-5-1`),
+  Opus 5.5 (`claude-opus-5-5`), Sonnet 5.5 (`claude-sonnet-5-5`), Haiku 4.5
+  (`claude-haiku-4-5-20251001`), and a custom-ID text field. The IDs are one
+  constant table in `forge-entities`; updating the list is a one-place edit.
+  A saved ID not in the table is shown in the custom field.
+- Sidebar: group title + `+` (starts the new-session panel with that folder
+  preselected), and a bottom "Settings ⌘," entry. No account or plan line:
+  Forge has no login.
+- The workspace page renders the overlay above everything else.
+
+### 16.5 Sidebar markers (answers §15.11)
+
+| State | Look |
+|---|---|
+| idle | hollow ring (as now) |
+| running | accent ring that slowly rotates |
+| needs attention | filled warning dot with a small `!` |
+
+Distinguished by shape and motion, not colour alone. The existing `marker`
+enum in `forge-entities` is unchanged; only the CSS and the widget markup move.
+The animation respects `prefers-reduced-motion` (static ring).
+
+### 16.6 Theme
+
+`theme.css` is rewritten around tokens: one background, a sidebar a few percent
+darker, muted text, one accent, one warning, one danger, radii and spacing
+steps. Light and dark both via `prefers-color-scheme`. Existing class names
+are kept where they still mean the same thing so widget code changes little;
+new names are added for cards, the composer box, the overlay and rows.
+
+### 16.7 Testing
+
+Automated (TDD, each test seen failing first):
+
+- `forge-domain`: a config without `model` loads; with `model` round-trips;
+  the normaliser maps `""` and `"  "` to `None`.
+- `forge-application`: `save_settings` keeps `enabled_*` untouched; a failing
+  repository returns the error and stores nothing.
+- `forge-features`: draft / save / failed save keeps the draft; `choose_model`
+  saves at once; cancel discards; `shortcut_for(",", …)` on macOS and elsewhere;
+  `start_new` passes the saved model to the registry.
+
+Manual checklist (real window, real `~/.claude`), recorded in §16.9 like §15.11:
+light and dark; all three markers visible and distinct; `⌘,` opens, Esc closes;
+save a key, start a new session, it uses the new key (and an open older
+session still uses the old one); pick a model, the new session runs on it;
+a hand-edited `config.json` with extra `enabled_skills` survives a save;
+a broken `config.json` shows the notice and Save replaces it.
+
+### 16.8 Task order
+
+1. Domain: `model` field + normaliser.
+2. Application: `load_settings`, `save_settings`.
+3. Features: settings state, shortcut, `start_new` uses the saved model.
+4. Theme rewrite and shared row component.
+5. Sidebar: group `+`, markers, bottom entry.
+6. Settings overlay (Connection, Model) and new-session panel change.
+7. Manual checklist, fixes, §16.9 "As built".
+
+Tasks 1–3 need no window and come first; 4–6 are compile-checked only until 7,
+the lesson of §15.11 (runtime problems appear only in a live window), so task 7
+is budgeted for fixes.
