@@ -5,7 +5,7 @@ mod project;
 mod session;
 
 pub use config::{normalize_setting, AppConfig};
-pub use extension::{McpServerDefinition, PluginDefinition, SkillDefinition};
+pub use extension::{ActiveExtensions, McpServerDefinition, PluginDefinition, SkillDefinition};
 pub use permission::{PermissionDecision, PermissionMode};
 pub use project::ProjectSummary;
 pub use session::{
