@@ -1848,7 +1848,86 @@ each enabled `~/.claude/skills/<name>`), passes it in `plugins` as
 
 ### 17.8 As built
 
-*(filled in at the end, like §15.11 and §16.9)*
+Verified 2026-10-01 on macOS 26.6.2, Dioxus =0.7.10, SDK 0.3.283. The GUI was **not** driven
+(no window automation, no `cargo run -p forge-app`), and no file under `~/.claude`,
+`~/.claude.json` or Forge's `config.json` was written; the scripted checks below ran against the
+built sidecar, the real SDK and the real `~/.claude`, using temp directories for everything
+they wrote.
+
+Tests: `cargo test --workspace` 301 passed (baseline 274); sidecar `npm test` 26 passed
+(baseline 19); `npm run typecheck` clean; `npm run build` produces `sidecar/dist/index.js`.
+
+Checks:
+
+- **A. Suites.** Rust 301/301, sidecar 26/26, typecheck clean. Pass.
+- **B. Build.** `sidecar/dist/index.js` and `dist/session.js` exist (dist is git-ignored). Pass.
+- **C. Real SDK, shipped `SidecarSession` (built `dist/session.js`), real `query`, one message sent
+  and shut down at `init`.** Pass.
+  - One user skill (`report-writer`, real dir under `~/.claude/skills`): options were
+    `settingSources ['project']`, `strictMcpConfig true`, `skills ['forge-skills:report-writer']`,
+    one local plugin `/…/T/forge-skills-XXXXXX`, `mcpServers {}`. `init.skills` listed
+    `forge-skills:report-writer` plus only the SDK-bundled skills (design, dataviz, update-config,
+    verify, debug, code-review, simplify, batch, …); no other user skill (`frontend-design`,
+    `webapp-testing`, …) and nothing from the user's enabled plugins (claude-hud, superpowers, …).
+    `init.plugins` = `forge-skills`, `agents-md`, `telemetry` (the last two are SDK-bundled).
+    `init.mcp_servers` = `[]`. During the session the `forge-skills-*` directory existed; after
+    the session ended it was gone, and `~/.claude/skills/report-writer/SKILL.md` was intact.
+  - Names `"../evil"` (pointing at `frontend-design`) plus `report-writer`: only
+    `forge-skills:report-writer` was listed; nothing was created outside the temp dir;
+    `frontend-design` untouched; temp dir cleaned up.
+  - Nothing enabled: `skills []`, `plugins []`, no `forge-skills` plugin, no user skills in
+    `init`, `mcp_servers []`, no temp dir created.
+- **D. Real adapters, read-only** (a throwaway example, removed; config was a temp file):
+  `list_skills(None)` 30 (for example `algorithmic-art`, `brand-guidelines`, `built-in-browser`
+  from `~/.claude/skills/synced/…`), `list_plugins()` 10 (for example
+  `claude-hud@claude-hud`, `context7@claude-plugins-official`), `list_mcp_servers(None)` 0
+  (no global servers in `~/.claude.json`). `resolve_active` with `report-writer` and
+  `andrej-karpathy-skills@karpathy-skills` enabled returned skills
+  `{report-writer: ~/.claude/skills/report-writer}`, `plugin_paths` = that plugin's `installPath`
+  (`~/.claude/plugins/cache/karpathy-skills/andrej-karpathy-skills/1.0.0`), `mcp_servers {}`.
+  Pass.
+- **E. Reader failure.** Covered by the unit test
+  `live_session::tests::a_reader_failure_spawns_nothing_and_keeps_the_typed_text` (passes);
+  not redone.
+
+Differences from §17:
+
+- §17.3 originally had the sidecar pass enabled skills by name (`skills: [names]`) with
+  user-level settings. As §17.7 found, `settingSources ['project']` does not discover user
+  skills and `['user','project']` leaks the user's enabled plugins, so the sidecar generates a
+  per-session local plugin named `forge-skills` (a temp directory of symlinks to each enabled
+  skill directory, removed when the session ends) and lists the skills as `forge-skills:<name>`.
+  The spike's throwaway plugin was called `forge-user-skills`; the plan chose `forge-skills`.
+- A skill name that is not one safe path component (`..`, contains `/`, `\`, NUL, or empty) is
+  skipped by the sidecar.
+
+**Not checked (for a person to walk)** in the real window:
+
+- The Skills, Plugins and MCP servers tabs list the real definitions (project or global), an
+  empty kind says "Nothing found.".
+- A switch persists across an app restart (`enabled_*` in `config.json`).
+- A skill / plugin / MCP server is usable in a real conversation in a new session and not when
+  off (also a project-local skill); the `forge-skills-*` directory exists while a session is open
+  and is gone after closing it, from the app.
+- An older open session is unchanged by toggling.
+- With the overlay open, `⌘W`, `⌘N`, `Ctrl+Tab` do nothing to the sessions behind it while `Esc`
+  and `⌘,` still work.
+- "Saved." does not follow a tab change (Connection, Model, Skills).
+- A broken reader is shown in the window with the typed text kept in the message box and no
+  process left running.
+- A skill name present both user-level and project-level shows once.
+
+Deferred Minor findings that matter to a user: the catalog is not reset when the overlay opens
+(a stale list shows until the listing returns); overlapping quick toggles can race; `reload()`
+can overwrite `saved` after an in-flight toggle; a rejecting `cleanup()` can mask the session
+outcome.
+
+Found while verifying (none in shipped code): the sidecar tests
+(`sidecar/test/session.test.ts`, line 25) create `forge-test-skill-*` directories with
+`mkdtempSync` and never remove them, leaving three per `npm test` run in the system temp dir.
+A sidecar killed with SIGKILL cannot run `cleanup()`, so its `forge-skills-*` directory (only
+symlinks) is left behind; this is inherent to the design and was seen only after killing test
+runs by hand.
 
 ### 17.9 Task order
 
