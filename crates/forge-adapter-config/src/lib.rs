@@ -110,6 +110,7 @@ mod tests {
         let config = AppConfig {
             base_url: Some("https://api.anthropic.com".to_string()),
             api_key: Some("sk-ant-test".to_string()),
+            model: Some("claude-sonnet-5-5".to_string()),
             enabled_skills: vec!["brainstorming".to_string()],
             enabled_plugins: vec!["playwright@marketplace".to_string()],
             enabled_mcp_servers: vec!["playwright-mcp".to_string()],
