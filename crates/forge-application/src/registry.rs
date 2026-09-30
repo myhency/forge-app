@@ -7,6 +7,7 @@ use forge_domain::{PermissionMode, ProjectSummary, Session, SessionId};
 use forge_ports::{SessionRepositoryError, SessionRepositoryPort, SidecarFactoryPort};
 use thiserror::Error;
 
+use crate::use_cases::ExtensionsUseCase;
 use crate::live_session::{spawn_live_session, LiveSessionHandle, LiveSessionId, LiveSessionInit};
 
 #[derive(Debug, Error)]
@@ -28,16 +29,22 @@ pub struct OpenOutcome {
 pub struct SessionRegistry {
     factory: Arc<dyn SidecarFactoryPort>,
     sessions: Arc<dyn SessionRepositoryPort>,
+    extensions: Arc<ExtensionsUseCase>,
     next_id: AtomicU64,
     // Never held across an `.await`.
     handles: Mutex<HashMap<LiveSessionId, LiveSessionHandle>>,
 }
 
 impl SessionRegistry {
-    pub fn new(factory: Arc<dyn SidecarFactoryPort>, sessions: Arc<dyn SessionRepositoryPort>) -> Self {
+    pub fn new(
+        factory: Arc<dyn SidecarFactoryPort>,
+        sessions: Arc<dyn SessionRepositoryPort>,
+        extensions: Arc<ExtensionsUseCase>,
+    ) -> Self {
         Self {
             factory,
             sessions,
+            extensions,
             next_id: AtomicU64::new(1),
             handles: Mutex::new(HashMap::new()),
         }
@@ -127,6 +134,7 @@ impl SessionRegistry {
             model,
             can_send: project.exists,
             factory: self.factory.clone(),
+            extensions: self.extensions.clone(),
         });
         handles.insert(id, handle.clone());
         handle
@@ -197,7 +205,7 @@ mod tests {
         sessions: Arc<dyn SessionRepositoryPort>,
     ) -> (SessionRegistry, Arc<AtomicUsize>) {
         let (factory, spawns) = factory_returning(sidecars);
-        (SessionRegistry::new(factory, sessions), spawns)
+        (SessionRegistry::new(factory, sessions, crate::test_support::no_extensions()), spawns)
     }
 
     #[tokio::test]

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use dioxus::prelude::*;
-use forge_application::{LiveSessionHandle, LiveSessionId, LiveSessionView, SessionRegistry, SettingsUseCase};
+use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, SessionRegistry, SettingsUseCase};
 use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SessionId, SessionSummary};
 use forge_ports::{ProjectRepositoryPort, SessionRepositoryPort};
 
@@ -16,6 +16,7 @@ pub struct WorkspaceServices {
     pub projects: Arc<dyn ProjectRepositoryPort>,
     pub sessions: Arc<dyn SessionRepositoryPort>,
     pub settings: Arc<SettingsUseCase>,
+    pub extensions: Arc<ExtensionsUseCase>,
 }
 
 /// What the main pane shows.

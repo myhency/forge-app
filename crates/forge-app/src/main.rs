@@ -3,10 +3,13 @@ use std::sync::Arc;
 use dioxus::desktop::muda::{Menu, PredefinedMenuItem, Submenu};
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
-use forge_adapter_claude_fs::{default_claude_home, ClaudeProjectAdapter, ClaudeSessionAdapter};
+use forge_adapter_claude_fs::{
+    default_claude_home, default_claude_json_path, ClaudeMcpAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
+    ClaudeSessionAdapter, ClaudeSkillAdapter,
+};
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
-use forge_application::{SessionRegistry, SettingsUseCase};
+use forge_application::{ExtensionsUseCase, SessionRegistry, SettingsUseCase};
 use forge_features::WorkspaceServices;
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
@@ -89,11 +92,22 @@ fn build_services() -> WorkspaceServices {
 
     let config = Arc::new(ConfigFileAdapter::new(config_path));
     let factory = Arc::new(SidecarProcessFactory::new(node, script, config.clone()));
-    let settings = Arc::new(SettingsUseCase::new(config));
+    let settings = Arc::new(SettingsUseCase::new(config.clone()));
+    let claude_json = default_claude_json_path().expect("could not resolve the home directory");
+    // With no project open the tabs read the home directory as the project, so only the global
+    // definitions (`~/.claude/skills`, the global MCP servers) show.
+    let home = claude_home.parent().map(std::path::Path::to_path_buf).unwrap_or_else(|| claude_home.clone());
+    let extensions = Arc::new(ExtensionsUseCase::new(
+        config.clone(),
+        Arc::new(ClaudeSkillAdapter::new(claude_home.clone())),
+        Arc::new(ClaudePluginAdapter::new(claude_home.clone())),
+        Arc::new(ClaudeMcpAdapter::new(claude_json)),
+        home,
+    ));
     let sessions = Arc::new(ClaudeSessionAdapter::new(claude_home.clone()));
     let projects = Arc::new(ClaudeProjectAdapter::new(claude_home));
-    let registry = Arc::new(SessionRegistry::new(factory, sessions.clone()));
-    WorkspaceServices { registry, projects, sessions, settings }
+    let registry = Arc::new(SessionRegistry::new(factory, sessions.clone(), extensions.clone()));
+    WorkspaceServices { registry, projects, sessions, settings, extensions }
 }
 
 #[component]

@@ -7,6 +7,7 @@ use forge_ports::SidecarFactoryPort;
 use tokio::sync::{mpsc, watch};
 
 use crate::live_session_actor::Actor;
+use crate::use_cases::ExtensionsUseCase;
 
 /// App-local handle for an open session. Claude's own `SessionId` is unknown for a brand-new
 /// session until the sidecar reports `session_started`, so it cannot be the key.
@@ -113,6 +114,7 @@ pub(crate) struct LiveSessionInit {
     pub model: Option<String>,
     pub can_send: bool,
     pub factory: Arc<dyn SidecarFactoryPort>,
+    pub extensions: Arc<ExtensionsUseCase>,
 }
 
 /// Starts the session's task. Must be called from inside a tokio runtime.
@@ -131,7 +133,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
     let (command_tx, command_rx) = mpsc::unbounded_channel();
-    let actor = Actor::new(view, view_tx, command_rx, init.factory, init.model);
+    let actor = Actor::new(view, view_tx, command_rx, init.factory, init.model, init.extensions);
     tokio::spawn(actor.run());
     LiveSessionHandle {
         id: init.id,
@@ -142,14 +144,17 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
-    use forge_domain::{MessageRole, PermissionMode};
+    use forge_domain::{ActiveExtensions, AppConfig, MessageRole, PermissionMode, SkillDefinition};
     use forge_ports::{SidecarError, SidecarEvent, StartSessionParams};
 
     use super::*;
-    use crate::test_support::{factory_returning, fake_sidecar, wait_closed, wait_for, Call};
+    use crate::test_support::{
+        extensions_with, factory_returning, failing_extensions, fake_sidecar, no_extensions, wait_closed, wait_for, Call,
+    };
 
     fn empty_session() -> Session {
         Session {
@@ -170,6 +175,7 @@ mod tests {
             model: Some("model-x".to_string()),
             can_send: true,
             factory,
+            extensions: no_extensions(),
         }
     }
 
@@ -194,7 +200,7 @@ mod tests {
             resume_session_id: resume.map(str::to_string),
             permission_mode: PermissionMode::AcceptEdits,
             model: Some("model-x".to_string()),
-            extensions: Default::default(),
+            extensions: ActiveExtensions::default(),
         }
     }
 
@@ -581,6 +587,49 @@ mod tests {
         let seen = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
 
         assert!(seen.last_error.unwrap().contains("ended"));
+    }
+
+    #[tokio::test]
+    async fn the_started_session_gets_exactly_the_enabled_extensions() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let config = AppConfig { enabled_skills: vec!["pdf".to_string()], ..AppConfig::default() };
+        let skills = vec![
+            SkillDefinition { name: "pdf".to_string(), path: PathBuf::from("/skills/pdf"), description: None },
+            SkillDefinition { name: "docx".to_string(), path: PathBuf::from("/skills/docx"), description: None },
+        ];
+        let mut init = new_init(factory);
+        init.extensions = extensions_with(config, skills);
+        let handle = spawn_live_session(init);
+        let mut view = handle.subscribe();
+
+        handle.send("hello".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        let mut expected = start_params(None);
+        expected.extensions = ActiveExtensions {
+            skills: BTreeMap::from([("pdf".to_string(), PathBuf::from("/skills/pdf"))]),
+            ..ActiveExtensions::default()
+        };
+        assert_eq!(control.calls(), vec![Call::Start(expected), Call::Send("hello".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn a_reader_failure_spawns_nothing_and_keeps_the_typed_text() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(sidecar)]);
+        let mut init = new_init(factory);
+        init.extensions = failing_extensions();
+        let handle = spawn_live_session(init);
+        let mut view = handle.subscribe();
+
+        handle.send("hello".to_string());
+        let seen = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        assert!(seen.last_error.unwrap().contains("skill reader is down"));
+        assert_eq!(seen.unsent.as_deref(), Some("hello"));
+        assert_eq!(spawns.load(Ordering::SeqCst), 0, "no process for a session that cannot start");
+        assert!(control.calls().is_empty());
     }
 
     #[tokio::test]

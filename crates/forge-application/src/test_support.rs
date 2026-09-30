@@ -1,19 +1,23 @@
 //! Test doubles for the session tasks. `MockSidecarPort` cannot script "alive but quiet" (a
 //! `next_event` that stays pending), so the sidecar here is a small fake driven through a control.
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_domain::PermissionDecision;
+use forge_domain::{AppConfig, PermissionDecision, SkillDefinition};
 use forge_ports::{
+    MockConfigRepositoryPort, MockMcpRegistryPort, MockPluginRepositoryPort, MockSkillRepositoryPort,
+    SkillRepositoryError,
     MockSidecarFactoryPort, SidecarError, SidecarEvent, SidecarFactoryPort, SidecarPort,
     StartSessionParams,
 };
 use tokio::sync::{mpsc, watch};
 
 use crate::live_session::LiveSessionView;
+use crate::use_cases::ExtensionsUseCase;
 
 /// Every command the fake sidecar received, in order.
 #[derive(Debug, Clone, PartialEq)]
@@ -177,4 +181,45 @@ pub(crate) async fn wait_closed(view: &mut watch::Receiver<LiveSessionView>) {
     tokio::time::timeout(WAIT, waiting)
         .await
         .expect("the session should have closed");
+}
+
+/// An `ExtensionsUseCase` over mocks: `config` is what the config file holds, `skills` what the
+/// skill reader finds. The plugin and MCP readers have no expectations, so a test that needs them
+/// gets a panic rather than a silent empty answer.
+pub(crate) fn extensions_with(config: AppConfig, skills: Vec<SkillDefinition>) -> Arc<ExtensionsUseCase> {
+    let mut config_port = MockConfigRepositoryPort::new();
+    config_port.expect_load().returning(move || Ok(config.clone()));
+    let mut skill_port = MockSkillRepositoryPort::new();
+    skill_port.expect_list_skills().returning(move |_| Ok(skills.clone()));
+    Arc::new(ExtensionsUseCase::new(
+        Arc::new(config_port),
+        Arc::new(skill_port),
+        Arc::new(MockPluginRepositoryPort::new()),
+        Arc::new(MockMcpRegistryPort::new()),
+        PathBuf::from("/home/me"),
+    ))
+}
+
+/// Nothing enabled, so no reader is ever called.
+pub(crate) fn no_extensions() -> Arc<ExtensionsUseCase> {
+    extensions_with(AppConfig::default(), Vec::new())
+}
+
+/// A skill is enabled and the skill reader fails.
+pub(crate) fn failing_extensions() -> Arc<ExtensionsUseCase> {
+    let mut config_port = MockConfigRepositoryPort::new();
+    config_port
+        .expect_load()
+        .returning(|| Ok(AppConfig { enabled_skills: vec!["pdf".to_string()], ..AppConfig::default() }));
+    let mut skill_port = MockSkillRepositoryPort::new();
+    skill_port
+        .expect_list_skills()
+        .returning(|_| Err(SkillRepositoryError::ListFailed("skill reader is down".to_string())));
+    Arc::new(ExtensionsUseCase::new(
+        Arc::new(config_port),
+        Arc::new(skill_port),
+        Arc::new(MockPluginRepositoryPort::new()),
+        Arc::new(MockMcpRegistryPort::new()),
+        PathBuf::from("/home/me"),
+    ))
 }

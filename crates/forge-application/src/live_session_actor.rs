@@ -7,7 +7,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::event::{apply_sidecar_event, SessionUpdate};
 use crate::live_session::{LiveCommand, LiveSessionView, Phase};
-use crate::use_cases::{ApprovePermissionUseCase, InterruptTurnUseCase, SendMessageUseCase};
+use crate::use_cases::{ApprovePermissionUseCase, ExtensionsUseCase, InterruptTurnUseCase, SendMessageUseCase};
 
 const CANNOT_SEND: &str = "the project folder no longer exists, so this session can only be viewed";
 
@@ -19,6 +19,7 @@ pub(crate) struct Actor {
     commands: mpsc::UnboundedReceiver<LiveCommand>,
     factory: Arc<dyn SidecarFactoryPort>,
     model: Option<String>,
+    extensions: Arc<ExtensionsUseCase>,
     sidecar: Option<Arc<dyn SidecarPort>>,
     /// The view changed since it was last published.
     dirty: bool,
@@ -31,6 +32,7 @@ impl Actor {
         commands: mpsc::UnboundedReceiver<LiveCommand>,
         factory: Arc<dyn SidecarFactoryPort>,
         model: Option<String>,
+        extensions: Arc<ExtensionsUseCase>,
     ) -> Self {
         Self {
             view,
@@ -38,6 +40,7 @@ impl Actor {
             commands,
             factory,
             model,
+            extensions,
             sidecar: None,
             dirty: false,
         }
@@ -122,9 +125,15 @@ impl Actor {
         self.view.failed_sends += 1;
     }
 
-    // Spawns a sidecar and starts (or resumes) the session on it. The sidecar is only kept once
+    // Resolves what is switched on, spawns a sidecar and starts (or resumes) the session on it.
+    // Resolving comes first so a failing reader spawns no process. The sidecar is only kept once
     // both steps succeed; otherwise it is dropped, which ends its process.
     async fn start_sidecar(&mut self) -> Result<(), String> {
+        let extensions = self
+            .extensions
+            .resolve_active(&self.view.project_path)
+            .await
+            .map_err(|e| e.to_string())?;
         let sidecar = self.factory.spawn().await.map_err(|e| e.to_string())?;
         sidecar
             .start_session(StartSessionParams {
@@ -132,7 +141,7 @@ impl Actor {
                 resume_session_id: self.view.claude_session_id.as_ref().map(|id| id.0.clone()),
                 permission_mode: self.view.session.permission_mode,
                 model: self.model.clone(),
-                extensions: Default::default(),
+                extensions,
             })
             .await
             .map_err(|e| e.to_string())?;
