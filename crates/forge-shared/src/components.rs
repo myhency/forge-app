@@ -54,7 +54,13 @@ impl Tone {
 
 #[component]
 pub fn StatusDot(tone: Tone) -> Element {
-    rsx! { span { class: tone.class() } }
+    rsx! {
+        span { class: tone.class(),
+            if tone == Tone::Warning {
+                "!"
+            }
+        }
+    }
 }
 
 /// A dropdown over `(value, label)` pairs.
@@ -99,6 +105,43 @@ pub fn TextArea(
             disabled,
             oninput: move |evt| oninput.call(evt.value()),
             onkeydown: move |evt| onkeydown.call(evt),
+        }
+    }
+}
+
+/// A one-line text field; `secret` hides the characters (an API key).
+#[component]
+pub fn TextInput(
+    value: String,
+    #[props(default)] placeholder: String,
+    #[props(default)] secret: bool,
+    oninput: EventHandler<String>,
+) -> Element {
+    rsx! {
+        input {
+            class: "text-input",
+            r#type: if secret { "password" } else { "text" },
+            value: "{value}",
+            placeholder: "{placeholder}",
+            autocomplete: "off",
+            spellcheck: "false",
+            oninput: move |evt| oninput.call(evt.value()),
+        }
+    }
+}
+
+/// One settings row: a title and a line of explanation on the left, the control (`children`) on the right.
+#[component]
+pub fn SettingRow(title: String, #[props(default)] description: String, children: Element) -> Element {
+    rsx! {
+        div { class: "setting-row",
+            div { class: "setting-info",
+                div { class: "setting-title", "{title}" }
+                if !description.is_empty() {
+                    div { class: "setting-desc", "{description}" }
+                }
+            }
+            div { class: "setting-control", {children} }
         }
     }
 }

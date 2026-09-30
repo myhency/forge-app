@@ -1,5 +1,4 @@
-/// The app's stylesheet. Neutral on purpose: visual parity with Claude Code desktop is out of
-/// scope for the walking skeleton (spec §15.1).
+/// The app's stylesheet: a flat single-tone look after Claude Code desktop (spec §16.6).
 pub const THEME_CSS: &str = include_str!("theme.css");
 
 #[cfg(test)]
@@ -12,6 +11,9 @@ mod tests {
             ".workspace",
             ".sidebar",
             ".sidebar-item",
+            ".sidebar-group-header",
+            ".group-add",
+            ".sidebar-footer",
             ".main-pane",
             ".messages",
             ".message",
@@ -20,6 +22,11 @@ mod tests {
             ".composer",
             ".status-dot",
             ".banner",
+            ".settings-backdrop",
+            ".settings-panel",
+            ".settings-nav-item",
+            ".setting-row",
+            ".text-input",
         ] {
             assert!(THEME_CSS.contains(class), "theme.css is missing {class}");
         }
@@ -28,5 +35,11 @@ mod tests {
     #[test]
     fn the_stylesheet_has_a_dark_mode() {
         assert!(THEME_CSS.contains("prefers-color-scheme: dark"));
+    }
+
+    #[test]
+    fn the_running_marker_animates_but_not_for_people_who_asked_for_less_motion() {
+        assert!(THEME_CSS.contains("@keyframes"));
+        assert!(THEME_CSS.contains("prefers-reduced-motion"));
     }
 }
