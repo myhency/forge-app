@@ -1651,3 +1651,143 @@ Plan 6 was built on branch `plan-6-2` and checked on 2026-09-30 (macOS 26, Dioxu
 **Not fixed, on purpose (final review, Minor):** a backdrop click after a drag-select closes the overlay and drops the draft; ⌘, while open reloads and drops edits; session shortcuts still act behind the overlay and there is no focus trap; the "Saved." line is shared across tabs (seen live: it stays after switching from Connection to Model); a failed model choice leaves the dropdown on the clicked value; concurrent saves can overwrite each other; the config file is briefly created with default permissions and written non-atomically (pre-existing); a few CSS width edge cases; the Model line shows "Default model" until the first load finishes. Also: a config file that parses badly (for example a wrong type) is replaced without a backup, and unknown keys are dropped on any save.
 
 **Observed, unexplained:** while automating, the first click on Save after typing did not register once (the second did); and ⌘V did not paste into the new-session textarea although it pasted into a Settings input. Both may be artifacts of the automation (macOS autocorrect popups were visible), so they are recorded, not classified.
+
+## 17. Detailed Design: Skills, Plugins and MCP servers (Plan 7)
+
+Plan 7 makes the enable/disable lists that have sat in `AppConfig` since Plan 2
+do something: three settings tabs manage them, and a session started
+afterwards runs with exactly the skills, plugins and MCP servers that are
+switched on. It also clears two small items Plan 6 left open (§16.9).
+
+### 17.1 Scope and decisions
+
+Decisions (user-approved during brainstorming, 2026-09-30):
+
+- **Toggles take effect on sessions.** Not just stored: the active lists reach
+  the SDK through `start_session`. A running session keeps what it was started
+  with; the tabs say so (same rule as the connection and model, §16.1).
+- **Forge's toggles are the only source of truth.** Today the sidecar passes
+  no options, so the SDK loads every settings source
+  (`~/.claude/settings.json`, project, local) and Claude Code's own enabled
+  plugins, MCP servers and hooks leak into Forge sessions. That contradicts
+  §4.3. From this plan a Forge session loads only the project settings source
+  and only the servers, skills and plugins Forge has enabled.
+  Consequence to state plainly: user-level hooks and permission rules from
+  `~/.claude/settings.json` no longer apply to Forge sessions.
+- Marketplace install, editing a skill, and adding or removing an MCP server
+  stay out of scope (§2).
+
+**In scope:** protocol fields; sidecar option mapping; resolving the active
+set at session start; Skills / Plugins / MCP tabs; per-tab status; ignoring
+session shortcuts while the overlay is open.
+
+**Out of scope:** the other Minor items of §16.9 (backdrop click after a drag,
+⌘, dropping edits, concurrent-save overwrite, non-atomic config write, config
+backup); toggling inside a running session; per-project enabled lists (state is
+by name, global, as §4.1).
+
+### 17.2 SDK facts (read from `sdk.d.ts`, `@anthropic-ai/claude-agent-sdk` 0.3.283)
+
+- `plugins?: {type: 'local', path}[]`: plugin directories by path.
+- `skills?: string[] | 'all'`: names match the `SKILL.md` `name` or directory,
+  or `plugin:skill`. **Omitted means "the CLI's defaults", not "off"**, so an
+  empty active list must be sent as `[]`. It is a context filter, not a sandbox.
+- `mcpServers?: Record<string, McpServerConfig>` and `strictMcpConfig?: boolean`
+  (only the servers passed here, ignoring `.mcp.json`, user settings and plugins).
+- `settingSources?: ('user'|'project'|'local')[]`: omitted loads all; `[]` is
+  isolation; `'project'` is needed for `CLAUDE.md`.
+
+### 17.3 Protocol and session start
+
+- `start_session` gains `skills: string[]`, `plugins: string[]` (absolute
+  paths) and `mcp_servers: object` (name to config, as read). `StartSessionParams`
+  in `forge-ports` gains the same three fields; the Rust and TypeScript
+  protocol types and the contract test change together.
+- `forge-domain` gets `ActiveExtensions { skills, plugin_paths, mcp_servers }`.
+- `forge-application` gets a use-case that builds it: load the config, list
+  the definitions for the session's project through the three existing ports,
+  keep the definitions whose names are in the `enabled_*` lists. An enabled
+  name with no definition (deleted, or not in this project) is skipped without
+  an error. A failing reader fails the session start with the existing
+  notice mechanism (§15.11 item 14), so a session never silently starts with
+  fewer tools than the user switched on.
+- Wherever the registry starts a sidecar (new session, and the lazy start of a
+  resumed one) it passes the result in `StartSessionParams`.
+- Sidecar mapping: `settingSources: ['project']`, `strictMcpConfig: true`,
+  `skills`, `plugins: paths.map(path => ({type: 'local', path}))`, `mcpServers`.
+  Empty lists are sent as `[]` and `{}`.
+
+### 17.4 Settings tabs
+
+- `SettingsSection` gains `Skills`, `Plugins`, `McpServers`; the navigation
+  lists them under Model.
+- Each tab lists the definitions as `SettingRow`s: name, one-line description,
+  a switch. Skills show the `SKILL.md` description; plugins show
+  `name@marketplace`; MCP servers show `command` or `url` when present (the
+  config stays opaque, §12.2) and the plain name otherwise. A switch saves at
+  once through the existing `Toggle*UseCase` and shows the new state from the
+  returned config.
+- Project-local definitions need a project: the tabs read for the active
+  session's project, and for the global definitions only when there is none.
+  The tab names the project it is showing.
+- Each tab carries the line "Sessions that are already open keep what they
+  started with; a change applies to the next new session."
+- A reader failure shows its message in that tab only. An empty list shows a
+  one-line empty state.
+
+### 17.5 Small items
+
+- While the overlay is open, `⌘N`, `⌘W` and `Ctrl+Tab` are ignored; only `⌘,`
+  and Esc act. (Found live in Plan 6: ⌘W closed a session behind the overlay.)
+- The "Saved." / error status becomes per section, so it does not follow the
+  user to another tab.
+
+### 17.6 Testing
+
+Automated (TDD, each test seen failing first):
+
+- `forge-application`: the active set keeps only enabled definitions; an
+  enabled name without a definition is skipped; nothing enabled gives empty
+  lists; a failing reader is an error and starts nothing.
+- `forge-adapter-sidecar`: `start_session` serialises the three fields; the
+  contract test with the fake sidecar carries them through.
+- `sidecar` (vitest): the fields become the SDK options above; empty lists are
+  still passed.
+- `forge-features`: toggling saves and reflects the returned config; status is
+  per section; shortcuts other than `⌘,` and Esc do nothing while open.
+
+**Spike first (Task 1, throwaway):** with the real SDK and the real
+`~/.claude`, check (a) that a user skill in `~/.claude/skills` is still
+discovered with `settingSources: ['project']` and listed by `skills: [...]`,
+(b) that a plugin loads from its `installPath`, (c) that both MCP config shapes
+of §13.1 are accepted as `mcpServers` values, (d) that nothing from
+`~/.claude/settings.json` leaks in. The mapping in §17.3 is adjusted to the
+findings, and the findings are recorded in §17.7.
+
+Manual checklist (real window, real `~/.claude`), recorded in §17.8: the three
+tabs list the real definitions; a switch persists across restart; a skill
+switched on is usable in a new session and unusable when off; an enabled
+plugin's skill appears; an MCP server appears in the session and not when off;
+an open older session is unchanged; ⌘W behind the overlay does nothing; the
+status line does not follow a tab change.
+
+### 17.7 Spike findings
+
+*(filled in by Task 1)*
+
+### 17.8 As built
+
+*(filled in at the end, like §15.11 and §16.9)*
+
+### 17.9 Task order
+
+1. Spike (§17.6), findings into §17.7.
+2. Protocol: `StartSessionParams`, Rust and TypeScript wire types, contract test.
+3. Sidecar: option mapping.
+4. Domain and application: `ActiveExtensions` and its use-case.
+5. Registry and `Workspace` pass it at session start.
+6. Features: sections, per-section status, overlay-aware shortcuts.
+7. Tabs in the overlay.
+8. Manual checklist, fixes, §17.8.
+
+Tasks 2–6 need no window. As in §16.8, task 8 is budgeted for fixes.
