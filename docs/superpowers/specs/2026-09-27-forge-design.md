@@ -1633,3 +1633,21 @@ a broken `config.json` shows the notice and Save replaces it.
 Tasks 1–3 need no window and come first; 4–6 are compile-checked only until 7,
 the lesson of §15.11 (runtime problems appear only in a live window), so task 7
 is budgeted for fixes.
+
+### 16.9 As built
+
+Plan 6 was built on branch `plan-6-2` and checked on 2026-09-30 (macOS 26, Dioxus 0.7.10). 274 workspace tests pass. The live-window checks were driven by script (`cliclick` and System Events keystrokes) with screenshots, on the real `~/.claude`; one real turn was run.
+
+**Checked live (passed):** the overlay opens with ⌘, and closes with Esc and with ✕; ⌘, reopens it afterwards, including after Esc from inside an input; the Connection tab saves ("Saved.", Save dims again), masks the key, stores a trailing space trimmed, writes the file `0600`, and stores an emptied field as `null`; the Model tab saves a chosen or typed model at once, and the new-session panel then shows "Haiku 4.5"; a real session started from that panel ran on `claude-haiku-4-5-20251001` (read from its transcript) and answered; the idle marker is a hollow ring and the running marker a turning partial ring; a `config.json` that is not JSON shows the parse error in the overlay and Save replaces it; ⌘N works after closing the overlay.
+
+**Not checked:** dark mode; the needs-attention marker (no permission request was triggered); the Show button; the backdrop click; the group `+`; a wrong key failing a turn and an open older session keeping its old key; a typed model ID that is not in the table; Stop, permission answers, ⌘W and Ctrl+Tab; a hand-edited `enabled_skills` surviving a save (covered by the use-case tests only). These remain for a person to walk.
+
+**Runtime fixes:**
+1. `fix: keep saves and session start alive across unmounts and restore key focus` — from the final review: saves and `start_new` use `dioxus::core::spawn_forever` so switching tab, Esc or clicking away cannot cancel them half-way.
+2. `fix: give the window focus back when a view change removes the focused element` — found live: after a session starts, the composer that had focus is unmounted, focus falls to `<body>`, and every shortcut (⌘, ⌘N ⌘W Ctrl+Tab) is dead until a click. This predates Plan 6 (Plan 5 has the same unmount) but the overlay made it visible. The page now refocuses the root whenever the overlay or the active view changes, and only if nothing has focus.
+
+**Differences from §16:** `SettingsUseCase` is one struct with `load`, `saved_model`, `save_connection`, `save_model` rather than `load_settings` / `save_settings`; a saved model that is not in the table is shown as a "Custom: …" option in the dropdown rather than in the custom field; the chat composer has no folder chip or model line (only the new-session panel shows the model); the Settings footer shows `⌘,` on every platform.
+
+**Not fixed, on purpose (final review, Minor):** a backdrop click after a drag-select closes the overlay and drops the draft; ⌘, while open reloads and drops edits; session shortcuts still act behind the overlay and there is no focus trap; the "Saved." line is shared across tabs (seen live: it stays after switching from Connection to Model); a failed model choice leaves the dropdown on the clicked value; concurrent saves can overwrite each other; the config file is briefly created with default permissions and written non-atomically (pre-existing); a few CSS width edge cases; the Model line shows "Default model" until the first load finishes. Also: a config file that parses badly (for example a wrong type) is replaced without a backup, and unknown keys are dropped on any save.
+
+**Observed, unexplained:** while automating, the first click on Save after typing did not register once (the second did); and ⌘V did not paste into the new-session textarea although it pasted into a Settings input. Both may be artifacts of the automation (macOS autocorrect popups were visible), so they are recorded, not classified.
