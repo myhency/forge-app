@@ -224,6 +224,8 @@ impl Workspace {
             return false;
         };
         match shortcut {
+            // Opening settings belongs to `Settings::on_key`; the page offers it the event next.
+            Shortcut::OpenSettings => return false,
             Shortcut::NewSession => self.show_new_session(),
             Shortcut::NextSession => self.cycle(true),
             Shortcut::PreviousSession => self.cycle(false),

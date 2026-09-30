@@ -4,9 +4,10 @@ pub enum Shortcut {
     NextSession,
     PreviousSession,
     CloseSession,
+    OpenSettings,
 }
 
-/// Claude Code desktop's session shortcuts: Cmd+N new session, Cmd+W close the session,
+/// Claude Code desktop's session shortcuts: Cmd+N new session, Cmd+W close the session, Cmd+, open settings,
 /// Ctrl+Tab / Ctrl+Shift+Tab cycle. "Cmd" is Ctrl on platforms other than macOS. `key` is the
 /// pressed key: `"Tab"`, or a character in any case.
 pub fn shortcut_for(key: &str, ctrl: bool, meta: bool, shift: bool, mac: bool) -> Option<Shortcut> {
@@ -20,6 +21,7 @@ pub fn shortcut_for(key: &str, ctrl: bool, meta: bool, shift: bool, mac: bool) -
     match key.to_lowercase().as_str() {
         "n" => Some(Shortcut::NewSession),
         "w" => Some(Shortcut::CloseSession),
+        "," => Some(Shortcut::OpenSettings),
         _ => None,
     }
 }
@@ -66,5 +68,13 @@ mod tests {
     fn tab_without_ctrl_is_left_alone() {
         assert_eq!(shortcut_for("Tab", false, false, false, true), None);
         assert_eq!(shortcut_for("Tab", false, true, false, true), None);
+    }
+
+    #[test]
+    fn cmd_comma_opens_settings_on_a_mac_and_ctrl_comma_elsewhere() {
+        assert_eq!(shortcut_for(",", false, true, false, true), Some(Shortcut::OpenSettings));
+        assert_eq!(shortcut_for(",", true, false, false, false), Some(Shortcut::OpenSettings));
+        assert_eq!(shortcut_for(",", true, false, false, true), None, "Ctrl+, on a Mac");
+        assert_eq!(shortcut_for(",", false, true, true, true), None, "Cmd+Shift+,");
     }
 }
