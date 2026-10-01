@@ -35,6 +35,45 @@ pub struct SidebarEntry {
     pub marker: SessionMarker,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteAction {
+    Allowed,
+    /// The session is open in Forge; it has to be closed first.
+    WhileOpen,
+    /// There is no transcript on disk to act on yet.
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowActions {
+    pub can_rename: bool,
+    pub delete: DeleteAction,
+}
+
+impl SidebarEntry {
+    /// What the row's menu offers. A session with no Claude id has no transcript to rename or delete.
+    pub fn actions(&self) -> RowActions {
+        match (&self.key, &self.session_id) {
+            (_, None) => RowActions { can_rename: false, delete: DeleteAction::Unavailable },
+            (EntryKey::Live(_), Some(_)) => RowActions { can_rename: true, delete: DeleteAction::WhileOpen },
+            (EntryKey::Past { .. }, Some(_)) => RowActions { can_rename: true, delete: DeleteAction::Allowed },
+        }
+    }
+}
+
+/// Puts `sessions` in place of one project's listing and refreshes its count; other projects and
+/// unknown paths are left alone.
+pub fn replace_project_sessions(
+    past: &mut [(ProjectSummary, Vec<SessionSummary>)],
+    project_path: &std::path::Path,
+    sessions: Vec<SessionSummary>,
+) {
+    if let Some((project, listed)) = past.iter_mut().find(|(project, _)| project.path == project_path) {
+        project.session_count = sessions.len();
+        *listed = sessions;
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SidebarGroup {
     pub project: ProjectSummary,
@@ -229,7 +268,7 @@ fn truncate_chars(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use forge_application::{LiveSessionId, LiveSessionView, Phase};
     use forge_domain::{
@@ -255,6 +294,56 @@ mod tests {
             title: title.map(str::to_string),
             updated_at: format!("2026-09-29T00:00:0{}Z", id.len() % 10),
         }
+    }
+
+    fn entry(key: EntryKey, session: Option<&str>) -> SidebarEntry {
+        SidebarEntry {
+            key,
+            session_id: session.map(|id| SessionId(id.to_string())),
+            title: "t".to_string(),
+            updated_at: None,
+            marker: SessionMarker::Idle,
+        }
+    }
+
+    #[test]
+    fn a_past_session_can_be_renamed_and_deleted() {
+        let past = entry(EntryKey::Past { project: PathBuf::from("/w"), session: SessionId("s".into()) }, Some("s"));
+        assert_eq!(past.actions(), RowActions { can_rename: true, delete: DeleteAction::Allowed });
+    }
+
+    #[test]
+    fn an_open_session_can_be_renamed_but_not_deleted() {
+        let open = entry(EntryKey::Live(LiveSessionId(1)), Some("s"));
+        assert_eq!(open.actions(), RowActions { can_rename: true, delete: DeleteAction::WhileOpen });
+    }
+
+    #[test]
+    fn an_open_session_without_a_claude_id_has_no_actions() {
+        let fresh = entry(EntryKey::Live(LiveSessionId(1)), None);
+        assert_eq!(fresh.actions(), RowActions { can_rename: false, delete: DeleteAction::Unavailable });
+    }
+
+    #[test]
+    fn replacing_one_projects_sessions_leaves_the_others_and_updates_the_count() {
+        let mut past = vec![
+            (project("/a"), vec![summary("1", Some("one")), summary("2", Some("two"))]),
+            (project("/b"), vec![summary("3", Some("three"))]),
+        ];
+
+        replace_project_sessions(&mut past, Path::new("/a"), vec![summary("2", Some("renamed"))]);
+
+        assert_eq!(past[0].1.len(), 1);
+        assert_eq!(past[0].1[0].title.as_deref(), Some("renamed"));
+        assert_eq!(past[0].0.session_count, 1);
+        assert_eq!(past[1].1.len(), 1, "the other project is untouched");
+    }
+
+    #[test]
+    fn replacing_sessions_of_an_unknown_project_changes_nothing() {
+        let mut past = vec![(project("/a"), vec![summary("1", None)])];
+        replace_project_sessions(&mut past, Path::new("/zzz"), Vec::new());
+        assert_eq!(past[0].1.len(), 1);
     }
 
     fn open(id: u64, path: &str, claude_id: Option<&str>, marker: SessionMarker) -> LiveSummary {

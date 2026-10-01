@@ -4,10 +4,11 @@ use std::sync::Arc;
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, SessionRegistry, SettingsUseCase};
 use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SessionId, SessionSummary};
-use forge_ports::{ProjectRepositoryPort, SessionRepositoryPort};
+use forge_ports::{FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
 
+use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
-use crate::sidebar::{cycle_target, merge_sidebar, open_order, LiveSummary, SidebarGroup};
+use crate::sidebar::{cycle_target, merge_sidebar, open_order, replace_project_sessions, LiveSummary, SidebarGroup};
 
 /// Everything the workspace needs from the outside, injected once by the composition root.
 #[derive(Clone)]
@@ -17,6 +18,7 @@ pub struct WorkspaceServices {
     pub sessions: Arc<dyn SessionRepositoryPort>,
     pub settings: Arc<SettingsUseCase>,
     pub extensions: Arc<ExtensionsUseCase>,
+    pub folder_picker: Arc<dyn FolderPickerPort>,
 }
 
 /// What the main pane shows.
@@ -42,6 +44,8 @@ pub struct Workspace {
     active: Signal<Active>,
     notice: Signal<Option<String>>,
     new_folder: Signal<Option<PathBuf>>,
+    extra_folders: Signal<Vec<PathBuf>>,
+    picking: Signal<bool>,
 }
 
 /// Creates the workspace, provides it to every descendant and loads the sidebar once. Call it in
@@ -55,6 +59,8 @@ pub fn use_workspace_provider() -> Workspace {
         active: Signal::new(Active::NewSession),
         notice: Signal::new(None),
         new_folder: Signal::new(None),
+        extra_folders: Signal::new(Vec::new()),
+        picking: Signal::new(false),
     });
     use_context_provider(move || workspace);
     use_hook(move || workspace.reload_past());
@@ -91,14 +97,98 @@ impl Workspace {
         merge_sidebar(&self.past.read(), &open)
     }
 
-    /// The project folders a new session can start in: known projects that still exist.
+    /// The project folders a new session can start in: known projects that still exist, plus any
+    /// folders added through the dialog.
     pub fn new_session_projects(&self) -> Vec<ProjectSummary> {
-        self.past
-            .read()
+        let past = self.past.read();
+        let mut projects: Vec<ProjectSummary> = past
             .iter()
             .filter(|(project, _)| project.exists)
             .map(|(project, _)| project.clone())
-            .collect()
+            .collect();
+        for path in self.extra_folders.read().iter() {
+            if !projects.iter().any(|project| project.path == *path) {
+                projects.push(ProjectSummary {
+                    path: path.clone(),
+                    last_active: String::new(),
+                    session_count: 0,
+                    exists: true,
+                });
+            }
+        }
+        projects
+    }
+
+    /// Reloads one project's session list, leaving every other project as drawn.
+    pub fn reload_project(&self, project: PathBuf) {
+        let services = (*self.services.peek()).clone();
+        let mut past = self.past;
+        let mut notice = self.notice;
+        spawn(async move {
+            match services.sessions.list_sessions(&project).await {
+                Ok(sessions) => replace_project_sessions(&mut past.write(), &project, sessions),
+                Err(error) => notice.set(Some(format!("{}: {error}", project.display()))),
+            }
+        });
+    }
+
+    /// Renames a session (open or not). The list is re-read for that project only.
+    pub fn rename_session(&self, project: PathBuf, session: SessionId, title: String) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        spawn(async move {
+            match services.registry.rename(&project, &session, &title).await {
+                Ok(_) => this.reload_project(project),
+                Err(error) => this.report(error.to_string()),
+            }
+        });
+    }
+
+    /// Moves a session that is not open to the trash. The list is re-read for that project only.
+    pub fn delete_session(&self, project: PathBuf, session: SessionId) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        spawn(async move {
+            match services.registry.delete(&project, &session).await {
+                Ok(()) => this.reload_project(project),
+                Err(error) => this.report(error.to_string()),
+            }
+        });
+    }
+
+    /// Whether a folder dialog is open; the button is disabled meanwhile so only one can be.
+    pub fn picking_folder(&self) -> bool {
+        *self.picking.read()
+    }
+
+    /// Opens the native folder dialog and applies the choice to the new-session panel.
+    pub fn open_folder(&self) {
+        if self.picking_folder() {
+            return;
+        }
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let mut picking = self.picking;
+        picking.set(true);
+        // Root scope: the dialog outlives a re-render of the composer that asked for it.
+        dioxus::core::spawn_forever(async move {
+            let picked = services.folder_picker.pick_folder().await;
+            picking.set(false);
+            let Some(picked) = picked else {
+                return;
+            };
+            let known: Vec<PathBuf> = this.new_session_projects().into_iter().map(|project| project.path).collect();
+            let is_dir = std::fs::metadata(&picked).map(|m| m.is_dir()).unwrap_or(false);
+            match choose_folder(&known, picked, is_dir) {
+                FolderChoice::Known(path) => this.set_new_folder(Some(path)),
+                FolderChoice::Added(path) => {
+                    let mut extra = this.extra_folders;
+                    extra.write().push(path.clone());
+                    this.set_new_folder(Some(path));
+                }
+                FolderChoice::Rejected(message) => this.report(message),
+            }
+        });
     }
 
     pub fn live_view(&self, id: LiveSessionId) -> Option<Signal<LiveSessionView>> {

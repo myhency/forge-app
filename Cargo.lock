@@ -1503,6 +1503,7 @@ dependencies = [
  "dioxus",
  "forge-adapter-claude-fs",
  "forge-adapter-config",
+ "forge-adapter-dialog",
  "forge-adapter-sidecar",
  "forge-application",
  "forge-features",

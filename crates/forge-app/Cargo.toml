@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 forge-adapter-claude-fs = { path = "../forge-adapter-claude-fs" }
 forge-adapter-config = { path = "../forge-adapter-config" }
+forge-adapter-dialog = { path = "../forge-adapter-dialog" }
 forge-adapter-sidecar = { path = "../forge-adapter-sidecar" }
 forge-application = { path = "../forge-application" }
 forge-features = { path = "../forge-features" }

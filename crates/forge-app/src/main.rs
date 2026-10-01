@@ -7,6 +7,7 @@ use forge_adapter_claude_fs::{
     default_claude_home, default_claude_json_path, ClaudeMcpAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
     ClaudeSessionAdapter, ClaudeSkillAdapter,
 };
+use forge_adapter_dialog::RfdFolderPicker;
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
 use forge_application::{ExtensionsUseCase, SessionRegistry, SettingsUseCase};
@@ -107,7 +108,8 @@ fn build_services() -> WorkspaceServices {
     let sessions = Arc::new(ClaudeSessionAdapter::new(claude_home.clone()));
     let projects = Arc::new(ClaudeProjectAdapter::new(claude_home));
     let registry = Arc::new(SessionRegistry::new(factory, sessions.clone(), extensions.clone()));
-    WorkspaceServices { registry, projects, sessions, settings, extensions }
+    let folder_picker = Arc::new(RfdFolderPicker::new());
+    WorkspaceServices { registry, projects, sessions, settings, extensions, folder_picker }
 }
 
 #[component]
