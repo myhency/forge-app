@@ -1949,3 +1949,169 @@ accepted follow-up.
 8. Manual checklist, fixes, §17.8.
 
 Tasks 2–6 need no window. As in §16.8, task 8 is budgeted for fixes.
+
+## 18. Detailed Design: chat rendering (Plan 8)
+
+Plan 8 closes three Tier 1 items of §7 that are pure presentation: markdown,
+syntax-highlighted code blocks, and a diff viewer for Edit/Write tool calls.
+It touches no port and no adapter. Plan 9 (§19) covers the rest of Tier 1.
+
+### 18.1 Scope and decisions
+
+- Markdown and highlighting are rendered in Rust (`pulldown-cmark` and
+  `syntect`), not in the webview: pure functions that unit tests can reach,
+  and no JavaScript bundle to ship offline.
+- Markdown applies to **assistant** messages only. User messages stay plain text.
+- **Out of scope:** copy buttons, line numbers in diffs, side-by-side diffs,
+  rendering Bash/Read output as markdown, a theme chooser, incremental
+  (cached) re-rendering while streaming.
+
+### 18.2 Markdown (`forge-entities`)
+
+`render_markdown(&str) -> String` converts CommonMark plus tables and
+strikethrough to HTML with `pulldown-cmark`.
+
+- **Raw HTML is never passed through.** `Html` and `InlineHtml` events are
+  emitted as escaped text, so model output cannot become live markup in the
+  webview.
+- **Link schemes:** only `http`, `https` and `mailto` keep their `href`; any
+  other scheme renders as plain text.
+- A message is re-parsed in full on every update. An unterminated code fence
+  is treated by the parser as code to the end of the text, which is the
+  right behavior mid-stream.
+- `MessageBubble` inserts the result with `dangerous_inner_html` for the
+  assistant role only.
+
+### 18.3 Syntax highlighting
+
+Code fences go through `syntect` with `ClassedHTMLGenerator`, which emits CSS
+classes instead of inline colors. The stylesheet carries a light and a dark
+palette selected by `prefers-color-scheme`, matching §16.6. The fence's
+language tag picks the syntax; an unknown or missing tag renders as escaped,
+unhighlighted code. Only syntect's pure-Rust regex backend is enabled; no C
+dependency is added.
+
+### 18.4 Diff viewer
+
+`diff_for_tool_call(&ToolCall) -> Option<FileDiff>` in `forge-entities`,
+with line diffs from the `similar` crate.
+
+- `Edit`: `old_string` against `new_string`.
+- `MultiEdit`: each edit in order, as separate hunks.
+- `Write`: every line of `content` as an addition. The previous file content
+  is not part of the tool input, so the header says "new content" and does not
+  claim whether the file existed.
+- Any other tool, or input missing the expected fields, gives `None`.
+- No line numbers: the input does not say where in the file the edit lands.
+  Lines carry a `+` / `-` / space prefix and a background color.
+
+`ToolCallLine` keeps its collapsed one-line form. For calls that have a diff,
+clicking the line expands it (state is local to the line). `PermissionCard`
+shows the same diff component for pending Edit/Write requests, so the content
+can be read before allowing.
+
+### 18.5 Testing
+
+Unit tests, no rendering: markdown conversion for each supported construct,
+HTML escaping, link-scheme filtering, unterminated fences, language
+detection with an unknown tag, and diff output for Edit, MultiEdit, Write
+and malformed input. Visual checks go in the manual checklist (§8).
+
+### 18.6 Task order
+
+1. Dependencies (`pulldown-cmark`, `syntect`, `similar`); confirm the build
+   stays free of C dependencies.
+2. `render_markdown` with escaping and link filtering.
+3. Highlighting inside code fences.
+4. `diff_for_tool_call` and the `FileDiff` model.
+5. `MessageBubble` markdown rendering and the stylesheet (both palettes).
+6. Expandable `ToolCallLine` and the diff in `PermissionCard`.
+7. Manual checklist, fixes, "As built".
+
+## 19. Detailed Design: session rename/delete and folder open (Plan 9)
+
+Plan 9 finishes Tier 1: session rename and delete (shared with Claude Code on
+disk) and a native folder-open dialog.
+
+### 19.1 Scope and decisions
+
+- Rename appends a `custom-title` entry to the session's `.jsonl`; delete
+  moves the file to the OS trash. Neither is permanent from the user's side.
+- A session whose sidecar is running cannot be deleted. It can be renamed.
+- **Out of scope:** trash restore UI, bulk delete, deleting a project,
+  undo for rename, file watching (the list is re-read after each action),
+  the §15.12 `cwd` collision.
+
+### 19.2 Ports and adapters
+
+`SessionRepositoryPort` gains:
+
+- `rename_session(project_path, id, title)`
+- `delete_session(project_path, id)`
+
+with new `SessionRepositoryError` variants `RenameFailed` and `DeleteFailed`
+(`NotFound` is reused). `forge-adapter-claude-fs` implements them.
+
+- **Rename:** append `{"type":"custom-title","customTitle":<title>,"sessionId":<id>}`
+  as one line. The reader already takes the last title entry (`title_from_value`),
+  so reading is unchanged. If the file does not end with a newline, one is
+  written first.
+- **Delete:** the `.jsonl` goes to the trash through the `trash` crate,
+  behind a thin wrapper so tests never touch a real trash. Whether a
+  same-named sibling directory (sub-agent data) exists and should go with it
+  is settled by the spike.
+
+`FolderPickerPort::pick_folder() -> Option<PathBuf>` is a new port in
+`forge-ports`; its adapter uses `rfd`.
+
+### 19.3 Spike (first task)
+
+Findings go to §19.7, as in §15 and §17.
+
+1. What Claude Code itself writes when a session is renamed (field names,
+   whether a `sessionId` is present), checked against a session renamed in
+   Claude Code, not assumed.
+2. Whether a session has sibling files or directories besides its `.jsonl`.
+3. That `rfd` opens a folder dialog from inside the Dioxus desktop window
+   without blocking the event loop.
+
+### 19.4 Application and features
+
+- Title validation: trimmed, non-empty, at most 200 characters.
+- Delete is refused with a clear message when the session is live.
+- Renaming a live session also updates its title in the live view.
+- After either action, only that project's session list is reloaded.
+
+### 19.5 UI
+
+- **Sidebar:** hovering a session shows a `⋯` menu with "Rename" and "Delete".
+  Rename turns the title into an input in place (Enter confirms, Esc cancels).
+  Delete asks for confirmation ("Moves the session to the trash").
+- **New session panel:** an "Open folder…" button beside the Folder
+  dropdown. The chosen path goes to `set_new_folder`; a folder already in
+  the list selects that project; a path that does not exist is rejected.
+- Both keep working with the overlay-aware shortcuts of §17.
+
+### 19.6 Testing
+
+Adapter tests use temp-dir fixtures: after a rename, `list_sessions` and
+`load_session` return the new title; newline handling; `NotFound` for a
+missing session; delete through a fake trash wrapper. Feature logic (title
+validation, refusing live sessions, reload scope) uses mock ports. The
+dialog itself is manual.
+
+### 19.7 Spike findings
+
+(To be filled in by task 1.)
+
+### 19.8 Task order
+
+1. Spike (§19.3), findings into §19.7.
+2. Port methods and error variants; mocks.
+3. Adapter rename.
+4. Adapter delete behind the trash wrapper.
+5. `FolderPickerPort` and its `rfd` adapter.
+6. Application/feature logic: validation, live-session guard, reload.
+7. Sidebar menu, in-place rename and delete confirmation.
+8. Open-folder button in the new session panel.
+9. Manual checklist, fixes, "As built".
