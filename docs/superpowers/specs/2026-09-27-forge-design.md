@@ -2603,3 +2603,13 @@ whether it lists plugin and skill commands that Forge enables; (4) what
 `init.slash_commands` contains for the same session. If (1) fails, the plan
 falls back to starting a turn-less init another way, and the spike's result is
 recorded here as §21.7.
+
+### 21.7 Spike result
+
+Checked 2026-10-01 with the real SDK 0.3.283 (`query()` with a prompt iterable that had not yielded anything), cwd `sidecar/`, `settingSources: ["project"]`, no Forge plugins or skills.
+
+1. **`supportedCommands()` answers before any user message.** First run 3 972 ms (it includes starting the SDK process), second run 886 ms. It returned 53 and 52 commands in the two runs (the count is not stable between runs), so the list is read as given and never counted on. No timeout was hit; the 10 s limit in §21.3 stays.
+2. **Fields:** `name`, `description`, `argumentHint` and `builtin` (boolean). Descriptions can be very long (a skill's whole "when to use" text), so the popup shows one truncated line. `builtin` is not used.
+3. **Names have no leading `/`.** The sidecar still strips one (§21.3) in case another SDK version adds it.
+4. **`init.slash_commands` is a list of names without `/`**, 52 names in the run with a message, in a different order from the one `supportedCommands()` gave first. It contains an internal-looking name, `__remote-workflow`. The names are not filtered: the spec says to list what the SDK reports. Whether the two lists always have the same names was not established beyond these two runs, so the "names changed" rule in §21.3 stays as designed (the later list wins when its names differ).
+5. Not checked: that Forge's own enabled skills and plugins show up (they were not loaded in this probe). The live check in the last task covers it.
