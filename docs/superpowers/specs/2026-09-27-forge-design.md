@@ -2109,7 +2109,63 @@ dialog itself is manual.
 
 ### 19.7 Spike findings
 
-(To be filled in by task 1.)
+Run 2026-10-01 by a non-interactive agent in the `plan-9` worktree. It could
+not run an interactive `claude` session or click a native dialog, so those
+answers are marked "Not checked" with what a person must do. No finding
+contradicts a Decision of the Plan 9 plan.
+
+- **Baseline — Checked.** `cargo test --workspace` reports 344 passing
+  tests (the plan assumed 341).
+- **(a) What `/rename` writes — Partly checked.** Not run live (needs an
+  interactive `claude`). Real data in `~/.claude/projects` has two sessions
+  (both in `-Users-james-Developer-mywork`) with `custom-title` lines, almost
+  certainly written by `/rename`: exactly
+  `{"type":"custom-title","customTitle":"<title>","sessionId":"<session id>"}`,
+  field order `type`, `customTitle`, `sessionId`, `sessionId` present. Claude
+  Code repeats the same line several times in one file (4 and 3 times, at
+  lines 30/38/53/74 and 20/33/41), interleaved with other entries, so the
+  reader must accept duplicates and take the last. `ai-title` lines are
+  `{"type":"ai-title","aiTitle":"<title>","sessionId":"<id>"}` (98 files have
+  one). No file holds both kinds, so the order of `ai-title` after
+  `custom-title` is **Not checked** (Decision 2 stands on the reader rule,
+  not on observed order). Both files ended with a newline, but that last line
+  was a normal entry, so "file ended without a newline before a rename" is
+  **Not checked**; Task 2 handles it defensively anyway. A person should: in
+  a scratch directory run `claude`, send a message, `/rename spike-title`,
+  exit, run `grep -n '"custom-title"\|"ai-title"'` and `tail -c 200 | od -c`
+  on the file, then send one more message and exit and look again.
+- **(b)/(c) Siblings of a session's `.jsonl` — Checked (read-only).** 135
+  `.jsonl` files; only 7 have a same-named `<session-id>/` directory (other
+  directories are `memory/`). Contents seen: `tool-results/*.txt` (large tool
+  output) and `subagents/agent-*.jsonl` + `agent-*.meta.json` (sub-agent
+  transcripts). All of it belongs only to that session, so trashing the
+  `.jsonl` and the same-named sibling directory together is right, and the
+  sibling lines stay in Task 3. Other places carrying the session id:
+  `~/.claude/file-history/<session-id>/` (exists for some sessions, absent
+  for most) and `~/.claude/session-env/<session-id>/` (empty directories).
+  `todos`, `shell-snapshots` (named by timestamp), `tasks` (`session-*`) and
+  `sessions` (named by pid) do not carry it. Decision: trash only the
+  `.jsonl` and the sibling directory; leave `file-history` and `session-env`
+  (Claude Code's own housekeeping, not this feature's to touch).
+- **(d) Folder dialog in the Dioxus window — Partly checked.** `rfd = "0.17"`
+  resolves (0.17.2) and builds with default features in a throwaway crate on
+  macOS. Dialog opening, window responsiveness while it is open, the printed
+  path, `None` on cancel and no hang are **Not checked**: a person must add
+  the button from the brief to `NewSessionComposer`, `cargo run -p
+  forge-app`, click it, pick a folder, cancel once, type and resize while it
+  is open. Task 8 depends on this.
+- **(e) `trash` — Partly checked.** `trash = "5"`: `trash::delete` on an
+  existing temp file returned `Ok(())`, the file was gone, and the call
+  blocked for about 3.7 s (on macOS it drives Finder through AppleScript), so
+  it must run off the UI thread (`spawn_blocking`). A path that does not
+  exist returns `Err(Os { code: 1, .. })` with an AppleScript/Finder message
+  (localized, not a typed not-found), so check existence ourselves before
+  calling and map that to `NotFound`. That the file lands in `~/.Trash` is
+  **Not checked**: the sandbox denies listing `~/.Trash`; a person should
+  confirm in Finder.
+- **(f) Rename changes the modified time — Checked.** On a scratch copy,
+  `stat -f %m` went from 1790857716 to 1790857717 after one `echo '{}' >>`;
+  a rename therefore moves the session up the list (Decision 5).
 
 ### 19.8 Task order
 
