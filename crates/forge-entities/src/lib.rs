@@ -1,4 +1,5 @@
 mod diff;
+mod diff_view;
 mod extension_rows;
 mod highlight;
 mod markdown;
@@ -10,6 +11,7 @@ mod sidebar_item;
 mod tool_summary;
 
 pub use diff::{diff_for_tool, diff_for_tool_call, DiffLine, DiffLineKind, FileDiff};
+pub use diff_view::DiffView;
 pub use markdown::render_markdown;
 pub use message::{MessageBubble, ToolCallLine};
 pub use model_catalog::{model_from_value, model_label, model_options, model_value, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
