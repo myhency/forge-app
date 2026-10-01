@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use forge_domain::{ActiveExtensions, PermissionDecision, PermissionMode, TokenUsage};
+use forge_domain::{ActiveExtensions, PermissionDecision, PermissionMode, SlashCommand, TokenUsage};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -35,6 +35,8 @@ pub enum SidecarEvent {
     },
     /// How full the context window is, sent after each `TurnComplete` when the SDK could say.
     ContextUsage { total_tokens: u64, max_tokens: u64 },
+    /// The slash commands the SDK reports; each event replaces the earlier list.
+    CommandsAvailable { commands: Vec<SlashCommand> },
     Error { message: String },
     SessionEnded,
 }
@@ -113,5 +115,26 @@ mod tests {
         let event: SidecarEvent =
             serde_json::from_str(r#"{"type":"context_usage","total_tokens":76200,"max_tokens":200000}"#).unwrap();
         assert_eq!(event, SidecarEvent::ContextUsage { total_tokens: 76_200, max_tokens: 200_000 });
+    }
+
+    #[test]
+    fn commands_available_parses_with_and_without_the_optional_fields() {
+        let event: SidecarEvent = serde_json::from_str(
+            r#"{"type":"commands_available","commands":[{"name":"compact","description":"Free up context","argument_hint":"[text]"},{"name":"review"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            event,
+            SidecarEvent::CommandsAvailable {
+                commands: vec![
+                    forge_domain::SlashCommand {
+                        name: "compact".to_string(),
+                        description: Some("Free up context".to_string()),
+                        argument_hint: Some("[text]".to_string()),
+                    },
+                    forge_domain::SlashCommand { name: "review".to_string(), description: None, argument_hint: None },
+                ]
+            }
+        );
     }
 }

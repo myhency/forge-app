@@ -1,4 +1,4 @@
-use forge_domain::{ContextUsage, Message, MessageRole, PermissionRequest, Session, SessionId, ToolCall, ToolResult};
+use forge_domain::{ContextUsage, Message, MessageRole, PermissionRequest, Session, SessionId, SlashCommand, ToolCall, ToolResult};
 use forge_ports::SidecarEvent;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,6 +10,7 @@ pub enum SessionUpdate {
     PermissionRequested(PermissionRequest),
     TurnCompleted,
     ContextUsage(ContextUsage),
+    CommandsAvailable(Vec<SlashCommand>),
     Errored { message: String },
     SessionEnded,
 }
@@ -92,6 +93,7 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             total_tokens: *total_tokens,
             max_tokens: *max_tokens,
         }),
+        SidecarEvent::CommandsAvailable { commands } => SessionUpdate::CommandsAvailable(commands.clone()),
         SidecarEvent::Error { message } => SessionUpdate::Errored { message: message.clone() },
         SidecarEvent::SessionEnded => SessionUpdate::SessionEnded,
     }
@@ -333,5 +335,14 @@ mod tests {
             apply_sidecar_event(&mut session, &SidecarEvent::SessionEnded),
             SessionUpdate::SessionEnded
         );
+    }
+
+    #[test]
+    fn commands_available_is_reported_and_leaves_the_session_alone() {
+        let mut session = empty_session();
+        let commands = vec![forge_domain::SlashCommand { name: "compact".to_string(), description: None, argument_hint: None }];
+        let update = apply_sidecar_event(&mut session, &SidecarEvent::CommandsAvailable { commands: commands.clone() });
+        assert_eq!(update, SessionUpdate::CommandsAvailable(commands));
+        assert!(session.messages.is_empty());
     }
 }

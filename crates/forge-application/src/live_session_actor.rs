@@ -200,6 +200,7 @@ impl Actor {
                 self.view.pending_permissions.clear();
             }
             SessionUpdate::ContextUsage(context) => self.view.context = Some(context),
+            SessionUpdate::CommandsAvailable(commands) => self.view.commands = commands,
             // The sidecar protocol does not distinguish fatal from non-fatal errors, so every
             // `Error` ends this sidecar: its query is over and `start_session` cannot be re-sent.
             SessionUpdate::Errored { message } => self.fail(message, true).await,

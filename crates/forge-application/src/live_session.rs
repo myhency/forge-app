@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_domain::{ContextUsage, PermissionDecision, PermissionRequest, Session, SessionId};
+use forge_domain::{ContextUsage, PermissionDecision, PermissionRequest, Session, SessionId, SlashCommand};
 use forge_ports::SidecarFactoryPort;
 use tokio::sync::{mpsc, watch};
 
@@ -46,6 +46,8 @@ pub struct LiveSessionView {
     /// finished in this run: the sidecar starts on the first send, so an opened-but-idle session
     /// has no value yet.
     pub context: Option<ContextUsage>,
+    /// The slash commands the SDK reported; empty until the first report.
+    pub commands: Vec<SlashCommand>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -142,6 +144,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         unsent: None,
         failed_sends: 0,
         context: None,
+        commands: Vec::new(),
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
     let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -848,5 +851,22 @@ mod tests {
         .await;
 
         assert_eq!(seen.context.map(|c| c.percent()), Some(20));
+    }
+
+    #[tokio::test]
+    async fn a_commands_update_replaces_the_last_list() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        assert!(handle.snapshot().commands.is_empty());
+
+        handle.send("go".to_string());
+        let named = |name: &str| forge_domain::SlashCommand { name: name.to_string(), description: None, argument_hint: None };
+        control.push(SidecarEvent::CommandsAvailable { commands: vec![named("a"), named("b")] });
+        control.push(SidecarEvent::CommandsAvailable { commands: vec![named("c")] });
+        let seen = wait_for(&mut view, "the second list", |v| v.commands == vec![named("c")]).await;
+
+        assert_eq!(seen.commands.len(), 1);
     }
 }

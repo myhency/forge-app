@@ -383,6 +383,7 @@ mod tests {
             unsent: None,
             failed_sends: 0,
             context: None,
+            commands: Vec::new(),
         }
     }
 

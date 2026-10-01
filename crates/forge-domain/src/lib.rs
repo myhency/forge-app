@@ -1,3 +1,4 @@
+mod command;
 mod config;
 mod extension;
 mod permission;
@@ -5,6 +6,7 @@ mod project;
 mod session;
 mod usage;
 
+pub use command::SlashCommand;
 pub use config::{normalize_setting, AppConfig};
 pub use extension::{ActiveExtensions, McpServerDefinition, PluginDefinition, SkillDefinition};
 pub use permission::{PermissionDecision, PermissionMode};
