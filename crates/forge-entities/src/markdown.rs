@@ -2,9 +2,10 @@ use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 use crate::highlight::{escape_html, highlight_code};
 
-// Above this many bytes a code block is shown escaped but not highlighted, so one enormous
-// block cannot stall the window while the message re-renders.
-const MAX_HIGHLIGHT_BYTES: usize = 100_000;
+// Above this many bytes a code block is shown escaped but not highlighted. The whole message is
+// re-rendered on every streamed token, so the cost of highlighting is paid once per token:
+// about 55 ms per token at this size in a release build, and it grows steeply beyond it.
+const MAX_HIGHLIGHT_BYTES: usize = 20_000;
 
 /// Assistant text as HTML. Raw HTML in the text is escaped, links keep an `href` only for
 /// `http`, `https` and `mailto`, images become their alt text, and fenced code is highlighted
@@ -201,5 +202,14 @@ mod tests {
         let html = render_markdown(&source);
         assert!(!html.contains("hl-"), "highlighting should be skipped above the size limit");
         assert!(html.contains("let x = 1;"));
+    }
+
+    #[test]
+    fn a_code_block_too_big_to_re_highlight_on_every_streamed_token_is_not_highlighted() {
+        let source = format!("```rust\n{}```", "let x = 1;\n".repeat(2_500));
+        assert!(source.len() > 25_000);
+        assert!(!render_markdown(&source).contains("hl-"));
+        let small = format!("```rust\n{}```", "let x = 1;\n".repeat(500));
+        assert!(render_markdown(&small).contains("hl-"));
     }
 }

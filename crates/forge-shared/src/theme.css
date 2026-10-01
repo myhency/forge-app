@@ -200,7 +200,7 @@ button.tool-call { appearance: none; background: none; text-align: left; cursor:
 .tool-call.expandable:hover { background: var(--bg-hover); }
 
 .diff { max-width: 760px; margin: 6px 0 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); overflow: hidden; font-family: var(--mono); font-size: 12px; }
-.permission-card .diff { margin: 4px 0 10px; }
+.permission-card .diff { margin: 4px 0 10px; max-height: 40vh; overflow-y: auto; }
 .diff-header { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--fg-muted); }
 .diff-path { color: var(--fg); overflow-wrap: anywhere; }
 .diff-counts { margin-left: auto; white-space: nowrap; }

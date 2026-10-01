@@ -1978,7 +1978,8 @@ strikethrough to HTML with `pulldown-cmark`.
   other scheme renders as plain text. Images are never loaded: an image
   renders as its alt text (a remote image URL in model output would be a
   tracking channel).
-- A code block over 100 000 bytes is shown escaped but not highlighted.
+- A code block over 20 000 bytes is shown escaped but not highlighted
+  (the whole message is re-rendered on every streamed token).
 - A message is re-parsed in full on every update. An unterminated code fence
   is treated by the parser as code to the end of the text, which is the
   right behavior mid-stream.
@@ -2130,6 +2131,8 @@ Plan 8 was built on branch `plan-8` and checked on 2026-10-01 (macOS 26, Dioxus 
 
 **Not checked (needs a person):** the live window walk of the plan's Task 6 checklist — the sidecar is not built in this worktree and the walk needs real Claude turns. Specifically: clicking a link opens the system browser without navigating the window; the expand/collapse of an Edit/Write line by mouse and keyboard; the diff inside a real permission card; resuming an older session with Edit/Write calls; the 300-line cut on a real long `Write`; streaming a half-written code block; user messages shown verbatim.
 
-**Differences from §18:** none beyond those already written into §18.2, §18.4 and §18.6 when the plan was made (images render as alt text; blocks over 100 000 bytes are not highlighted; a diff is cut at 300 lines; `diff_for_tool` takes a name and an input; highlighting precedes markdown in the task order). A line that begins with raw HTML (for example `<script>…`) is an HTML block in CommonMark, so the rest of that paragraph is shown as literal text rather than parsed as markdown; it is escaped, so this is safe.
+**Differences from §18:** none beyond those already written into §18.2, §18.4 and §18.6 when the plan was made (images render as alt text; blocks over 20 000 bytes are not highlighted (the final review measured 280 ms per render at 91 KB, paid once per streamed token); line diffs have a 100 ms deadline; a diff inside a permission card is at most 40vh tall and scrolls; a diff is cut at 300 lines; `diff_for_tool` takes a name and an input; highlighting precedes markdown in the task order). A line that begins with raw HTML (for example `<script>…`) is an HTML block in CommonMark, so the rest of that paragraph is shown as literal text rather than parsed as markdown; it is escaped, so this is safe.
+
+**Final review (Plan 8):** no XSS path was found in about 30 hostile inputs. Four Important findings were fixed, each with a failing test first: a long diff in the permission card pushed the buttons off screen (now capped at 40vh and scrolls); highlighting up to 100 KB on every streamed token froze the window (cap lowered to 20 000 bytes); an unrelated 10 000-line Edit took 10 s to diff in a debug build (100 ms deadline); the dark-palette stylesheet test could not fail (now checks the definitions inside the dark block). Deferred minors: an email autolink `<a@b.c>` loses its link; escaped raw HTML blocks collapse their line breaks and can touch the preceding word; whitespace-only assistant content leaves an empty wrapper; an empty `MultiEdit` or empty `Write` still expands into a header-only box; the tool-call button may differ slightly in line height from the plain lines (not checked visually).
 
 **Not fixed, on purpose:** TypeScript and TOML fences are not highlighted (the bundled syntax set has neither); the whole message is re-parsed on every streamed update.

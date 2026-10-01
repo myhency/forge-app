@@ -61,9 +61,19 @@ mod tests {
 
     #[test]
     fn the_code_and_diff_colors_have_a_dark_palette() {
-        let dark = THEME_CSS.rsplit("prefers-color-scheme: dark").next().unwrap();
-        for variable in ["--hl-keyword", "--hl-string", "--diff-added-bg", "--diff-removed-bg"] {
-            assert!(dark.contains(variable), "the dark palette is missing {variable}");
+        // The body of the last dark media block: from its opening to the closing "}\n}".
+        let start = THEME_CSS.rfind("@media (prefers-color-scheme: dark)").unwrap();
+        let block = &THEME_CSS[start..];
+        let dark = &block[..block.find("\n}").unwrap()];
+        for definition in ["--hl-keyword:", "--hl-string:", "--diff-added-bg:", "--diff-removed-bg:"] {
+            assert!(dark.contains(definition), "the dark palette does not define {definition}");
         }
+    }
+
+    #[test]
+    fn a_diff_inside_a_permission_card_scrolls_instead_of_pushing_the_buttons_away() {
+        let rule = THEME_CSS.lines().find(|line| line.starts_with(".permission-card .diff {")).unwrap();
+        assert!(rule.contains("max-height"), "{rule}");
+        assert!(rule.contains("overflow-y: auto"), "{rule}");
     }
 }

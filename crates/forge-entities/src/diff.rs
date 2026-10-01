@@ -1,9 +1,15 @@
+use std::time::Duration;
+
 use forge_domain::ToolCall;
 use serde_json::{Map, Value};
 use similar::{ChangeTag, TextDiff};
 
 // A diff shows at most this many lines in total; the rest is summarised as "… N more lines".
 const MAX_DIFF_LINES: usize = 300;
+// A diff of two huge, unrelated texts is slow to compute exactly; past this deadline `similar`
+// returns a coarser (still correct, less minimal) diff. This runs when a transcript is rendered,
+// before anyone expands the line.
+const DIFF_DEADLINE: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffLineKind {
@@ -68,7 +74,9 @@ fn edit_hunk(object: &Map<String, Value>) -> Option<Vec<DiffLine>> {
 }
 
 fn line_diff(old: &str, new: &str) -> Vec<DiffLine> {
-    TextDiff::from_lines(old, new)
+    TextDiff::configure()
+        .timeout(DIFF_DEADLINE)
+        .diff_lines(old, new)
         .iter_all_changes()
         .map(|change| DiffLine {
             kind: match change.tag() {
@@ -220,5 +228,16 @@ mod tests {
             result: None,
         };
         assert!(diff_for_tool_call(&call).is_some());
+    }
+
+    #[test]
+    fn a_huge_edit_with_nothing_in_common_is_diffed_within_a_deadline() {
+        let old: String = (0..8000).map(|i| format!("old line {i}\n")).collect();
+        let new: String = (0..8000).map(|i| format!("new line {i}\n")).collect();
+        let input = json!({ "file_path": "f", "old_string": old, "new_string": new });
+        let started = std::time::Instant::now();
+        let diff = diff_for_tool("Edit", &input).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "took {:?}", started.elapsed());
+        assert_eq!((diff.added, diff.removed), (8000, 8000));
     }
 }
