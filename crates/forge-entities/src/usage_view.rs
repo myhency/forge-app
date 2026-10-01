@@ -88,6 +88,8 @@ pub struct UsageView {
     pub output: String,
     pub cache_read: String,
     pub cache_write: String,
+    /// The number of web searches, shown only when there were any.
+    pub web_searches: Option<String>,
     /// `None` when something was used but no model has a price.
     pub cost: Option<String>,
     /// `excludes <model>, …` when some models have no price.
@@ -129,6 +131,7 @@ impl UsageView {
             output: format_tokens(total.output),
             cache_read: format_tokens(total.cache_read),
             cache_write: format_tokens(total.cache_write()),
+            web_searches: (total.web_search_requests > 0).then(|| format_tokens(total.web_search_requests)),
             cost,
             cost_note,
             models: usage
@@ -223,7 +226,7 @@ mod tests {
         let mut usage = SessionUsage::default();
         usage.add(
             "claude-test",
-            TokenUsage { input: 1_000_000, output: 100_000, cache_read: 2_000, cache_write_5m: 3_000, cache_write_1h: 4_000 },
+            TokenUsage { input: 1_000_000, output: 100_000, cache_read: 2_000, cache_write_5m: 3_000, cache_write_1h: 4_000, web_search_requests: 0 },
         );
         let view = UsageView::new(&usage, Some(ContextUsage { total_tokens: 76_200, max_tokens: 200_000 }), &prices());
 
@@ -273,5 +276,40 @@ mod tests {
         let mut usage = SessionUsage::default();
         usage.add("claude-haiku-4-5-20251001", TokenUsage { input: 1_000_000, ..Default::default() });
         assert_eq!(UsageView::for_session(&usage, None).cost.as_deref(), Some("$1.00"));
+    }
+
+    #[test]
+    fn web_searches_are_listed_and_priced_at_a_cent_each() {
+        let mut usage = SessionUsage::default();
+        usage.add("claude-test", TokenUsage { input: 1_000_000, web_search_requests: 120, ..Default::default() });
+        let view = UsageView::new(&usage, None, &prices());
+
+        assert_eq!(view.web_searches.as_deref(), Some("120"));
+        assert_eq!(view.cost.as_deref(), Some("$4.20"), "$3.00 of input + 120 searches at $0.01");
+    }
+
+    #[test]
+    fn no_web_searches_means_no_web_search_row() {
+        let mut usage = SessionUsage::default();
+        usage.add("claude-test", TokenUsage { input: 5, ..Default::default() });
+        assert_eq!(UsageView::new(&usage, None, &prices()).web_searches, None);
+        assert_eq!(UsageView::new(&SessionUsage::default(), None, &prices()).web_searches, None);
+    }
+
+    #[test]
+    fn a_session_that_only_searched_the_web_has_usage_and_a_cost() {
+        let mut usage = SessionUsage::default();
+        usage.add("claude-test", TokenUsage { web_search_requests: 50, ..Default::default() });
+        let view = UsageView::new(&usage, None, &prices());
+        assert!(view.has_usage);
+        assert_eq!(view.web_searches.as_deref(), Some("50"));
+        assert_eq!(view.cost.as_deref(), Some("$0.50"));
+    }
+
+    #[test]
+    fn large_search_counts_are_written_short() {
+        let mut usage = SessionUsage::default();
+        usage.add("claude-test", TokenUsage { web_search_requests: 12_300, ..Default::default() });
+        assert_eq!(UsageView::new(&usage, None, &prices()).web_searches.as_deref(), Some("12.3k"));
     }
 }

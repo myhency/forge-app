@@ -288,6 +288,7 @@ describe("SidecarSession", () => {
             cache_read_input_tokens: 5,
             cache_creation_input_tokens: 6,
             cache_creation: { ephemeral_5m_input_tokens: 2, ephemeral_1h_input_tokens: 4 },
+            server_tool_use: { web_search_requests: 3, web_fetch_requests: 1 },
           },
           // A running total that includes helper models: it must not be what is sent.
           modelUsage: { "claude-test": { inputTokens: 999 }, "claude-helper": { inputTokens: 901 } },
@@ -299,8 +300,69 @@ describe("SidecarSession", () => {
 
     expect(events).toContainEqual({
       type: "turn_complete",
-      usage: { "claude-test": { input: 12, output: 34, cache_read: 5, cache_write_5m: 2, cache_write_1h: 4 } },
+      usage: { "claude-test": { input: 12, output: 34, cache_read: 5, cache_write_5m: 2, cache_write_1h: 4, web_search_requests: 3 } },
     });
+  });
+
+  const searchResult = (n: unknown, parent: string | null = null) => ({
+    type: "user",
+    parent_tool_use_id: parent,
+    message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_s", content: "..." }] },
+    tool_use_result: { query: "rust", results: [], durationSeconds: 1, searchCount: n },
+  });
+
+  it("counts the web searches a WebSearch tool result reports in the turn's usage", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-test", content: [] } };
+        yield searchResult(2);
+        yield { type: "result", subtype: "success", usage: { input_tokens: 5, output_tokens: 6, server_tool_use: { web_search_requests: 0 } } };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const done = events.find((e) => e.type === "turn_complete") as Extract<SidecarEvent, { type: "turn_complete" }>;
+    expect(done.usage["claude-test"].web_search_requests).toBe(2);
+    expect(done.usage["claude-test"].input).toBe(5);
+  });
+
+  it("does not carry one turn's searches into the next", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-test", content: [] } };
+        yield searchResult(2);
+        yield { type: "result", subtype: "success", usage: { input_tokens: 1 } };
+        yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-test", content: [] } };
+        yield { type: "result", subtype: "success", usage: { input_tokens: 1 } };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const done = events.filter((e) => e.type === "turn_complete") as Array<Extract<SidecarEvent, { type: "turn_complete" }>>;
+    expect(done.map((e) => e.usage["claude-test"].web_search_requests)).toEqual([2, 0]);
+  });
+
+  it("ignores a sub-agent's search and results that are not a search count", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-test", content: [] } };
+        yield searchResult(3, "toolu_parent");
+        yield searchResult("many");
+        yield searchResult(-1);
+        yield { type: "user", parent_tool_use_id: null, message: { role: "user", content: [] }, tool_use_result: { toolStats: { searchCount: 9 } } };
+        yield { type: "result", subtype: "success", usage: { input_tokens: 1 } };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const done = events.find((e) => e.type === "turn_complete") as Extract<SidecarEvent, { type: "turn_complete" }>;
+    expect(done.usage["claude-test"].web_search_requests).toBe(0);
   });
 
   it("does not take a sub-agent's model for the turn", async () => {

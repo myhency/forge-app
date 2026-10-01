@@ -7,6 +7,7 @@ export interface WireTokenUsage {
   cache_read: number;
   cache_write_5m: number;
   cache_write_1h: number;
+  web_search_requests: number;
 }
 
 export type SidecarCommand =

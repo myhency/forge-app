@@ -2345,6 +2345,12 @@ command the SDK reports in `system/init.slash_commands`).
   does not jump on resume. The SDK's `total_cost_usd` is not used. A model that
   is not in the table has no cost (`—`); tokens are still shown. The cost is
   labelled an estimate at list price, as the CLI's `/usage` does.
+- **Web searches are priced.** Each search costs $0.01 (the pricing page: "$10 per
+  1,000 searches", read 2026-10-01), on top of the tokens and the same for every
+  model. Web fetch has no charge of its own, and code execution is billed by
+  time, not tokens, so neither is counted. The `WebSearch` tool runs its own
+  request, so its searches are **not** in the main loop's `usage`; they are read
+  from the tool's result (§20.3, §20.4, §20.10 item 5).
 - **Out of scope:** plan usage and usage-credit spend, a usage column in the
   sidebar, sub-agent files (`subagents/`) in the restored sum, user-set price
   overrides, budgets or limits (`maxBudgetUsd`), `modelPricing`-style
@@ -2354,8 +2360,8 @@ command the SDK reports in `system/init.slash_commands`).
 
 New `usage.rs`, no I/O:
 
-- `TokenUsage { input, output, cache_read, cache_write_5m, cache_write_1h }`
-  (all `u64`), with `+` and `+=`. A cache write with no 5m/1h split counts as
+- `TokenUsage { input, output, cache_read, cache_write_5m, cache_write_1h,
+  web_search_requests }` (all `u64`), with `+` and `+=`. A cache write with no 5m/1h split counts as
   5m (the cheaper rate would understate; the spike confirms which side to
   err on).
 - `SessionUsage { by_model: BTreeMap<String, TokenUsage> }` with `add(model, usage)`
@@ -2386,10 +2392,18 @@ Usage is therefore kept **once per `message.id`, the last line wins**. Lines
 without an id are counted once each. A line whose usage cannot be read is
 skipped; it never fails the load. Synthetic or empty models are ignored.
 
+Web searches are not in `message.usage` (§20.10 item 5). A `user` line whose
+`toolUseResult.searchCount` is a positive number (the `WebSearch` tool's output;
+a nested `toolStats.searchCount` is not one) adds that many searches to the model
+of the closest earlier assistant message, once per `tool_use_id` (lines without
+one count once each). `message.usage.server_tool_use.web_search_requests` is added
+too, for searches the model ran server-side in the main loop. Sidechain lines and
+a result with no earlier assistant message are ignored.
+
 ### 20.4 Sidecar and ports
 
 `turn_complete` becomes
-`{ type, usage: { model: { input, output, cache_read, cache_write_5m, cache_write_1h } } }`
+`{ type, usage: { model: { input, output, cache_read, cache_write_5m, cache_write_1h, web_search_requests } } }`
 and carries only what this turn **added**. The numbers come from the `result`
 message's `usage` (main agent loop only, per turn, with the `cache_creation`
 5m/1h split), attributed to the model of the turn's main-loop assistant
@@ -2397,7 +2411,10 @@ messages (`message.model`, `parent_tool_use_id` empty). `result.modelUsage` is
 **not** used (§20.10: it is a running total, it includes helper models such as
 the title writer and sub-agents, and after a resume its first value already holds
 the earlier turns). A turn with no main-loop assistant message sends an empty
-`usage`. The old `input_tokens` / `output_tokens` fields are removed (the only
+`usage`. `web_search_requests` is the sum of `result.usage.server_tool_use.web_search_requests`
+and the `searchCount` of the turn's main-loop `WebSearch` tool results (the user
+message's `tool_use_result.searchCount`; sub-agent results are ignored). The old
+`input_tokens` / `output_tokens` fields are removed (the only
 consumer is `forge-adapter-sidecar`, changed in the same plan; protocol tests
 are updated with it).
 
@@ -2429,7 +2446,7 @@ New `usage_ring.rs`, placed beside `SendMessageBox` in `ChatWindow`.
   With no context value yet it is an empty ring with `—`.
 - **Popover:** opens on click, closes on outside click and on Esc. Rows:
   context (`38% · 76.2k / 200k tokens`); session totals (input, output, cache
-  read, cache write); `Estimated cost $0.55` with a one-line note that it is
+  read, cache write, and web searches when there were any); `Estimated cost $0.55` with a one-line note that it is
   list price and may differ from the bill; one line per model. A model without
   a price shows `—` and the total says `excludes <model>`.
 - Both colour schemes use the existing tokens in `theme.css`; the dark-palette
@@ -2486,10 +2503,11 @@ Run on 2026-10-01 with Agent SDK 0.3.283, Claude Code 2.1.286, a Claude login (n
 2. **`Query.getContextUsage()` works on the live streaming query.** Fields `totalTokens`, `maxTokens`, `rawMaxTokens`, `percentage`, `model`, `categories`. First call about 850 ms, later calls 9 ms (11 393 of 1 000 000 tokens after turn 1; 11 440 after turn 2). It also answered on a resumed session before any turn (880 ms, 11 440 / 1 000 000). Forge still starts the sidecar on the first send, so the ring stays empty until the first turn finishes; showing the value for an opened-but-idle session would need a sidecar at open time and is left for later. The 3 s limit of §20.4 stands.
 3. **Summing the session file per `message.id` matches the SDK exactly.** File: input 6, output 466, cache read 22 379, cache write 11 479, against the sum of the three `result.usage` values: 6, 466, 22 379, 11 479. The first message was written on **two** lines (so de-duplication is needed) and its last line carried the final `output_tokens` (459; the first line was a partial). This login uses **1-hour** cache writes: all 11 479 were `ephemeral_1h`, and `result.usage.cache_creation` has the same split, so live and restored cost agree.
 4. **Custom `base_url`: not tested** (no gateway at hand). The model id in usage is the `message.model` the endpoint returns; an id that is not in the price table shows tokens with no cost (§20.1).
+5. **Web searches are not in the main loop's `usage`.** A real turn that called `WebSearch` once reported `result.usage.server_tool_use.web_search_requests: 0` (the session file's assistant lines say the same). The search runs as its own request inside the tool; its count is in the tool result: the session file's `user` line has `toolUseResult.searchCount: 1`, and the SDK's `WebSearchOutput` documents `searchCount` ("Number of web searches performed"), delivered live as the user message's `tool_use_result`. After this change the same turn gave `web_search_requests: 1` live and `1` restored, and every token field matched too (6 / 506 / 32 080 / 0 / 2 764).
 
 ### 20.11 As built
 
-Plan 10 was built on branch `plan-10` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Agent SDK 0.3.283). 435 Rust workspace tests pass (390 before) and 52 sidecar tests pass (38 before).
+Plan 10 was built on branch `plan-10` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Agent SDK 0.3.283). 454 Rust workspace tests pass (390 before) and 60 sidecar tests pass (38 before).
 
 **Checked (passed):**
 - Real sidecar and real SDK, driven through `forge-adapter-sidecar` for one turn: `TurnComplete { usage: {"claude-opus-5-5": input 2, output 4, cache_read 9579, cache_write_5m 0, cache_write_1h 1363} }` and `ContextUsage { total_tokens: 10944, max_tokens: 1000000 }` arrived and parsed.
@@ -2497,6 +2515,8 @@ Plan 10 was built on branch `plan-10` and checked on 2026-10-01 (macOS 26, Dioxu
 - The real `theme.css` with the ring (normal, warn, danger, empty) and the open popover (an unpriced model, the "excludes" note) served as a static page and screenshotted in light and in dark mode: both are readable, and the three ring levels are told apart by colour and by the arc length.
 
 **Not checked (needs a person):** the live window. The widget code compiles and its pure parts are tested, but nobody has clicked it in the running app: opening and closing the popover with the ring, with Esc and with a click outside; the popover staying inside a narrow window; a resumed session in the sidebar showing its restored totals before the first send and an empty ring; a custom model id showing `—` and "excludes <id>"; and the custom `base_url` case (spike item 4).
+
+**Web searches (added after the first review):** each search is priced at $0.01 and listed in the popover (a `Web searches` row, shown only when there were any). They come from the `WebSearch` tool result, not from `usage` (§20.10 item 5). A real turn with one search gave `web_search_requests: 1` live and restored, with every token field equal.
 
 **Differences from §20:** §20.4 was changed by the spike: the sidecar sends `result.usage` under the main-loop assistant model, not `modelUsage` (§20.10). Because of that Task 5 has no `UsageTracker`; `sidecar/src/usage.ts` has `toWireUsage` and `turnUsage`. §20.2's price matching was narrowed by the final review (below). `PriceTable` lives in `usage.rs`, not a separate `prices.rs`.
 
@@ -2509,4 +2529,4 @@ Plan 10 was built on branch `plan-10` and checked on 2026-10-01 (macOS 26, Dioxu
 - A turn that ends without a `result` (an error, an interrupt) loses its tokens from the live total; the restore path counts them after a reload.
 - If the model changes in the middle of one turn, all of that turn's `result.usage` is attributed to the last main-loop model.
 - The ring is part of the message box, so a session that can only be viewed (its folder is gone) shows no ring or popover.
-- Sub-agent, helper-model, data-residency (1.1x), fast-mode and batch usage or pricing are not counted or modelled (§20.1).
+- Sub-agent and helper-model usage, code-execution time, and data-residency (1.1x), fast-mode and batch pricing are not counted or modelled (§20.1).

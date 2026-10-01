@@ -92,13 +92,13 @@ mod tests {
     #[test]
     fn turn_complete_carries_per_model_usage() {
         let event: SidecarEvent = serde_json::from_str(
-            r#"{"type":"turn_complete","usage":{"claude-test":{"input":12,"output":34,"cache_read":5,"cache_write_5m":6,"cache_write_1h":0}}}"#,
+            r#"{"type":"turn_complete","usage":{"claude-test":{"input":12,"output":34,"cache_read":5,"cache_write_5m":6,"cache_write_1h":0,"web_search_requests":2}}}"#,
         )
         .unwrap();
         let SidecarEvent::TurnComplete { usage } = event else { panic!("not a turn_complete") };
         assert_eq!(
             usage["claude-test"],
-            forge_domain::TokenUsage { input: 12, output: 34, cache_read: 5, cache_write_5m: 6, cache_write_1h: 0 }
+            forge_domain::TokenUsage { input: 12, output: 34, cache_read: 5, cache_write_5m: 6, cache_write_1h: 0, web_search_requests: 2 }
         );
     }
 

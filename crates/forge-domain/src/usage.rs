@@ -12,6 +12,8 @@ pub struct TokenUsage {
     pub cache_read: u64,
     pub cache_write_5m: u64,
     pub cache_write_1h: u64,
+    /// Server-side web searches; each is billed on top of the tokens.
+    pub web_search_requests: u64,
 }
 
 impl TokenUsage {
@@ -34,6 +36,7 @@ impl Add for TokenUsage {
             cache_read: self.cache_read + other.cache_read,
             cache_write_5m: self.cache_write_5m + other.cache_write_5m,
             cache_write_1h: self.cache_write_1h + other.cache_write_1h,
+            web_search_requests: self.web_search_requests + other.web_search_requests,
         }
     }
 }
@@ -121,6 +124,11 @@ impl ContextUsage {
     }
 }
 
+/// What one web search costs: $10 per 1 000 searches (https://platform.claude.com/docs/en/about-claude/pricing,
+/// read 2026-10-01). The same for every model. Web fetch has no charge of its own, and code
+/// execution is billed by time, not tokens, so neither is counted.
+const WEB_SEARCH_MICRO_DOLLARS: u64 = 10_000;
+
 /// Prices in micro-dollars per million tokens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rates {
@@ -150,7 +158,7 @@ impl Rates {
             + usage.cache_read as u128 * self.cache_read as u128
             + usage.cache_write_5m as u128 * self.cache_write_5m as u128
             + usage.cache_write_1h as u128 * self.cache_write_1h as u128;
-        Cost(((scaled + 500_000) / 1_000_000) as u64)
+        Cost(((scaled + 500_000) / 1_000_000) as u64 + usage.web_search_requests * WEB_SEARCH_MICRO_DOLLARS)
     }
 }
 
@@ -340,5 +348,40 @@ mod tests {
         assert_eq!(prices.estimate_cost("claude-opus-5-5-20260101", &one_million), Some(Cost(4_000_000)), "Opus 5.5, dated");
         assert_eq!(prices.estimate_cost("claude-opus-5-5", &one_million), Some(Cost(4_000_000)));
         assert_eq!(prices.estimate_cost("claude-opus-5", &one_million), Some(Cost(5_000_000)));
+    }
+
+    #[test]
+    fn a_web_search_costs_a_cent_on_top_of_the_tokens() {
+        let used = TokenUsage { input: 1_000_000, web_search_requests: 3, ..Default::default() };
+        assert_eq!(table().estimate_cost("claude-test", &used), Some(Cost(3_000_000 + 30_000)));
+    }
+
+    #[test]
+    fn web_searches_without_tokens_still_cost_money() {
+        let used = TokenUsage { web_search_requests: 100, ..Default::default() };
+        assert_eq!(table().estimate_cost("claude-test", &used), Some(Cost(1_000_000)), "100 searches = $1");
+    }
+
+    #[test]
+    fn web_searches_make_a_usage_non_empty_and_add_up() {
+        let searches = TokenUsage { web_search_requests: 2, ..Default::default() };
+        assert!(!searches.is_empty());
+        let mut session = SessionUsage::default();
+        session.add("claude-test", searches);
+        session.add("claude-test", searches);
+        assert_eq!(session.total().web_search_requests, 4);
+        assert!(!session.is_empty());
+    }
+
+    #[test]
+    fn an_unpriced_model_has_no_cost_even_with_web_searches() {
+        let used = TokenUsage { web_search_requests: 5, ..Default::default() };
+        assert_eq!(table().estimate_cost("some-other-model", &used), None);
+    }
+
+    #[test]
+    fn token_usage_reads_web_search_requests_from_json() {
+        let parsed: TokenUsage = serde_json::from_str(r#"{"web_search_requests": 3}"#).unwrap();
+        assert_eq!(parsed, TokenUsage { web_search_requests: 3, ..Default::default() });
     }
 }

@@ -4,7 +4,7 @@ const count = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 
 const isZero = (u: WireTokenUsage): boolean =>
-  u.input + u.output + u.cache_read + u.cache_write_5m + u.cache_write_1h === 0;
+  u.input + u.output + u.cache_read + u.cache_write_5m + u.cache_write_1h + u.web_search_requests === 0;
 
 /** The wire shape of one `result.usage`: the main loop's usage for that turn (spec §20.4, §20.10). */
 export function toWireUsage(usage: any): WireTokenUsage {
@@ -27,12 +27,19 @@ export function toWireUsage(usage: any): WireTokenUsage {
     cache_read: count(usage?.cache_read_input_tokens),
     cache_write_5m: write5m,
     cache_write_1h: write1h,
+    // Web fetches have no charge of their own, so only searches are carried (spec §20.1).
+    web_search_requests: count(usage?.server_tool_use?.web_search_requests),
   };
 }
 
-/** What a finished turn used, keyed by the model that produced it; nothing when either is unknown. */
-export function turnUsage(model: string | null, usage: unknown): Record<string, WireTokenUsage> {
+/**
+ * What a finished turn used, keyed by the model that produced it; nothing when either is unknown.
+ * `searches` are the web searches the `WebSearch` tool reported during the turn: that tool runs its
+ * own request, so they are not in the main loop's `usage` (spec §20.1).
+ */
+export function turnUsage(model: string | null, usage: unknown, searches = 0): Record<string, WireTokenUsage> {
   if (!model) return {};
   const wire = toWireUsage(usage);
+  wire.web_search_requests += count(searches);
   return isZero(wire) ? {} : { [model]: wire };
 }

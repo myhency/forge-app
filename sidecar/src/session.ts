@@ -70,6 +70,8 @@ export class SidecarSession {
   private sessionEndedPromise: Promise<void> = Promise.resolve();
   // The model of the current turn's main-loop assistant messages: `result.usage` is that model's.
   private mainModel: string | null = null;
+  // Web searches the WebSearch tool reported since the last result (that tool's own request is not in `result.usage`).
+  private pendingSearches = 0;
   private readonly contextUsageTimeoutMs: number;
 
   constructor(
@@ -280,6 +282,10 @@ export class SidecarSession {
         return;
       }
       case "user": {
+        const searches = message.tool_use_result?.searchCount;
+        if (!message.parent_tool_use_id && typeof searches === "number" && Number.isFinite(searches) && searches > 0) {
+          this.pendingSearches += Math.floor(searches);
+        }
         const blocks = message.message?.content;
         if (!Array.isArray(blocks)) return;
         for (const block of blocks) {
@@ -298,8 +304,9 @@ export class SidecarSession {
         // `result.usage` is this turn's main-loop usage. `modelUsage` is not used: it is a running
         // total, includes helper models and sub-agents, and after a resume already holds the
         // earlier turns (spec §20.10).
-        this.emit({ type: "turn_complete", usage: turnUsage(this.mainModel, message.usage) });
+        this.emit({ type: "turn_complete", usage: turnUsage(this.mainModel, message.usage, this.pendingSearches) });
         this.mainModel = null;
+        this.pendingSearches = 0;
         void this.emitContextUsage();
         return;
       }

@@ -58,6 +58,9 @@ pub fn UsageRing(id: LiveSessionId) -> Element {
                         div { class: "usage-row", span { "Output" } span { class: "value", "{usage.output}" } }
                         div { class: "usage-row", span { "Cache read" } span { class: "value", "{usage.cache_read}" } }
                         div { class: "usage-row", span { "Cache write" } span { class: "value", "{usage.cache_write}" } }
+                        if let Some(searches) = usage.web_searches.as_ref() {
+                            div { class: "usage-row", span { "Web searches" } span { class: "value", "{searches}" } }
+                        }
                     }
                     div { class: "usage-section",
                         div { class: "usage-heading", "Estimated cost" }
