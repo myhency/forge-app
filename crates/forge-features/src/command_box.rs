@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::SlashCommand;
-use forge_entities::{insert_text, menu_action, menu_rows, move_selection, MenuAction, MenuKey};
+use forge_entities::{insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};
 use forge_shared::TextArea;
 
 /// A text box that lists slash commands while its text is just `/name`. The parent owns the text:
@@ -19,9 +19,18 @@ pub fn CommandTextArea(
     let mut dismissed = use_signal(|| false);
     // What the person last typed. Text that arrives another way (a failed send put back, a picked
     // command) does not open the popup.
-    let mut typed = use_signal(String::new);
+    let mut typed = use_signal(|| None::<String>);
+    // Forgotten as soon as the text changes without a keystroke: a pick, a send that clears the box,
+    // a failed send put back. Without this the put-back text would equal the old `typed` and reopen
+    // the popup.
+    use_effect(use_reactive!(|value| {
+        let kept = typed_after_change(typed.peek().as_deref(), &value);
+        if kept != *typed.peek() {
+            typed.set(kept);
+        }
+    }));
 
-    let matches: Vec<SlashCommand> = menu_rows(&commands, &value, &typed.read(), dismissed() || disabled)
+    let matches: Vec<SlashCommand> = menu_rows(&commands, &value, typed.read().as_deref(), dismissed() || disabled)
         .into_iter()
         .cloned()
         .collect();
@@ -73,7 +82,7 @@ pub fn CommandTextArea(
                 placeholder,
                 disabled,
                 oninput: move |text: String| {
-                    typed.set(text.clone());
+                    typed.set(Some(text.clone()));
                     selected.set(0);
                     dismissed.set(false);
                     oninput.call(text);

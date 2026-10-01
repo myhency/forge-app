@@ -72,16 +72,23 @@ pub fn menu_action(key: MenuKey, composing: bool, shift: bool) -> Option<MenuAct
     }
 }
 
-/// The popup's rows; empty means closed. It is open only for text the person typed (`value == typed`):
-/// text that arrives another way, like a failed send put back in the box, must not open it.
-pub fn menu_rows<'a>(commands: &'a [SlashCommand], value: &str, typed: &str, dismissed: bool) -> Vec<&'a SlashCommand> {
-    if dismissed || value != typed {
+/// The popup's rows; empty means closed. It is open only for text the person typed (`typed` is that
+/// text, `None` when the box's text changed some other way since): text that arrives another way, like
+/// a failed send put back in the box, must not open it.
+pub fn menu_rows<'a>(commands: &'a [SlashCommand], value: &str, typed: Option<&str>, dismissed: bool) -> Vec<&'a SlashCommand> {
+    if dismissed || typed != Some(value) {
         return Vec::new();
     }
     match command_query(value) {
         Some(query) => filter_commands(commands, query),
         None => Vec::new(),
     }
+}
+
+/// What counts as typed once the box's text is `value`: the typed text if it is still what the box
+/// holds, otherwise nothing (a pick, a send that cleared the box, a failed send put back).
+pub fn typed_after_change(typed: Option<&str>, value: &str) -> Option<String> {
+    typed.filter(|typed| *typed == value).map(str::to_string)
 }
 
 #[cfg(test)]
@@ -155,16 +162,27 @@ mod tests {
     fn the_popup_rows_are_the_matches_for_text_the_person_typed() {
         let commands = vec![cmd("compact"), cmd("review")];
         let names = |rows: Vec<&SlashCommand>| rows.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
-        assert_eq!(names(menu_rows(&commands, "/c", "/c", false)), vec!["compact"]);
-        assert_eq!(names(menu_rows(&commands, "/", "/", false)), vec!["compact", "review"]);
+        assert_eq!(names(menu_rows(&commands, "/c", Some("/c"), false)), vec!["compact"]);
+        assert_eq!(names(menu_rows(&commands, "/", Some("/"), false)), vec!["compact", "review"]);
     }
 
     #[test]
     fn the_popup_is_closed_after_escape_for_text_put_back_and_after_a_space() {
         let commands = vec![cmd("compact")];
-        assert!(menu_rows(&commands, "/c", "/c", true).is_empty(), "dismissed with Esc");
-        assert!(menu_rows(&commands, "/compact", "", false).is_empty(), "text put back after a failed send was not typed");
-        assert!(menu_rows(&commands, "/compact now", "/compact now", false).is_empty());
-        assert!(menu_rows(&commands, "hello", "hello", false).is_empty());
+        assert!(menu_rows(&commands, "/c", Some("/c"), true).is_empty(), "dismissed with Esc");
+        assert!(menu_rows(&commands, "/compact", None, false).is_empty(), "nothing was typed since the text last changed by itself");
+        assert!(menu_rows(&commands, "/compact", Some(""), false).is_empty(), "text put back differs from what was typed");
+        assert!(menu_rows(&commands, "/compact now", Some("/compact now"), false).is_empty());
+        assert!(menu_rows(&commands, "hello", Some("hello"), false).is_empty());
+    }
+
+    #[test]
+    fn what_was_typed_is_forgotten_as_soon_as_the_text_changes_without_a_keystroke() {
+        // Typed "/compact", picked it ("/compact "), sent (text cleared), the send failed and the text came back.
+        assert_eq!(typed_after_change(Some("/compact"), "/compact"), Some("/compact".to_string()));
+        assert_eq!(typed_after_change(Some("/compact"), "/compact "), None, "a pick");
+        assert_eq!(typed_after_change(Some("/compact"), ""), None, "a send cleared the box");
+        assert_eq!(typed_after_change(None, "/compact"), None, "so the text put back is not typed text");
+        assert_eq!(typed_after_change(None, ""), None);
     }
 }
