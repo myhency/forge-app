@@ -9,60 +9,98 @@ use crate::registry::SessionRegistry;
 
 struct Running {
     folder: PathBuf,
+    generation: u64,
     // Owns the probe: aborting this task drops it, which ends the probe's sidecar.
     forwarder: JoinHandle<()>,
 }
 
-/// Keeps at most one probe, for the folder the new-session screen shows, and republishes its list.
-pub struct ProbeSlot {
+struct State {
+    running: Option<Running>,
+    /// The generation of the probe started last; each probe gets the next number.
+    generation: u64,
+}
+
+struct Inner {
     registry: Arc<SessionRegistry>,
     commands: watch::Sender<Vec<SlashCommand>>,
-    running: Mutex<Option<Running>>,
+    state: Mutex<State>,
+}
+
+impl Inner {
+    // `abort` cannot stop a poll that is already running on another thread, so a forwarder can
+    // deliver a list after its probe was replaced. Only the running probe's generation gets through,
+    // checked under the same lock `set_folder` clears the list under (never held across an await).
+    fn publish(&self, generation: u64, list: Vec<SlashCommand>) {
+        let state = self.state.lock().unwrap();
+        if state.running.as_ref().is_some_and(|running| running.generation == generation) {
+            self.commands.send_replace(list);
+        }
+    }
+}
+
+/// Keeps at most one probe, for the folder the new-session screen shows, and republishes its list.
+pub struct ProbeSlot {
+    inner: Arc<Inner>,
 }
 
 impl ProbeSlot {
     pub fn new(registry: Arc<SessionRegistry>) -> Self {
         let (commands, _) = watch::channel(Vec::new());
-        Self { registry, commands, running: Mutex::new(None) }
+        Self {
+            inner: Arc::new(Inner { registry, commands, state: Mutex::new(State { running: None, generation: 0 }) }),
+        }
     }
 
     /// Wakes on every change of the list, including its clearing.
     pub fn subscribe(&self) -> watch::Receiver<Vec<SlashCommand>> {
-        self.commands.subscribe()
+        self.inner.commands.subscribe()
     }
 
     pub fn commands(&self) -> Vec<SlashCommand> {
-        self.commands.borrow().clone()
+        self.inner.commands.borrow().clone()
+    }
+
+    #[cfg(test)]
+    fn generation(&self) -> u64 {
+        self.inner.state.lock().unwrap().generation
+    }
+
+    #[cfg(test)]
+    fn publish(&self, generation: u64, list: Vec<SlashCommand>) {
+        self.inner.publish(generation, list);
     }
 
     /// Makes `project` the folder being probed. The same folder keeps its probe; anything else ends it,
     /// clears the list and starts a probe for `project` (none for `None` or a folder that is gone).
     /// Starting needs a tokio runtime.
     pub fn set_folder(&self, project: Option<&ProjectSummary>) {
-        let mut running = self.running.lock().unwrap();
-        if let (Some(current), Some(project)) = (running.as_ref(), project) {
+        let mut state = self.inner.state.lock().unwrap();
+        if let (Some(current), Some(project)) = (state.running.as_ref(), project) {
             if current.folder == project.path {
                 return;
             }
         }
-        if let Some(old) = running.take() {
+        if let Some(old) = state.running.take() {
             old.forwarder.abort();
         }
-        self.commands.send_replace(Vec::new());
+        self.inner.commands.send_replace(Vec::new());
         let Some(project) = project else {
             return;
         };
-        let Some(probe) = self.registry.probe_commands(project) else {
+        let Some(probe) = self.inner.registry.probe_commands(project) else {
             return;
         };
-        let sender = self.commands.clone();
+        state.generation += 1;
+        let generation = state.generation;
+        let inner = self.inner.clone();
         let forwarder = tokio::spawn(async move {
             let mut updates = probe.subscribe();
             while updates.changed().await.is_ok() {
-                sender.send_replace(updates.borrow_and_update().clone());
+                let list = updates.borrow_and_update().clone();
+                inner.publish(generation, list);
             }
         });
-        *running = Some(Running { folder: project.path.clone(), forwarder });
+        state.running = Some(Running { folder: project.path.clone(), generation, forwarder });
     }
 
     /// The latest list; the probe is ended and the list cleared.
@@ -164,5 +202,26 @@ mod tests {
 
         assert_eq!(spawns.load(Ordering::SeqCst), 0);
         assert!(slot.commands().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_list_from_an_ended_probe_is_not_published_even_if_it_arrives_after_the_clear() {
+        let (a, _control_a) = fake_sidecar();
+        let (b, _control_b) = fake_sidecar();
+        let (registry, _spawns) = registry_with(vec![Ok(a), Ok(b)]);
+        let slot = ProbeSlot::new(registry);
+
+        slot.set_folder(Some(&project("/work/a", true)));
+        let old = slot.generation();
+        slot.set_folder(Some(&project("/work/b", true)));
+        // The old forwarder was mid-poll when it was aborted and now delivers its list.
+        slot.publish(old, vec![command("late-from-a")]);
+
+        assert!(slot.commands().is_empty());
+        slot.publish(slot.generation(), vec![command("from-b")]);
+        assert_eq!(slot.commands(), vec![command("from-b")]);
+        slot.end();
+        slot.publish(slot.generation(), vec![command("after-end")]);
+        assert!(slot.commands().is_empty(), "nothing is published once the probe has ended");
     }
 }
