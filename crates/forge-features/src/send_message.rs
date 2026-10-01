@@ -7,7 +7,7 @@ use crate::workspace::use_workspace;
 /// The message box of an open session: Enter sends, Shift+Enter adds a line, and while a turn is
 /// running a Stop button interrupts it.
 #[component]
-pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool) -> Element {
+pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children: Element) -> Element {
     let workspace = use_workspace();
     let mut draft = use_signal(String::new);
     let mut seen_failures = use_signal(|| 0u32);
@@ -63,6 +63,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool) -> Eleme
                 },
             }
             div { class: "composer-row",
+                {children}
                 span { class: "spacer" }
                 if running {
                     Button { label: "Stop", kind: ButtonKind::Danger, onclick: stop }

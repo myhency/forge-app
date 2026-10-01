@@ -80,4 +80,21 @@ mod tests {
         assert!(rule.contains("max-height"), "{rule}");
         assert!(rule.contains("overflow-y: auto"), "{rule}");
     }
+
+    #[test]
+    fn the_usage_ring_styles_exist() {
+        for selector in [".usage-ring", ".usage-ring.warn", ".usage-ring.danger", ".usage-popover", ".usage-backdrop"] {
+            assert!(THEME_CSS.contains(selector), "theme.css is missing {selector}");
+        }
+    }
+
+    #[test]
+    fn the_usage_styles_take_every_color_from_the_theme_variables() {
+        let rules: Vec<&str> = THEME_CSS.lines().filter(|line| line.starts_with(".usage")).collect();
+        assert!(rules.len() >= 5, "found only {} usage rules", rules.len());
+        for rule in rules {
+            assert!(!rule.contains('#'), "a hard-coded color in: {rule}");
+            assert!(!rule.contains("rgb"), "a hard-coded color in: {rule}");
+        }
+    }
 }

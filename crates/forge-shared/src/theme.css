@@ -114,6 +114,22 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .composer .textarea { border: none; background: transparent; padding: 2px; min-height: 48px; outline: none; }
 .composer-row { display: flex; align-items: center; gap: 8px; }
 .composer-row .spacer { flex: 1; }
+.usage { position: relative; flex: none; }
+.usage-ring { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 50%; background: transparent; cursor: pointer; }
+.usage-ring:hover { background: var(--bg-hover); }
+.usage-ring svg { width: 20px; height: 20px; transform: rotate(-90deg); }
+.usage-ring .track { fill: none; stroke: var(--border); stroke-width: 3; }
+.usage-ring .arc { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+.usage-ring.warn .arc { stroke: var(--warning); }
+.usage-ring.danger .arc { stroke: var(--danger); }
+.usage-ring.empty .arc { stroke: none; }
+.usage-backdrop { position: fixed; inset: 0; z-index: 9; background: transparent; }
+.usage-popover { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 10; width: 300px; padding: 12px; box-sizing: border-box; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); box-shadow: var(--shadow); font-size: 12px; }
+.usage-heading { margin: 0 0 6px; font-size: 11px; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.usage-row { display: flex; justify-content: space-between; gap: 12px; padding: 1px 0; }
+.usage-row .value { font-variant-numeric: tabular-nums; }
+.usage-section + .usage-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.usage-note { margin-top: 4px; font-size: 11px; color: var(--fg-muted); }
 .textarea { width: 100%; box-sizing: border-box; min-height: 64px; padding: 8px; resize: vertical; font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
 .select { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; max-width: 100%; }
 .text-input { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; min-width: 280px; box-sizing: border-box; }

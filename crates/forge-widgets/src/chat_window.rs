@@ -4,6 +4,7 @@ use forge_entities::{MessageBubble, PermissionCard};
 use forge_features::{use_workspace, PermissionActions, SendMessageBox};
 
 use crate::sidebar::project_label;
+use crate::usage_ring::UsageRing;
 
 /// One open session: its messages, any permission request waiting for an answer, and the message box.
 #[component]
@@ -36,7 +37,9 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 }
             }
             if view.can_send {
-                SendMessageBox { id, running: view.phase == Phase::Running, can_send: true }
+                SendMessageBox { id, running: view.phase == Phase::Running, can_send: true,
+                    UsageRing { id }
+                }
             } else {
                 div { class: "banner info",
                     "The project folder no longer exists, so this session can only be viewed."
