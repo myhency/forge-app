@@ -2206,7 +2206,12 @@ project, and:
 4. Rename an open session: the sidebar and the live view show the new title at
    once; send another message, wait for the turn to finish, the title is still
    the new one. Open the same project in `claude`, the new title is shown
-   there.
+   there. Also rename a session that already has a custom title (set earlier
+   by `/rename` or a Forge rename), send a message, then reload/reopen it: the
+   new title must still show; Claude Code re-appends `custom-title` lines each
+   turn (§19.7 a), so an older title could win again. This is an unverified
+   risk; possible fixes are to re-append the title after each turn, or to
+   refuse rename while a sidecar is attached.
 5. A 201-character title: the notice says the limit; nothing changes on disk.
 6. Delete a past session: confirmation reads "Moves the session to the
    trash"; Cancel keeps it; Delete removes it from the list and it is in the
@@ -2215,7 +2220,8 @@ project, and:
    first" note; after ⌘W it can be deleted.
 8. Shortcuts still work while a rename input or the menu is open (⌘N,
    Ctrl+Tab); ⌘W while renaming closes the session as before and does not
-   leave a stuck input.
+   leave a stuck input. After a rename or a delete confirmation, shortcuts
+   still work without clicking first (focus returns to the workspace).
 9. "Open folder…": the dialog opens, the window stays responsive; cancel
    changes nothing; picking a listed folder selects it; picking a new folder
    adds it to the dropdown and selects it; Start works there and the project
@@ -2225,7 +2231,12 @@ project, and:
     for one run), "Open folder…" is usable and Start becomes enabled after a
     folder is chosen.
 
-No fixes were made, since nothing was walked. The §19.7 items still marked
+Also not checked: switching to another app while the rename input is open
+cancels the rename (blur), so confirm that is acceptable; the Open-folder
+button stays disabled if the dialog never returns, and the dialog has no
+parent window (app-modal on macOS), so confirm that too.
+
+No fixes were made from the walk, since nothing was walked. The §19.7 items still marked
 "Not checked" (real `/rename` output, `~/.Trash`, the `rfd` dialog on the
 main thread) are covered by the same walk.
 
@@ -2244,6 +2255,20 @@ main thread) are covered by the same walk.
 6. `rename_session` takes the title as `&str`; delete also trashes the
    same-named sibling directory (`<id>/`, sub-agent data), as settled by the
    spike (§19.7).
+
+**Trash on macOS:** the trash now uses `NSFileManager` (no Finder or
+AppleScript, so no Automation permission prompt and no multi-second delay).
+Not checked: whether it works in a bundled app and that the item lands in
+`~/.Trash`.
+
+**Final review fixes applied:** (1) the rename input stops propagation only for
+Enter and Escape, so app shortcuts still arrive; (2) session ids starting with
+`.` are refused (a `..jsonl` file would have trashed the project directory);
+(4) leaving the rename or delete-confirm mode returns focus to the workspace;
+(5) the macOS trash uses `NSFileManager`; (6) a delete that trashed the
+transcript but not its folder says so, and the project list reloads on a
+failed delete. The "no test for the partial failure" and "message does not say
+the transcript already moved" items under Task 3 below are now fixed.
 
 **Known limitation:** `SessionRegistry::delete` checks that the session is not
 open and then awaits the delete. A session opened in that window can leave a
