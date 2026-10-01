@@ -195,10 +195,11 @@ impl Actor {
             }
             // A finished turn has no open permission request any more (Stop makes the sidecar deny
             // it silently), and a stale card would hide the next real one.
-            SessionUpdate::TurnCompleted { .. } => {
+            SessionUpdate::TurnCompleted => {
                 self.view.phase = Phase::Idle;
                 self.view.pending_permissions.clear();
             }
+            SessionUpdate::ContextUsage(context) => self.view.context = Some(context),
             // The sidecar protocol does not distinguish fatal from non-fatal errors, so every
             // `Error` ends this sidecar: its query is over and `start_session` cannot be re-sent.
             SessionUpdate::Errored { message } => self.fail(message, true).await,

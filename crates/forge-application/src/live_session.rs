@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_domain::{PermissionDecision, PermissionRequest, Session, SessionId};
+use forge_domain::{ContextUsage, PermissionDecision, PermissionRequest, Session, SessionId};
 use forge_ports::SidecarFactoryPort;
 use tokio::sync::{mpsc, watch};
 
@@ -42,6 +42,10 @@ pub struct LiveSessionView {
     pub unsent: Option<String>,
     /// How many sends have failed so far. The UI restores `unsent` when this number changes.
     pub failed_sends: u32,
+    /// How full the context window was after the last finished turn. `None` until a turn has
+    /// finished in this run: the sidecar starts on the first send, so an opened-but-idle session
+    /// has no value yet.
+    pub context: Option<ContextUsage>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -137,6 +141,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         can_send: init.can_send,
         unsent: None,
         failed_sends: 0,
+        context: None,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
     let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -155,7 +160,7 @@ mod tests {
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
-    use forge_domain::{ActiveExtensions, AppConfig, MessageRole, PermissionMode, SkillDefinition};
+    use forge_domain::{ActiveExtensions, AppConfig, ContextUsage, MessageRole, PermissionMode, SkillDefinition, TokenUsage};
     use forge_ports::{SidecarError, SidecarEvent, StartSessionParams};
 
     use super::*;
@@ -225,7 +230,7 @@ mod tests {
     }
 
     fn turn_complete() -> SidecarEvent {
-        SidecarEvent::TurnComplete { input_tokens: 1, output_tokens: 2 }
+        SidecarEvent::TurnComplete { usage: BTreeMap::new() }
     }
 
     #[tokio::test]
@@ -805,5 +810,43 @@ mod tests {
         assert_eq!(last.phase, Phase::Idle);
         assert_eq!(last.session.messages[1].content.len(), 1000);
         assert!(updates <= 5, "1001 events were published {updates} times");
+    }
+
+    #[tokio::test]
+    async fn a_finished_turn_adds_its_usage_to_the_totals_that_came_with_the_session() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let mut init = resumed_init(factory);
+        init.session.usage.add("claude-test", TokenUsage { input: 100, ..Default::default() });
+        let handle = spawn_live_session(init);
+        let mut view = handle.subscribe();
+
+        handle.send("go".to_string());
+        control.push(SidecarEvent::TurnComplete {
+            usage: BTreeMap::from([("claude-test".to_string(), TokenUsage { input: 10, output: 5, ..Default::default() })]),
+        });
+        let seen = wait_for(&mut view, "the usage to grow", |v| v.session.usage.total().output == 5).await;
+
+        assert_eq!(seen.session.usage.total().input, 110);
+        assert_eq!(seen.phase, Phase::Idle);
+    }
+
+    #[tokio::test]
+    async fn a_context_update_replaces_the_last_one() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        assert_eq!(handle.snapshot().context, None, "nothing is measured before the first turn");
+
+        handle.send("go".to_string());
+        control.push(SidecarEvent::ContextUsage { total_tokens: 10, max_tokens: 100 });
+        control.push(SidecarEvent::ContextUsage { total_tokens: 20, max_tokens: 100 });
+        let seen = wait_for(&mut view, "the second context value", |v| {
+            v.context == Some(ContextUsage { total_tokens: 20, max_tokens: 100 })
+        })
+        .await;
+
+        assert_eq!(seen.context.map(|c| c.percent()), Some(20));
     }
 }

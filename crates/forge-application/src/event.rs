@@ -1,4 +1,4 @@
-use forge_domain::{Message, MessageRole, PermissionRequest, Session, SessionId, ToolCall, ToolResult};
+use forge_domain::{ContextUsage, Message, MessageRole, PermissionRequest, Session, SessionId, ToolCall, ToolResult};
 use forge_ports::SidecarEvent;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -8,7 +8,8 @@ pub enum SessionUpdate {
     ToolCallStarted { tool_call: ToolCall },
     ToolCallCompleted { tool_call_id: String },
     PermissionRequested(PermissionRequest),
-    TurnCompleted { input_tokens: u32, output_tokens: u32 },
+    TurnCompleted,
+    ContextUsage(ContextUsage),
     Errored { message: String },
     SessionEnded,
 }
@@ -81,10 +82,16 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
                 input: input.clone(),
             })
         }
-        SidecarEvent::TurnComplete { input_tokens, output_tokens } => SessionUpdate::TurnCompleted {
-            input_tokens: *input_tokens,
-            output_tokens: *output_tokens,
-        },
+        SidecarEvent::TurnComplete { usage } => {
+            for (model, tokens) in usage {
+                session.usage.add(model, *tokens);
+            }
+            SessionUpdate::TurnCompleted
+        }
+        SidecarEvent::ContextUsage { total_tokens, max_tokens } => SessionUpdate::ContextUsage(ContextUsage {
+            total_tokens: *total_tokens,
+            max_tokens: *max_tokens,
+        }),
         SidecarEvent::Error { message } => SessionUpdate::Errored { message: message.clone() },
         SidecarEvent::SessionEnded => SessionUpdate::SessionEnded,
     }
@@ -93,7 +100,8 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_domain::PermissionMode;
+    use forge_domain::{ContextUsage, PermissionMode, TokenUsage};
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     fn empty_session() -> Session {
@@ -289,10 +297,29 @@ mod tests {
     }
 
     #[test]
-    fn turn_complete_reports_usage() {
+    fn turn_complete_adds_the_turns_usage_to_the_session() {
         let mut session = empty_session();
-        let update = apply_sidecar_event(&mut session, &SidecarEvent::TurnComplete { input_tokens: 10, output_tokens: 20 });
-        assert_eq!(update, SessionUpdate::TurnCompleted { input_tokens: 10, output_tokens: 20 });
+        session.usage.add("claude-test", TokenUsage { input: 100, output: 1, ..Default::default() });
+        let event = SidecarEvent::TurnComplete {
+            usage: BTreeMap::from([
+                ("claude-test".to_string(), TokenUsage { input: 10, output: 20, ..Default::default() }),
+                ("claude-other".to_string(), TokenUsage { output: 5, ..Default::default() }),
+            ]),
+        };
+
+        let update = apply_sidecar_event(&mut session, &event);
+
+        assert_eq!(update, SessionUpdate::TurnCompleted);
+        assert_eq!(session.usage.total(), TokenUsage { input: 110, output: 26, ..Default::default() });
+        assert_eq!(session.usage.models().count(), 2);
+    }
+
+    #[test]
+    fn context_usage_is_reported_and_leaves_the_session_alone() {
+        let mut session = empty_session();
+        let update = apply_sidecar_event(&mut session, &SidecarEvent::ContextUsage { total_tokens: 5, max_tokens: 10 });
+        assert_eq!(update, SessionUpdate::ContextUsage(ContextUsage { total_tokens: 5, max_tokens: 10 }));
+        assert!(session.usage.is_empty());
     }
 
     #[test]

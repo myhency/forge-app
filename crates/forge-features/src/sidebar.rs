@@ -382,6 +382,7 @@ mod tests {
             can_send: true,
             unsent: None,
             failed_sends: 0,
+            context: None,
         }
     }
 

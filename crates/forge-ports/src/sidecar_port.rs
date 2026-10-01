@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
+
 use async_trait::async_trait;
-use forge_domain::{ActiveExtensions, PermissionDecision, PermissionMode};
+use forge_domain::{ActiveExtensions, PermissionDecision, PermissionMode, TokenUsage};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -26,7 +28,13 @@ pub enum SidecarEvent {
     ToolUse { tool_call_id: String, name: String, input: serde_json::Value },
     ToolResult { tool_call_id: String, output: String, is_error: bool },
     PermissionRequest { permission_request_id: String, tool_name: String, input: serde_json::Value },
-    TurnComplete { input_tokens: u32, output_tokens: u32 },
+    /// What the turn added, per model.
+    TurnComplete {
+        #[serde(default)]
+        usage: BTreeMap<String, TokenUsage>,
+    },
+    /// How full the context window is, sent after each `TurnComplete` when the SDK could say.
+    ContextUsage { total_tokens: u64, max_tokens: u64 },
     Error { message: String },
     SessionEnded,
 }
@@ -79,5 +87,31 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn turn_complete_carries_per_model_usage() {
+        let event: SidecarEvent = serde_json::from_str(
+            r#"{"type":"turn_complete","usage":{"claude-test":{"input":12,"output":34,"cache_read":5,"cache_write_5m":6,"cache_write_1h":0}}}"#,
+        )
+        .unwrap();
+        let SidecarEvent::TurnComplete { usage } = event else { panic!("not a turn_complete") };
+        assert_eq!(
+            usage["claude-test"],
+            forge_domain::TokenUsage { input: 12, output: 34, cache_read: 5, cache_write_5m: 6, cache_write_1h: 0 }
+        );
+    }
+
+    #[test]
+    fn turn_complete_with_no_usage_is_still_a_turn_complete() {
+        let event: SidecarEvent = serde_json::from_str(r#"{"type":"turn_complete","usage":{}}"#).unwrap();
+        assert_eq!(event, SidecarEvent::TurnComplete { usage: Default::default() });
+    }
+
+    #[test]
+    fn context_usage_event_parses() {
+        let event: SidecarEvent =
+            serde_json::from_str(r#"{"type":"context_usage","total_tokens":76200,"max_tokens":200000}"#).unwrap();
+        assert_eq!(event, SidecarEvent::ContextUsage { total_tokens: 76_200, max_tokens: 200_000 });
     }
 }
