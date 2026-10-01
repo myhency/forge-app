@@ -2321,3 +2321,153 @@ Plan 8 was built on branch `plan-8` and checked on 2026-10-01 (macOS 26, Dioxus 
 **Final review (Plan 8):** no XSS path was found in about 30 hostile inputs. Four Important findings were fixed, each with a failing test first: a long diff in the permission card pushed the buttons off screen (now capped at 40vh and scrolls); highlighting up to 100 KB on every streamed token froze the window (cap lowered to 20 000 bytes); an unrelated 10 000-line Edit took 10 s to diff in a debug build (100 ms deadline); the dark-palette stylesheet test could not fail (now checks the definitions inside the dark block). Deferred minors: an email autolink `<a@b.c>` loses its link; escaped raw HTML blocks collapse their line breaks and can touch the preceding word; whitespace-only assistant content leaves an empty wrapper; an empty `MultiEdit` or empty `Write` still expands into a header-only box; the tool-call button may differ slightly in line height from the plain lines (not checked visually).
 
 **Not fixed, on purpose:** TypeScript and TOML fences are not highlighted (the bundled syntax set has neither); the whole message is re-parsed on every streamed update.
+
+## 20. Detailed Design: session usage display (Plan 10)
+
+Plan 10 shows how much a session has used: a context ring next to the message
+box, and a popover with session totals and an estimated cost. Slash command
+autocomplete is Plan 11 (decided in the Plan 10 brainstorm: it will list every
+command the SDK reports in `system/init.slash_commands`).
+
+### 20.1 Scope and decisions
+
+- **Placement.** A ring next to the message box, like the desktop app's usage
+  ring (the desktop docs: "click the usage ring next to the model picker").
+  Forge has no model picker there, so the ring sits beside `SendMessageBox`.
+  The popover shows context window use, session totals, an estimated cost and
+  a per-model list. Plan usage (subscription limits) is shared by all Claude
+  Code surfaces and Forge cannot read it; it is out of scope.
+- **History.** Totals include usage from before the session was opened in
+  this run: `load_session` sums the `.jsonl` file. A resumed session carries on
+  from that sum.
+- **One cost path.** Cost is always computed in Rust from token counts and one
+  price table, for live turns and for restored history alike, so the number
+  does not jump on resume. The SDK's `total_cost_usd` is not used. A model that
+  is not in the table has no cost (`—`); tokens are still shown. The cost is
+  labelled an estimate at list price, as the CLI's `/usage` does.
+- **Out of scope:** plan usage and usage-credit spend, a usage column in the
+  sidebar, sub-agent files (`subagents/`) in the restored sum, user-set price
+  overrides, budgets or limits (`maxBudgetUsd`), `modelPricing`-style
+  contracted rates, history charts, slash commands (Plan 11).
+
+### 20.2 Domain (`forge-domain`)
+
+New `usage.rs`, no I/O:
+
+- `TokenUsage { input, output, cache_read, cache_write_5m, cache_write_1h }`
+  (all `u64`), with `+` and `+=`. A cache write with no 5m/1h split counts as
+  5m (the cheaper rate would understate; the spike confirms which side to
+  err on).
+- `SessionUsage { by_model: BTreeMap<String, TokenUsage> }` with `add(model, usage)`
+  and `total() -> TokenUsage`.
+- `PriceTable` and `estimate_cost(model, &TokenUsage) -> Option<Cost>`.
+  `Cost` is integer micro-dollars (no floats in sums). The table is data in
+  `prices.rs`, matched by model-id prefix (`claude-sonnet-4-6` matches
+  `claude-sonnet-4-6-20260101`). The numbers come from Anthropic's published
+  pricing page and each row names its source and the date it was read. An
+  unmatched model gives `None`.
+- `SessionUsage::cost() -> CostSummary { total: Cost, unpriced_models: Vec<String> }`:
+  the sum over priced models plus the names that were left out.
+
+`Session` gains `usage: SessionUsage`.
+
+### 20.3 Restoring history (`forge-adapter-claude-fs`)
+
+`load_session` reads, for each `assistant` line, `message.id`, `message.model`
+and `message.usage` (`input_tokens`, `output_tokens`, `cache_read_input_tokens`,
+`cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`,
+falling back to `cache_creation_input_tokens`).
+
+A real file repeats one `message.id` across several lines (one per content
+block); in the sample checked for this design, 4 usage lines were 2 messages.
+Usage is therefore kept **once per `message.id`, the last line wins**. Lines
+without an id are counted once each. A line whose usage cannot be read is
+skipped; it never fails the load. Synthetic or empty models are ignored.
+
+### 20.4 Sidecar and ports
+
+`turn_complete` becomes
+`{ type, usage: { model: { input, output, cache_read, cache_write_5m, cache_write_1h } } }`
+and carries only what this turn **added**. Whether the SDK's `result.usage` /
+`result.modelUsage` are per turn or running totals is checked first (§20.7);
+if they are running totals the sidecar keeps the last totals and sends the
+difference. The old `input_tokens` / `output_tokens` fields are removed (the
+only consumer is `forge-adapter-sidecar`, changed in the same plan; protocol
+tests are updated with it).
+
+A new event `context_usage { total_tokens, max_tokens }` is sent after each
+`turn_complete`: the sidecar calls `getContextUsage()` on the live `Query`.
+If the call throws or takes over 3 s it sends nothing; the turn is not
+affected. `SidecarEvent` in `forge-ports` gets `TurnComplete { usage }` and
+`ContextUsage { total_tokens, max_tokens }`.
+
+### 20.5 Application and features
+
+- `LiveSession` holds `usage: SessionUsage` (seeded from the loaded `Session`
+  when a session is resumed) and `context: Option<ContextUsage>`.
+  `SessionUpdate::TurnCompleted` (today dropped at `live_session_actor.rs`)
+  adds the turn's usage; a new `SessionUpdate::ContextUsage` sets `context`.
+  `LiveSessionView` exposes both.
+- `forge-entities` gets `usage_view.rs`: `UsageView` and `format_tokens`
+  (`999`, `1.2k`, `3.4M`), `format_cost` (`<$0.01`, then two decimals) and
+  `ring_level(percent)` (normal below 70, warn from 70, danger from 90).
+  Entities does not depend on `forge-application`; `forge-features` maps the
+  domain values into `UsageView`.
+
+### 20.6 UI (`forge-widgets`)
+
+New `usage_ring.rs`, placed beside `SendMessageBox` in `ChatWindow`.
+
+- **Ring:** an SVG arc for the context percentage, coloured by `ring_level`;
+  the percentage is also the tooltip text (colour is not the only signal).
+  With no context value yet it is an empty ring with `—`.
+- **Popover:** opens on click, closes on outside click and on Esc. Rows:
+  context (`38% · 76.2k / 200k tokens`); session totals (input, output, cache
+  read, cache write); `Estimated cost $0.55` with a one-line note that it is
+  list price and may differ from the bill; one line per model. A model without
+  a price shows `—` and the total says `excludes <model>`.
+- Both colour schemes use the existing tokens in `theme.css`; the dark-palette
+  stylesheet test is extended to the new classes and must be able to fail.
+
+### 20.7 Spike (first task)
+
+Run the real sidecar with a real SDK (0.3.283) and answer, before any code
+depends on them:
+
+1. Are `result.usage` and `result.modelUsage` per turn or a running total for
+   the session, with streaming input and after a resume?
+2. Does `Query.getContextUsage()` work on the live streaming `Query`, and what
+   are its latency and its value right after a resume with no turn yet?
+3. Does a real `.jsonl` split cache writes into `ephemeral_5m` / `ephemeral_1h`
+   consistently, and does summing it per `message.id` match the sum of the
+   SDK's per-turn usage for the same session (the check that restore is
+   right)?
+4. Does a custom `base_url` change the model ids that appear in usage?
+
+Findings are written into §20.9 and the plan's affected tasks are changed
+before they start.
+
+### 20.8 Testing
+
+Domain: cost per model, 5m vs 1h cache writes, prefix match, unknown model,
+sum with a partly unpriced set. Adapter: duplicate `message.id`, last line
+wins, no id, unreadable line, no usage, synthetic model, a real fixture taken
+in the spike. Sidecar (vitest): `turn_complete` carries deltas for per-turn
+and for running-total inputs, `context_usage` is sent after `turn_complete`,
+a failing or slow `getContextUsage` sends nothing. Application: a resume
+seeds the totals, a turn adds to them, a `ContextUsage` update replaces the
+value. Entities: formatting boundaries. Widgets: ring level, empty state,
+popover content, unpriced model.
+
+### 20.9 Task order
+
+1. Spike (§20.7), findings recorded.
+2. `forge-domain` usage types, price table, cost.
+3. `forge-adapter-claude-fs` restore with `message.id` de-duplication.
+4. Sidecar: `turn_complete` deltas and `context_usage`; `forge-ports` and
+   `forge-adapter-sidecar` changes.
+5. `forge-application`: seeding, `TurnCompleted`, `ContextUsage`.
+6. `forge-entities` formatting; `forge-features` mapping.
+7. `forge-widgets` ring and popover; theme and dark-palette test.
+8. Walk-through in the real window (light and dark, a resumed session, an
+   unpriced model); final review; as-built notes.
