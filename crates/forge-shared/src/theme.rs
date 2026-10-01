@@ -42,4 +42,28 @@ mod tests {
         assert!(THEME_CSS.contains("@keyframes"));
         assert!(THEME_CSS.contains("prefers-reduced-motion"));
     }
+
+    #[test]
+    fn the_stylesheet_styles_markdown_highlighting_and_diffs() {
+        for selector in [
+            ".markdown",
+            ".code-block",
+            ".hl-comment",
+            ".hl-string",
+            ".diff",
+            ".diff-line.added",
+            ".diff-line.removed",
+            ".tool-call.expandable",
+        ] {
+            assert!(THEME_CSS.contains(selector), "theme.css is missing {selector}");
+        }
+    }
+
+    #[test]
+    fn the_code_and_diff_colors_have_a_dark_palette() {
+        let dark = THEME_CSS.rsplit("prefers-color-scheme: dark").next().unwrap();
+        for variable in ["--hl-keyword", "--hl-string", "--diff-added-bg", "--diff-removed-bg"] {
+            assert!(dark.contains(variable), "the dark palette is missing {variable}");
+        }
+    }
 }

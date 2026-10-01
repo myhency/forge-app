@@ -3,6 +3,7 @@ use forge_domain::{Message, MessageRole, ToolCall};
 
 use crate::diff::diff_for_tool_call;
 use crate::diff_view::DiffView;
+use crate::markdown::render_markdown;
 use crate::tool_summary::{tool_call_status, tool_input_summary, ToolCallStatus};
 
 #[component]
@@ -11,10 +12,17 @@ pub fn MessageBubble(message: Message) -> Element {
         MessageRole::User => ("user", "You"),
         MessageRole::Assistant => ("assistant", "Claude"),
     };
+    // Only Claude's text is markdown; what a person typed is shown exactly as typed.
+    let markdown = match message.role {
+        MessageRole::Assistant if !message.content.is_empty() => Some(render_markdown(&message.content)),
+        _ => None,
+    };
     rsx! {
         div { class: "message {role_class}",
             div { class: "role", "{role_label}" }
-            if !message.content.is_empty() {
+            if let Some(html) = markdown {
+                div { class: "content markdown", dangerous_inner_html: "{html}" }
+            } else if !message.content.is_empty() {
                 div { class: "content", "{message.content}" }
             }
             for tool_call in message.tool_calls.iter() {

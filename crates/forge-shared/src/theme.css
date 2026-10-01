@@ -144,3 +144,70 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .setting-control { display: flex; align-items: center; gap: 8px; flex: none; }
 .status-line { min-height: 20px; margin-top: 12px; font-size: 13px; color: var(--fg-muted); }
 .status-line.error { color: var(--danger); }
+
+/* Markdown, code highlighting and diffs (spec §18). The colors are variables with a light and a dark palette. */
+:root {
+  --code-bg: #f3f1ee;
+  --hl-comment: #8a837b;
+  --hl-keyword: #a21caf;
+  --hl-string: #15803d;
+  --hl-number: #b45309;
+  --hl-function: #1d4ed8;
+  --hl-type: #0f766e;
+  --diff-added-bg: rgba(22, 163, 74, 0.14);
+  --diff-removed-bg: rgba(220, 38, 38, 0.14);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --code-bg: #171412;
+    --hl-comment: #8a837b;
+    --hl-keyword: #e879f9;
+    --hl-string: #86efac;
+    --hl-number: #fdba74;
+    --hl-function: #93c5fd;
+    --hl-type: #5eead4;
+    --diff-added-bg: rgba(74, 222, 128, 0.16);
+    --diff-removed-bg: rgba(248, 113, 113, 0.18);
+  }
+}
+
+.message .content.markdown { white-space: normal; }
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown p, .markdown ul, .markdown ol, .markdown blockquote, .markdown table { margin: 0 0 10px; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 { margin: 16px 0 6px; line-height: 1.3; }
+.markdown h1 { font-size: 1.3em; }
+.markdown h2 { font-size: 1.15em; }
+.markdown h3, .markdown h4 { font-size: 1.02em; }
+.markdown ul, .markdown ol { padding-left: 1.5em; }
+.markdown blockquote { padding-left: 12px; border-left: 3px solid var(--border); color: var(--fg-muted); }
+.markdown a { color: var(--accent); }
+.markdown code { font-family: var(--mono); font-size: 0.9em; padding: 1px 5px; background: var(--code-bg); border-radius: 5px; }
+.markdown table { border-collapse: collapse; display: block; overflow-x: auto; }
+.markdown th, .markdown td { padding: 4px 10px; border: 1px solid var(--border); }
+.markdown th { background: var(--bg-hover); text-align: left; }
+.code-block { margin: 0 0 10px; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; }
+.code-block code { padding: 0; background: none; font-size: 12.5px; line-height: 1.5; white-space: pre; }
+
+.hl-comment { color: var(--hl-comment); font-style: italic; }
+.hl-string { color: var(--hl-string); }
+.hl-constant.hl-numeric { color: var(--hl-number); }
+.hl-keyword:not(.hl-operator), .hl-storage { color: var(--hl-keyword); }
+.hl-entity.hl-name.hl-function, .hl-support.hl-function { color: var(--hl-function); }
+.hl-entity.hl-name.hl-type, .hl-entity.hl-name.hl-class, .hl-support.hl-type, .hl-support.hl-class { color: var(--hl-type); }
+
+button.tool-call { appearance: none; background: none; text-align: left; cursor: pointer; }
+.tool-call.expandable:hover { background: var(--bg-hover); }
+
+.diff { max-width: 760px; margin: 6px 0 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); overflow: hidden; font-family: var(--mono); font-size: 12px; }
+.permission-card .diff { margin: 4px 0 10px; }
+.diff-header { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--fg-muted); }
+.diff-path { color: var(--fg); overflow-wrap: anywhere; }
+.diff-counts { margin-left: auto; white-space: nowrap; }
+.diff-hunk + .diff-hunk { border-top: 1px dashed var(--border); }
+.diff-line { display: flex; min-height: 1.5em; line-height: 1.5; }
+.diff-sign { flex: none; width: 2.2ch; text-align: center; color: var(--fg-muted); user-select: none; }
+.diff-text { white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 10px; }
+.diff-line.added { background: var(--diff-added-bg); }
+.diff-line.removed { background: var(--diff-removed-bg); }
+.diff-more { padding: 5px 10px; color: var(--fg-muted); border-top: 1px solid var(--border); }
