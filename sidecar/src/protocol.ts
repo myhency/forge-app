@@ -1,6 +1,14 @@
 export type WirePermissionMode = "default" | "accept_edits" | "bypass_permissions" | "plan";
 export type WirePermissionDecision = "allow_once" | "allow_always" | "deny";
 
+export interface WireTokenUsage {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write_5m: number;
+  cache_write_1h: number;
+}
+
 export type SidecarCommand =
   | {
       type: "start_session";
@@ -24,7 +32,8 @@ export type SidecarEvent =
   | { type: "tool_use"; tool_call_id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_call_id: string; output: string; is_error: boolean }
   | { type: "permission_request"; permission_request_id: string; tool_name: string; input: unknown }
-  | { type: "turn_complete"; input_tokens: number; output_tokens: number }
+  | { type: "turn_complete"; usage: Record<string, WireTokenUsage> }
+  | { type: "context_usage"; total_tokens: number; max_tokens: number }
   | { type: "error"; message: string }
   | { type: "session_ended" };
 

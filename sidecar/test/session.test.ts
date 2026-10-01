@@ -6,8 +6,8 @@ import { isSafeSkillName } from "../src/skills_plugin.js";
 import { SidecarSession, type QueryFn } from "../src/session.js";
 import type { SidecarCommand, SidecarEvent } from "../src/protocol.js";
 
-function toQueryHandle(gen: AsyncGenerator<unknown>): ReturnType<QueryFn> {
-  return Object.assign(gen, { interrupt: async () => undefined });
+function toQueryHandle(gen: AsyncGenerator<unknown>, extra: Record<string, unknown> = {}): ReturnType<QueryFn> {
+  return Object.assign(gen, { interrupt: async () => undefined }, extra);
 }
 
 const startCommand: SidecarCommand = {
@@ -274,17 +274,139 @@ describe("SidecarSession", () => {
     expect(events).toContainEqual({ type: "tool_result", tool_call_id: "t-1", output: "done", is_error: false });
   });
 
-  it("forwards a result message as turn_complete", async () => {
+  it("forwards a result message as turn_complete with the turn's usage under the main-loop model", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>
       toQueryHandle((async function* () {
-        yield { type: "result", subtype: "success", usage: { input_tokens: 12, output_tokens: 34 } };
+        yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-test", content: [] } };
+        yield {
+          type: "result",
+          subtype: "success",
+          usage: {
+            input_tokens: 12,
+            output_tokens: 34,
+            cache_read_input_tokens: 5,
+            cache_creation_input_tokens: 6,
+            cache_creation: { ephemeral_5m_input_tokens: 2, ephemeral_1h_input_tokens: 4 },
+          },
+          // A running total that includes helper models: it must not be what is sent.
+          modelUsage: { "claude-test": { inputTokens: 999 }, "claude-helper": { inputTokens: 901 } },
+        };
       })());
 
     const session = new SidecarSession(queryFn, (e) => events.push(e));
     await session.handle(startCommand);
 
-    expect(events).toContainEqual({ type: "turn_complete", input_tokens: 12, output_tokens: 34 });
+    expect(events).toContainEqual({
+      type: "turn_complete",
+      usage: { "claude-test": { input: 12, output: 34, cache_read: 5, cache_write_5m: 2, cache_write_1h: 4 } },
+    });
+  });
+
+  it("does not take a sub-agent's model for the turn", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-main", content: [] } };
+        yield { type: "assistant", parent_tool_use_id: "toolu_1", message: { model: "claude-sub", content: [] } };
+        yield { type: "result", subtype: "success", usage: { input_tokens: 1, output_tokens: 2 } };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const done = events.find((e) => e.type === "turn_complete") as Extract<SidecarEvent, { type: "turn_complete" }>;
+    expect(Object.keys(done.usage)).toEqual(["claude-main"]);
+  });
+
+  it("sends an empty usage for a turn that had no main-loop assistant message", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "result", subtype: "success", usage: { input_tokens: 1, output_tokens: 2 } };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events).toContainEqual({ type: "turn_complete", usage: {} });
+  });
+
+  it("does not carry one turn's model into the next", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-test", content: [] } };
+        yield { type: "result", subtype: "success", usage: { input_tokens: 1, output_tokens: 1 } };
+        yield { type: "result", subtype: "success", usage: { input_tokens: 7, output_tokens: 7 } };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const done = events.filter((e) => e.type === "turn_complete") as Array<Extract<SidecarEvent, { type: "turn_complete" }>>;
+    expect(done.map((e) => Object.keys(e.usage).length)).toEqual([1, 0]);
+  });
+
+  function contextQuery(getContextUsage: () => Promise<unknown>, waitMs = 20): QueryFn {
+    return () =>
+      toQueryHandle(
+        (async function* () {
+          yield { type: "result", subtype: "success", usage: {} };
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        })(),
+        { getContextUsage },
+      );
+  }
+
+  it("sends context_usage after turn_complete", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      contextQuery(async () => ({ totalTokens: 76200, maxTokens: 200000, percentage: 38 })),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    const types = events.map((e) => e.type);
+    expect(types.indexOf("context_usage")).toBeGreaterThan(types.indexOf("turn_complete"));
+    expect(events).toContainEqual({ type: "context_usage", total_tokens: 76200, max_tokens: 200000 });
+  });
+
+  it("sends no context_usage when getContextUsage throws, and the turn still completes", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      contextQuery(async () => { throw new Error("nope"); }),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    const types = events.map((e) => e.type);
+    expect(types).toContain("turn_complete");
+    expect(types).not.toContain("context_usage");
+    expect(types).not.toContain("error");
+  });
+
+  it("gives up on a getContextUsage that never answers", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      contextQuery(() => new Promise(() => {}), 60),
+      (e) => events.push(e),
+      { contextUsageTimeoutMs: 10 },
+    );
+    await session.handle(startCommand);
+
+    expect(events.map((e) => e.type)).not.toContain("context_usage");
+  });
+
+  it("ignores a context answer with an unusable window", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      contextQuery(async () => ({ totalTokens: 5, maxTokens: 0 })),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    expect(events.map((e) => e.type)).not.toContain("context_usage");
   });
 
   it("emits permission_request using the SDK's own requestId and resolves after permission_response (allow)", async () => {

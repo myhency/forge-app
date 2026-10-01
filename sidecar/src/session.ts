@@ -1,8 +1,10 @@
 import { buildSkillsPlugin } from "./skills_plugin.js";
+import { turnUsage } from "./usage.js";
 import type { SidecarCommand, SidecarEvent, WirePermissionDecision } from "./protocol.js";
 
 export type QueryHandle = AsyncIterable<unknown> & {
   interrupt: () => Promise<unknown>;
+  getContextUsage?: () => Promise<{ totalTokens: number; maxTokens: number }>;
 };
 
 export type QueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => QueryHandle;
@@ -14,6 +16,24 @@ type PermissionResult =
 interface PendingPermission {
   resolve: (result: PermissionResult) => void;
   suggestions?: unknown[];
+}
+
+const CONTEXT_USAGE_TIMEOUT_MS = 3000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(undefined), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 function toSdkPermissionMode(mode: string): "default" | "acceptEdits" | "bypassPermissions" | "plan" {
@@ -48,11 +68,17 @@ export class SidecarSession {
   private shuttingDown = false;
   private activeQuery: QueryHandle | null = null;
   private sessionEndedPromise: Promise<void> = Promise.resolve();
+  // The model of the current turn's main-loop assistant messages: `result.usage` is that model's.
+  private mainModel: string | null = null;
+  private readonly contextUsageTimeoutMs: number;
 
   constructor(
     private readonly queryFn: QueryFn,
     private readonly emit: (event: SidecarEvent) => void,
-  ) {}
+    options: { contextUsageTimeoutMs?: number } = {},
+  ) {
+    this.contextUsageTimeoutMs = options.contextUsageTimeoutMs ?? CONTEXT_USAGE_TIMEOUT_MS;
+  }
 
   async handle(command: SidecarCommand): Promise<void> {
     switch (command.type) {
@@ -209,6 +235,22 @@ export class SidecarSession {
     }
   }
 
+  // A failure or a slow answer only means no ring value this turn; it never touches the turn.
+  private async emitContextUsage(): Promise<void> {
+    const query = this.activeQuery;
+    if (!query?.getContextUsage) return;
+    try {
+      const context = await withTimeout(query.getContextUsage(), this.contextUsageTimeoutMs);
+      if (this.shuttingDown || !context) return;
+      const { totalTokens, maxTokens } = context;
+      if (Number.isFinite(totalTokens) && Number.isFinite(maxTokens) && maxTokens > 0 && totalTokens >= 0) {
+        this.emit({ type: "context_usage", total_tokens: totalTokens, max_tokens: maxTokens });
+      }
+    } catch {
+      // No context value this turn.
+    }
+  }
+
   private forwardMessage(message: any): void {
     switch (message.type) {
       case "system":
@@ -224,6 +266,10 @@ export class SidecarSession {
         return;
       }
       case "assistant": {
+        const model = message.message?.model;
+        if (!message.parent_tool_use_id && typeof model === "string" && model !== "" && !model.startsWith("<")) {
+          this.mainModel = model;
+        }
         const blocks = message.message?.content;
         if (!Array.isArray(blocks)) return;
         for (const block of blocks) {
@@ -248,13 +294,15 @@ export class SidecarSession {
         }
         return;
       }
-      case "result":
-        this.emit({
-          type: "turn_complete",
-          input_tokens: message.usage?.input_tokens ?? 0,
-          output_tokens: message.usage?.output_tokens ?? 0,
-        });
+      case "result": {
+        // `result.usage` is this turn's main-loop usage. `modelUsage` is not used: it is a running
+        // total, includes helper models and sub-agents, and after a resume already holds the
+        // earlier turns (spec §20.10).
+        this.emit({ type: "turn_complete", usage: turnUsage(this.mainModel, message.usage) });
+        this.mainModel = null;
+        void this.emitContextUsage();
         return;
+      }
       default:
         return;
     }

@@ -969,6 +969,8 @@ git commit -m "feat: restore a session's usage from its file, once per message i
 
 ### Task 5: Sidecar — per-turn usage deltas and `context_usage`
 
+> **Revised after the Task 1 spike (spec §20.4, §20.10):** the sidecar reports `result.usage` (main loop, per turn, with the 5m/1h split) under the main-loop assistant model, **not** `modelUsage`. So there is no `UsageTracker`, no `cumulative` switch and no `RESULT_USAGE_IS_CUMULATIVE`; `sidecar/src/usage.ts` has `toWireUsage(usage)` and `turnUsage(model, usage)`. The code and tests below this note that mention `UsageTracker`/`modelUsage` are superseded by what was committed.
+
 **Files:**
 - Create: `sidecar/src/usage.ts`, `sidecar/test/usage.test.ts`
 - Modify: `sidecar/src/protocol.ts`, `sidecar/src/session.ts`, `sidecar/test/session.test.ts`
