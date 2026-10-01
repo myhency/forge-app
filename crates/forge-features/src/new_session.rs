@@ -59,7 +59,7 @@ pub fn NewSessionComposer() -> Element {
     rsx! {
         div { class: "new-session",
             if !has_folder {
-                div { class: "banner info", "No existing project folder was found in your Claude Code history." }
+                div { class: "banner info", "No existing project folder was found in your Claude Code history. Use “Open folder…” to choose one." }
             }
             div { class: "field",
                 label { "Folder" }
@@ -68,6 +68,11 @@ pub fn NewSessionComposer() -> Element {
                     options,
                     disabled: !has_folder,
                     onchange: move |path: String| workspace.set_new_folder(Some(path.into())),
+                }
+                Button {
+                    label: "Open folder…",
+                    disabled: workspace.picking_folder(),
+                    onclick: move |_| workspace.open_folder(),
                 }
             }
             div { class: "field",
