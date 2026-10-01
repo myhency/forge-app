@@ -124,7 +124,8 @@ impl Workspace {
         let services = (*self.services.peek()).clone();
         let mut past = self.past;
         let mut notice = self.notice;
-        spawn(async move {
+        // Root scope: a disk mutation must finish even if the row that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
             match services.sessions.list_sessions(&project).await {
                 Ok(sessions) => replace_project_sessions(&mut past.write(), &project, sessions),
                 Err(error) => notice.set(Some(format!("{}: {error}", project.display()))),
@@ -136,7 +137,8 @@ impl Workspace {
     pub fn rename_session(&self, project: PathBuf, session: SessionId, title: String) {
         let this = *self;
         let services = (*self.services.peek()).clone();
-        spawn(async move {
+        // Root scope: a disk mutation must finish even if the row that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
             match services.registry.rename(&project, &session, &title).await {
                 Ok(_) => this.reload_project(project),
                 Err(error) => this.report(error.to_string()),
@@ -148,7 +150,8 @@ impl Workspace {
     pub fn delete_session(&self, project: PathBuf, session: SessionId) {
         let this = *self;
         let services = (*self.services.peek()).clone();
-        spawn(async move {
+        // Root scope: a disk mutation must finish even if the row that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
             match services.registry.delete(&project, &session).await {
                 Ok(()) => this.reload_project(project),
                 Err(error) => this.report(error.to_string()),
