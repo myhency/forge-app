@@ -2530,3 +2530,76 @@ Plan 10 was built on branch `plan-10` and checked on 2026-10-01 (macOS 26, Dioxu
 - If the model changes in the middle of one turn, all of that turn's `result.usage` is attributed to the last main-loop model.
 - The ring is part of the message box, so a session that can only be viewed (its folder is gone) shows no ring or popover.
 - Sub-agent and helper-model usage, code-execution time, and data-residency (1.1x), fast-mode and batch pricing are not counted or modelled (§20.1).
+
+## 21. Detailed Design: slash command autocomplete (Plan 11)
+
+Plan 11 lists the slash commands of a session when the user types `/` in the
+message box. The list is whatever the SDK reports; Forge defines no commands.
+
+### 21.1 Scope and decisions
+
+- **Verified against the desktop docs (read 2026-10-01):** typing `/` in the
+  prompt box, or the **+** button then **Slash commands**, shows what is
+  available: built-in commands, custom skills, project skills and skills from
+  installed plugins. Selecting one makes it appear highlighted in the input
+  field; the user types the task after it and sends as usual. A command can be
+  sent while a turn is running, like any message.
+- **Not specified by the docs (Forge's own choices, labelled as such):** the
+  filter rule (case-insensitive prefix, then substring, on the name), the keys
+  (Up/Down move, Enter or Tab insert, Esc close), and the popup look (the same
+  style as the usage popover). The **+** button is out of scope; only `/`.
+- **List available before the first message.** The SDK sends `system/init`
+  only once a turn has started, so the sidecar asks for the list as soon as the
+  query is running (§21.3) and again on `init`; the later value replaces the
+  earlier. A session whose list never arrives shows no popup.
+- **Names, plus description when the SDK gives one.** `init.slash_commands` is
+  a list of names. If the spike (§21.6) shows `supportedCommands()` also
+  returns a description and an argument hint, they are shown beside the name.
+- **Out of scope:** running commands in a special way (they are sent as plain
+  text, as today), argument completion, the **+** menu, a cache of the list
+  across sessions, editing or hiding commands.
+
+### 21.2 Domain (`forge-domain`)
+
+`SlashCommand { name: String, description: Option<String>, argument_hint:
+Option<String> }`, with `name` stored without the leading `/`. The live
+session view keeps `commands: Vec<SlashCommand>`; it is empty until the first
+`CommandsAvailable` event and is replaced, not merged, by each later one.
+
+### 21.3 Sidecar
+
+- New event `commands_available { commands: [{ name, description?,
+  argument_hint? }] }` in `protocol.ts` and in the Rust `SidecarEvent`.
+- After the query is created, the session calls `supportedCommands()` (with a
+  3 s timeout, like `getContextUsage`) and emits the event. A failure or
+  timeout emits nothing and is not an error.
+- On `system/init` it emits the event again from `slash_commands` (names
+  only), but only when the list differs from the last one, so a richer list
+  from `supportedCommands()` is not replaced by a poorer one with the same
+  names.
+
+### 21.4 Message box
+
+A pure function `filter_commands(commands, input) -> Vec<&SlashCommand>`: the
+popup is open only while the input starts with `/` and has no whitespace
+after the name part; the query is the text after `/`. Prefix matches come
+first, then substring matches, each in the SDK's order. Up/Down wrap around,
+Enter and Tab insert `/name ` and close the popup, Esc closes it until the
+input changes. With no match the popup is not shown. Enter with the popup
+closed sends as today.
+
+### 21.5 Testing
+
+Sidecar: the event on `supportedCommands()`, on `init`, the timeout and the
+no-downgrade rule. Rust: protocol parsing, the replace rule in the view.
+Widgets: `filter_commands` and the key handling as pure functions. A person
+checks the live window (not automatable here).
+
+### 21.6 Spike (first task of the plan)
+
+Before any code: with the real SDK (0.3.283) check (1) `supportedCommands()`
+before any user message returns, and how long it takes; (2) its fields; (3)
+whether it lists plugin and skill commands that Forge enables; (4) what
+`init.slash_commands` contains for the same session. If (1) fails, the plan
+falls back to starting a turn-less init another way, and the spike's result is
+recorded here as §21.7.
