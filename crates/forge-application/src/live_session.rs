@@ -170,6 +170,7 @@ mod tests {
             title: None,
             messages: Vec::new(),
             permission_mode: PermissionMode::AcceptEdits,
+            usage: forge_domain::SessionUsage::default(),
         }
     }
 

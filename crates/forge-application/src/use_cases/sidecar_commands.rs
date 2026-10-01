@@ -64,6 +64,7 @@ mod tests {
             title: None,
             messages: Vec::new(),
             permission_mode: forge_domain::PermissionMode::Default,
+            usage: forge_domain::SessionUsage::default(),
         }
     }
 

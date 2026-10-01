@@ -407,6 +407,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
             title: None,
             messages: Vec::new(),
             permission_mode: PermissionMode::Default,
+            usage: forge_domain::SessionUsage::default(),
         };
         let mut reader = BufReader::new(file);
         let mut buffer = Vec::new();

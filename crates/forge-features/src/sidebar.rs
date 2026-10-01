@@ -373,6 +373,7 @@ mod tests {
                 title: None,
                 messages: Vec::new(),
                 permission_mode: PermissionMode::Default,
+                usage: forge_domain::SessionUsage::default(),
             },
             claude_session_id: None,
             phase,

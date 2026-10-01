@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::PermissionMode;
+use crate::{PermissionMode, SessionUsage};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SessionId(pub String);
@@ -12,6 +12,8 @@ pub struct Session {
     pub title: Option<String>,
     pub messages: Vec<Message>,
     pub permission_mode: PermissionMode,
+    /// What the session has used so far: restored from the session file, then grown by each turn.
+    pub usage: SessionUsage,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,5 +91,18 @@ mod tests {
     fn session_id_equality_is_value_based() {
         assert_eq!(SessionId("s-1".to_string()), SessionId("s-1".to_string()));
         assert_ne!(SessionId("s-1".to_string()), SessionId("s-2".to_string()));
+    }
+
+    #[test]
+    fn a_new_session_has_used_nothing() {
+        let session = Session {
+            id: SessionId("s".to_string()),
+            project_path: PathBuf::from("/p"),
+            title: None,
+            messages: Vec::new(),
+            permission_mode: PermissionMode::Default,
+            usage: SessionUsage::default(),
+        };
+        assert!(session.usage.is_empty());
     }
 }

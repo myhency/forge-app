@@ -93,6 +93,7 @@ impl SessionRegistry {
             title: None,
             messages: Vec::new(),
             permission_mode,
+            usage: forge_domain::SessionUsage::default(),
         };
         let mut handles = self.handles.lock().unwrap();
         Ok(self.insert(&mut handles, project, session, None, model))
@@ -239,6 +240,7 @@ mod tests {
                 Message { role: MessageRole::Assistant, content: "reply".to_string(), tool_calls: Vec::new() },
             ],
             permission_mode: PermissionMode::Default,
+            usage: forge_domain::SessionUsage::default(),
         }
     }
 

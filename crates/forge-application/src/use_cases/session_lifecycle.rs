@@ -106,6 +106,7 @@ mod tests {
                 title: None,
                 messages: Vec::new(),
                 permission_mode: PermissionMode::Default,
+                usage: forge_domain::SessionUsage::default(),
             })
         });
 
@@ -154,6 +155,7 @@ mod tests {
                 title: None,
                 messages: Vec::new(),
                 permission_mode: PermissionMode::Default,
+                usage: forge_domain::SessionUsage::default(),
             })
         });
 
@@ -181,6 +183,7 @@ mod tests {
                 title: None,
                 messages: Vec::new(),
                 permission_mode: PermissionMode::Plan,
+                usage: forge_domain::SessionUsage::default(),
             })
         });
 
