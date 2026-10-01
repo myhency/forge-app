@@ -2730,3 +2730,15 @@ While the new-session screen is shown there is one more sidecar process (the
 probe), and choosing another folder starts another; the list appears about 1 to
 4 seconds after the folder is chosen (§21.7). A person who starts typing a `/`
 before that sees no popup yet.
+
+### 22.6 As built
+
+Built on branch `plan-11` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Agent SDK 0.3.283). 487 Rust workspace tests pass (472 before §22) and 68 sidecar tests pass (unchanged: §22 needed no sidecar change).
+
+**Checked (passed):**
+- The probe (starts a default-mode sidecar for the folder with no message, publishes each list, ignores other events, stops quietly on an error, a failed spawn and a missing folder, shuts its sidecar down when dropped), `ProbeSlot` (starts for a folder, keeps the probe for the same folder, ends it and clears the list for another folder so a late event of the old folder does not show, `end()` returns the latest list), `open_new` seeding the session's `commands`, and the pure popup rules (Shift+Enter does not pick; text that was not typed does not open the popup) are covered by tests.
+- The real app, started with the sidecar built: with the new-session screen showing its default folder there is exactly one `sidecar/dist/index.js` process (`pgrep`), and none after the app is killed. No Dioxus warnings in the log (the first version created the list signal in `ScopeId::APP` and warned that `spawn_forever` runs in `ScopeId::ROOT`; it is created in `ROOT` now).
+
+**Not checked (needs a person):** the popup itself in the new-session screen and in an open session (the list appearing about 1 to 4 s after the folder is chosen, narrowing, Up/Down/Enter/Tab/Esc, a mouse click, Shift+Enter with the popup open, Korean IME Enter, light and dark mode); that choosing another folder replaces the list; that Start with a `/command` first message sends it and the new session's box shows the carried-over list; that leaving the screen for an open session ends the probe and coming back starts one; the failure runs (a folder that no longer exists, `node` missing from `PATH`).
+
+**Differences from §22:** none in behaviour. The popup's "selection brought back into range" is `move_selection(selected, count, 0)` computed in `CommandTextArea` rather than a separate function.

@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use dioxus::prelude::*;
-use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, SessionRegistry, SettingsUseCase};
-use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SessionId, SessionSummary};
+use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
+use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SessionId, SessionSummary, SlashCommand};
 use forge_ports::{FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
 
 use crate::folder_choice::{choose_folder, FolderChoice};
@@ -46,21 +46,35 @@ pub struct Workspace {
     new_folder: Signal<Option<PathBuf>>,
     extra_folders: Signal<Vec<PathBuf>>,
     picking: Signal<bool>,
+    probe: Signal<Arc<ProbeSlot>>,
+    new_commands: Signal<Vec<SlashCommand>>,
 }
 
 /// Creates the workspace, provides it to every descendant and loads the sidebar once. Call it in
 /// the page at the top of the tree; descendants call `use_workspace`.
 pub fn use_workspace_provider() -> Workspace {
     let services = use_context::<WorkspaceServices>();
-    let workspace = use_hook(move || Workspace {
-        services: Signal::new(services),
-        past: Signal::new(Vec::new()),
-        live: Signal::new(Vec::new()),
-        active: Signal::new(Active::NewSession),
-        notice: Signal::new(None),
-        new_folder: Signal::new(None),
-        extra_folders: Signal::new(Vec::new()),
-        picking: Signal::new(false),
+    let workspace = use_hook(move || {
+        let slot = Arc::new(ProbeSlot::new(services.registry.clone()));
+        let mut list = slot.subscribe();
+        let mut new_commands = Signal::new_in_scope(Vec::new(), ScopeId::ROOT);
+        dioxus::core::spawn_forever(async move {
+            while list.changed().await.is_ok() {
+                new_commands.set(list.borrow_and_update().clone());
+            }
+        });
+        Workspace {
+            services: Signal::new(services),
+            past: Signal::new(Vec::new()),
+            live: Signal::new(Vec::new()),
+            active: Signal::new(Active::NewSession),
+            notice: Signal::new(None),
+            new_folder: Signal::new(None),
+            extra_folders: Signal::new(Vec::new()),
+            picking: Signal::new(false),
+            probe: Signal::new(slot),
+            new_commands,
+        }
     });
     use_context_provider(move || workspace);
     use_hook(move || workspace.reload_past());
@@ -225,6 +239,28 @@ impl Workspace {
         self.new_folder.read().clone()
     }
 
+    /// The folder the new-session panel would start in: the chosen one if it is still offered,
+    /// otherwise the first.
+    pub fn chosen_new_folder(&self) -> Option<PathBuf> {
+        let projects = self.new_session_projects();
+        self.new_folder()
+            .filter(|path| projects.iter().any(|project| project.path == *path))
+            .or_else(|| projects.first().map(|project| project.path.clone()))
+    }
+
+    /// Probes `folder`'s slash commands for the new-session text box; `None` ends the probe. The same
+    /// folder keeps its probe. Call it inside the Dioxus runtime (a `spawn`), not from a render.
+    pub fn probe_new_folder(&self, folder: Option<PathBuf>) {
+        let project = folder.and_then(|path| self.new_session_projects().into_iter().find(|p| p.path == path));
+        let slot = (*self.probe.peek()).clone();
+        slot.set_folder(project.as_ref());
+    }
+
+    /// The slash commands of the probed folder; empty until the probe answers.
+    pub fn new_commands(&self) -> Vec<SlashCommand> {
+        self.new_commands.read().clone()
+    }
+
     /// The project the settings tabs describe: the active session's, or the one the new-session
     /// panel would start in, or none.
     pub fn context_project(&self) -> Option<PathBuf> {
@@ -291,6 +327,7 @@ impl Workspace {
     pub fn start_new(&self, project: ProjectSummary, mode: PermissionMode, text: String) {
         let this = *self;
         let services = (*self.services.peek()).clone();
+        let slot = (*self.probe.peek()).clone();
         // Pinned to the root scope: `NewSessionComposer` unmounts if the person clicks elsewhere
         // while the saved model is being read, which would cancel a plain `spawn`.
         dioxus::core::spawn_forever(async move {
@@ -301,7 +338,8 @@ impl Workspace {
                     return;
                 }
             };
-            match services.registry.open_new(&project, mode, model, Vec::new()) {
+            let commands = slot.end();
+            match services.registry.open_new(&project, mode, model, commands) {
                 Ok(handle) => {
                     let id = this.attach(handle.clone());
                     handle.send(text);

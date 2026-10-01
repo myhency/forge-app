@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
 use forge_entities::model_label;
-use forge_shared::{Button, ButtonKind, Select, TextArea};
+use forge_shared::{Button, ButtonKind, Select};
 
+use crate::command_box::CommandTextArea;
 use crate::permission_mode::{mode_options, parse_mode};
 use crate::settings::use_settings;
 use crate::workspace::use_workspace;
@@ -15,6 +16,14 @@ pub fn NewSessionComposer() -> Element {
     let mut mode = use_signal(|| "default".to_string());
     let mut text = use_signal(String::new);
 
+    // The probe follows the chosen folder: it is replaced when the folder changes, kept when it does
+    // not, and ended when this panel goes away (Start, another session, the settings).
+    use_effect(move || {
+        let folder = workspace.chosen_new_folder();
+        spawn(async move { workspace.probe_new_folder(folder) });
+    });
+    use_drop(move || workspace.probe_new_folder(None));
+
     let projects = workspace.new_session_projects();
     let options: Vec<(String, String)> = projects
         .iter()
@@ -23,13 +32,7 @@ pub fn NewSessionComposer() -> Element {
             (path.clone(), path)
         })
         .collect();
-    // The chosen folder if it is still offered, otherwise the first one.
-    let selected = workspace
-        .new_folder()
-        .map(|path| path.to_string_lossy().to_string())
-        .filter(|path| options.iter().any(|(value, _)| value == path))
-        .or_else(|| options.first().map(|(value, _)| value.clone()))
-        .unwrap_or_default();
+    let selected = workspace.chosen_new_folder().map(|path| path.to_string_lossy().to_string()).unwrap_or_default();
     let model = model_label(settings.model().as_deref());
 
     // `submit` is used by two handlers, so it may capture only `Copy` values (signals): it looks the
@@ -88,17 +91,13 @@ pub fn NewSessionComposer() -> Element {
                     onchange: move |value| mode.set(value),
                 }
             }
-            TextArea {
+            CommandTextArea {
                 value: text(),
+                commands: workspace.new_commands(),
                 placeholder: "What should Claude do?",
                 disabled: !has_folder,
                 oninput: move |value| text.set(value),
-                onkeydown: move |event: KeyboardEvent| {
-                    if event.key() == Key::Enter && !event.modifiers().shift() && !event.is_composing() {
-                        event.prevent_default();
-                        submit();
-                    }
-                },
+                onsubmit: move |_| submit(),
             }
             div { class: "composer-row",
                 span { class: "spacer" }
