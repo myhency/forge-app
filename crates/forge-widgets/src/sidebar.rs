@@ -1,10 +1,10 @@
 use std::path::Path;
 
 use dioxus::prelude::*;
-use forge_entities::{relative_time, SidebarItem};
 use forge_features::{use_settings, use_workspace, Active, EntryKey};
 use forge_shared::{Button, ButtonKind};
-use time::OffsetDateTime;
+
+use crate::session_row::SessionRow;
 
 /// The folder's own name for a sidebar heading; the full path stays available as a tooltip. A
 /// path with no final component (the filesystem root) is shown whole.
@@ -22,7 +22,6 @@ pub fn Sidebar() -> Element {
     let groups = workspace.sidebar();
     let active = workspace.active();
     let notice = workspace.notice();
-    let now = OffsetDateTime::now_utc();
 
     rsx! {
         div { class: "sidebar",
@@ -60,20 +59,15 @@ pub fn Sidebar() -> Element {
                         }
                     }
                     for entry in group.entries.iter() {
-                        SidebarItem {
+                        SessionRow {
                             key: "{entry.key.dom_key()}",
-                            title: entry.title.clone(),
-                            subtitle: entry
-                                .updated_at
-                                .as_deref()
-                                .map(|updated_at| relative_time(updated_at, now))
-                                .unwrap_or_default(),
-                            marker: entry.marker,
+                            project: group.project.path.clone(),
+                            entry: entry.clone(),
                             active: match &entry.key {
                                 EntryKey::Live(id) => active == Active::Live(*id),
                                 EntryKey::Past { .. } => false,
                             },
-                            onclick: {
+                            onopen: {
                                 let project = group.project.clone();
                                 let key = entry.key.clone();
                                 move |_| match &key {

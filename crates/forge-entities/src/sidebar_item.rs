@@ -27,6 +27,7 @@ pub fn SidebarItem(
     marker: SessionMarker,
     active: bool,
     onclick: EventHandler<MouseEvent>,
+    #[props(default)] children: Element,
 ) -> Element {
     let class = if active { "sidebar-item active" } else { "sidebar-item" };
     rsx! {
@@ -34,6 +35,7 @@ pub fn SidebarItem(
             StatusDot { tone: marker.tone() }
             span { class: "title", "{title}" }
             span { class: "subtitle", "{subtitle}" }
+            {children}
         }
     }
 }
