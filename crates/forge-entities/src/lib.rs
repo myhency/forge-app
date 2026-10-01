@@ -1,4 +1,5 @@
 mod extension_rows;
+mod highlight;
 mod message;
 mod model_catalog;
 mod permission;
