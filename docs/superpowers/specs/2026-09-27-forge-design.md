@@ -2733,7 +2733,7 @@ before that sees no popup yet.
 
 ### 22.6 As built
 
-Built on branch `plan-11` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Agent SDK 0.3.283). 487 Rust workspace tests pass (472 before §22) and 68 sidecar tests pass (unchanged: §22 needed no sidecar change).
+Built on branch `plan-11` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Agent SDK 0.3.283). 489 Rust workspace tests pass (472 before §22) and 68 sidecar tests pass (unchanged: §22 needed no sidecar change).
 
 **Checked (passed):**
 - The probe (starts a default-mode sidecar for the folder with no message, publishes each list, ignores other events, stops quietly on an error, a failed spawn and a missing folder, shuts its sidecar down when dropped), `ProbeSlot` (starts for a folder, keeps the probe for the same folder, ends it and clears the list for another folder so a late event of the old folder does not show, `end()` returns the latest list), `open_new` seeding the session's `commands`, and the pure popup rules (Shift+Enter does not pick; text that was not typed does not open the popup) are covered by tests.
@@ -2742,3 +2742,12 @@ Built on branch `plan-11` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Ag
 **Not checked (needs a person):** the popup itself in the new-session screen and in an open session (the list appearing about 1 to 4 s after the folder is chosen, narrowing, Up/Down/Enter/Tab/Esc, a mouse click, Shift+Enter with the popup open, Korean IME Enter, light and dark mode); that choosing another folder replaces the list; that Start with a `/command` first message sends it and the new session's box shows the carried-over list; that leaving the screen for an open session ends the probe and coming back starts one; the failure runs (a folder that no longer exists, `node` missing from `PATH`).
 
 **Differences from §22:** none in behaviour. The popup's "selection brought back into range" is `move_selection(selected, count, 0)` computed in `CommandTextArea` rather than a separate function.
+
+**Final review (Plan 11, part 2):** no Critical finding. Two Important findings were fixed, each with a failing test first: (1) text put back in the box after a failed send reopened the popup in the common path (type `/compact`, pick, send, send fails): the "typed" text was never forgotten when the box was cleared or a command was picked, so the put-back text equalled it again; what counts as typed is now forgotten as soon as the text changes without a keystroke (`typed_after_change`); (2) on the multi-thread runtime `abort()` cannot stop a forwarder that is already mid-poll, so a list from a replaced probe could land after the list was cleared and show one folder's commands under another; every list is now published under the slot's lock only if its probe is still the running one (a generation number).
+
+**Not fixed, on purpose (Minor):**
+- `start_new` ends whatever probe the slot holds when `saved_model()` returns: if the person picked another folder or session during that read, the new session is seeded with that folder's list or an empty one (its own sidecar sends the real list a moment later).
+- An ended probe still resolves extensions, spawns node and runs `start_session` before it shuts down (it watches the end signal only after `start_session` returns), so stepping through the folder list quickly can start several sidecars at once. They end; they do not leak.
+- Changing the enabled extensions in Settings does not re-probe: the list is stale until the folder changes or the screen is shown again. Every return to the new-session screen starts a fresh probe.
+- If `open_new` fails after the probe was ended, the composer stays with an empty list until a folder signal changes.
+- Not checked: whether a probe that never sends a message leaves a transcript file on disk.
