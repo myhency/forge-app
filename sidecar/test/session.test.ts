@@ -471,6 +471,116 @@ describe("SidecarSession", () => {
     expect(events.map((e) => e.type)).not.toContain("context_usage");
   });
 
+  function commandsQuery(
+    supportedCommands: () => Promise<unknown>,
+    initCommands?: string[],
+    waitMs = 30,
+  ): QueryFn {
+    return () =>
+      toQueryHandle(
+        (async function* () {
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          if (initCommands) yield { type: "system", subtype: "init", session_id: "s-1", slash_commands: initCommands };
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        })(),
+        { supportedCommands },
+      );
+  }
+
+  function commandEvents(events: SidecarEvent[]) {
+    return events.filter((e) => e.type === "commands_available");
+  }
+
+  it("sends commands_available from supportedCommands() before any message", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      commandsQuery(async () => [
+        { name: "compact", description: "Free up context", argumentHint: "[instructions]" },
+        { name: "review", description: "" },
+      ]),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    expect(commandEvents(events)).toEqual([
+      {
+        type: "commands_available",
+        commands: [
+          { name: "compact", description: "Free up context", argument_hint: "[instructions]" },
+          { name: "review" },
+        ],
+      },
+    ]);
+  });
+
+  it("drops a leading slash, empty and non-string names and duplicates", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      commandsQuery(async () => [{ name: "/compact" }, { name: "compact" }, { name: "" }, { name: 3 }, null, { name: "/" }]),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    expect(commandEvents(events)).toEqual([{ type: "commands_available", commands: [{ name: "compact" }] }]);
+  });
+
+  it("does not send the init list again when it has the same names", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      commandsQuery(async () => [{ name: "compact", description: "Free up context" }], ["compact"]),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    expect(commandEvents(events)).toHaveLength(1);
+  });
+
+  it("sends the init list when its names differ, and when supportedCommands() gave nothing", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      commandsQuery(async () => [{ name: "compact" }], ["compact", "review"]),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+    expect(commandEvents(events)).toEqual([
+      { type: "commands_available", commands: [{ name: "compact" }] },
+      { type: "commands_available", commands: [{ name: "compact" }, { name: "review" }] },
+    ]);
+
+    const later: SidecarEvent[] = [];
+    const second = new SidecarSession(
+      commandsQuery(async () => { throw new Error("nope"); }, ["compact"]),
+      (e) => later.push(e),
+    );
+    await second.handle(startCommand);
+    expect(commandEvents(later)).toEqual([{ type: "commands_available", commands: [{ name: "compact" }] }]);
+  });
+
+  it("sends nothing and no error when supportedCommands() throws, and the session carries on", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      commandsQuery(async () => { throw new Error("nope"); }),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    expect(commandEvents(events)).toEqual([]);
+    expect(events.map((e) => e.type)).toEqual(["session_ended"]);
+  });
+
+  it("gives up on a supportedCommands() that never answers", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      commandsQuery(() => new Promise(() => {}), undefined, 60),
+      (e) => events.push(e),
+      { commandsTimeoutMs: 10 },
+    );
+    await session.handle(startCommand);
+
+    expect(commandEvents(events)).toEqual([]);
+    expect(events.map((e) => e.type)).toEqual(["session_ended"]);
+  });
+
   it("emits permission_request using the SDK's own requestId and resolves after permission_response (allow)", async () => {
     const events: SidecarEvent[] = [];
     let capturedCanUseTool: any;

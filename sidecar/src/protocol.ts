@@ -10,6 +10,12 @@ export interface WireTokenUsage {
   web_search_requests: number;
 }
 
+export interface WireSlashCommand {
+  name: string;
+  description?: string;
+  argument_hint?: string;
+}
+
 export type SidecarCommand =
   | {
       type: "start_session";
@@ -35,6 +41,7 @@ export type SidecarEvent =
   | { type: "permission_request"; permission_request_id: string; tool_name: string; input: unknown }
   | { type: "turn_complete"; usage: Record<string, WireTokenUsage> }
   | { type: "context_usage"; total_tokens: number; max_tokens: number }
+  | { type: "commands_available"; commands: WireSlashCommand[] }
   | { type: "error"; message: string }
   | { type: "session_ended" };
 

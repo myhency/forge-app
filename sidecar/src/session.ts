@@ -1,10 +1,11 @@
 import { buildSkillsPlugin } from "./skills_plugin.js";
 import { turnUsage } from "./usage.js";
-import type { SidecarCommand, SidecarEvent, WirePermissionDecision } from "./protocol.js";
+import type { SidecarCommand, SidecarEvent, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
 
 export type QueryHandle = AsyncIterable<unknown> & {
   interrupt: () => Promise<unknown>;
   getContextUsage?: () => Promise<{ totalTokens: number; maxTokens: number }>;
+  supportedCommands?: () => Promise<unknown>;
 };
 
 export type QueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => QueryHandle;
@@ -19,6 +20,26 @@ interface PendingPermission {
 }
 
 const CONTEXT_USAGE_TIMEOUT_MS = 3000;
+const COMMANDS_TIMEOUT_MS = 10000;
+
+// The SDK may list a name with or without its slash; Forge keeps it without.
+function toWireCommands(raw: unknown): WireSlashCommand[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const commands: WireSlashCommand[] = [];
+  for (const item of raw) {
+    const entry = typeof item === "string" ? { name: item } : (item as { name?: unknown } | null);
+    const name = typeof entry?.name === "string" ? entry.name.replace(/^\//, "") : "";
+    if (name === "" || seen.has(name)) continue;
+    seen.add(name);
+    const command: WireSlashCommand = { name };
+    const { description, argumentHint } = entry as { description?: unknown; argumentHint?: unknown };
+    if (typeof description === "string" && description !== "") command.description = description;
+    if (typeof argumentHint === "string" && argumentHint !== "") command.argument_hint = argumentHint;
+    commands.push(command);
+  }
+  return commands;
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
   return new Promise((resolve, reject) => {
@@ -72,14 +93,17 @@ export class SidecarSession {
   private mainModel: string | null = null;
   // Web searches the WebSearch tool reported since the last result (that tool's own request is not in `result.usage`).
   private pendingSearches = 0;
+  private lastCommandNames: string | null = null;
   private readonly contextUsageTimeoutMs: number;
+  private readonly commandsTimeoutMs: number;
 
   constructor(
     private readonly queryFn: QueryFn,
     private readonly emit: (event: SidecarEvent) => void,
-    options: { contextUsageTimeoutMs?: number } = {},
+    options: { contextUsageTimeoutMs?: number; commandsTimeoutMs?: number } = {},
   ) {
     this.contextUsageTimeoutMs = options.contextUsageTimeoutMs ?? CONTEXT_USAGE_TIMEOUT_MS;
+    this.commandsTimeoutMs = options.commandsTimeoutMs ?? COMMANDS_TIMEOUT_MS;
   }
 
   async handle(command: SidecarCommand): Promise<void> {
@@ -219,6 +243,7 @@ export class SidecarSession {
       throw err;
     }
     this.activeQuery = query;
+    void this.emitSupportedCommands();
 
     try {
       for await (const message of query) {
@@ -234,6 +259,27 @@ export class SidecarSession {
     } finally {
       // A failing cleanup must not replace the session's real outcome.
       await skillsPlugin?.cleanup().catch(() => {});
+    }
+  }
+
+  // Sent only when the names changed, so the poorer init list (names only) never replaces the richer
+  // supportedCommands() list that has the same names.
+  private emitCommands(raw: unknown): void {
+    const commands = toWireCommands(raw);
+    const key = commands.map((c) => c.name).join("\n");
+    if (this.shuttingDown || commands.length === 0 || key === this.lastCommandNames) return;
+    this.lastCommandNames = key;
+    this.emit({ type: "commands_available", commands });
+  }
+
+  // A failure or a slow answer only means no list yet; it never touches the session.
+  private async emitSupportedCommands(): Promise<void> {
+    const query = this.activeQuery;
+    if (!query?.supportedCommands) return;
+    try {
+      this.emitCommands(await withTimeout(query.supportedCommands(), this.commandsTimeoutMs));
+    } catch {
+      // No list from this call; `init` may still bring one.
     }
   }
 
@@ -258,6 +304,7 @@ export class SidecarSession {
       case "system":
         if (message.subtype === "init") {
           this.emit({ type: "session_started", session_id: message.session_id });
+          this.emitCommands(message.slash_commands);
         }
         return;
       case "stream_event": {
