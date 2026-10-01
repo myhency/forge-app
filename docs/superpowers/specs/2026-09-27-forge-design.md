@@ -2637,3 +2637,96 @@ Plan 11 was built on branch `plan-11` and checked on 2026-10-01 (macOS 26, Dioxu
 - A failed send of a bare `/command` is put back in the box and reopens the popup, so Enter completes the text instead of resending.
 - Not tested: whether warming a resumed session (`resume` with no message) changes its transcript file; check it in the live window.
 - The popup and the usage popover use the same layer and could overlap.
+
+## 22. Detailed Design: slash commands on the new-session screen (Plan 11, part 2)
+
+§21 lists commands in the message box of an **open** session. The new-session
+screen (`NewSessionComposer`) has its own text box and no session: `start_new`
+opens the session only when the first message is sent, so no sidecar exists
+before that and §21's warm-up never applies. The first live check of §21
+(2026-10-01) showed exactly this: `/` on the new-session screen listed nothing.
+§21.1's "before the first message" is therefore true for a reopened past
+session and false for a new one until §22 is built.
+
+### 22.1 Scope and decisions
+
+- **Goal.** On the new-session screen, once a folder is chosen, typing `/` in
+  the first-message box lists that folder's commands.
+- **A probe, not an adopted sidecar.** For the chosen folder Forge starts one
+  sidecar only to learn the command list (the *probe*). It is not handed to
+  the session: permission mode and model are fixed when a sidecar is started,
+  and the person can still change them on this screen. The session starts its
+  own sidecar at the first send, as today (§17.4).
+- **The list carries over.** When the first message is sent, the probe's last
+  list becomes the new session's initial `commands`, so the popup in the new
+  session's message box is not empty while its own sidecar starts. The session's
+  own `commands_available` events replace it (§21.2).
+- **Lifetime.** One probe at a time. It is replaced when the chosen folder
+  changes (choosing the same folder again keeps it), and ended when the person
+  leaves the screen, when the first message is sent, and when the app closes.
+  Dropping the probe handle ends the probe's sidecar.
+- **Quiet failure.** If the probe cannot resolve the extensions, cannot start,
+  or its sidecar errors or exits, there is no banner and no state change: the
+  list stays as it was (empty if nothing arrived). The first send reports its
+  own errors as before.
+- **Same start parameters as a session, minus what does not matter.** The probe
+  uses the folder, the extensions resolved for it (§17.4, the same
+  `resolve_active`), permission mode `default` and no model: neither changes
+  which commands exist. It sends no message.
+- **Shared popup.** The popup and its key handling move out of
+  `SendMessageBox` into one component used by both text boxes. The rules stay
+  those of §21.4 (`forge-entities`), with three changes that come from the Plan
+  11 final review and are made here because the code moves anyway:
+  1. Enter/Tab pick the row that is highlighted (the selection is brought back
+     into range before use), so a list that shrinks cannot make Enter do nothing.
+  2. Enter or Tab with Shift held does not pick; Shift+Enter still adds a line.
+  3. Text put back after a failed send does not reopen the popup.
+- **Out of scope:** adopting the probe's sidecar for the session, probing for
+  folders that are not chosen (no pre-start while browsing the folder list),
+  caching lists between runs, showing a loading state in the popup (it simply
+  is not shown until a list arrives).
+
+### 22.2 Application (`forge-application`)
+
+`SessionRegistry::probe_commands(&self, project: &ProjectSummary) -> Option<CommandProbe>`
+returns `None` when the folder does not exist. `CommandProbe` holds a
+`watch::Receiver<Vec<SlashCommand>>` (`commands()` for the latest list,
+`subscribe()` to wake on a new one) and the sender side of a close channel;
+dropping it ends its task. The task: resolve the active extensions, spawn a
+sidecar through the factory, `start_session` with the parameters above, then
+loop on `next_event`, publishing each `CommandsAvailable` and ignoring every
+other event; on a stream end, an `Error` or a `SessionEnded` it just stops. On
+close it calls `shutdown` on the sidecar (bounded, as `discard_sidecar` does).
+
+`open_new` gets a fourth argument, `commands: Vec<SlashCommand>`, stored in the
+new session's first view. Callers with no probe pass an empty list.
+
+### 22.3 Workspace and screen (`forge-features`)
+
+`Workspace` owns the current probe and the folder it was started for:
+`probe_new_folder(folder: Option<PathBuf>)` replaces it only when the folder
+differs, `new_commands() -> Vec<SlashCommand>` is the latest list for the chosen
+folder (empty without one), and `take_new_commands()` is used by `start_new` to
+seed the session and end the probe. `NewSessionComposer` calls
+`probe_new_folder` whenever the chosen folder changes and `probe_new_folder(None)`
+when it unmounts. The probe is not started for a folder that does not exist.
+
+### 22.4 Testing
+
+Application: the probe publishes a list, ignores other events, replaces its list
+with a later event, stops quietly on an error, a stream end and a failed spawn,
+shuts its sidecar down when dropped, and `probe_commands` returns `None` for a
+missing folder; `open_new` seeds `commands`. Features: the workspace keeps the
+probe for the same folder, replaces it for another, and `start_new` ends it and
+passes its list on. Entities: the selection is clamped before picking and Shift
+disables Enter/Tab picking (`menu_action` takes the modifier). A person checks
+the live window (new-session screen: `/` lists the commands after a few
+seconds; changing the folder changes the list; Start with a `/command` still
+works; leaving the screen leaves no extra node process running).
+
+### 22.5 Costs
+
+While the new-session screen is shown there is one more sidecar process (the
+probe), and choosing another folder starts another; the list appears about 1 to
+4 seconds after the folder is chosen (§21.7). A person who starts typing a `/`
+before that sees no popup yet.
