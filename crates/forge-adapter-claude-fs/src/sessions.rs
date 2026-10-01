@@ -292,7 +292,9 @@ fn apply_line(session: &mut Session, line: &Value) {
 
 // A session id names a file in the project directory; anything that could point elsewhere is not one.
 fn valid_session_id(id: &str) -> bool {
-    !(id.is_empty() || id.contains(['/', '\\']) || id.contains(".."))
+    // A leading dot is refused too: a file named `..jsonl` has the stem `.`, and `<dir>/.` is the
+    // project directory itself.
+    !(id.is_empty() || id.starts_with('.') || id.contains(['/', '\\']) || id.contains(".."))
 }
 
 async fn lacks_trailing_newline(file: &mut tokio::fs::File) -> std::io::Result<bool> {
@@ -487,8 +489,8 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
                 .to_string(),
         );
         entry.push('\n');
-        // One write, so a transcript being appended to by Claude Code at the same moment gets the
-        // whole line or none of it interleaved.
+        // The whole entry goes out in one `write_all` on a file opened in append mode (O_APPEND), so
+        // it is written in a single write at the end of the file.
         file.write_all(entry.as_bytes())
             .await
             .map_err(|e| rename_error(&path, e))?;
@@ -518,7 +520,12 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         let outcome = tokio::task::spawn_blocking(move || {
             trash.trash(&transcript).map_err(|e| format!("{}: {e}", transcript.display()))?;
             if has_sibling {
-                trash.trash(&sibling).map_err(|e| format!("{}: {e}", sibling.display()))?;
+                trash.trash(&sibling).map_err(|e| {
+                    format!(
+                        "the session transcript was moved to the trash, but its data folder could not be: {}: {e}",
+                        sibling.display()
+                    )
+                })?;
             }
             Ok::<(), String>(())
         })
@@ -1464,5 +1471,42 @@ mod tests {
 
         assert!(matches!(&result, Err(SessionRepositoryError::DeleteFailed(m)) if m.contains("the trash is unavailable")), "{result:?}");
         assert_eq!(adapter.list_sessions(&project()).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn rename_and_delete_refuse_dot_ids_even_with_a_dot_dot_jsonl_file_present() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), ".", &[user_text("hi")]);
+        assert!(path.ends_with("..jsonl") && path.exists());
+        write_session(home.path(), &project(), ".hidden", &[user_text("hi")]);
+        let (adapter, trash) = adapter_with(home.path());
+        for bad in [".", ".hidden"] {
+            let id = SessionId(bad.to_string());
+            let deleted = adapter.delete_session(&project(), &id).await;
+            assert!(matches!(deleted, Err(SessionRepositoryError::NotFound(_))), "delete {bad:?}");
+            let renamed = adapter.rename_session(&project(), &id, "x").await;
+            assert!(matches!(renamed, Err(SessionRepositoryError::NotFound(_))), "rename {bad:?}");
+        }
+        assert!(trash.trashed.lock().unwrap().is_empty());
+        assert!(path.exists());
+        assert_eq!(std::fs::read_to_string(&path).unwrap().lines().count(), 1, "nothing appended");
+    }
+
+    #[tokio::test]
+    async fn a_sibling_that_cannot_be_trashed_is_reported_as_a_partial_delete() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[user_text("hi")]);
+        let sibling = path.with_extension("");
+        std::fs::create_dir_all(&sibling).unwrap();
+        let (adapter, trash) = adapter_with(home.path());
+        *trash.fail_on.lock().unwrap() = Some(sibling.clone());
+
+        let result = adapter.delete_session(&project(), &SessionId("s1".to_string())).await;
+
+        let Err(SessionRepositoryError::DeleteFailed(message)) = result else { panic!("{result:?}") };
+        assert!(message.contains("moved to the trash"), "{message}");
+        assert!(message.contains(&sibling.display().to_string()), "{message}");
+        assert_eq!(*trash.trashed.lock().unwrap(), vec![path.clone()]);
+        assert!(!path.exists());
     }
 }

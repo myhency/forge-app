@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_entities::{relative_time, SidebarItem};
-use forge_features::{use_workspace, DeleteAction, SidebarEntry};
+use forge_features::{refocus_workspace, use_workspace, DeleteAction, SidebarEntry};
 use forge_shared::{Button, ButtonKind};
 use time::OffsetDateTime;
 
@@ -43,22 +43,32 @@ pub fn SessionRow(project: PathBuf, entry: SidebarEntry, active: bool, onopen: E
                         // A click in the field must not open the session behind it.
                         onclick: move |event| event.stop_propagation(),
                         oninput: move |event| mode.set(RowMode::Renaming(event.value())),
-                        onblur: move |_| mode.set(RowMode::Normal),
+                        onblur: move |_| {
+                            mode.set(RowMode::Normal);
+                            refocus_workspace();
+                        },
                         onkeydown: {
                             let draft = draft.clone();
                             move |event: KeyboardEvent| {
-                                event.stop_propagation();
+                                // Only the keys the input consumes stop here; everything else,
+                                // the app shortcuts included, bubbles to the workspace root.
                                 match event.key() {
                                     // Enter that ends an IME composition (Korean, Japanese, Chinese)
                                     // confirms the text being composed, not the rename.
                                     Key::Enter if !event.is_composing() => {
+                                        event.stop_propagation();
                                         event.prevent_default();
                                         if let (Some(title), Some(id)) = (rename_submit(&draft, &original), session_id.clone()) {
                                             workspace.rename_session(project.clone(), id, title);
                                         }
                                         mode.set(RowMode::Normal);
+                                        refocus_workspace();
                                     }
-                                    Key::Escape => mode.set(RowMode::Normal),
+                                    Key::Escape => {
+                                        event.stop_propagation();
+                                        mode.set(RowMode::Normal);
+                                        refocus_workspace();
+                                    }
                                     _ => {}
                                 }
                             }
@@ -73,7 +83,13 @@ pub fn SessionRow(project: PathBuf, entry: SidebarEntry, active: bool, onopen: E
             rsx! {
                 div { class: "confirm-row",
                     span { class: "confirm-text", "Delete “{entry.title}”? Moves the session to the trash." }
-                    Button { label: "Cancel", onclick: move |_| mode.set(RowMode::Normal) }
+                    Button {
+                        label: "Cancel",
+                        onclick: move |_| {
+                            mode.set(RowMode::Normal);
+                            refocus_workspace();
+                        },
+                    }
                     Button {
                         label: "Delete",
                         kind: ButtonKind::Danger,
@@ -82,6 +98,7 @@ pub fn SessionRow(project: PathBuf, entry: SidebarEntry, active: bool, onopen: E
                                 workspace.delete_session(project.clone(), id);
                             }
                             mode.set(RowMode::Normal);
+                            refocus_workspace();
                         },
                     }
                 }

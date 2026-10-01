@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_features::{use_settings_provider, use_workspace_provider, Active};
+use forge_features::{refocus_workspace, use_settings_provider, use_workspace_provider, Active};
 use forge_widgets::{ChatWindow, NewSessionPanel, SettingsOverlay, Sidebar};
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
@@ -14,9 +14,7 @@ pub fn WorkspacePage() -> Element {
     // back to the root — but only if nothing has it, so a composer the person is typing in keeps it.
     use_effect(move || {
         let _ = (settings.is_open(), workspace.active());
-        document::eval(
-            "setTimeout(() => { const a = document.activeElement; if (!a || a === document.body) { document.querySelector('.workspace')?.focus(); } }, 0);",
-        );
+        refocus_workspace();
     });
 
     // The tabs list the definitions of the project the person is looking at.

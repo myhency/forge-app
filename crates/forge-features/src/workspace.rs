@@ -154,7 +154,12 @@ impl Workspace {
         dioxus::core::spawn_forever(async move {
             match services.registry.delete(&project, &session).await {
                 Ok(()) => this.reload_project(project),
-                Err(error) => this.report(error.to_string()),
+                Err(error) => {
+                    this.report(error.to_string());
+                    // A delete can fail half way (transcript trashed, its folder not): reload so
+                    // what is gone from disk is gone from the list.
+                    this.reload_project(project.clone());
+                }
             }
         });
     }

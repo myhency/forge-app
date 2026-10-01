@@ -10,6 +10,18 @@ pub struct SystemTrash;
 
 impl TrashBin for SystemTrash {
     fn trash(&self, path: &Path) -> Result<(), String> {
-        ::trash::delete(path).map_err(|error| error.to_string())
+        // On macOS the default method drives Finder through AppleScript: it needs the Automation
+        // permission to control Finder (awkward in a bundled app) and takes seconds. NSFileManager
+        // needs neither.
+        #[cfg(target_os = "macos")]
+        let context = {
+            use ::trash::macos::{DeleteMethod, TrashContextExtMacos};
+            let mut context = ::trash::TrashContext::new();
+            context.set_delete_method(DeleteMethod::NsFileManager);
+            context
+        };
+        #[cfg(not(target_os = "macos"))]
+        let context = ::trash::TrashContext::new();
+        context.delete(path).map_err(|error| error.to_string())
     }
 }
