@@ -83,6 +83,10 @@ impl Actor {
             LiveCommand::Send(text) => self.send(text).await,
             LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
             LiveCommand::Interrupt => self.interrupt().await,
+            LiveCommand::SetTitle(title) => {
+                self.view.session.title = Some(title);
+                self.dirty = true;
+            }
             LiveCommand::Close => {}
         }
     }

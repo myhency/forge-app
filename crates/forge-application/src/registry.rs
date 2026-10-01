@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -16,6 +16,32 @@ pub enum OpenError {
     ProjectMissing(PathBuf),
     #[error("failed to load the session: {0}")]
     Load(#[from] SessionRepositoryError),
+}
+
+const MAX_TITLE_CHARS: usize = 200;
+
+#[derive(Debug, Error)]
+pub enum ManageSessionError {
+    #[error("the title cannot be empty")]
+    EmptyTitle,
+    #[error("the title can be at most {max} characters")]
+    TitleTooLong { max: usize },
+    #[error("Close the session first (⌘W) to delete it.")]
+    SessionOpen,
+    #[error("{0}")]
+    Repository(#[from] SessionRepositoryError),
+}
+
+/// A session title as it will be stored: trimmed, not empty, at most 200 characters.
+pub fn normalize_title(raw: &str) -> Result<String, ManageSessionError> {
+    let title = raw.trim();
+    if title.is_empty() {
+        return Err(ManageSessionError::EmptyTitle);
+    }
+    if title.chars().count() > MAX_TITLE_CHARS {
+        return Err(ManageSessionError::TitleTooLong { max: MAX_TITLE_CHARS });
+    }
+    Ok(title.to_string())
 }
 
 pub struct OpenOutcome {
@@ -111,6 +137,32 @@ impl SessionRegistry {
         if let Some(handle) = self.handles.lock().unwrap().remove(&id) {
             handle.close();
         }
+    }
+
+    /// Renames a past or open session. The title is stored first; an open session's view is
+    /// updated only once that succeeded. Returns the title as stored.
+    pub async fn rename(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        title: &str,
+    ) -> Result<String, ManageSessionError> {
+        let title = normalize_title(title)?;
+        self.sessions.rename_session(project_path, session_id, &title).await?;
+        if let Some(handle) = self.find_open(session_id) {
+            handle.set_title(title.clone());
+        }
+        Ok(title)
+    }
+
+    /// Moves a session that is not open to the trash. An open session is refused: its view would
+    /// go on showing (and could resume) a transcript that no longer exists.
+    pub async fn delete(&self, project_path: &Path, session_id: &SessionId) -> Result<(), ManageSessionError> {
+        if self.find_open(session_id).is_some() {
+            return Err(ManageSessionError::SessionOpen);
+        }
+        self.sessions.delete_session(project_path, session_id).await?;
+        Ok(())
     }
 
     fn find_open(&self, session_id: &SessionId) -> Option<LiveSessionHandle> {
@@ -428,5 +480,159 @@ mod tests {
             1,
             "exactly one of the two found the other's handle"
         );
+    }
+
+    #[test]
+    fn titles_are_trimmed_and_must_not_be_empty() {
+        assert_eq!(normalize_title("  Fix the build \n").unwrap(), "Fix the build");
+        assert!(matches!(normalize_title(""), Err(ManageSessionError::EmptyTitle)));
+        assert!(matches!(normalize_title("  \t\n "), Err(ManageSessionError::EmptyTitle)));
+    }
+
+    #[test]
+    fn a_title_may_be_200_characters_but_not_201() {
+        let at_limit = "a".repeat(200);
+        assert_eq!(normalize_title(&at_limit).unwrap(), at_limit);
+        assert!(matches!(
+            normalize_title(&"a".repeat(201)),
+            Err(ManageSessionError::TitleTooLong { max: 200 })
+        ));
+    }
+
+    #[test]
+    fn the_title_limit_counts_characters_not_bytes() {
+        let korean = "한".repeat(200); // 600 bytes
+        assert_eq!(normalize_title(&korean).unwrap(), korean);
+        assert!(normalize_title(&"한".repeat(201)).is_err());
+    }
+
+    #[test]
+    fn the_limit_applies_after_trimming() {
+        let padded = format!("  {}  ", "a".repeat(200));
+        assert_eq!(normalize_title(&padded).unwrap().chars().count(), 200);
+    }
+
+    #[tokio::test]
+    async fn rename_stores_the_trimmed_title_and_returns_it() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository
+            .expect_rename_session()
+            .withf(|p: &Path, id: &SessionId, title: &str| p == Path::new("/work/a") && id.0 == "claude-1" && title == "Mine")
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+
+        let stored = registry.rename(Path::new("/work/a"), &SessionId("claude-1".to_string()), "  Mine ").await.unwrap();
+
+        assert_eq!(stored, "Mine");
+    }
+
+    #[tokio::test]
+    async fn rename_with_an_invalid_title_never_reaches_the_repository() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository.expect_rename_session().times(0);
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+
+        let result = registry.rename(Path::new("/work/a"), &SessionId("claude-1".to_string()), "   ").await;
+
+        assert!(matches!(result, Err(ManageSessionError::EmptyTitle)));
+    }
+
+    #[tokio::test]
+    async fn rename_of_an_open_session_updates_its_live_title() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository.expect_load_session().times(1).returning(|_, _| Ok(past_session("claude-1")));
+        repository.expect_rename_session().times(1).returning(|_, _, _| Ok(()));
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+        let outcome = registry
+            .open_existing(&project("/work/a", true), SessionId("claude-1".to_string()))
+            .await
+            .unwrap();
+        let mut view = outcome.handle.subscribe();
+
+        registry.rename(Path::new("/work/a"), &SessionId("claude-1".to_string()), "Renamed").await.unwrap();
+
+        let updated = wait_for(&mut view, "the new title", |v| v.session.title.as_deref() == Some("Renamed")).await;
+        assert_eq!(updated.session.title.as_deref(), Some("Renamed"));
+    }
+
+    #[tokio::test]
+    async fn a_failed_rename_leaves_the_open_sessions_title_alone() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository.expect_load_session().times(1).returning(|_, _| Ok(past_session("claude-1")));
+        repository
+            .expect_rename_session()
+            .times(1)
+            .returning(|_, _, _| Err(SessionRepositoryError::RenameFailed("read-only".to_string())));
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+        let outcome = registry
+            .open_existing(&project("/work/a", true), SessionId("claude-1".to_string()))
+            .await
+            .unwrap();
+
+        let result = registry.rename(Path::new("/work/a"), &SessionId("claude-1".to_string()), "Renamed").await;
+
+        assert!(matches!(result, Err(ManageSessionError::Repository(SessionRepositoryError::RenameFailed(_)))));
+        tokio::task::yield_now().await;
+        assert_eq!(outcome.handle.snapshot().session.title.as_deref(), Some("A title"));
+    }
+
+    #[tokio::test]
+    async fn delete_goes_to_the_repository_for_a_session_that_is_not_open() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository.expect_delete_session().times(1).returning(|_, _| Ok(()));
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+
+        let result = registry.delete(Path::new("/work/a"), &SessionId("claude-9".to_string())).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn delete_of_an_open_session_is_refused_and_touches_nothing() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository.expect_load_session().times(1).returning(|_, _| Ok(past_session("claude-1")));
+        repository.expect_delete_session().times(0);
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+        registry.open_existing(&project("/work/a", true), SessionId("claude-1".to_string())).await.unwrap();
+
+        let result = registry.delete(Path::new("/work/a"), &SessionId("claude-1".to_string())).await;
+
+        assert!(matches!(result, Err(ManageSessionError::SessionOpen)));
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Close the session first (⌘W) to delete it."
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_works_again_once_the_session_is_closed() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository.expect_load_session().times(1).returning(|_, _| Ok(past_session("claude-1")));
+        repository.expect_delete_session().times(1).returning(|_, _| Ok(()));
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+        let outcome = registry
+            .open_existing(&project("/work/a", true), SessionId("claude-1".to_string()))
+            .await
+            .unwrap();
+        registry.close(outcome.handle.id());
+
+        let result = registry.delete(Path::new("/work/a"), &SessionId("claude-1".to_string())).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_repository_failure_on_delete_is_reported() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository
+            .expect_delete_session()
+            .times(1)
+            .returning(|_, _| Err(SessionRepositoryError::DeleteFailed("no trash".to_string())));
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+
+        let result = registry.delete(Path::new("/work/a"), &SessionId("claude-9".to_string())).await;
+
+        assert!(matches!(result, Err(ManageSessionError::Repository(SessionRepositoryError::DeleteFailed(_)))));
     }
 }

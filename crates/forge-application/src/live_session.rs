@@ -49,6 +49,7 @@ pub enum LiveCommand {
     Send(String),
     Approve { id: String, decision: PermissionDecision },
     Interrupt,
+    SetTitle(String),
     Close,
 }
 
@@ -75,6 +76,12 @@ impl LiveSessionHandle {
             id: permission_request_id,
             decision,
         });
+    }
+
+    /// Shows `title` as the session's title. Called after the new title is stored, so the view
+    /// never claims a name the transcript does not have.
+    pub fn set_title(&self, title: String) {
+        let _ = self.commands.send(LiveCommand::SetTitle(title));
     }
 
     pub fn interrupt(&self) {
