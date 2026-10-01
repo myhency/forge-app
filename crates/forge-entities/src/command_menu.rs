@@ -61,14 +61,26 @@ pub enum MenuAction {
 }
 
 /// What an open menu does with a key. Enter or Tab that confirms an IME composition (Korean, Japanese,
-/// Chinese) belongs to the composition, so it does nothing here.
-pub fn menu_action(key: MenuKey, composing: bool) -> Option<MenuAction> {
+/// Chinese) belongs to the composition, and with Shift held Enter adds a line, so neither picks.
+pub fn menu_action(key: MenuKey, composing: bool, shift: bool) -> Option<MenuAction> {
     match key {
         MenuKey::Up => Some(MenuAction::Move(-1)),
         MenuKey::Down => Some(MenuAction::Move(1)),
-        MenuKey::Enter | MenuKey::Tab if !composing => Some(MenuAction::Pick),
+        MenuKey::Enter | MenuKey::Tab if !composing && !shift => Some(MenuAction::Pick),
         MenuKey::Escape => Some(MenuAction::Close),
         _ => None,
+    }
+}
+
+/// The popup's rows; empty means closed. It is open only for text the person typed (`value == typed`):
+/// text that arrives another way, like a failed send put back in the box, must not open it.
+pub fn menu_rows<'a>(commands: &'a [SlashCommand], value: &str, typed: &str, dismissed: bool) -> Vec<&'a SlashCommand> {
+    if dismissed || value != typed {
+        return Vec::new();
+    }
+    match command_query(value) {
+        Some(query) => filter_commands(commands, query),
+        None => Vec::new(),
     }
 }
 
@@ -122,13 +134,37 @@ mod tests {
 
     #[test]
     fn keys_map_to_menu_actions_and_enter_during_an_ime_composition_does_nothing() {
-        assert_eq!(menu_action(MenuKey::Up, false), Some(MenuAction::Move(-1)));
-        assert_eq!(menu_action(MenuKey::Down, false), Some(MenuAction::Move(1)));
-        assert_eq!(menu_action(MenuKey::Enter, false), Some(MenuAction::Pick));
-        assert_eq!(menu_action(MenuKey::Tab, false), Some(MenuAction::Pick));
-        assert_eq!(menu_action(MenuKey::Escape, false), Some(MenuAction::Close));
-        assert_eq!(menu_action(MenuKey::Other, false), None);
-        assert_eq!(menu_action(MenuKey::Enter, true), None);
-        assert_eq!(menu_action(MenuKey::Tab, true), None);
+        assert_eq!(menu_action(MenuKey::Up, false, false), Some(MenuAction::Move(-1)));
+        assert_eq!(menu_action(MenuKey::Down, false, false), Some(MenuAction::Move(1)));
+        assert_eq!(menu_action(MenuKey::Enter, false, false), Some(MenuAction::Pick));
+        assert_eq!(menu_action(MenuKey::Tab, false, false), Some(MenuAction::Pick));
+        assert_eq!(menu_action(MenuKey::Escape, false, false), Some(MenuAction::Close));
+        assert_eq!(menu_action(MenuKey::Other, false, false), None);
+        assert_eq!(menu_action(MenuKey::Enter, true, false), None);
+        assert_eq!(menu_action(MenuKey::Tab, true, false), None);
+    }
+
+    #[test]
+    fn enter_and_tab_with_shift_held_do_not_pick() {
+        assert_eq!(menu_action(MenuKey::Enter, false, true), None, "Shift+Enter adds a line");
+        assert_eq!(menu_action(MenuKey::Tab, false, true), None);
+        assert_eq!(menu_action(MenuKey::Down, false, true), Some(MenuAction::Move(1)));
+    }
+
+    #[test]
+    fn the_popup_rows_are_the_matches_for_text_the_person_typed() {
+        let commands = vec![cmd("compact"), cmd("review")];
+        let names = |rows: Vec<&SlashCommand>| rows.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names(menu_rows(&commands, "/c", "/c", false)), vec!["compact"]);
+        assert_eq!(names(menu_rows(&commands, "/", "/", false)), vec!["compact", "review"]);
+    }
+
+    #[test]
+    fn the_popup_is_closed_after_escape_for_text_put_back_and_after_a_space() {
+        let commands = vec![cmd("compact")];
+        assert!(menu_rows(&commands, "/c", "/c", true).is_empty(), "dismissed with Esc");
+        assert!(menu_rows(&commands, "/compact", "", false).is_empty(), "text put back after a failed send was not typed");
+        assert!(menu_rows(&commands, "/compact now", "/compact now", false).is_empty());
+        assert!(menu_rows(&commands, "hello", "hello", false).is_empty());
     }
 }

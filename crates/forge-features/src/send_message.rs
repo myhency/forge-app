@@ -123,7 +123,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                                 Key::Escape => MenuKey::Escape,
                                 _ => MenuKey::Other,
                             };
-                            if let Some(action) = menu_action(key, event.is_composing()) {
+                            if let Some(action) = menu_action(key, event.is_composing(), event.modifiers().shift()) {
                                 event.prevent_default();
                                 match action {
                                     MenuAction::Move(delta) => selected.set(move_selection(selected(), count, delta)),

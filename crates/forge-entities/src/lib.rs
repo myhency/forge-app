@@ -12,7 +12,7 @@ mod sidebar_item;
 mod tool_summary;
 mod usage_view;
 
-pub use command_menu::{command_query, filter_commands, insert_text, menu_action, move_selection, MenuAction, MenuKey};
+pub use command_menu::{command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, MenuAction, MenuKey};
 pub use diff::{diff_for_tool, diff_for_tool_call, DiffLine, DiffLineKind, FileDiff};
 pub use diff_view::DiffView;
 pub use markdown::render_markdown;
