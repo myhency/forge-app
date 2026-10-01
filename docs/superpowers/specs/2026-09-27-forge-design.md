@@ -2044,7 +2044,7 @@ disk) and a native folder-open dialog.
 
 - Rename appends a `custom-title` entry to the session's `.jsonl`; delete
   moves the file to the OS trash. Neither is permanent from the user's side.
-- A session whose sidecar is running cannot be deleted. It can be renamed.
+- A session open in Forge cannot be deleted. It can be renamed.
 - **Out of scope:** trash restore UI, bulk delete, deleting a project,
   undo for rename, file watching (the list is re-read after each action),
   the §15.12 `cwd` collision.
@@ -2085,7 +2085,8 @@ Findings go to §19.7, as in §15 and §17.
 ### 19.4 Application and features
 
 - Title validation: trimmed, non-empty, at most 200 characters.
-- Delete is refused with a clear message when the session is live.
+- Delete is refused with a clear message when the session is open in Forge
+  ("Close the session first (⌘W) to delete it.").
 - Renaming a live session also updates its title in the live view.
 - After either action, only that project's session list is reloaded.
 
@@ -2178,6 +2179,109 @@ contradicts a Decision of the Plan 9 plan.
 7. Sidebar menu, in-place rename and delete confirmation.
 8. Open-folder button in the new session panel.
 9. Manual checklist, fixes, "As built".
+
+### 19.9 As built
+
+Plan 9 was built on branch `plan-9` and checked on 2026-10-01 by a
+non-interactive agent. `cargo test --workspace` passes with 388 tests (344
+before Plan 9, after the spike run; the old plan assumed 341). The sidecar was
+not touched by Plan 9 and `sidecar/node_modules` is absent, so `npm test` and
+`npm run typecheck` were not run (sidecar untouched, not run).
+
+**Checked (passed):** the automated tests only.
+
+**Not checked (needs a person):** the whole window walk. A person must run
+`cd sidecar && npm run build`, then `cargo run -p forge-app`, on a scratch
+project, and:
+
+1. Hover a past session: a `⋯` appears; clicking it opens the menu and does
+   not open the session; clicking elsewhere does not leave a stuck menu.
+2. Rename: type a new name, Enter, so the title changes, the list reloads for
+   that project only (other groups do not flicker), the renamed session moves
+   to the top. Esc cancels. Clicking away cancels. An unchanged or blank name
+   does nothing.
+3. Korean IME: in the rename input, type a Korean word and press Enter to
+   commit the composition; the rename is not submitted; a second Enter
+   submits. (This also settles the parked WebKit IME Enter concern.)
+4. Rename an open session: the sidebar and the live view show the new title at
+   once; send another message, wait for the turn to finish, the title is still
+   the new one. Open the same project in `claude`, the new title is shown
+   there.
+5. A 201-character title: the notice says the limit; nothing changes on disk.
+6. Delete a past session: confirmation reads "Moves the session to the
+   trash"; Cancel keeps it; Delete removes it from the list and it is in the
+   Trash (Finder) with its sibling directory if it had one.
+7. An open session's menu has Delete disabled with the "Close the session
+   first" note; after ⌘W it can be deleted.
+8. Shortcuts still work while a rename input or the menu is open (⌘N,
+   Ctrl+Tab); ⌘W while renaming closes the session as before and does not
+   leave a stuck input.
+9. "Open folder…": the dialog opens, the window stays responsive; cancel
+   changes nothing; picking a listed folder selects it; picking a new folder
+   adds it to the dropdown and selects it; Start works there and the project
+   then shows in the sidebar; picking while the dialog is already open
+   (double click) opens one dialog.
+10. With no Claude Code history at all (set `HOME` to an empty temp directory
+    for one run), "Open folder…" is usable and Start becomes enabled after a
+    folder is chosen.
+
+No fixes were made, since nothing was walked. The §19.7 items still marked
+"Not checked" (real `/rename` output, `~/.Trash`, the `rfd` dialog on the
+main thread) are covered by the same walk.
+
+**Differences from §19:**
+
+1. Delete is refused for every session open in Forge, not only when "its
+   sidecar is running" (message: "Close the session first (⌘W) to delete
+   it."). §19.1 and §19.4 are corrected.
+2. A `custom-title` always beats an `ai-title` in the reader; §19.2 said "the
+   last title entry".
+3. A folder chosen in the dialog that is not in the list is added to the
+   dropdown for this run only.
+4. Delete confirmation is inline in the sidebar row, not a modal.
+5. Renaming moves the session to the top of its project's list, because the
+   file's modified time changes (§19.7 f).
+6. `rename_session` takes the title as `&str`; delete also trashes the
+   same-named sibling directory (`<id>/`, sub-agent data), as settled by the
+   spike (§19.7).
+
+**Known limitation:** `SessionRegistry::delete` checks that the session is not
+open and then awaits the delete. A session opened in that window can leave a
+view over a trashed transcript: a load or resume error, no corruption.
+
+**Deferred minors:**
+
+- Task 1: "Partly checked" wording in §19.7; the intro says "almost certainly
+  written by /rename".
+- Task 2: title lines flagged `isSidechain`/`isMeta` are now counted (none seen
+  in real data); the newline check and the append are not atomic; the
+  id-refusal test asserts only `NotFound`; the adapter writes empty titles
+  as-is (validated in the registry).
+- Task 3: a sibling symlink to a directory would be trashed (metadata follows
+  links); no test for the partial failure where the transcript is trashed but
+  the sibling fails, and the message does not say the transcript already
+  moved; a duplicate `Arc` import in tests.
+- Task 4: the failed-rename test asserts after only `yield_now` (weak);
+  rename and delete do not cross-check the project path against the open
+  handle. Ruling: the delete check-then-await race is accepted as written
+  (see Known limitation).
+- Task 5: `rfd` `AsyncFileDialog` main-thread behaviour on macOS is unverified.
+- Task 6: `choose_folder` normalisation is lexical only (`..`, symlinks,
+  case-insensitive filesystems may produce duplicates); `reload_project` keeps
+  `last_active`; import order in `main.rs`.
+- Task 7: several row menus can be open at once (no outside-click or Esc
+  close); the controlled input value mid-IME may reset the composition;
+  `ConfirmingDelete` has no Esc; Delete on a row without a `session_id` is a
+  silent no-op (gated by `actions()`); `rename_submit` is `pub` rather than
+  `pub(crate)`; the menu on the last row may scroll-clip.
+- Parked: the WebKit/Safari IME concern that the Enter committing a Korean
+  composition may arrive with `isComposing=false` (keyCode 229). The guard is
+  the same as the app's other inputs and Dioxus exposes no keyCode accessor;
+  checklist item 3 settles it. If it fails, the fix is composition-state
+  tracking in all three inputs.
+- Rulings: the Task 1 spike and this Task 9 checklist were recorded as "Not
+  checked (needs a person)" because a subagent cannot run interactive
+  `claude` or a GUI dialog, so UI bugs may surface when the user runs the app.
 
 ### 18.7 As built
 
