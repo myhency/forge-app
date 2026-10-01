@@ -1,3 +1,4 @@
+mod command_probe;
 mod event;
 mod live_session;
 mod live_session_actor;
@@ -7,6 +8,7 @@ mod use_cases;
 #[cfg(test)]
 mod test_support;
 
+pub use command_probe::CommandProbe;
 pub use event::{apply_sidecar_event, push_user_message, SessionUpdate};
 pub use live_session::{LiveCommand, LiveSessionHandle, LiveSessionId, LiveSessionView, Phase};
 pub use registry::{normalize_title, ManageSessionError, OpenError, OpenOutcome, SessionRegistry};

@@ -3,10 +3,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use forge_domain::{PermissionMode, ProjectSummary, Session, SessionId};
+use forge_domain::{PermissionMode, ProjectSummary, Session, SessionId, SlashCommand};
 use forge_ports::{SessionRepositoryError, SessionRepositoryPort, SidecarFactoryPort};
 use thiserror::Error;
 
+use crate::command_probe::{spawn_probe, CommandProbe};
 use crate::use_cases::ExtensionsUseCase;
 use crate::live_session::{spawn_live_session, LiveSessionHandle, LiveSessionId, LiveSessionInit};
 
@@ -85,6 +86,15 @@ impl SessionRegistry {
         self
     }
 
+    /// Starts a probe for `project`'s slash commands; `None` when the folder is gone. Must be called
+    /// from inside a tokio runtime.
+    pub fn probe_commands(&self, project: &ProjectSummary) -> Option<CommandProbe> {
+        if !project.exists {
+            return None;
+        }
+        Some(spawn_probe(self.factory.clone(), self.extensions.clone(), project.path.clone()))
+    }
+
     /// Opens an empty session in `project`. Fails if the folder is gone: nothing can be started there.
     /// Must be called from inside a tokio runtime.
     pub fn open_new(
@@ -92,6 +102,7 @@ impl SessionRegistry {
         project: &ProjectSummary,
         permission_mode: PermissionMode,
         model: Option<String>,
+        commands: Vec<SlashCommand>,
     ) -> Result<LiveSessionHandle, OpenError> {
         if !project.exists {
             return Err(OpenError::ProjectMissing(project.path.clone()));
@@ -105,7 +116,7 @@ impl SessionRegistry {
             usage: forge_domain::SessionUsage::default(),
         };
         let mut handles = self.handles.lock().unwrap();
-        Ok(self.insert(&mut handles, project, session, None, model))
+        Ok(self.insert(&mut handles, project, session, None, model, commands))
     }
 
     /// Opens a past session read-only, or returns the handle it already has. Two sidecars must
@@ -127,7 +138,7 @@ impl SessionRegistry {
         if let Some(handle) = find_in(&handles, &session_id) {
             return Ok(OpenOutcome { handle, already_open: true });
         }
-        let handle = self.insert(&mut handles, project, session, Some(session_id), None);
+        let handle = self.insert(&mut handles, project, session, Some(session_id), None, Vec::new());
         Ok(OpenOutcome { handle, already_open: false })
     }
 
@@ -186,6 +197,7 @@ impl SessionRegistry {
         session: Session,
         claude_session_id: Option<SessionId>,
         model: Option<String>,
+        commands: Vec<SlashCommand>,
     ) -> LiveSessionHandle {
         let id = LiveSessionId(self.next_id.fetch_add(1, Ordering::Relaxed));
         let handle = spawn_live_session(LiveSessionInit {
@@ -195,6 +207,7 @@ impl SessionRegistry {
             claude_session_id,
             model,
             can_send: project.exists,
+            commands,
             factory: self.factory.clone(),
             extensions: self.extensions.clone(),
         });
@@ -279,7 +292,7 @@ mod tests {
         let (registry, spawns) = registry(vec![], repository_returning("unused", 0));
 
         let handle = registry
-            .open_new(&project("/work/a", true), PermissionMode::AcceptEdits, Some("m".to_string()))
+            .open_new(&project("/work/a", true), PermissionMode::AcceptEdits, Some("m".to_string()), Vec::new())
             .unwrap();
 
         let view = handle.snapshot();
@@ -295,7 +308,7 @@ mod tests {
     async fn open_new_rejects_a_missing_folder_and_registers_nothing() {
         let (registry, _spawns) = registry(vec![], repository_returning("unused", 0));
 
-        let result = registry.open_new(&project("/gone", false), PermissionMode::Default, None);
+        let result = registry.open_new(&project("/gone", false), PermissionMode::Default, None, Vec::new());
 
         assert!(matches!(result, Err(OpenError::ProjectMissing(path)) if path == Path::new("/gone")));
         assert!(registry.handles().is_empty());
@@ -355,7 +368,7 @@ mod tests {
         let (sidecar, control) = fake_sidecar();
         let (registry, _spawns) = registry(vec![Ok(sidecar)], repository_returning("unused", 0));
         let handle = registry
-            .open_new(&project("/work/a", true), PermissionMode::Default, None)
+            .open_new(&project("/work/a", true), PermissionMode::Default, None, Vec::new())
             .unwrap();
         let mut view = handle.subscribe();
         handle.send("hi".to_string());
@@ -412,9 +425,9 @@ mod tests {
     #[tokio::test]
     async fn handles_are_listed_oldest_first() {
         let (registry, _spawns) = registry(vec![], repository_returning("unused", 0));
-        let a = registry.open_new(&project("/work/a", true), PermissionMode::Default, None).unwrap();
-        let b = registry.open_new(&project("/work/b", true), PermissionMode::Default, None).unwrap();
-        let c = registry.open_new(&project("/work/c", true), PermissionMode::Default, None).unwrap();
+        let a = registry.open_new(&project("/work/a", true), PermissionMode::Default, None, Vec::new()).unwrap();
+        let b = registry.open_new(&project("/work/b", true), PermissionMode::Default, None, Vec::new()).unwrap();
+        let c = registry.open_new(&project("/work/c", true), PermissionMode::Default, None, Vec::new()).unwrap();
 
         let ids: Vec<LiveSessionId> = registry.handles().iter().map(|h| h.id()).collect();
 
@@ -429,8 +442,8 @@ mod tests {
             vec![Ok(first_sidecar), Ok(second_sidecar)],
             repository_returning("unused", 0),
         );
-        let first = registry.open_new(&project("/work/a", true), PermissionMode::Default, None).unwrap();
-        let second = registry.open_new(&project("/work/b", true), PermissionMode::Default, None).unwrap();
+        let first = registry.open_new(&project("/work/a", true), PermissionMode::Default, None, Vec::new()).unwrap();
+        let second = registry.open_new(&project("/work/b", true), PermissionMode::Default, None, Vec::new()).unwrap();
         let mut first_view = first.subscribe();
         let mut second_view = second.subscribe();
 
@@ -658,7 +671,7 @@ mod tests {
             .with_warm_up();
 
         let handle = registry
-            .open_new(&project("/work/a", true), PermissionMode::AcceptEdits, Some("m".to_string()))
+            .open_new(&project("/work/a", true), PermissionMode::AcceptEdits, Some("m".to_string()), Vec::new())
             .unwrap();
         let command = forge_domain::SlashCommand { name: "compact".to_string(), description: None, argument_hint: None };
         control.push(forge_ports::SidecarEvent::CommandsAvailable { commands: vec![command.clone()] });
@@ -684,5 +697,16 @@ mod tests {
         wait_closed(&mut view).await;
 
         assert_eq!(spawns.load(Ordering::SeqCst), 0);
+    }
+    #[tokio::test]
+    async fn open_new_starts_the_session_with_the_given_commands() {
+        let (registry, _spawns) = registry(vec![], repository_returning("unused", 0));
+        let commands = vec![forge_domain::SlashCommand { name: "compact".to_string(), description: None, argument_hint: None }];
+
+        let handle = registry
+            .open_new(&project("/work/a", true), PermissionMode::AcceptEdits, None, commands.clone())
+            .unwrap();
+
+        assert_eq!(handle.snapshot().commands, commands);
     }
 }

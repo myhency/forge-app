@@ -301,7 +301,7 @@ impl Workspace {
                     return;
                 }
             };
-            match services.registry.open_new(&project, mode, model) {
+            match services.registry.open_new(&project, mode, model, Vec::new()) {
                 Ok(handle) => {
                     let id = this.attach(handle.clone());
                     handle.send(text);

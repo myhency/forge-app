@@ -133,6 +133,7 @@ pub(crate) struct LiveSessionInit {
     pub claude_session_id: Option<SessionId>,
     pub model: Option<String>,
     pub can_send: bool,
+    pub commands: Vec<SlashCommand>,
     pub factory: Arc<dyn SidecarFactoryPort>,
     pub extensions: Arc<ExtensionsUseCase>,
 }
@@ -151,7 +152,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         unsent: None,
         failed_sends: 0,
         context: None,
-        commands: Vec::new(),
+        commands: init.commands,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
     let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -197,6 +198,7 @@ mod tests {
             claude_session_id: None,
             model: Some("model-x".to_string()),
             can_send: true,
+            commands: Vec::new(),
             factory,
             extensions: no_extensions(),
         }
