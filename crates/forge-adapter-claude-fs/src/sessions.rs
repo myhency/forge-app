@@ -9,6 +9,7 @@ use forge_domain::{
 };
 use forge_ports::{SessionRepositoryError, SessionRepositoryPort};
 use crate::trash::{SystemTrash, TrashBin};
+use crate::usage::UsageCollector;
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
@@ -401,6 +402,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         };
 
         let mut titles = TitleTracker::default();
+        let mut usage = UsageCollector::default();
         let mut session = Session {
             id: session_id.clone(),
             project_path: project_path.to_path_buf(),
@@ -441,12 +443,14 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
                     if let Some((kind, found)) = title_from_value(&value) {
                         titles.see(kind, found);
                     }
+                    usage.see(&value);
                     apply_line(&mut session, &value)
                 }
                 None => malformed_line = Some(line_number),
             }
         }
         session.title = titles.title();
+        session.usage = usage.finish();
         Ok(session)
     }
 
@@ -1509,5 +1513,29 @@ mod tests {
         assert!(message.contains(&sibling.display().to_string()), "{message}");
         assert_eq!(*trash.trashed.lock().unwrap(), vec![path.clone()]);
         assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn load_session_sums_usage_once_per_message_id() {
+        let home = tempfile::tempdir().unwrap();
+        let line = |id: &str, output: u64| {
+            json!({"type": "assistant", "isSidechain": false, "message": {
+                "id": id, "role": "assistant", "model": "claude-sonnet-4-6", "content": [{"type": "text", "text": "hi"}],
+                "usage": {"input_tokens": 3, "output_tokens": output, "cache_read_input_tokens": 100, "cache_creation_input_tokens": 0}
+            }})
+        };
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[user_text("hello"), line("m1", 10), line("m1", 10), line("m2", 20)],
+        );
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let loaded = adapter.load_session(&project(), &SessionId("s1".to_string())).await.unwrap();
+
+        let total = loaded.usage.total();
+        assert_eq!((total.input, total.output, total.cache_read), (6, 30, 200));
+        assert_eq!(loaded.usage.models().count(), 1);
     }
 }

@@ -6,6 +6,7 @@ mod plugins;
 mod mcp;
 mod projects;
 mod trash;
+mod usage;
 
 pub use sessions::ClaudeSessionAdapter;
 pub use skills::ClaudeSkillAdapter;
