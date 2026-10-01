@@ -404,6 +404,10 @@ mod tests {
         async fn rename_session(&self, _project_path: &Path, _session_id: &SessionId, _title: &str) -> Result<(), SessionRepositoryError> {
             Ok(())
         }
+
+        async fn delete_session(&self, _project_path: &Path, _session_id: &SessionId) -> Result<(), SessionRepositoryError> {
+            Ok(())
+        }
     }
 
     #[tokio::test]

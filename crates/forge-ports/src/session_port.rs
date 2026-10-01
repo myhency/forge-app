@@ -17,6 +17,8 @@ pub enum SessionRepositoryError {
     LoadFailed(String),
     #[error("failed to rename session: {0}")]
     RenameFailed(String),
+    #[error("failed to delete session: {0}")]
+    DeleteFailed(String),
 }
 
 #[cfg_attr(any(test, feature = "mocks"), automock)]
@@ -38,6 +40,13 @@ pub trait SessionRepositoryPort: Send + Sync {
         project_path: &Path,
         session_id: &SessionId,
         title: &str,
+    ) -> Result<(), SessionRepositoryError>;
+    /// Moves the session's transcript (and the data kept beside it) to the OS trash. Nothing is
+    /// removed permanently.
+    async fn delete_session(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
     ) -> Result<(), SessionRepositoryError>;
 }
 
@@ -72,6 +81,23 @@ mod tests {
             .rename_session(&PathBuf::from("/tmp/project"), &SessionId("s-1".to_string()), "New title")
             .await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn mock_session_repository_port_can_record_a_delete_call() {
+        let mut mock = MockSessionRepositoryPort::new();
+        mock.expect_delete_session().times(1).returning(|_, _| Ok(()));
+
+        let result = mock
+            .delete_session(&PathBuf::from("/tmp/project"), &SessionId("s-1".to_string()))
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn delete_failed_message_names_the_cause() {
+        let error = SessionRepositoryError::DeleteFailed("no trash".to_string());
+        assert_eq!(error.to_string(), "failed to delete session: no trash");
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -7,17 +8,23 @@ use forge_domain::{
     Message, MessageRole, PermissionMode, Session, SessionId, SessionSummary, ToolCall, ToolResult,
 };
 use forge_ports::{SessionRepositoryError, SessionRepositoryPort};
+use crate::trash::{SystemTrash, TrashBin};
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 
 pub struct ClaudeSessionAdapter {
     claude_home: PathBuf,
+    trash: Arc<dyn TrashBin>,
 }
 
 impl ClaudeSessionAdapter {
     pub fn new(claude_home: PathBuf) -> Self {
-        Self { claude_home }
+        Self::with_trash(claude_home, Arc::new(SystemTrash))
+    }
+
+    pub fn with_trash(claude_home: PathBuf, trash: Arc<dyn TrashBin>) -> Self {
+        Self { claude_home, trash }
     }
 
     // Claude Code names the directory after its resolved working directory (symlinks resolved,
@@ -486,6 +493,38 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
             .await
             .map_err(|e| rename_error(&path, e))?;
         file.flush().await.map_err(|e| rename_error(&path, e))
+    }
+
+    async fn delete_session(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+    ) -> Result<(), SessionRepositoryError> {
+        let id = &session_id.0;
+        if !valid_session_id(id) {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+        let dir = self.project_dir(project_path).await;
+        let transcript = dir.join(format!("{id}.jsonl"));
+        if !tokio::fs::try_exists(&transcript).await.unwrap_or(false) {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+        // The data Claude Code keeps beside a transcript (sub-agent transcripts, tool results) is
+        // the session's own, so it goes with it. Anything else is left alone.
+        let sibling = dir.join(id);
+        let has_sibling = tokio::fs::metadata(&sibling).await.map(|m| m.is_dir()).unwrap_or(false);
+
+        let trash = self.trash.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            trash.trash(&transcript).map_err(|e| format!("{}: {e}", transcript.display()))?;
+            if has_sibling {
+                trash.trash(&sibling).map_err(|e| format!("{}: {e}", sibling.display()))?;
+            }
+            Ok::<(), String>(())
+        })
+        .await
+        .map_err(|e| SessionRepositoryError::DeleteFailed(e.to_string()))?;
+        outcome.map_err(SessionRepositoryError::DeleteFailed)
     }
 }
 
@@ -1330,5 +1369,100 @@ mod tests {
         let sessions = adapter.list_sessions(&project()).await.unwrap();
 
         assert_eq!(sessions[0].title, Some("Found after garbage".to_string()));
+    }
+
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct FakeTrash {
+        trashed: Mutex<Vec<PathBuf>>,
+        fail_on: Mutex<Option<PathBuf>>,
+    }
+
+    impl crate::trash::TrashBin for FakeTrash {
+        fn trash(&self, path: &Path) -> Result<(), String> {
+            if self.fail_on.lock().unwrap().as_deref() == Some(path) {
+                return Err("the trash is unavailable".to_string());
+            }
+            self.trashed.lock().unwrap().push(path.to_path_buf());
+            // Behave like the real thing: the path is gone afterwards.
+            if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) }
+                .map_err(|e| e.to_string())
+        }
+    }
+
+    fn adapter_with(home: &Path) -> (ClaudeSessionAdapter, Arc<FakeTrash>) {
+        let trash = Arc::new(FakeTrash::default());
+        (ClaudeSessionAdapter::with_trash(home.to_path_buf(), trash.clone()), trash)
+    }
+
+    #[tokio::test]
+    async fn delete_moves_the_transcript_to_the_trash_and_it_is_no_longer_listed() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[user_text("hi")]);
+        write_session(home.path(), &project(), "s2", &[user_text("keep")]);
+        let (adapter, trash) = adapter_with(home.path());
+
+        adapter.delete_session(&project(), &SessionId("s1".to_string())).await.unwrap();
+
+        assert_eq!(*trash.trashed.lock().unwrap(), vec![path.clone()]);
+        let listed = adapter.list_sessions(&project()).await.unwrap();
+        assert_eq!(listed.iter().map(|s| s.id.0.as_str()).collect::<Vec<_>>(), vec!["s2"]);
+    }
+
+    #[tokio::test]
+    async fn delete_also_trashes_the_sibling_directory_of_the_session() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[user_text("hi")]);
+        let sibling = path.with_extension("");
+        std::fs::create_dir_all(sibling.join("subagents")).unwrap();
+        let other = path.with_file_name("s2");
+        std::fs::create_dir_all(&other).unwrap();
+        let (adapter, trash) = adapter_with(home.path());
+
+        adapter.delete_session(&project(), &SessionId("s1".to_string())).await.unwrap();
+
+        assert_eq!(*trash.trashed.lock().unwrap(), vec![path, sibling]);
+        assert!(other.exists(), "another session's directory is not touched");
+    }
+
+    #[tokio::test]
+    async fn delete_of_a_missing_session_is_not_found_and_trashes_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "other", &[user_text("hi")]);
+        let (adapter, trash) = adapter_with(home.path());
+
+        let result = adapter.delete_session(&project(), &SessionId("missing".to_string())).await;
+
+        assert!(matches!(result, Err(SessionRepositoryError::NotFound(id)) if id.0 == "missing"));
+        assert!(trash.trashed.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn delete_refuses_ids_that_could_leave_the_project_directory() {
+        let home = tempfile::tempdir().unwrap();
+        let outside = home.path().join("projects").join("precious.jsonl");
+        std::fs::create_dir_all(outside.parent().unwrap()).unwrap();
+        std::fs::write(&outside, "x").unwrap();
+        let (adapter, trash) = adapter_with(home.path());
+        for bad in ["", "../precious", "a/b", "a\\b", ".."] {
+            let result = adapter.delete_session(&project(), &SessionId(bad.to_string())).await;
+            assert!(matches!(result, Err(SessionRepositoryError::NotFound(_))), "{bad:?}");
+        }
+        assert!(trash.trashed.lock().unwrap().is_empty());
+        assert!(outside.exists());
+    }
+
+    #[tokio::test]
+    async fn a_failing_trash_is_a_delete_error_and_the_session_stays_listed() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[user_text("hi")]);
+        let (adapter, trash) = adapter_with(home.path());
+        *trash.fail_on.lock().unwrap() = Some(path);
+
+        let result = adapter.delete_session(&project(), &SessionId("s1".to_string())).await;
+
+        assert!(matches!(&result, Err(SessionRepositoryError::DeleteFailed(m)) if m.contains("the trash is unavailable")), "{result:?}");
+        assert_eq!(adapter.list_sessions(&project()).await.unwrap().len(), 1);
     }
 }
