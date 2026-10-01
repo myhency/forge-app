@@ -952,4 +952,42 @@ mod tests {
 
         wait_closed(&mut view).await;
     }
+
+    #[tokio::test]
+    async fn a_warm_sidecar_that_fails_before_any_send_is_dropped_without_an_error_and_the_next_send_starts_again() {
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.warm_up();
+        first_control.push(SidecarEvent::Error { message: "the SDK failed to start".to_string() });
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let quiet = handle.snapshot();
+        assert_eq!(quiet.last_error, None, "no banner for a failure nobody asked for");
+        assert_eq!(quiet.phase, Phase::Idle);
+
+        handle.send("hello".to_string());
+        let seen = wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 2);
+        assert_eq!(seen.last_error, None);
+        assert_eq!(second_control.calls(), vec![Call::Start(start_params(None)), Call::Send("hello".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn a_sidecar_that_fails_after_a_send_still_fails_the_session() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.warm_up();
+        handle.send("hello".to_string());
+        control.push(SidecarEvent::Error { message: "boom".to_string() });
+        let seen = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        assert_eq!(seen.last_error.as_deref(), Some("boom"));
+    }
 }

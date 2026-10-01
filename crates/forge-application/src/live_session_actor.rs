@@ -24,6 +24,9 @@ pub(crate) struct Actor {
     /// §17.4); a failed resolution is not stored, so the next start resolves again.
     active: Option<ActiveExtensions>,
     sidecar: Option<Arc<dyn SidecarPort>>,
+    /// The sidecar was started by a warm-up and nothing has been sent to it yet. A failure then is
+    /// dropped quietly: nobody asked for anything, and the first send starts a sidecar again.
+    warm_only: bool,
     /// The view changed since it was last published.
     dirty: bool,
 }
@@ -46,6 +49,7 @@ impl Actor {
             extensions,
             active: None,
             sidecar: None,
+            warm_only: false,
             dirty: false,
         }
     }
@@ -66,7 +70,7 @@ impl Actor {
                 },
                 event = next_event(&self.sidecar) => match event {
                     Some(event) => self.apply_event(event).await,
-                    None => self.fail("the sidecar process exited unexpectedly".to_string(), false).await,
+                    None => self.sidecar_gone("the sidecar process exited unexpectedly".to_string(), false).await,
                 },
                 _ = std::future::ready(()), if self.dirty => self.publish(),
             }
@@ -98,7 +102,18 @@ impl Actor {
         }
         // Not `fail`: nothing was asked of the session yet, so there is nothing to report. The first
         // send resolves and spawns again and shows its own error if it fails too.
-        let _ = self.start_sidecar().await;
+        self.warm_only = self.start_sidecar().await.is_ok();
+    }
+
+    // The sidecar's process or session ended on its own. After a warm-up with nothing sent it is just
+    // dropped; otherwise the session fails.
+    async fn sidecar_gone(&mut self, message: String, shutdown: bool) {
+        if self.warm_only {
+            self.warm_only = false;
+            self.discard_sidecar(shutdown).await;
+        } else {
+            self.fail(message, shutdown).await;
+        }
     }
 
     async fn send(&mut self, text: String) {
@@ -107,6 +122,7 @@ impl Actor {
             self.dirty = true;
             return;
         }
+        self.warm_only = false;
         if self.sidecar.is_none() {
             if let Err(message) = self.start_sidecar().await {
                 self.keep_unsent(text);
@@ -213,10 +229,10 @@ impl Actor {
             SessionUpdate::CommandsAvailable(commands) => self.view.commands = commands,
             // The sidecar protocol does not distinguish fatal from non-fatal errors, so every
             // `Error` ends this sidecar: its query is over and `start_session` cannot be re-sent.
-            SessionUpdate::Errored { message } => self.fail(message, true).await,
+            SessionUpdate::Errored { message } => self.sidecar_gone(message, true).await,
             SessionUpdate::SessionEnded => {
                 // The sidecar is still alive and cleaning up, so it is asked to exit and awaited.
-                self.fail("the session ended unexpectedly".to_string(), true).await;
+                self.sidecar_gone("the session ended unexpectedly".to_string(), true).await;
             }
             SessionUpdate::MessageDelta { .. }
             | SessionUpdate::ToolCallStarted { .. }

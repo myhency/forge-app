@@ -2616,7 +2616,7 @@ Checked 2026-10-01 with the real SDK 0.3.283 (`query()` with a prompt iterable t
 
 ### 21.8 As built
 
-Plan 11 was built on branch `plan-11` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Agent SDK 0.3.283). 470 Rust workspace tests pass (454 before) and 66 sidecar tests pass (60 before).
+Plan 11 was built on branch `plan-11` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Agent SDK 0.3.283). 472 Rust workspace tests pass (454 before) and 68 sidecar tests pass (60 before).
 
 **Checked (passed):** the real SDK answers `supportedCommands()` before any message (§21.7). Every other part is covered by tests: the sidecar events (`supportedCommands()`, `init`, the same-names rule, a failing and a never-answering call, names with a slash, empty or duplicated); the Rust event and view (a new list replaces the old); the warm-up (starts the sidecar with no send, the first send reuses it, a failed warm-up shows no error and the first send starts again, no warm-up when the folder is gone, close right after warm-up); and the pure menu rules (query, prefix then substring order, wrap-around selection, the inserted text, keys, IME Enter).
 
@@ -2628,3 +2628,12 @@ Plan 11 was built on branch `plan-11` and checked on 2026-10-01 (macOS 26, Dioxu
 - `builtin` (a field of the SDK's answer) is not used.
 
 **Known costs:** every opened session whose folder exists now holds a sidecar process from the moment it is opened; the enabled extensions are resolved at that moment, not at the first send, so toggling one later does not reach an already open session until it is reopened.
+
+**Final review (Plan 11):** no Critical finding. Two Important findings were fixed, each with a failing test first: (1) the `init` list (names only, in another order, sometimes another length than `supportedCommands()`) replaced the richer list, so descriptions and hints vanished after the first message; the sidecar now merges what it already knew into the `init` names and compares without regard to order; (2) a warm-up sidecar that failed after starting (SDK start-up error, process exit) showed the error banner and "needs attention" before the person had asked for anything; the actor now drops such a sidecar quietly until something has been sent to it.
+
+**Not fixed, on purpose (Minor):**
+- `Enter` picks the row stored in `selected`, which is not clamped like the highlighted row: if the list shrinks while the person has moved the selection down, Enter picks nothing and sends nothing for that press.
+- Shift+Enter and Shift+Tab pick a command while the popup is open, instead of adding a line.
+- A failed send of a bare `/command` is put back in the box and reopens the popup, so Enter completes the text instead of resending.
+- Not tested: whether warming a resumed session (`resume` with no message) changes its transcript file; check it in the live window.
+- The popup and the usage popover use the same layer and could overlap.
