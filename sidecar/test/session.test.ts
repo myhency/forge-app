@@ -556,6 +556,34 @@ describe("SidecarSession", () => {
     expect(commandEvents(later)).toEqual([{ type: "commands_available", commands: [{ name: "compact" }] }]);
   });
 
+  it("keeps the descriptions when init lists the same names in another order", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      commandsQuery(
+        async () => [{ name: "compact", description: "Free up context" }, { name: "review", description: "Review code" }],
+        ["review", "compact"],
+      ),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    expect(commandEvents(events)).toHaveLength(1);
+  });
+
+  it("keeps the descriptions of the names it already knew when init adds a name", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      commandsQuery(async () => [{ name: "compact", description: "Free up context" }], ["review", "compact"]),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    expect(commandEvents(events).at(-1)).toEqual({
+      type: "commands_available",
+      commands: [{ name: "review" }, { name: "compact", description: "Free up context" }],
+    });
+  });
+
   it("sends nothing and no error when supportedCommands() throws, and the session carries on", async () => {
     const events: SidecarEvent[] = [];
     const session = new SidecarSession(

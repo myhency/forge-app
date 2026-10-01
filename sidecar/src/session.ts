@@ -93,7 +93,8 @@ export class SidecarSession {
   private mainModel: string | null = null;
   // Web searches the WebSearch tool reported since the last result (that tool's own request is not in `result.usage`).
   private pendingSearches = 0;
-  private lastCommandNames: string | null = null;
+  private lastCommandsKey: string | null = null;
+  private knownCommands = new Map<string, WireSlashCommand>();
   private readonly contextUsageTimeoutMs: number;
   private readonly commandsTimeoutMs: number;
 
@@ -262,13 +263,16 @@ export class SidecarSession {
     }
   }
 
-  // Sent only when the names changed, so the poorer init list (names only) never replaces the richer
-  // supportedCommands() list that has the same names.
-  private emitCommands(raw: unknown): void {
-    const commands = toWireCommands(raw);
-    const key = commands.map((c) => c.name).join("\n");
-    if (this.shuttingDown || commands.length === 0 || key === this.lastCommandNames) return;
-    this.lastCommandNames = key;
+  // `init` lists names only, so a name the earlier list already described keeps its description and hint
+  // (the two lists also differ in order and sometimes in length). Sent only when the result differs from
+  // the last one, compared without regard to order.
+  private emitCommands(raw: unknown, namesOnly = false): void {
+    let commands = toWireCommands(raw);
+    if (namesOnly) commands = commands.map((c) => this.knownCommands.get(c.name) ?? c);
+    const key = JSON.stringify([...commands].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)));
+    if (this.shuttingDown || commands.length === 0 || key === this.lastCommandsKey) return;
+    this.lastCommandsKey = key;
+    this.knownCommands = new Map(commands.map((c) => [c.name, c]));
     this.emit({ type: "commands_available", commands });
   }
 
@@ -304,7 +308,7 @@ export class SidecarSession {
       case "system":
         if (message.subtype === "init") {
           this.emit({ type: "session_started", session_id: message.session_id });
-          this.emitCommands(message.slash_commands);
+          this.emitCommands(message.slash_commands, true);
         }
         return;
       case "stream_event": {
