@@ -2388,12 +2388,16 @@ skipped; it never fails the load. Synthetic or empty models are ignored.
 
 `turn_complete` becomes
 `{ type, usage: { model: { input, output, cache_read, cache_write_5m, cache_write_1h } } }`
-and carries only what this turn **added**. Whether the SDK's `result.usage` /
-`result.modelUsage` are per turn or running totals is checked first (§20.7);
-if they are running totals the sidecar keeps the last totals and sends the
-difference. The old `input_tokens` / `output_tokens` fields are removed (the
-only consumer is `forge-adapter-sidecar`, changed in the same plan; protocol
-tests are updated with it).
+and carries only what this turn **added**. The numbers come from the `result`
+message's `usage` (main agent loop only, per turn, with the `cache_creation`
+5m/1h split), attributed to the model of the turn's main-loop assistant
+messages (`message.model`, `parent_tool_use_id` empty). `result.modelUsage` is
+**not** used (§20.10: it is a running total, it includes helper models such as
+the title writer and sub-agents, and after a resume its first value already holds
+the earlier turns). A turn with no main-loop assistant message sends an empty
+`usage`. The old `input_tokens` / `output_tokens` fields are removed (the only
+consumer is `forge-adapter-sidecar`, changed in the same plan; protocol tests
+are updated with it).
 
 A new event `context_usage { total_tokens, max_tokens }` is sent after each
 `turn_complete`: the sidecar calls `getContextUsage()` on the live `Query`.
@@ -2471,3 +2475,12 @@ popover content, unpriced model.
 7. `forge-widgets` ring and popover; theme and dark-palette test.
 8. Walk-through in the real window (light and dark, a resumed session, an
    unpriced model); final review; as-built notes.
+
+### 20.10 Spike findings
+
+Run on 2026-10-01 with Agent SDK 0.3.283, Claude Code 2.1.286, a Claude login (no API key), model `claude-opus-5-5`, project `/tmp/forge-spike`: two turns ("write about 200 words", then "reply: ok"), then a resume with no prompt, then a resume with one turn. The driver was a throwaway script around the real `SidecarSession` and is not kept.
+
+1. **`result.usage` is per turn; `result.modelUsage` is a running total.** Turn 1: `output_tokens` 459; turn 2: 4; resumed turn: 3 (a one-word reply each time). `usage` has `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` and `cache_creation.{ephemeral_5m,ephemeral_1h}_input_tokens`. `modelUsage` after the resumed turn held opus `outputTokens` 466 (= 459 + 4 + 3) and `cacheReadInputTokens` 22379, so a resumed session's first `modelUsage` already carries the earlier turns, and it also listed `claude-haiku-4-5-20251001` (901 in / 11 out, an internal helper) that no assistant message used. The SDK's type notes say the same ("cumulative across turns in streaming-input sessions"; "a resumed session continues from the totals its transcript saved"). Decision: Forge uses `result.usage` and the main-loop model (spec §20.4), not `modelUsage`.
+2. **`Query.getContextUsage()` works on the live streaming query.** Fields `totalTokens`, `maxTokens`, `rawMaxTokens`, `percentage`, `model`, `categories`. First call about 850 ms, later calls 9 ms (11 393 of 1 000 000 tokens after turn 1; 11 440 after turn 2). It also answered on a resumed session before any turn (880 ms, 11 440 / 1 000 000). Forge still starts the sidecar on the first send, so the ring stays empty until the first turn finishes; showing the value for an opened-but-idle session would need a sidecar at open time and is left for later. The 3 s limit of §20.4 stands.
+3. **Summing the session file per `message.id` matches the SDK exactly.** File: input 6, output 466, cache read 22 379, cache write 11 479, against the sum of the three `result.usage` values: 6, 466, 22 379, 11 479. The first message was written on **two** lines (so de-duplication is needed) and its last line carried the final `output_tokens` (459; the first line was a partial). This login uses **1-hour** cache writes: all 11 479 were `ephemeral_1h`, and `result.usage.cache_creation` has the same split, so live and restored cost agree.
+4. **Custom `base_url`: not tested** (no gateway at hand). The model id in usage is the `message.model` the endpoint returns; an id that is not in the price table shows tokens with no cost (§20.1).
