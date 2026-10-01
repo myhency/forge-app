@@ -154,11 +154,24 @@ impl Rates {
     }
 }
 
-/// Model-id prefixes and what they cost. The longest matching prefix wins, so a dated id such as
-/// `claude-haiku-4-5-20251001` finds the `claude-haiku-4-5` row.
+/// Model ids and what they cost. A row matches its exact id, or that id followed by a dated
+/// suffix (`claude-haiku-4-5` matches `claude-haiku-4-5-20251001`). It does not match a longer id
+/// that merely starts with it: `claude-fable-5-2` is not priced at `claude-fable-5`'s rates, it has
+/// no price until it gets a row, and its cost shows as `—` instead of a wrong number.
 #[derive(Debug, Clone)]
 pub struct PriceTable {
     rows: Vec<(&'static str, Rates)>,
+}
+
+// `model` is `id` itself or `id-YYYYMMDD`.
+fn is_id_or_dated(model: &str, id: &str) -> bool {
+    match model.strip_prefix(id) {
+        Some("") => true,
+        Some(rest) => rest
+            .strip_prefix('-')
+            .is_some_and(|date| date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit())),
+        None => false,
+    }
 }
 
 impl PriceTable {
@@ -169,8 +182,7 @@ impl PriceTable {
     pub fn rates_for(&self, model: &str) -> Option<&Rates> {
         self.rows
             .iter()
-            .filter(|(prefix, _)| model.starts_with(prefix))
-            .max_by_key(|(prefix, _)| prefix.len())
+            .find(|(id, _)| is_id_or_dated(model, id))
             .map(|(_, rates)| rates)
     }
 
@@ -306,5 +318,27 @@ mod tests {
     fn token_usage_reads_missing_json_fields_as_zero() {
         let parsed: TokenUsage = serde_json::from_str(r#"{"input": 7, "cache_write_1h": 2}"#).unwrap();
         assert_eq!(parsed, TokenUsage { input: 7, cache_write_1h: 2, ..Default::default() });
+    }
+
+    #[test]
+    fn a_newer_model_id_is_not_priced_at_an_older_models_rates() {
+        let prices = table();
+        assert_eq!(prices.estimate_cost("claude-test-2", &usage(1_000_000, 0)), None);
+        assert_eq!(prices.estimate_cost("claude-test-5-1", &usage(1_000_000, 0)), None);
+        assert_eq!(prices.estimate_cost("claude-testing", &usage(1_000_000, 0)), None);
+        assert_eq!(prices.estimate_cost("claude-test-2026010", &usage(1_000_000, 0)), None, "7 digits is not a date");
+        assert_eq!(prices.estimate_cost("claude-test-20260101x", &usage(1_000_000, 0)), None);
+        assert_eq!(prices.estimate_cost("claude-test", &usage(1_000_000, 0)), Some(Cost(3_000_000)), "the exact id");
+    }
+
+    #[test]
+    fn the_list_prices_do_not_guess_for_ids_they_do_not_list() {
+        let prices = PriceTable::list_prices();
+        let one_million = usage(1_000_000, 0);
+        assert_eq!(prices.estimate_cost("claude-fable-5-2", &one_million), None, "not Fable 5's cache rates");
+        assert_eq!(prices.estimate_cost("claude-opus-5-6", &one_million), None, "not Opus 5's rates");
+        assert_eq!(prices.estimate_cost("claude-opus-5-5-20260101", &one_million), Some(Cost(4_000_000)), "Opus 5.5, dated");
+        assert_eq!(prices.estimate_cost("claude-opus-5-5", &one_million), Some(Cost(4_000_000)));
+        assert_eq!(prices.estimate_cost("claude-opus-5", &one_million), Some(Cost(5_000_000)));
     }
 }

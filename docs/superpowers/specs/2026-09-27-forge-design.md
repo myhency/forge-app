@@ -2362,8 +2362,10 @@ New `usage.rs`, no I/O:
   and `total() -> TokenUsage`.
 - `PriceTable` and `estimate_cost(model, &TokenUsage) -> Option<Cost>`.
   `Cost` is integer micro-dollars (no floats in sums). The table is data in
-  `prices.rs`, matched by model-id prefix (`claude-sonnet-4-6` matches
-  `claude-sonnet-4-6-20260101`). The numbers come from Anthropic's published
+  `usage.rs`, matched on the exact model id or the id plus a `-YYYYMMDD`
+  suffix (`claude-sonnet-4-6` matches `claude-sonnet-4-6-20260101`, not
+  `claude-sonnet-4-6-1`; final review: a longer id that only starts with a row's id must
+  not borrow that row's rates, it has no cost until it gets a row). The numbers come from Anthropic's published
   pricing page and each row names its source and the date it was read. An
   unmatched model gives `None`.
 - `SessionUsage::cost() -> CostSummary { total: Cost, unpriced_models: Vec<String> }`:
@@ -2484,3 +2486,27 @@ Run on 2026-10-01 with Agent SDK 0.3.283, Claude Code 2.1.286, a Claude login (n
 2. **`Query.getContextUsage()` works on the live streaming query.** Fields `totalTokens`, `maxTokens`, `rawMaxTokens`, `percentage`, `model`, `categories`. First call about 850 ms, later calls 9 ms (11 393 of 1 000 000 tokens after turn 1; 11 440 after turn 2). It also answered on a resumed session before any turn (880 ms, 11 440 / 1 000 000). Forge still starts the sidecar on the first send, so the ring stays empty until the first turn finishes; showing the value for an opened-but-idle session would need a sidecar at open time and is left for later. The 3 s limit of §20.4 stands.
 3. **Summing the session file per `message.id` matches the SDK exactly.** File: input 6, output 466, cache read 22 379, cache write 11 479, against the sum of the three `result.usage` values: 6, 466, 22 379, 11 479. The first message was written on **two** lines (so de-duplication is needed) and its last line carried the final `output_tokens` (459; the first line was a partial). This login uses **1-hour** cache writes: all 11 479 were `ephemeral_1h`, and `result.usage.cache_creation` has the same split, so live and restored cost agree.
 4. **Custom `base_url`: not tested** (no gateway at hand). The model id in usage is the `message.model` the endpoint returns; an id that is not in the price table shows tokens with no cost (§20.1).
+
+### 20.11 As built
+
+Plan 10 was built on branch `plan-10` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Agent SDK 0.3.283). 435 Rust workspace tests pass (390 before) and 52 sidecar tests pass (38 before).
+
+**Checked (passed):**
+- Real sidecar and real SDK, driven through `forge-adapter-sidecar` for one turn: `TurnComplete { usage: {"claude-opus-5-5": input 2, output 4, cache_read 9579, cache_write_5m 0, cache_write_1h 1363} }` and `ContextUsage { total_tokens: 10944, max_tokens: 1000000 }` arrived and parsed.
+- The same session file read back through `ClaudeSessionAdapter::load_session` gave exactly the same numbers (2 / 4 / 9579 / 0 / 1363), so restore and live agree, including the 1-hour cache write split.
+- The real `theme.css` with the ring (normal, warn, danger, empty) and the open popover (an unpriced model, the "excludes" note) served as a static page and screenshotted in light and in dark mode: both are readable, and the three ring levels are told apart by colour and by the arc length.
+
+**Not checked (needs a person):** the live window. The widget code compiles and its pure parts are tested, but nobody has clicked it in the running app: opening and closing the popover with the ring, with Esc and with a click outside; the popover staying inside a narrow window; a resumed session in the sidebar showing its restored totals before the first send and an empty ring; a custom model id showing `—` and "excludes <id>"; and the custom `base_url` case (spike item 4).
+
+**Differences from §20:** §20.4 was changed by the spike: the sidecar sends `result.usage` under the main-loop assistant model, not `modelUsage` (§20.10). Because of that Task 5 has no `UsageTracker`; `sidecar/src/usage.ts` has `toWireUsage` and `turnUsage`. §20.2's price matching was narrowed by the final review (below). `PriceTable` lives in `usage.rs`, not a separate `prices.rs`.
+
+**Final review (Plan 10):** no Critical or Important finding on the seven focus items. One finding was graded up after re-grading by effect and fixed with a failing test first: a longer model id that only starts with a listed id (`claude-fable-5-2`, `claude-opus-5-6`) was priced at the shorter row's rates, so a newer model showed a wrong cost with no hint. A row now matches only its exact id or the id plus `-YYYYMMDD`; anything else shows `—`.
+
+**Not fixed, on purpose (Minor):**
+- `LiveSessionView.context` is not cleared when a sidecar fails or a later `getContextUsage` fails or times out, so the ring can show the previous turn's value until the next turn ends.
+- Token and cost sums use plain `+` on `u64`; a corrupt session file with absurd counts could panic a debug build or wrap in a release build (`saturating_add` would harden it).
+- Esc closes the popover only while the ring button has focus; the popover has no `role="dialog"`.
+- A turn that ends without a `result` (an error, an interrupt) loses its tokens from the live total; the restore path counts them after a reload.
+- If the model changes in the middle of one turn, all of that turn's `result.usage` is attributed to the last main-loop model.
+- The ring is part of the message box, so a session that can only be viewed (its folder is gone) shows no ring or popover.
+- Sub-agent, helper-model, data-residency (1.1x), fast-mode and batch usage or pricing are not counted or modelled (§20.1).
