@@ -2613,3 +2613,18 @@ Checked 2026-10-01 with the real SDK 0.3.283 (`query()` with a prompt iterable t
 3. **Names have no leading `/`.** The sidecar still strips one (§21.3) in case another SDK version adds it.
 4. **`init.slash_commands` is a list of names without `/`**, 52 names in the run with a message, in a different order from the one `supportedCommands()` gave first. It contains an internal-looking name, `__remote-workflow`. The names are not filtered: the spec says to list what the SDK reports. Whether the two lists always have the same names was not established beyond these two runs, so the "names changed" rule in §21.3 stays as designed (the later list wins when its names differ).
 5. Not checked: that Forge's own enabled skills and plugins show up (they were not loaded in this probe). The live check in the last task covers it.
+
+### 21.8 As built
+
+Plan 11 was built on branch `plan-11` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Agent SDK 0.3.283). 470 Rust workspace tests pass (454 before) and 66 sidecar tests pass (60 before).
+
+**Checked (passed):** the real SDK answers `supportedCommands()` before any message (§21.7). Every other part is covered by tests: the sidecar events (`supportedCommands()`, `init`, the same-names rule, a failing and a never-answering call, names with a slash, empty or duplicated); the Rust event and view (a new list replaces the old); the warm-up (starts the sidecar with no send, the first send reuses it, a failed warm-up shows no error and the first send starts again, no warm-up when the folder is gone, close right after warm-up); and the pure menu rules (query, prefix then substring order, wrap-around selection, the inserted text, keys, IME Enter).
+
+**Not checked (needs a person):** the live window. The popup code builds and its rules are tested, but nobody has used it in the running app: that `/` lists the commands in a new session before the first message, typing narrows them, Up/Down/Enter/Tab/Esc and a mouse click work, Korean IME Enter does not pick, the popup looks right in light and dark mode with a very long description, and that Forge's own enabled skills and plugins appear in the list (the §21.7 probe did not load them).
+
+**Differences from §21 and the plan:**
+- The warm-up is opt-in: `SessionRegistry::with_warm_up()`, called once in `forge-app`'s `main.rs`, instead of an unconditional call in the registry. An unconditional call made the registry tests that use an unscripted factory spawn a sidecar in the session task and made their "opening spawns nothing" assertions untrue.
+- The `supportedCommands()` timeout is 10 s (spike: 4 s for the first call).
+- `builtin` (a field of the SDK's answer) is not used.
+
+**Known costs:** every opened session whose folder exists now holds a sidecar process from the moment it is opened; the enabled extensions are resolved at that moment, not at the first send, so toggling one later does not reach an already open session until it is reopened.
