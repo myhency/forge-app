@@ -1,3 +1,4 @@
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -8,7 +9,7 @@ use forge_domain::{
 use forge_ports::{SessionRepositoryError, SessionRepositoryPort};
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 
 pub struct ClaudeSessionAdapter {
     claude_home: PathBuf,
@@ -76,27 +77,53 @@ fn to_base36(mut value: u32) -> String {
     digits.iter().rev().collect()
 }
 
-fn title_from_value(value: &Value) -> Option<String> {
-    let key = match value.get("type")?.as_str()? {
-        "ai-title" => "aiTitle",
-        "custom-title" => "customTitle",
-        _ => return None,
-    };
-    value.get(key)?.as_str().map(str::to_string)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TitleKind {
+    Auto,
+    Custom,
 }
 
-fn title_from_line(line: &str) -> Option<String> {
+fn title_from_value(value: &Value) -> Option<(TitleKind, String)> {
+    let (kind, key) = match value.get("type")?.as_str()? {
+        "ai-title" => (TitleKind::Auto, "aiTitle"),
+        "custom-title" => (TitleKind::Custom, "customTitle"),
+        _ => return None,
+    };
+    Some((kind, value.get(key)?.as_str()?.to_string()))
+}
+
+fn title_from_line(line: &str) -> Option<(TitleKind, String)> {
     if !line.contains("-title\"") {
         return None;
     }
     title_from_value(&serde_json::from_str::<Value>(line).ok()?)
 }
 
+// The last title of each kind; a title the user chose wins over one Claude wrote, wherever each sits.
+#[derive(Default)]
+struct TitleTracker {
+    auto: Option<String>,
+    custom: Option<String>,
+}
+
+impl TitleTracker {
+    fn see(&mut self, kind: TitleKind, title: String) {
+        match kind {
+            TitleKind::Auto => self.auto = Some(title),
+            TitleKind::Custom => self.custom = Some(title),
+        }
+    }
+
+    fn title(self) -> Option<String> {
+        self.custom.or(self.auto)
+    }
+}
+
 async fn read_title(path: &Path) -> Option<String> {
     let file = tokio::fs::File::open(path).await.ok()?;
     let mut reader = BufReader::new(file);
     let mut buffer = Vec::new();
-    let mut title = None;
+    let mut titles = TitleTracker::default();
     loop {
         buffer.clear();
         // A read error keeps the title found so far; an invalid-UTF-8 line is skipped.
@@ -104,11 +131,11 @@ async fn read_title(path: &Path) -> Option<String> {
             Ok(0) | Err(_) => break,
             Ok(_) => {}
         }
-        if let Some(found) = std::str::from_utf8(&buffer).ok().and_then(title_from_line) {
-            title = Some(found);
+        if let Some((kind, found)) = std::str::from_utf8(&buffer).ok().and_then(title_from_line) {
+            titles.see(kind, found);
         }
     }
-    title
+    titles.title()
 }
 
 fn parse_permission_mode(raw: &str) -> PermissionMode {
@@ -252,13 +279,27 @@ fn apply_line(session: &mut Session, line: &Value) {
                 session.permission_mode = parse_permission_mode(mode);
             }
         }
-        Some("ai-title") | Some("custom-title") => {
-            if let Some(title) = title_from_value(line) {
-                session.title = Some(title);
-            }
-        }
         _ => {}
     }
+}
+
+// A session id names a file in the project directory; anything that could point elsewhere is not one.
+fn valid_session_id(id: &str) -> bool {
+    !(id.is_empty() || id.contains(['/', '\\']) || id.contains(".."))
+}
+
+async fn lacks_trailing_newline(file: &mut tokio::fs::File) -> std::io::Result<bool> {
+    if file.metadata().await?.len() == 0 {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::End(-1)).await?;
+    let mut last = [0u8; 1];
+    file.read_exact(&mut last).await?;
+    Ok(last[0] != b'\n')
+}
+
+fn rename_error(path: &Path, e: std::io::Error) -> SessionRepositoryError {
+    SessionRepositoryError::RenameFailed(format!("{}: {e}", path.display()))
 }
 
 #[async_trait]
@@ -328,7 +369,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         session_id: &SessionId,
     ) -> Result<Session, SessionRepositoryError> {
         let id = &session_id.0;
-        if id.is_empty() || id.contains(['/', '\\']) || id.contains("..") {
+        if !valid_session_id(id) {
             return Err(SessionRepositoryError::NotFound(session_id.clone()));
         }
 
@@ -350,6 +391,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
             }
         };
 
+        let mut titles = TitleTracker::default();
         let mut session = Session {
             id: session_id.clone(),
             project_path: project_path.to_path_buf(),
@@ -385,11 +427,65 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
                 .ok()
                 .and_then(|line| serde_json::from_str::<Value>(line).ok())
             {
-                Some(value) => apply_line(&mut session, &value),
+                Some(value) => {
+                    if let Some((kind, found)) = title_from_value(&value) {
+                        titles.see(kind, found);
+                    }
+                    apply_line(&mut session, &value)
+                }
                 None => malformed_line = Some(line_number),
             }
         }
+        session.title = titles.title();
         Ok(session)
+    }
+
+    async fn rename_session(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        title: &str,
+    ) -> Result<(), SessionRepositoryError> {
+        let id = &session_id.0;
+        if !valid_session_id(id) {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+        let path = self
+            .project_dir(project_path)
+            .await
+            .join(format!("{id}.jsonl"));
+        // Append mode, and no `create`: a rename must never conjure a transcript.
+        let mut file = match tokio::fs::OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(&path)
+            .await
+        {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(SessionRepositoryError::NotFound(session_id.clone()))
+            }
+            Err(e) => return Err(rename_error(&path, e)),
+        };
+
+        let mut entry = String::new();
+        if lacks_trailing_newline(&mut file)
+            .await
+            .map_err(|e| rename_error(&path, e))?
+        {
+            entry.push('\n');
+        }
+        entry.push_str(
+            &serde_json::json!({"type": "custom-title", "customTitle": title, "sessionId": id})
+                .to_string(),
+        );
+        entry.push('\n');
+        // One write, so a transcript being appended to by Claude Code at the same moment gets the
+        // whole line or none of it interleaved.
+        file.write_all(entry.as_bytes())
+            .await
+            .map_err(|e| rename_error(&path, e))?;
+        file.flush().await.map_err(|e| rename_error(&path, e))
     }
 }
 
@@ -418,6 +514,133 @@ mod tests {
 
     fn ai_title(title: &str) -> Value {
         json!({"type": "ai-title", "aiTitle": title, "sessionId": "s"})
+    }
+
+    fn custom_title(title: &str) -> Value {
+        json!({"type": "custom-title", "customTitle": title, "sessionId": "s"})
+    }
+
+    #[tokio::test]
+    async fn rename_appends_a_custom_title_line_that_list_and_load_read_back() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[user_text("hi"), ai_title("Auto")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        adapter.rename_session(&project(), &SessionId("s1".to_string()), "Mine").await.unwrap();
+
+        let listed = adapter.list_sessions(&project()).await.unwrap();
+        assert_eq!(listed[0].title.as_deref(), Some("Mine"));
+        let loaded = adapter.load_session(&project(), &SessionId("s1".to_string())).await.unwrap();
+        assert_eq!(loaded.title.as_deref(), Some("Mine"));
+        assert_eq!(loaded.messages.len(), 1, "the history is untouched");
+    }
+
+    #[tokio::test]
+    async fn rename_writes_one_json_line_with_the_documented_fields() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[user_text("hi")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        adapter.rename_session(&project(), &SessionId("s1".to_string()), "Mine").await.unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        let last = text.lines().last().unwrap();
+        let value: Value = serde_json::from_str(last).unwrap();
+        assert_eq!(value, json!({"type": "custom-title", "customTitle": "Mine", "sessionId": "s1"}));
+        assert!(text.ends_with('\n'));
+    }
+
+    #[tokio::test]
+    async fn rename_with_awkward_characters_stays_one_valid_line() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[user_text("hi")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        let title = "a \"quoted\" \\ back\tslash\nnext line 한글";
+
+        adapter.rename_session(&project(), &SessionId("s1".to_string()), title).await.unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text.lines().count(), 2);
+        let listed = adapter.list_sessions(&project()).await.unwrap();
+        assert_eq!(listed[0].title.as_deref(), Some(title));
+    }
+
+    #[tokio::test]
+    async fn rename_starts_on_a_new_line_when_the_file_has_no_trailing_newline() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[user_text("hi")]);
+        let without_newline = std::fs::read_to_string(&path).unwrap().trim_end().to_string();
+        std::fs::write(&path, &without_newline).unwrap();
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        adapter.rename_session(&project(), &SessionId("s1".to_string()), "Mine").await.unwrap();
+
+        let loaded = adapter.load_session(&project(), &SessionId("s1".to_string())).await.unwrap();
+        assert_eq!(loaded.title.as_deref(), Some("Mine"));
+        assert_eq!(loaded.messages.len(), 1, "the earlier last line still parses");
+    }
+
+    #[tokio::test]
+    async fn rename_of_an_empty_file_writes_just_the_title_line() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        adapter.rename_session(&project(), &SessionId("s1".to_string()), "Mine").await.unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap().lines().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn rename_of_a_missing_session_is_not_found_and_creates_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "other", &[user_text("hi")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let result = adapter.rename_session(&project(), &SessionId("missing".to_string()), "Mine").await;
+
+        assert!(matches!(result, Err(SessionRepositoryError::NotFound(id)) if id.0 == "missing"));
+        let dir = home.path().join("projects").join(escape_project_path(&project()));
+        assert!(!dir.join("missing.jsonl").exists(), "rename must never create a transcript");
+    }
+
+    #[tokio::test]
+    async fn rename_refuses_ids_that_could_leave_the_project_directory() {
+        let home = tempfile::tempdir().unwrap();
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        for bad in ["", "../x", "a/b", "a\\b", ".."] {
+            let result = adapter.rename_session(&project(), &SessionId(bad.to_string()), "Mine").await;
+            assert!(matches!(result, Err(SessionRepositoryError::NotFound(_))), "{bad:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_custom_title_beats_an_ai_title_wherever_it_sits() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[custom_title("Mine"), user_text("hi"), ai_title("Auto written later")],
+        );
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let listed = adapter.list_sessions(&project()).await.unwrap();
+        let loaded = adapter.load_session(&project(), &SessionId("s1".to_string())).await.unwrap();
+
+        assert_eq!(listed[0].title.as_deref(), Some("Mine"));
+        assert_eq!(loaded.title.as_deref(), Some("Mine"));
+    }
+
+    #[tokio::test]
+    async fn the_last_custom_title_wins_among_custom_titles() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[custom_title("One"), custom_title("Two")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let listed = adapter.list_sessions(&project()).await.unwrap();
+
+        assert_eq!(listed[0].title.as_deref(), Some("Two"));
     }
 
     fn set_mtime(path: &Path, seconds_since_epoch: u64) {

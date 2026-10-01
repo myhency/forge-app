@@ -400,6 +400,10 @@ mod tests {
             tokio::task::yield_now().await;
             Ok(past_session(&session_id.0))
         }
+
+        async fn rename_session(&self, _project_path: &Path, _session_id: &SessionId, _title: &str) -> Result<(), SessionRepositoryError> {
+            Ok(())
+        }
     }
 
     #[tokio::test]
