@@ -9,6 +9,7 @@ mod permission;
 mod relative_time;
 mod sidebar_item;
 mod tool_summary;
+mod usage_view;
 
 pub use diff::{diff_for_tool, diff_for_tool_call, DiffLine, DiffLineKind, FileDiff};
 pub use diff_view::DiffView;
@@ -20,3 +21,4 @@ pub use relative_time::relative_time;
 pub use sidebar_item::{SessionMarker, SidebarItem};
 pub use tool_summary::{tool_call_status, tool_input_summary, ToolCallStatus};
 pub use extension_rows::{mcp_rows, mcp_summary, plugin_rows, project_label, skill_rows, ExtensionRow};
+pub use usage_view::{format_cost, format_tokens, ring_dash, ring_level, ContextView, ModelLine, RingLevel, UsageView};
