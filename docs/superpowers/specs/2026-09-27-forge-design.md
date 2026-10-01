@@ -2121,3 +2121,15 @@ dialog itself is manual.
 7. Sidebar menu, in-place rename and delete confirmation.
 8. Open-folder button in the new session panel.
 9. Manual checklist, fixes, "As built".
+
+### 18.7 As built
+
+Plan 8 was built on branch `plan-8` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10). 341 workspace tests pass (306 before). The build has no C dependency (`cargo tree` shows no `onig` or `-sys` crate under `forge-entities`).
+
+**Checked (passed):** the real `render_markdown` output and the real `theme.css`, served as a static page and screenshotted in a browser in light and in dark mode: headings, lists, table, strikethrough, inline code, links, highlighted Rust and Python fences, the unhighlighted TypeScript fence, the block-quote, a raw `<script>` line shown as text, and the diff markup (context, removed, added, header counts, the collapsed `Read` line next to an expanded `Edit` line). The markup in that page was written by hand to mirror `DiffView`; the Dioxus components themselves were compiled and unit-tested for their pure helpers but not run.
+
+**Not checked (needs a person):** the live window walk of the plan's Task 6 checklist — the sidecar is not built in this worktree and the walk needs real Claude turns. Specifically: clicking a link opens the system browser without navigating the window; the expand/collapse of an Edit/Write line by mouse and keyboard; the diff inside a real permission card; resuming an older session with Edit/Write calls; the 300-line cut on a real long `Write`; streaming a half-written code block; user messages shown verbatim.
+
+**Differences from §18:** none beyond those already written into §18.2, §18.4 and §18.6 when the plan was made (images render as alt text; blocks over 100 000 bytes are not highlighted; a diff is cut at 300 lines; `diff_for_tool` takes a name and an input; highlighting precedes markdown in the task order). A line that begins with raw HTML (for example `<script>…`) is an HTML block in CommonMark, so the rest of that paragraph is shown as literal text rather than parsed as markdown; it is escaped, so this is safe.
+
+**Not fixed, on purpose:** TypeScript and TOML fences are not highlighted (the bundled syntax set has neither); the whole message is re-parsed on every streamed update.
