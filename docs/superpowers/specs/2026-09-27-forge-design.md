@@ -1975,7 +1975,10 @@ strikethrough to HTML with `pulldown-cmark`.
   emitted as escaped text, so model output cannot become live markup in the
   webview.
 - **Link schemes:** only `http`, `https` and `mailto` keep their `href`; any
-  other scheme renders as plain text.
+  other scheme renders as plain text. Images are never loaded: an image
+  renders as its alt text (a remote image URL in model output would be a
+  tracking channel).
+- A code block over 100 000 bytes is shown escaped but not highlighted.
 - A message is re-parsed in full on every update. An unterminated code fence
   is treated by the parser as code to the end of the text, which is the
   right behavior mid-stream.
@@ -2004,6 +2007,10 @@ with line diffs from the `similar` crate.
 - Any other tool, or input missing the expected fields, gives `None`.
 - No line numbers: the input does not say where in the file the edit lands.
   Lines carry a `+` / `-` / space prefix and a background color.
+- A diff shows at most 300 lines in total; the rest is summarised as
+  "… N more lines". The `+N −M` counts in the header are the full totals.
+- The pure function takes a tool name and an input (`diff_for_tool`), with
+  a `ToolCall` wrapper, because a permission request has no `ToolCall`.
 
 `ToolCallLine` keeps its collapsed one-line form. For calls that have a diff,
 clicking the line expands it (state is local to the line). `PermissionCard`
@@ -2019,14 +2026,13 @@ and malformed input. Visual checks go in the manual checklist (§8).
 
 ### 18.6 Task order
 
-1. Dependencies (`pulldown-cmark`, `syntect`, `similar`); confirm the build
-   stays free of C dependencies.
-2. `render_markdown` with escaping and link filtering.
-3. Highlighting inside code fences.
-4. `diff_for_tool_call` and the `FileDiff` model.
+1. Dependencies (`pulldown-cmark`, `syntect`, `similar`), confirming the
+   build stays free of C dependencies, and `highlight_code`.
+2. `render_markdown` with escaping, link filtering and highlighted fences.
+3. `diff_for_tool` and the `FileDiff` model.
+4. `DiffView`, the expandable `ToolCallLine`, the diff in `PermissionCard`.
 5. `MessageBubble` markdown rendering and the stylesheet (both palettes).
-6. Expandable `ToolCallLine` and the diff in `PermissionCard`.
-7. Manual checklist, fixes, "As built".
+6. Manual checklist, fixes, §18.7 "As built".
 
 ## 19. Detailed Design: session rename/delete and folder open (Plan 9)
 
