@@ -1,4 +1,5 @@
 mod approve_permission;
+mod command_box;
 mod folder_choice;
 mod new_session;
 mod permission_mode;
@@ -12,6 +13,7 @@ mod sidebar;
 mod workspace;
 
 pub use approve_permission::PermissionActions;
+pub use command_box::CommandTextArea;
 pub use folder_choice::{choose_folder, FolderChoice};
 pub use new_session::NewSessionComposer;
 pub use refocus::refocus_workspace;
