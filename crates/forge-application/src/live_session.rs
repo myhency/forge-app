@@ -53,6 +53,7 @@ pub struct LiveSessionView {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LiveCommand {
     Send(String),
+    WarmUp,
     Approve { id: String, decision: PermissionDecision },
     Interrupt,
     SetTitle(String),
@@ -75,6 +76,12 @@ impl LiveSessionHandle {
 
     pub fn send(&self, text: String) {
         let _ = self.commands.send(LiveCommand::Send(text));
+    }
+
+    /// Starts the session's sidecar now instead of at the first send, so its slash commands are known
+    /// before the person types. A failure is not shown: the first send starts the sidecar again.
+    pub fn warm_up(&self) {
+        let _ = self.commands.send(LiveCommand::WarmUp);
     }
 
     pub fn approve(&self, permission_request_id: String, decision: PermissionDecision) {
@@ -868,5 +875,81 @@ mod tests {
         let seen = wait_for(&mut view, "the second list", |v| v.commands == vec![named("c")]).await;
 
         assert_eq!(seen.commands.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn warming_up_starts_the_sidecar_before_any_send_and_the_commands_arrive() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.warm_up();
+        let command = forge_domain::SlashCommand { name: "compact".to_string(), description: None, argument_hint: None };
+        control.push(SidecarEvent::CommandsAvailable { commands: vec![command.clone()] });
+        let seen = wait_for(&mut view, "the commands", |v| !v.commands.is_empty()).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+        assert_eq!(control.calls(), vec![Call::Start(start_params(None))]);
+        assert_eq!(seen.commands, vec![command]);
+        assert_eq!(seen.phase, Phase::Idle);
+        assert_eq!(seen.last_error, None);
+    }
+
+    #[tokio::test]
+    async fn the_first_send_after_a_warm_up_reuses_the_sidecar() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.warm_up();
+        handle.send("hello".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+        assert_eq!(control.calls(), vec![Call::Start(start_params(None)), Call::Send("hello".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn a_failed_warm_up_shows_no_error_and_the_first_send_starts_the_sidecar_again() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Err(SidecarError::SpawnFailed("no node".to_string())), Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.warm_up();
+        handle.send("hello".to_string());
+        let seen = wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 2);
+        assert_eq!(seen.last_error, None);
+        assert_eq!(control.calls(), vec![Call::Start(start_params(None)), Call::Send("hello".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn a_session_that_cannot_send_does_not_warm_up() {
+        let (factory, spawns) = factory_returning(vec![]);
+        let handle = spawn_live_session(LiveSessionInit { can_send: false, ..new_init(factory) });
+        let mut view = handle.subscribe();
+
+        handle.warm_up();
+        handle.close();
+        wait_closed(&mut view).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn closing_right_after_a_warm_up_ends_the_session() {
+        let (sidecar, _control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.warm_up();
+        handle.close();
+
+        wait_closed(&mut view).await;
     }
 }

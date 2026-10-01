@@ -56,6 +56,9 @@ pub struct SessionRegistry {
     factory: Arc<dyn SidecarFactoryPort>,
     sessions: Arc<dyn SessionRepositoryPort>,
     extensions: Arc<ExtensionsUseCase>,
+    /// Start each opened session's sidecar at once (so its slash commands are known) instead of at
+    /// its first send. Off by default: every open session then holds a process.
+    warm_up: bool,
     next_id: AtomicU64,
     // Never held across an `.await`.
     handles: Mutex<HashMap<LiveSessionId, LiveSessionHandle>>,
@@ -71,9 +74,15 @@ impl SessionRegistry {
             factory,
             sessions,
             extensions,
+            warm_up: false,
             next_id: AtomicU64::new(1),
             handles: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn with_warm_up(mut self) -> Self {
+        self.warm_up = true;
+        self
     }
 
     /// Opens an empty session in `project`. Fails if the folder is gone: nothing can be started there.
@@ -190,6 +199,9 @@ impl SessionRegistry {
             extensions: self.extensions.clone(),
         });
         handles.insert(id, handle.clone());
+        if self.warm_up && project.exists {
+            handle.warm_up();
+        }
         handle
     }
 }
@@ -636,5 +648,41 @@ mod tests {
         let result = registry.delete(Path::new("/work/a"), &SessionId("claude-9".to_string())).await;
 
         assert!(matches!(result, Err(ManageSessionError::Repository(SessionRepositoryError::DeleteFailed(_)))));
+    }
+
+    #[tokio::test]
+    async fn a_registry_that_warms_up_starts_the_sidecar_of_an_opened_session() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(sidecar)]);
+        let registry = SessionRegistry::new(factory, repository_returning("unused", 0), crate::test_support::no_extensions())
+            .with_warm_up();
+
+        let handle = registry
+            .open_new(&project("/work/a", true), PermissionMode::AcceptEdits, Some("m".to_string()))
+            .unwrap();
+        let command = forge_domain::SlashCommand { name: "compact".to_string(), description: None, argument_hint: None };
+        control.push(forge_ports::SidecarEvent::CommandsAvailable { commands: vec![command.clone()] });
+        let mut view = handle.subscribe();
+        let seen = wait_for(&mut view, "the commands", |v| !v.commands.is_empty()).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+        assert_eq!(seen.commands, vec![command]);
+    }
+
+    #[tokio::test]
+    async fn a_registry_that_warms_up_leaves_a_session_whose_folder_is_gone_alone() {
+        let (factory, spawns) = factory_returning(vec![]);
+        let registry = SessionRegistry::new(factory, repository_returning("claude-1", 1), crate::test_support::no_extensions())
+            .with_warm_up();
+
+        let outcome = registry
+            .open_existing(&project("/work/a", false), SessionId("claude-1".to_string()))
+            .await
+            .unwrap();
+        let mut view = outcome.handle.subscribe();
+        outcome.handle.close();
+        wait_closed(&mut view).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 0);
     }
 }

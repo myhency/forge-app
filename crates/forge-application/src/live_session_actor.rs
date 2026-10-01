@@ -81,6 +81,7 @@ impl Actor {
     async fn handle_command(&mut self, command: LiveCommand) {
         match command {
             LiveCommand::Send(text) => self.send(text).await,
+            LiveCommand::WarmUp => self.warm_up().await,
             LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
             LiveCommand::Interrupt => self.interrupt().await,
             LiveCommand::SetTitle(title) => {
@@ -89,6 +90,15 @@ impl Actor {
             }
             LiveCommand::Close => {}
         }
+    }
+
+    async fn warm_up(&mut self) {
+        if !self.view.can_send || self.sidecar.is_some() {
+            return;
+        }
+        // Not `fail`: nothing was asked of the session yet, so there is nothing to report. The first
+        // send resolves and spawns again and shows its own error if it fails too.
+        let _ = self.start_sidecar().await;
     }
 
     async fn send(&mut self, text: String) {

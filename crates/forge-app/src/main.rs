@@ -107,7 +107,7 @@ fn build_services() -> WorkspaceServices {
     ));
     let sessions = Arc::new(ClaudeSessionAdapter::new(claude_home.clone()));
     let projects = Arc::new(ClaudeProjectAdapter::new(claude_home));
-    let registry = Arc::new(SessionRegistry::new(factory, sessions.clone(), extensions.clone()));
+    let registry = Arc::new(SessionRegistry::new(factory, sessions.clone(), extensions.clone()).with_warm_up());
     let folder_picker = Arc::new(RfdFolderPicker::new());
     WorkspaceServices { registry, projects, sessions, settings, extensions, folder_picker }
 }
