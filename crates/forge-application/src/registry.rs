@@ -346,6 +346,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn two_folders_of_one_claude_directory_open_independently_one_view_only() {
+        let (registry, _spawns) = registry(vec![], repository_returning("claude-1", 2));
+
+        let gone = registry
+            .open_existing(&project("/work/my_app", false), SessionId("claude-1".to_string()))
+            .await
+            .unwrap();
+        let present = registry
+            .open_existing(&project("/work/my-app", true), SessionId("claude-2".to_string()))
+            .await
+            .unwrap();
+
+        assert!(!gone.handle.snapshot().can_send, "the folder that is gone is view-only");
+        assert!(present.handle.snapshot().can_send, "its sibling folder can still send");
+    }
+
+    #[tokio::test]
     async fn opening_an_already_open_session_returns_the_same_handle_without_loading_again() {
         let (registry, _spawns) = registry(vec![], repository_returning("claude-1", 1));
         let first = registry

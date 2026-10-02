@@ -2863,9 +2863,18 @@ Each item below gets a failing test first.
 
 ### 23.8 As built
 
-Plan 12 was built on branch `plan-12` and checked on 2026-10-03 (macOS 26, Dioxus 0.7.10). 510 Rust workspace tests pass (489 before, 21 new); no sidecar file changed, so the sidecar tests were not run.
+Plan 12 was built on branch `plan-12` and checked on 2026-10-03 (macOS 26, Dioxus 0.7.10). 513 Rust workspace tests pass (489 before, 24 new); no sidecar file changed, so the sidecar tests were not run.
 
 **Differences from §23.** (1) §23.4 was wrong in its first draft (it added an error to `ResumeSessionUseCase`, which nothing calls); it now says no change is needed, because `SessionRegistry::open_existing` already opens a past session view-only when its folder is gone. (2) §23.2 and §23.3 gained the rule that `list_sessions` does not split a directory in which no transcript names a `cwd`. (3) The "same folder" rule resolves symlinks and `..`; a `.` component is already ignored by `Path` equality, so the tests use `sub/..` as the second spelling.
+
+**Final review (Plan 12):** no Critical finding. Two Important findings were fixed: (1) two tests §23.6 names had been left out of the plan (load, rename and delete for either of two folders sharing a directory; a past session whose folder is gone opens view-only next to a sibling folder that can send); both were added and pass at once, since the behaviour was already right; (2) with three or more same-named folders at different depths, two different folders could get the same heading (`["/a/app", "/a/w/app", "/b/w/app"]` gave `app (a)` twice); `project_labels` now shows the full path for any label that is still not unique (failing test first).
+
+**Not fixed, on purpose (Minor):**
+- A transcript with no `cwd` inherits the `cwd` of the newest transcript that has one; if that is a stray `cwd` that does not map back to the directory, those transcripts disappear with the stray group (none on real data).
+- `list_sessions` reads the directory twice (the listing and the `cwd` scan); a transcript created between the two reads is skipped until the next reload.
+- A folder that no longer exists and was written two ways (symlink or `..`) shows as two projects, because it can no longer be resolved.
+- Cost: `list_projects` and then `list_sessions` per project read each transcript head again, and each `cwd` is resolved separately. Measured by the reviewer on the real `~/.claude/projects` (142 transcripts, about 710 KB of heads): about 30 ms. Not measured with a few hundred transcripts in one directory.
+- §23.7's open question (how Claude Code's own picker treats a transcript whose first `cwd` is a subfolder) was not checked; such a transcript is now a stray and is hidden from its parent folder's list.
 
 **Cost (§23.7).** The largest directory under the real `~/.claude/projects` had 23 entries, so no timing was taken; `list_sessions` now reads the first lines of every transcript twice (once for the `cwd`, once for the title) and has not been measured on a few hundred.
 

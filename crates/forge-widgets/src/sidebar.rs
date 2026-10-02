@@ -29,7 +29,7 @@ fn ancestor_name(path: &Path, depth: usize) -> Option<String> {
 /// the nearest parent name that differs among them: `app (a)` and `app (b)` for `/a/app` and
 /// `/b/app`. A name nobody else uses stays plain.
 pub fn project_labels(paths: &[PathBuf]) -> Vec<String> {
-    paths
+    let labels: Vec<String> = paths
         .iter()
         .enumerate()
         .map(|(index, path)| {
@@ -53,6 +53,19 @@ pub fn project_labels(paths: &[PathBuf]) -> Vec<String> {
                 }
             }
             format!("{base} ({})", path.display())
+        })
+        .collect();
+    // Paths can stop at different depths and land on the same text; two different folders must
+    // never share a heading, so any label that is still not unique shows the full path.
+    labels
+        .iter()
+        .zip(paths)
+        .map(|(label, path)| {
+            if labels.iter().filter(|other| *other == label).count() > 1 {
+                format!("{} ({})", project_label(path), path.display())
+            } else {
+                label.clone()
+            }
         })
         .collect()
 }
@@ -190,6 +203,17 @@ mod tests {
     #[test]
     fn a_folder_at_the_root_is_told_apart_by_the_root() {
         assert_eq!(labels(&["/app", "/b/app"]), ["app (/)", "app (b)"]);
+    }
+
+    #[test]
+    fn no_two_different_folders_share_a_heading() {
+        let result = labels(&["/a/app", "/a/w/app", "/b/w/app"]);
+
+        let mut sorted = result.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 3, "headings must be unique, got {result:?}");
+        assert_eq!(result[2], "app (b)", "a heading that was already unique is kept");
     }
 
     #[test]

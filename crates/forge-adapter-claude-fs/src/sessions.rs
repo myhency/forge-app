@@ -1634,4 +1634,25 @@ mod tests {
 
         assert_eq!(ids(&sessions), ["s-1"]);
     }
+
+    #[tokio::test]
+    async fn load_rename_and_delete_work_for_either_folder_sharing_one_directory() {
+        let home = tempfile::tempdir().unwrap();
+        let first = Path::new("/work/my_app");
+        let second = Path::new("/work/my-app");
+        write_session(home.path(), first, "a-1", &[cwd_user("/work/my_app", "one")]);
+        write_session(home.path(), second, "b-1", &[cwd_user("/work/my-app", "two")]);
+        let (adapter, _trash) = adapter_with(home.path());
+
+        let loaded = adapter.load_session(second, &SessionId("b-1".to_string())).await.unwrap();
+        assert_eq!(loaded.project_path, second, "the session reports the folder it was opened under");
+
+        adapter.rename_session(first, &SessionId("a-1".to_string()), "Renamed").await.unwrap();
+        let listed = adapter.list_sessions(first).await.unwrap();
+        assert_eq!(listed[0].title.as_deref(), Some("Renamed"));
+
+        adapter.delete_session(second, &SessionId("b-1".to_string())).await.unwrap();
+        assert!(adapter.list_sessions(second).await.unwrap().is_empty());
+        assert_eq!(ids(&adapter.list_sessions(first).await.unwrap()), ["a-1"], "the other folder keeps its session");
+    }
 }
