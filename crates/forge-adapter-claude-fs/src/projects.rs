@@ -441,4 +441,24 @@ mod tests {
         assert_eq!(projects[0].path, PathBuf::from("/work/a"));
         assert_eq!(projects[0].session_count, 1);
     }
+
+    #[tokio::test]
+    async fn list_projects_round_trips_with_list_sessions_for_two_folders_in_one_directory() {
+        let home = tempfile::tempdir().unwrap();
+        let first = Path::new("/work/my_app");
+        let second = Path::new("/work/my-app");
+        add_transcript(home.path(), first, "a-1", cwd_line(first).as_bytes(), at(100)).await;
+        add_transcript(home.path(), first, "a-2", cwd_line(first).as_bytes(), at(300)).await;
+        add_transcript(home.path(), second, "b-1", cwd_line(second).as_bytes(), at(200)).await;
+        add_transcript(home.path(), second, "bare", br#"{"type":"attachment"}"#, at(250)).await;
+
+        let projects = list(home.path()).await.unwrap();
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        assert_eq!(projects.len(), 2);
+        for project in &projects {
+            let sessions = adapter.list_sessions(&project.path).await.unwrap();
+            assert_eq!(sessions.len(), project.session_count, "{}", project.path.display());
+        }
+    }
 }

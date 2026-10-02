@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -8,6 +9,7 @@ use forge_domain::{
     Message, MessageRole, PermissionMode, Session, SessionId, SessionSummary, ToolCall, ToolResult,
 };
 use forge_ports::{SessionRepositoryError, SessionRepositoryPort};
+use crate::transcript_cwd::{assign_cwds, folder_key, transcripts_newest_first};
 use crate::trash::{SystemTrash, TrashBin};
 use crate::usage::UsageCollector;
 use serde_json::Value;
@@ -331,6 +333,17 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
             }
         };
 
+        // Folders whose paths differ only in characters Claude replaces share this directory
+        // (spec §23): keep only the transcripts of `project_path`'s own folder. A directory in
+        // which no transcript names a `cwd` is not split.
+        let owners = assign_cwds(transcripts_newest_first(&dir).await).await;
+        let wanted = folder_key(project_path).await;
+        let owned: Option<HashSet<PathBuf>> = if owners.is_empty() {
+            None
+        } else {
+            Some(owners.into_iter().filter(|t| t.key == wanted).map(|t| t.path).collect())
+        };
+
         let mut found: Vec<(SystemTime, SessionSummary)> = Vec::new();
         while let Some(entry) = entries.next_entry().await.map_err(|e| {
             SessionRepositoryError::ListFailed(format!("{}: {}", dir.display(), e))
@@ -346,6 +359,11 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
             else {
                 continue;
             };
+            if let Some(owned) = &owned {
+                if !owned.contains(&path) {
+                    continue;
+                }
+            }
             let Ok(metadata) = tokio::fs::metadata(&path).await else {
                 continue;
             };
@@ -1537,5 +1555,83 @@ mod tests {
         let total = loaded.usage.total();
         assert_eq!((total.input, total.output, total.cache_read), (6, 30, 200));
         assert_eq!(loaded.usage.models().count(), 1);
+    }
+
+    fn cwd_user(cwd: &str, text: &str) -> Value {
+        json!({ "type": "user", "cwd": cwd, "message": { "role": "user", "content": text } })
+    }
+
+    fn ids(sessions: &[SessionSummary]) -> Vec<&str> {
+        sessions.iter().map(|s| s.id.0.as_str()).collect()
+    }
+
+    #[tokio::test]
+    async fn list_sessions_lists_only_the_sessions_of_the_folder_asked_for() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), Path::new("/work/my_app"), "a-1", &[cwd_user("/work/my_app", "one")]);
+        write_session(home.path(), Path::new("/work/my-app"), "b-1", &[cwd_user("/work/my-app", "two")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let first = adapter.list_sessions(Path::new("/work/my_app")).await.unwrap();
+        let second = adapter.list_sessions(Path::new("/work/my-app")).await.unwrap();
+
+        assert_eq!(ids(&first), ["a-1"]);
+        assert_eq!(ids(&second), ["b-1"]);
+    }
+
+    #[tokio::test]
+    async fn list_sessions_gives_a_transcript_with_no_cwd_to_the_newest_folder() {
+        let home = tempfile::tempdir().unwrap();
+        let a = write_session(home.path(), Path::new("/work/my_app"), "a-1", &[cwd_user("/work/my_app", "one")]);
+        let b = write_session(home.path(), Path::new("/work/my-app"), "b-1", &[cwd_user("/work/my-app", "two")]);
+        let bare = write_session(home.path(), Path::new("/work/my-app"), "bare", &[json!({ "type": "attachment" })]);
+        set_mtime(&a, 100);
+        set_mtime(&b, 200);
+        set_mtime(&bare, 300);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let first = adapter.list_sessions(Path::new("/work/my_app")).await.unwrap();
+        let second = adapter.list_sessions(Path::new("/work/my-app")).await.unwrap();
+
+        assert_eq!(ids(&first), ["a-1"]);
+        assert_eq!(ids(&second), ["bare", "b-1"]);
+    }
+
+    #[tokio::test]
+    async fn list_sessions_for_a_folder_no_transcript_names_lists_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), Path::new("/work/my_app"), "a-1", &[cwd_user("/work/my_app", "one")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let sessions = adapter.list_sessions(Path::new("/work/my-app")).await.unwrap();
+
+        assert!(sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_sessions_does_not_split_a_directory_where_no_transcript_names_a_cwd() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s-1", &[user_text("one")]);
+        write_session(home.path(), &project(), "s-2", &[user_text("two")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let sessions = adapter.list_sessions(&project()).await.unwrap();
+
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn list_sessions_matches_a_folder_written_with_a_different_spelling() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let real = folder.path().canonicalize().unwrap();
+        std::fs::create_dir(real.join("sub")).unwrap();
+        let roundabout = real.join("sub").join("..");
+        write_session(home.path(), &real, "s-1", &[cwd_user(&roundabout.to_string_lossy(), "one")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let sessions = adapter.list_sessions(&real).await.unwrap();
+
+        assert_eq!(ids(&sessions), ["s-1"]);
     }
 }
