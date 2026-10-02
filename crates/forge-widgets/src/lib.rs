@@ -9,5 +9,5 @@ pub use chat_window::ChatWindow;
 pub use new_session_panel::NewSessionPanel;
 pub use session_row::SessionRow;
 pub use settings_overlay::SettingsOverlay;
-pub use sidebar::{project_label, Sidebar};
+pub use sidebar::{project_label, project_labels, Sidebar};
 pub use usage_ring::UsageRing;

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_features::{use_settings, use_workspace, Active, EntryKey};
@@ -14,12 +14,56 @@ pub fn project_label(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
+// The name of the `depth`-th ancestor of `path` (depth 1 is the parent). The root is written as
+// `/`, which keeps `/app` apart from `/b/app`.
+fn ancestor_name(path: &Path, depth: usize) -> Option<String> {
+    path.ancestors().nth(depth).map(|ancestor| {
+        ancestor
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| ancestor.to_string_lossy().to_string())
+    })
+}
+
+/// One heading per project, in the order of `paths`. Folders that share a name are told apart by
+/// the nearest parent name that differs among them: `app (a)` and `app (b)` for `/a/app` and
+/// `/b/app`. A name nobody else uses stays plain.
+pub fn project_labels(paths: &[PathBuf]) -> Vec<String> {
+    paths
+        .iter()
+        .enumerate()
+        .map(|(index, path)| {
+            let base = project_label(path);
+            let others: Vec<&PathBuf> = paths
+                .iter()
+                .enumerate()
+                .filter(|(other, candidate)| *other != index && project_label(candidate) == base)
+                .map(|(_, candidate)| candidate)
+                .collect();
+            if others.is_empty() {
+                return base;
+            }
+            let depth_limit = path.ancestors().count();
+            for depth in 1..depth_limit {
+                let mine = ancestor_name(path, depth);
+                if others.iter().all(|other| ancestor_name(other, depth) != mine) {
+                    if let Some(parent) = mine {
+                        return format!("{base} ({parent})");
+                    }
+                }
+            }
+            format!("{base} ({})", path.display())
+        })
+        .collect()
+}
+
 /// Sessions of every project, grouped by project, with a "+ New session" button on top.
 #[component]
 pub fn Sidebar() -> Element {
     let workspace = use_workspace();
     let settings = use_settings();
     let groups = workspace.sidebar();
+    let labels = project_labels(&groups.iter().map(|group| group.project.path.clone()).collect::<Vec<_>>());
     let active = workspace.active();
     let notice = workspace.notice();
 
@@ -38,13 +82,13 @@ pub fn Sidebar() -> Element {
                     Button { label: "Dismiss", onclick: move |_| workspace.dismiss_notice() }
                 }
             }
-            for group in groups {
+            for (group, label) in groups.into_iter().zip(labels) {
                 div { key: "{group.project.path.display()}",
                     div { class: "sidebar-group-header",
                         div {
                             class: if group.project.exists { "sidebar-group-title" } else { "sidebar-group-title missing" },
                             title: "{group.project.path.display()}",
-                            "{project_label(&group.project.path)}"
+                            "{label}"
                         }
                         if group.project.exists {
                             button {
@@ -113,5 +157,46 @@ mod tests {
     #[test]
     fn the_root_is_shown_whole() {
         assert_eq!(project_label(Path::new("/")), "/");
+    }
+
+    fn labels(paths: &[&str]) -> Vec<String> {
+        let paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+        project_labels(&paths)
+    }
+
+    #[test]
+    fn unique_names_stay_plain() {
+        assert_eq!(labels(&["/work/forge", "/work/other"]), ["forge", "other"]);
+    }
+
+    #[test]
+    fn same_named_folders_show_their_parent() {
+        assert_eq!(labels(&["/a/app", "/b/app"]), ["app (a)", "app (b)"]);
+    }
+
+    #[test]
+    fn the_nearest_parent_that_tells_them_apart_is_used() {
+        assert_eq!(labels(&["/x/same/app", "/y/same/app"]), ["app (x)", "app (y)"]);
+    }
+
+    #[test]
+    fn only_the_shared_names_get_a_parent() {
+        assert_eq!(
+            labels(&["/a/app", "/work/other", "/b/app"]),
+            ["app (a)", "other", "app (b)"]
+        );
+    }
+
+    #[test]
+    fn a_folder_at_the_root_is_told_apart_by_the_root() {
+        assert_eq!(labels(&["/app", "/b/app"]), ["app (/)", "app (b)"]);
+    }
+
+    #[test]
+    fn three_folders_with_one_name_each_get_their_own_parent() {
+        assert_eq!(
+            labels(&["/a/app", "/b/app", "/c/app"]),
+            ["app (a)", "app (b)", "app (c)"]
+        );
     }
 }
