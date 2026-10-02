@@ -1473,7 +1473,7 @@ Plan 5 was built on branch `plan-5` and verified by hand on 2026-09-30 (macOS 26
 A fresh reviewer read the whole branch. No Critical findings. Fixed (each with a test that failed first): a finished turn now drops its pending permission requests; sidebar entries have a unique DOM key; the sidecar exits when its stdin closes (no orphaned `node`/`claude` after quitting Forge). Test count is now 249 (+ sidecar 19).
 
 **Not fixed, on purpose**
-- *Lossy directory names can resume a session in the wrong folder* (`/work/my_app` and `/work/my-app` share one Claude directory; the project shows the newest `cwd`, and resuming an older session uses it). Needs each session to carry its own `cwd` through the port and an existence check for it; that is a change to §14/§15.3, not a fix. Rare (needs colliding names), and edits still go through permission prompts in the default mode. **Follow-up.**
+- *Lossy directory names can resume a session in the wrong folder* (`/work/my_app` and `/work/my-app` share one Claude directory; the project shows the newest `cwd`, and resuming an older session uses it). Needs each session to carry its own `cwd` through the port and an existence check for it; that is a change to §14/§15.3, not a fix. Rare (needs colliding names), and edits still go through permission prompts in the default mode. **Follow-up, closed by Plan 12 (§23).**
 - *Graceful shutdown before dropping the sidecar* (reviewer's guess that `kill_on_drop` beats the queued `shutdown`). Checked with `ps` after ⌘W mid-turn and after `kill`: no `node` or `claude` process was left. Revisit only if a leftover is ever seen.
 
 **Deferred minors.** Closed sessions keep their signal (memory) until exit; a Folder that disappears makes Start do nothing silently; `exists`/`can_send` are snapshots until the next reload; a message can stay in the history if the sidecar dies between two events; after a failure before `SessionStarted` the retry starts a fresh Claude session while the view still shows the first message; `biased` batching could delay publishing under a very fast event stream.
@@ -2860,3 +2860,14 @@ Each item below gets a failing test first.
   subfolder and `cd`-ed) is a separate project from its parent folder. That is
   what each transcript records. Not verified: how Claude Code's own session
   picker treats this case; check the docs during the plan before relying on it.
+
+### 23.8 As built
+
+Plan 12 was built on branch `plan-12` and checked on 2026-10-03 (macOS 26, Dioxus 0.7.10). 510 Rust workspace tests pass (489 before, 21 new); no sidecar file changed, so the sidecar tests were not run.
+
+**Differences from §23.** (1) §23.4 was wrong in its first draft (it added an error to `ResumeSessionUseCase`, which nothing calls); it now says no change is needed, because `SessionRegistry::open_existing` already opens a past session view-only when its folder is gone. (2) §23.2 and §23.3 gained the rule that `list_sessions` does not split a directory in which no transcript names a `cwd`. (3) The "same folder" rule resolves symlinks and `..`; a `.` component is already ignored by `Path` equality, so the tests use `sub/..` as the second spelling.
+
+**Cost (§23.7).** The largest directory under the real `~/.claude/projects` had 23 entries, so no timing was taken; `list_sessions` now reads the first lines of every transcript twice (once for the `cwd`, once for the title) and has not been measured on a few hundred.
+
+**Not checked (needs a person):** the sidebar with two real folders such as `/tmp/x/my_app` and `/tmp/x/my-app` that both have sessions (two headings, each listing only its own sessions; opening one and sending a message runs in its own folder); the heading for two same-named folders in different parents (`app (a)`, `app (b)`); a past session whose folder was deleted next to a sibling folder in the same Claude directory that still exists (the first view-only, the second able to send).
+
