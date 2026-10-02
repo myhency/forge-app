@@ -2817,9 +2817,9 @@ a separate deferred minor).
 ### 23.5 Sidebar labels (`forge-widgets`)
 
 `project_label` shows the last path component. Two projects in the list with the
-same last component (the case this plan creates, `my_app` and `my-app` do not
-collide, but `/a/app` and `/b/app` can) become `app (a)` and `app (b)`: the
-nearest parent component that tells them apart, in parentheses. The tooltip
+same last component (`/a/app` and `/b/app`) become `app (a)` and `app (b)`: the
+nearest parent component that tells them apart, in parentheses. (`my_app` and
+`my-app` already differ in their labels; this rule covers same-named folders.) The tooltip
 still shows the full path. Labels are computed over the list of groups, so a
 single project keeps its plain name.
 
@@ -2848,5 +2848,5 @@ Each item below gets a failing test first.
   read the `cwd` and the title in one pass.
 - A transcript whose first `cwd` is a subfolder (Claude Code started in a
   subfolder and `cd`-ed) is a separate project from its parent folder. That is
-  what each transcript records, and the same as Claude Code's own `--resume`
-  picker, which is scoped by `cwd`.
+  what each transcript records. Not verified: how Claude Code's own session
+  picker treats this case; check the docs during the plan before relying on it.
