@@ -2772,8 +2772,10 @@ session starts it in the wrong folder.
   `rename_session` and `delete_session` already take a `project_path`, and a
   session id is unique inside a directory, so only `list_projects` and
   `list_sessions` change what they return.
-- **Folder check on resume.** Resuming a session whose folder no longer exists
-  fails with a visible error instead of starting in a missing directory.
+- **Folder check on resume is already there.** A past session opens through
+  `SessionRegistry::open_existing` and is view-only (`can_send = project.exists`)
+  when its folder is gone. With one project per `cwd`, `exists` is now the
+  session's own folder, so nothing new is needed.
 - **Out of scope:** the other deferred minors of §15.12; a transcript whose
   `cwd` changes midway (its first `cwd` decides); merging or migrating
   transcripts between directories; any change to Claude's own files.
@@ -2808,11 +2810,12 @@ always lists exactly its own sessions through `list_sessions`.
 
 ### 23.4 Resume (`forge-application`)
 
-`ResumeSessionUseCase::execute` checks that `project_path` is a directory before
-loading. If it is not, it returns a new `ResumeSessionError::FolderMissing(path)`
-and starts no sidecar. The workspace shows it through the existing notice, as
-other resume errors are shown. Start is unchanged (a missing folder on Start is
-a separate deferred minor).
+No change. The live session starts its sidecar with `view.project_path` as
+`cwd` (`live_session_actor.rs`), and the project handed to `open_existing` now
+carries the session's own `cwd`. `ResumeSessionUseCase` is not used by the
+registry or the workspace; it is left alone. (Corrected during planning: the
+first draft of this section added a `FolderMissing` error to that use case,
+which no code calls.)
 
 ### 23.5 Sidebar labels (`forge-widgets`)
 
@@ -2833,11 +2836,11 @@ Each item below gets a failing test first.
   session; a transcript with no `cwd` joins the newest group with one; a
   directory with no `cwd` anywhere is skipped; `load_session`, rename and delete
   still work for either project.
-- Use case: resume with a missing folder returns `FolderMissing` and does not
-  call the sidecar; resume of an existing folder is unchanged.
+- Registry: opening a past session of a project whose own `cwd` is missing is
+  view-only while its sibling project (same Claude directory) can send (the
+  existing `open_existing` tests already cover one project).
 - Widgets: label disambiguation for equal last components, plain label for a
   unique one, and for three projects with the same name.
-- Workspace: the notice shows the `FolderMissing` message.
 
 ### 23.7 Costs and risks
 
