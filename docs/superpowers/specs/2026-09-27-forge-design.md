@@ -2789,7 +2789,13 @@ transcripts of one directory (newest first) and returns each one's `cwd`:
   `MAX_CWD_SCAN_LINES` lines (the existing `read_cwd`).
 - A transcript with no `cwd` takes the `cwd` of the newest transcript of that
   directory that has one. This is today's behaviour for such files.
-- A directory where no transcript has a `cwd` is skipped, as today.
+- A directory where no transcript has a `cwd` is skipped by `list_projects`, as
+  today. `list_sessions` does not split such a directory: it lists all of its
+  transcripts, as today.
+- Two `cwd` strings are the same folder when their resolved paths are equal
+  (symlinks, `.` and a trailing `/` resolved); a path that cannot be resolved
+  is compared as written. The project's `path` is the `cwd` as written in its
+  newest transcript.
 
 Because both methods use this function, a project listed by `list_projects`
 always lists exactly its own sessions through `list_sessions`.
@@ -2801,7 +2807,8 @@ always lists exactly its own sessions through `list_sessions`.
   `exists` computed from that group alone. The existing check that
   `project_dir(path)` maps back to the directory stays, per `cwd`.
 - `list_sessions(project_path)` keeps only the transcripts whose assigned `cwd`
-  equals `project_path`. A `project_path` that matches no transcript's `cwd`
+  is the same folder as `project_path` (rule in §23.2), unless no transcript in
+  the directory names a `cwd`. A `project_path` that matches no transcript's `cwd`
   but maps to the directory (for example a new folder with the same escaped
   name) lists nothing.
 - `load_session`, `rename_session` and `delete_session` are unchanged: they find
