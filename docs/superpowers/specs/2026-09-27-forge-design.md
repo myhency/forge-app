@@ -2751,3 +2751,102 @@ Built on branch `plan-11` and checked on 2026-10-01 (macOS 26, Dioxus 0.7.10, Ag
 - Changing the enabled extensions in Settings does not re-probe: the list is stale until the folder changes or the screen is shown again. Every return to the new-session screen starts a fresh probe.
 - If `open_new` fails after the probe was ended, the composer stays with an empty list until a folder signal changes.
 - Not checked: whether a probe that never sends a message leaves a transcript file on disk.
+
+## 23. Detailed Design: sessions keep their own folder (Plan 12)
+
+Plan 12 closes the follow-up recorded in §15.12: two folders whose paths differ
+only in characters Claude replaces with `-` (`/work/my_app`, `/work/my-app`)
+share one directory under `~/.claude/projects`. Forge shows one project for that
+directory, with the `cwd` of its newest transcript, so resuming an older
+session starts it in the wrong folder.
+
+### 23.1 Scope and decisions
+
+- **A project is a pair: Claude directory and `cwd`.** Each transcript carries
+  its own `cwd`. The sidebar and the new-session screen list one project per
+  distinct `cwd`, so the two folders above appear as two projects, and a new or
+  resumed session always starts in the folder of the project it belongs to.
+  (Chosen over keeping one group and only fixing resume: a mixed group would
+  show sessions of another folder under the wrong heading.)
+- **No port signature changes.** `list_sessions`, `load_session`,
+  `rename_session` and `delete_session` already take a `project_path`, and a
+  session id is unique inside a directory, so only `list_projects` and
+  `list_sessions` change what they return.
+- **Folder check on resume.** Resuming a session whose folder no longer exists
+  fails with a visible error instead of starting in a missing directory.
+- **Out of scope:** the other deferred minors of §15.12; a transcript whose
+  `cwd` changes midway (its first `cwd` decides); merging or migrating
+  transcripts between directories; any change to Claude's own files.
+
+### 23.2 Assigning a transcript to a `cwd` (`forge-adapter-claude-fs`)
+
+One function, shared by `list_projects` and `list_sessions`, takes the
+transcripts of one directory (newest first) and returns each one's `cwd`:
+
+- A transcript's `cwd` is the first non-empty `cwd` in its first
+  `MAX_CWD_SCAN_LINES` lines (the existing `read_cwd`).
+- A transcript with no `cwd` takes the `cwd` of the newest transcript of that
+  directory that has one. This is today's behaviour for such files.
+- A directory where no transcript has a `cwd` is skipped, as today.
+
+Because both methods use this function, a project listed by `list_projects`
+always lists exactly its own sessions through `list_sessions`.
+
+### 23.3 `list_projects` and `list_sessions`
+
+- `list_projects` groups a directory's transcripts by assigned `cwd` and emits
+  one `ProjectSummary` per group, with `last_active`, `session_count` and
+  `exists` computed from that group alone. The existing check that
+  `project_dir(path)` maps back to the directory stays, per `cwd`.
+- `list_sessions(project_path)` keeps only the transcripts whose assigned `cwd`
+  equals `project_path`. A `project_path` that matches no transcript's `cwd`
+  but maps to the directory (for example a new folder with the same escaped
+  name) lists nothing.
+- `load_session`, `rename_session` and `delete_session` are unchanged: they find
+  the file by directory and id. `load_session` already returns the
+  `project_path` it was given, which is now the session's own `cwd`.
+
+### 23.4 Resume (`forge-application`)
+
+`ResumeSessionUseCase::execute` checks that `project_path` is a directory before
+loading. If it is not, it returns a new `ResumeSessionError::FolderMissing(path)`
+and starts no sidecar. The workspace shows it through the existing notice, as
+other resume errors are shown. Start is unchanged (a missing folder on Start is
+a separate deferred minor).
+
+### 23.5 Sidebar labels (`forge-widgets`)
+
+`project_label` shows the last path component. Two projects in the list with the
+same last component (the case this plan creates, `my_app` and `my-app` do not
+collide, but `/a/app` and `/b/app` can) become `app (a)` and `app (b)`: the
+nearest parent component that tells them apart, in parentheses. The tooltip
+still shows the full path. Labels are computed over the list of groups, so a
+single project keeps its plain name.
+
+### 23.6 Testing
+
+Each item below gets a failing test first.
+
+- Adapter, with two transcripts in one directory whose `cwd`s are `/work/my_app`
+  and `/work/my-app`: `list_projects` returns two projects with the right
+  `session_count` and `last_active`; `list_sessions` for each lists only its own
+  session; a transcript with no `cwd` joins the newest group with one; a
+  directory with no `cwd` anywhere is skipped; `load_session`, rename and delete
+  still work for either project.
+- Use case: resume with a missing folder returns `FolderMissing` and does not
+  call the sidecar; resume of an existing folder is unchanged.
+- Widgets: label disambiguation for equal last components, plain label for a
+  unique one, and for three projects with the same name.
+- Workspace: the notice shows the `FolderMissing` message.
+
+### 23.7 Costs and risks
+
+- `list_sessions` reads the first lines of every transcript in the directory to
+  find its `cwd`, in addition to the title it already reads. It stays under the
+  same `MAX_CWD_SCAN_LINES` bound per file. Measure with a directory of a few
+  hundred transcripts during the plan; if the sidebar load is visibly slower,
+  read the `cwd` and the title in one pass.
+- A transcript whose first `cwd` is a subfolder (Claude Code started in a
+  subfolder and `cd`-ed) is a separate project from its parent folder. That is
+  what each transcript records, and the same as Claude Code's own `--resume`
+  picker, which is scoped by `cwd`.
