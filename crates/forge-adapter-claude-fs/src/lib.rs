@@ -5,6 +5,7 @@ mod skills;
 mod plugins;
 mod mcp;
 mod projects;
+mod transcript_cwd;
 mod trash;
 mod usage;
 

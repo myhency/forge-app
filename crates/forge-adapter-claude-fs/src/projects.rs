@@ -4,15 +4,10 @@ use std::time::SystemTime;
 use async_trait::async_trait;
 use forge_domain::ProjectSummary;
 use forge_ports::{ProjectRepositoryError, ProjectRepositoryPort};
-use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
-use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::sessions::ClaudeSessionAdapter;
-
-// How many lines of one transcript are searched for a `cwd`. Real transcripts carry one within
-// their first few lines; the bound only stops a pathological file from being read in full.
-const MAX_CWD_SCAN_LINES: usize = 60;
+use crate::transcript_cwd::{assign_cwds, transcripts_newest_first};
 
 pub struct ClaudeProjectAdapter {
     claude_home: PathBuf,
@@ -60,7 +55,7 @@ impl ProjectRepositoryPort for ClaudeProjectAdapter {
             let Ok(last_active) = time::OffsetDateTime::from(newest).format(&Rfc3339) else {
                 continue;
             };
-            let Some(path) = recover_cwd(&transcripts).await else {
+            let Some(path) = assign_cwds(transcripts.clone()).await.first().map(|t| t.cwd.clone()) else {
                 continue;
             };
 
@@ -90,67 +85,6 @@ impl ProjectRepositoryPort for ClaudeProjectAdapter {
     }
 }
 
-// Every `*.jsonl` file in `dir` with its modification time, newest first (ties broken by path so
-// the order is deterministic). Unreadable entries are skipped, never an error.
-async fn transcripts_newest_first(dir: &Path) -> Vec<(SystemTime, PathBuf)> {
-    let Ok(mut entries) = tokio::fs::read_dir(dir).await else {
-        return Vec::new();
-    };
-    let mut transcripts = Vec::new();
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
-            continue;
-        }
-        let Ok(metadata) = tokio::fs::metadata(&path).await else {
-            continue;
-        };
-        if !metadata.is_file() {
-            continue;
-        }
-        let Ok(modified) = metadata.modified() else {
-            continue;
-        };
-        transcripts.push((modified, path));
-    }
-    transcripts.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    transcripts
-}
-
-// The first `cwd` found, trying transcripts newest first.
-async fn recover_cwd(transcripts: &[(SystemTime, PathBuf)]) -> Option<PathBuf> {
-    for (_, path) in transcripts {
-        if let Some(cwd) = read_cwd(path).await {
-            return Some(cwd);
-        }
-    }
-    None
-}
-
-// The first non-empty `cwd` string in the first `MAX_CWD_SCAN_LINES` lines. A line that is not
-// valid JSON (a partial final line of a transcript still being appended to, or invalid UTF-8) is
-// skipped rather than failing the scan.
-async fn read_cwd(path: &Path) -> Option<PathBuf> {
-    let file = tokio::fs::File::open(path).await.ok()?;
-    let mut lines = BufReader::new(file).split(b'\n');
-    for _ in 0..MAX_CWD_SCAN_LINES {
-        let Ok(Some(line)) = lines.next_segment().await else {
-            return None;
-        };
-        let Ok(value) = serde_json::from_slice::<Value>(&line) else {
-            continue;
-        };
-        if let Some(cwd) = value
-            .get("cwd")
-            .and_then(Value::as_str)
-            .filter(|cwd| !cwd.is_empty())
-        {
-            return Some(PathBuf::from(cwd));
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -161,6 +95,7 @@ mod tests {
 
     use super::*;
     use crate::sessions::ClaudeSessionAdapter;
+    use crate::transcript_cwd::MAX_CWD_SCAN_LINES;
 
     fn at(seconds: u64) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
