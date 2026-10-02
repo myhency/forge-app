@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -7,7 +7,7 @@ use forge_ports::{ProjectRepositoryError, ProjectRepositoryPort};
 use time::format_description::well_known::Rfc3339;
 
 use crate::sessions::ClaudeSessionAdapter;
-use crate::transcript_cwd::{assign_cwds, transcripts_newest_first};
+use crate::transcript_cwd::{assign_cwds, transcripts_newest_first, Transcript};
 
 pub struct ClaudeProjectAdapter {
     claude_home: PathBuf,
@@ -48,36 +48,45 @@ impl ProjectRepositoryPort for ClaudeProjectAdapter {
                 continue;
             }
 
-            let transcripts = transcripts_newest_first(&dir).await;
-            let Some(&(newest, _)) = transcripts.first() else {
-                continue;
-            };
-            let Ok(last_active) = time::OffsetDateTime::from(newest).format(&Rfc3339) else {
-                continue;
-            };
-            let Some(path) = assign_cwds(transcripts.clone()).await.first().map(|t| t.cwd.clone()) else {
-                continue;
-            };
+            let assigned = assign_cwds(transcripts_newest_first(&dir).await).await;
 
-            // Keep a directory only if `ClaudeSessionAdapter` finds it again from the recovered
-            // path, so `list_sessions(project.path)` always lists exactly this directory.
-            if sessions.project_dir(&path).await != dir {
-                continue;
+            // One project per folder (spec §23): transcripts are newest first, so a group's first
+            // member is its newest and decides `path` and `last_active`.
+            let mut groups: Vec<(&PathBuf, Vec<&Transcript>)> = Vec::new();
+            for transcript in &assigned {
+                match groups.iter_mut().find(|(key, _)| **key == transcript.key) {
+                    Some((_, members)) => members.push(transcript),
+                    None => groups.push((&transcript.key, vec![transcript])),
+                }
             }
 
-            let exists = tokio::fs::metadata(&path)
-                .await
-                .map(|m| m.is_dir())
-                .unwrap_or(false);
-            found.push((
-                newest,
-                ProjectSummary {
-                    path,
-                    last_active,
-                    session_count: transcripts.len(),
-                    exists,
-                },
-            ));
+            for (_, members) in groups {
+                let newest = members[0];
+                let path = newest.cwd.clone();
+                let Ok(last_active) = time::OffsetDateTime::from(newest.modified).format(&Rfc3339) else {
+                    continue;
+                };
+
+                // Keep a group only if `ClaudeSessionAdapter` finds its directory again from the
+                // group's path, so `list_sessions(project.path)` lists exactly this folder.
+                if sessions.project_dir(&path).await != dir {
+                    continue;
+                }
+
+                let exists = tokio::fs::metadata(&path)
+                    .await
+                    .map(|m| m.is_dir())
+                    .unwrap_or(false);
+                found.push((
+                    newest.modified,
+                    ProjectSummary {
+                        path,
+                        last_active,
+                        session_count: members.len(),
+                        exists,
+                    },
+                ));
+            }
         }
 
         found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.path.cmp(&b.1.path)));
@@ -364,5 +373,72 @@ mod tests {
         let ids: Vec<SessionId> = sessions.into_iter().map(|s| s.id).collect();
         assert_eq!(ids, vec![SessionId("s-2".to_string()), SessionId("s-1".to_string())]);
         assert_eq!(projects[0].session_count, 2);
+    }
+
+    #[tokio::test]
+    async fn list_projects_lists_two_folders_sharing_one_claude_directory_as_two_projects() {
+        let home = tempfile::tempdir().unwrap();
+        let first = Path::new("/work/my_app");
+        let second = Path::new("/work/my-app");
+        add_transcript(home.path(), first, "a-1", cwd_line(first).as_bytes(), at(100)).await;
+        add_transcript(home.path(), first, "a-2", cwd_line(first).as_bytes(), at(300)).await;
+        add_transcript(home.path(), second, "b-1", cwd_line(second).as_bytes(), at(200)).await;
+
+        let projects = list(home.path()).await.unwrap();
+
+        assert_eq!(projects.len(), 2);
+        assert_eq!(projects[0].path, PathBuf::from("/work/my_app"), "newest activity first");
+        assert_eq!(projects[0].session_count, 2);
+        assert_eq!(projects[1].path, PathBuf::from("/work/my-app"));
+        assert_eq!(projects[1].session_count, 1);
+    }
+
+    #[tokio::test]
+    async fn list_projects_counts_a_transcript_with_no_cwd_under_the_newest_group() {
+        let home = tempfile::tempdir().unwrap();
+        let first = Path::new("/work/my_app");
+        let second = Path::new("/work/my-app");
+        add_transcript(home.path(), first, "a-1", cwd_line(first).as_bytes(), at(100)).await;
+        add_transcript(home.path(), second, "b-1", cwd_line(second).as_bytes(), at(200)).await;
+        add_transcript(home.path(), second, "bare", br#"{"type":"attachment"}"#, at(300)).await;
+
+        let projects = list(home.path()).await.unwrap();
+
+        assert_eq!(projects.len(), 2);
+        assert_eq!(projects[0].path, PathBuf::from("/work/my-app"));
+        assert_eq!(projects[0].session_count, 2);
+        assert_eq!(projects[1].path, PathBuf::from("/work/my_app"));
+        assert_eq!(projects[1].session_count, 1);
+    }
+
+    #[tokio::test]
+    async fn list_projects_merges_two_spellings_of_one_folder() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let real = folder.path().canonicalize().unwrap();
+        std::fs::create_dir(real.join("sub")).unwrap();
+        let roundabout = real.join("sub").join("..");
+        add_transcript(home.path(), &real, "plain", cwd_line(&real).as_bytes(), at(200)).await;
+        add_transcript(home.path(), &real, "round", cwd_line(&roundabout).as_bytes(), at(100)).await;
+
+        let projects = list(home.path()).await.unwrap();
+
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].path, real);
+        assert_eq!(projects[0].session_count, 2);
+    }
+
+    #[tokio::test]
+    async fn list_projects_drops_a_stray_group_but_keeps_the_others() {
+        let home = tempfile::tempdir().unwrap();
+        let project = Path::new("/work/a");
+        add_transcript(home.path(), project, "good", cwd_line(project).as_bytes(), at(200)).await;
+        add_transcript(home.path(), project, "stray", cwd_line(Path::new("/elsewhere")).as_bytes(), at(300)).await;
+
+        let projects = list(home.path()).await.unwrap();
+
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].path, PathBuf::from("/work/a"));
+        assert_eq!(projects[0].session_count, 1);
     }
 }
