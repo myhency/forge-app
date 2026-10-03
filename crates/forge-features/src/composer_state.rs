@@ -1,0 +1,255 @@
+use std::path::{Path, PathBuf};
+
+use dioxus::prelude::*;
+use forge_domain::{Attachment, AttachmentKind};
+
+use crate::attachments::{add_attachments, check_attachments, folder_label, with_folder_hints};
+use crate::workspace::WorkspaceServices;
+
+/// What a send takes out of the composer, decided without any UI.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Outgoing {
+    pub text: String,
+    pub attachments: Vec<Attachment>,
+}
+
+/// `None` when there is nothing to send (no text and no chips). Folder hints go after the text and
+/// only for folders not yet announced.
+pub fn plan_send(text: &str, attachments: &[Attachment], unannounced: &[PathBuf]) -> Option<Outgoing> {
+    let text = text.trim();
+    if text.is_empty() && attachments.is_empty() {
+        return None;
+    }
+    Some(Outgoing { text: with_folder_hints(text, unannounced), attachments: attachments.to_vec() })
+}
+
+/// What is in the composer besides what the text area owns: chips for attached files and added
+/// folders, and the small signals the `+` menu uses. Provided by the message box and read by the
+/// menu, which lives in another crate.
+#[derive(Clone, Copy)]
+pub struct ComposerState {
+    pub draft: Signal<String>,
+    attachments: Signal<Vec<Attachment>>,
+    /// Folders added in an open session, with whether the model was told about them yet.
+    folders: Signal<Vec<(PathBuf, bool)>>,
+    error: Signal<Option<String>>,
+    popup_token: Signal<u32>,
+    picking: Signal<bool>,
+    services: Signal<WorkspaceServices>,
+}
+
+pub fn use_composer_state_provider(draft: Signal<String>) -> ComposerState {
+    // Read here, in the component: an event handler cannot call `use_context`.
+    let services = use_context::<WorkspaceServices>();
+    let state = use_hook(move || ComposerState {
+        draft,
+        attachments: Signal::new(Vec::new()),
+        folders: Signal::new(Vec::new()),
+        error: Signal::new(None),
+        popup_token: Signal::new(0),
+        picking: Signal::new(false),
+        services: Signal::new(services),
+    });
+    use_context_provider(move || state);
+    state
+}
+
+pub fn use_composer_state() -> ComposerState {
+    use_context::<ComposerState>()
+}
+
+impl ComposerState {
+    pub fn attachments(&self) -> Vec<Attachment> {
+        self.attachments.read().clone()
+    }
+
+    pub fn folders(&self) -> Vec<PathBuf> {
+        self.folders.read().iter().map(|(path, _)| path.clone()).collect()
+    }
+
+    pub fn error(&self) -> Option<String> {
+        self.error.read().clone()
+    }
+
+    pub fn popup_token(&self) -> u32 {
+        *self.popup_token.read()
+    }
+
+    pub fn remove_attachment(&self, index: usize) {
+        let mut list = self.attachments;
+        if index < list.peek().len() {
+            list.write().remove(index);
+        }
+    }
+
+    pub fn remove_folder(&self, index: usize) {
+        let mut list = self.folders;
+        if index < list.peek().len() {
+            list.write().remove(index);
+        }
+    }
+
+    pub fn dismiss_error(&self) {
+        let mut error = self.error;
+        error.set(None);
+    }
+
+    /// Opens the file dialog and adds what was chosen as chips.
+    pub fn add_files(&self) {
+        if *self.picking.peek() {
+            return;
+        }
+        let services = (*self.services.peek()).clone();
+        let mut picking = self.picking;
+        let mut attachments = self.attachments;
+        picking.set(true);
+        // Root scope: the dialog outlives a re-render of the composer that asked for it.
+        dioxus::core::spawn_forever(async move {
+            let picked = services.file_picker.pick_files().await;
+            picking.set(false);
+            add_attachments(&mut attachments.write(), picked);
+        });
+    }
+
+    /// Opens the folder dialog and adds the chosen folder as a chip (once).
+    pub fn add_folder(&self) {
+        if *self.picking.peek() {
+            return;
+        }
+        let services = (*self.services.peek()).clone();
+        let mut picking = self.picking;
+        let mut folders = self.folders;
+        picking.set(true);
+        dioxus::core::spawn_forever(async move {
+            let picked = services.folder_picker.pick_folder().await;
+            picking.set(false);
+            let Some(path) = picked else { return };
+            if !folders.peek().iter().any(|(existing, _)| *existing == path) {
+                folders.write().push((path, false));
+            }
+        });
+    }
+
+    /// Puts `/` in the text area (after a space when there is text) and asks it to open its
+    /// command list.
+    pub fn insert_slash(&self) {
+        let mut draft = self.draft;
+        let mut token = self.popup_token;
+        let current = draft.peek().clone();
+        if current.is_empty() {
+            draft.set("/".to_string());
+        } else if current.ends_with(char::is_whitespace) {
+            draft.set(format!("{current}/"));
+        } else {
+            draft.set(format!("{current} /"));
+        }
+        let next = token.peek().wrapping_add(1);
+        token.set(next);
+    }
+
+    /// Looks at the chips before a send. A refusal sets the error and leaves everything where it
+    /// is; a pass clears the error and the chips.
+    fn check_and_clear(&self, attachments: &[Attachment]) -> bool {
+        let size_of = |path: &Path| std::fs::metadata(path).ok().filter(|m| m.is_file()).map(|m| m.len());
+        let mut error = self.error;
+        if let Err(message) = check_attachments(attachments, size_of) {
+            error.set(Some(message));
+            return false;
+        }
+        error.set(None);
+        let mut list = self.attachments;
+        list.write().clear();
+        true
+    }
+
+    /// Takes what a send needs. Checks the chips first: a refusal leaves everything where it is
+    /// and sets the error. On success the chips are cleared and the folders marked as told.
+    /// Call it only at the moment of sending, so a failed send has lost nothing.
+    pub fn take_for_send(&self, text: &str) -> Option<Outgoing> {
+        let attachments = self.attachments();
+        let unannounced: Vec<PathBuf> =
+            self.folders.peek().iter().filter(|(_, told)| !told).map(|(path, _)| path.clone()).collect();
+        let outgoing = plan_send(text, &attachments, &unannounced)?;
+        if !self.check_and_clear(&attachments) {
+            return None;
+        }
+        let mut folders = self.folders;
+        for (_, told) in folders.write().iter_mut() {
+            *told = true;
+        }
+        Some(outgoing)
+    }
+}
+
+/// The attached files and added folders as removable chips above the text.
+#[component]
+pub fn ComposerChips() -> Element {
+    let composer = use_composer_state();
+    let attachments = composer.attachments();
+    let folders = composer.folders();
+    if attachments.is_empty() && folders.is_empty() {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "chips",
+            for (index, attachment) in attachments.iter().enumerate() {
+                span { key: "a{index}", class: "chip", title: "{attachment.path.display()}",
+                    span { class: "chip-kind", if attachment.kind == AttachmentKind::Image { "🖼" } else { "📄" } }
+                    span { class: "chip-name", "{attachment.file_name()}" }
+                    button {
+                        class: "chip-remove",
+                        r#type: "button",
+                        "aria-label": "Remove",
+                        onclick: move |_| composer.remove_attachment(index),
+                        "×"
+                    }
+                }
+            }
+            for (index, folder) in folders.iter().enumerate() {
+                span { key: "f{index}", class: "chip", title: "{folder.display()}",
+                    span { class: "chip-kind", "📁" }
+                    span { class: "chip-name", "{folder_label(folder)}" }
+                    button {
+                        class: "chip-remove",
+                        r#type: "button",
+                        "aria-label": "Remove",
+                        onclick: move |_| composer.remove_folder(index),
+                        "×"
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn image() -> Attachment {
+        Attachment { path: "/x/a.png".into(), kind: AttachmentKind::Image }
+    }
+
+    #[test]
+    fn nothing_typed_and_nothing_attached_sends_nothing() {
+        assert_eq!(plan_send("   ", &[], &[]), None);
+    }
+
+    #[test]
+    fn chips_alone_can_be_sent() {
+        let out = plan_send("", &[image()], &[]).unwrap();
+        assert_eq!(out.text, "");
+        assert_eq!(out.attachments, vec![image()]);
+    }
+
+    #[test]
+    fn text_is_trimmed_and_unannounced_folders_follow_it() {
+        let out = plan_send("  fix  ", &[], &[PathBuf::from("/extra dir")]).unwrap();
+        assert_eq!(out.text, "fix\n@/extra dir");
+    }
+
+    #[test]
+    fn a_folder_alone_does_not_make_a_message() {
+        assert_eq!(plan_send("", &[], &[PathBuf::from("/extra")]), None);
+    }
+}
