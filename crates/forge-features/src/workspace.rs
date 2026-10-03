@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
+use forge_ports::{FilePickerPort, FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
 use time::OffsetDateTime;
 
 use crate::folder_choice::{choose_folder, FolderChoice};
@@ -29,6 +29,7 @@ pub struct WorkspaceServices {
     pub settings: Arc<SettingsUseCase>,
     pub extensions: Arc<ExtensionsUseCase>,
     pub folder_picker: Arc<dyn FolderPickerPort>,
+    pub file_picker: Arc<dyn FilePickerPort>,
 }
 
 /// What the main pane shows.
