@@ -10,6 +10,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
     let mut open = use_signal(|| false);
     let terminal_open = workspace.dock(id).is_open(Panel::Terminal);
     let changes_open = workspace.dock(id).is_open(Panel::Changes);
+    let files_open = workspace.dock(id).is_open(Panel::Files);
     let sleeping = workspace.prevents_sleep(id);
     rsx! {
         div { class: "pane-tools",
@@ -61,6 +62,19 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                 open.set(false);
                             }
                         },
+                        if terminal {
+                            button {
+                                class: "picker-item",
+                                r#type: "button",
+                                role: "menuitemcheckbox",
+                                "aria-checked": "{files_open}",
+                                onclick: move |_| {
+                                    workspace.change_dock(id, |dock| dock.toggle(Panel::Files));
+                                    open.set(false);
+                                },
+                                span { "Files" }
+                            }
+                        }
                         button {
                             class: "picker-item",
                             r#type: "button",
