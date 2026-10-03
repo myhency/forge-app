@@ -22,7 +22,7 @@ enum FromPage {
 
 // The page side of one tab: an xterm.js in the element `__HOST__`, kept to its size, wired to the
 // Rust side with `dioxus.send` / `dioxus.recv`. A hidden tab (`display: none`) has no size and
-// reports nothing. It cleans itself up when its element leaves the page.
+// reports nothing; a size is sent 150 ms after the last change. It cleans itself up when its element leaves the page.
 const BRIDGE_JS: &str = r#"
 const host = document.getElementById("__HOST__");
 const term = new Terminal({ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 12, cursorBlink: true });
@@ -30,11 +30,17 @@ const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
 term.open(host);
 let last = "";
+let timer = null;
 function report() {
     if (host.offsetWidth === 0 || host.offsetHeight === 0) return;
     fit.fit();
     const key = term.cols + "x" + term.rows;
-    if (key !== last) { last = key; dioxus.send({ t: "size", cols: term.cols, rows: term.rows }); }
+    if (key === last) return;
+    last = key;
+    // The screen follows a drag at once; the shell hears the new size only when it settles, or it
+    // would redraw its prompt at every step.
+    clearTimeout(timer);
+    timer = setTimeout(() => dioxus.send({ t: "size", cols: term.cols, rows: term.rows }), 150);
 }
 term.onData((d) => dioxus.send({ t: "data", d }));
 const observer = new ResizeObserver(report);
