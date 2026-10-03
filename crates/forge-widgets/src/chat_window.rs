@@ -3,6 +3,7 @@ use forge_application::{LiveSessionId, Phase};
 use forge_entities::{MessageBubble, PermissionCard, TranscriptView};
 use forge_features::{use_workspace, PermissionActions, SendMessageBox};
 
+use crate::composer_controls::{ModePicker, ModelPicker};
 use crate::sidebar::project_label;
 use crate::usage_ring::UsageRing;
 
@@ -53,6 +54,8 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
             }
             if view.can_send {
                 SendMessageBox { id, running: view.phase == Phase::Running, can_send: true,
+                    ModePicker { id }
+                    ModelPicker { id }
                     UsageRing { id }
                 }
             } else {

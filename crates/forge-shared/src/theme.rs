@@ -61,6 +61,9 @@ mod tests {
             ".thinking",
             ".tool-detail",
             ".view-switch",
+            ".picker-menu",
+            ".picker-item",
+            ".picker-confirm",
             ".view-option.selected",
         ] {
             assert!(THEME_CSS.contains(selector), "theme.css is missing {selector}");

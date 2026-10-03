@@ -227,6 +227,20 @@ impl Workspace {
         views.write().set(id, view);
     }
 
+    /// Changes the permission mode of the open session, from its next turn on.
+    pub fn set_permission_mode(&self, id: LiveSessionId, mode: PermissionMode) {
+        if let Some(handle) = self.handle(id) {
+            handle.set_permission_mode(mode);
+        }
+    }
+
+    /// Changes the model of the open session (`None`: the SDK's default), from its next turn on.
+    pub fn set_model(&self, id: LiveSessionId, model: Option<String>) {
+        if let Some(handle) = self.handle(id) {
+            handle.set_model(model);
+        }
+    }
+
     pub fn live_view(&self, id: LiveSessionId) -> Option<Signal<LiveSessionView>> {
         self.live
             .read()

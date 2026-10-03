@@ -9,3 +9,9 @@ pub fn refocus_workspace() {
         "setTimeout(() => { const a = document.activeElement; if (!a || a === document.body) { document.querySelector('.workspace')?.focus(); } }, 0);",
     );
 }
+
+/// Puts the cursor back in the message box. For a menu that opened from the composer and closed:
+/// the person was typing there and goes on.
+pub fn refocus_composer() {
+    document::eval("setTimeout(() => { document.querySelector('.composer textarea')?.focus(); }, 0);");
+}

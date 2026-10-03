@@ -258,3 +258,20 @@ button.tool-call { appearance: none; background: none; text-align: left; cursor:
 .diff-line.added { background: var(--diff-added-bg); }
 .diff-line.removed { background: var(--diff-removed-bg); }
 .diff-more { padding: 5px 10px; color: var(--fg-muted); border-top: 1px solid var(--border); }
+
+/* Composer pickers: mode and model */
+.picker { position: relative; }
+.picker-button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: none; border-radius: 8px; background: transparent; color: var(--fg-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.picker-button:hover, .picker-button.open { background: var(--bg-hover); color: var(--fg); }
+.picker-chevron { font-size: 10px; }
+.picker-backdrop { position: fixed; inset: 0; z-index: 9; }
+.picker-menu { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 10; min-width: 260px; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); box-shadow: var(--shadow); outline: none; }
+.picker-title { padding: 6px 8px 4px; font-size: 11px; color: var(--fg-muted); }
+.picker-divider { height: 1px; margin: 4px 6px; background: var(--border); }
+.picker-item { display: flex; align-items: flex-start; gap: 6px; width: 100%; box-sizing: border-box; padding: 6px 8px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.picker-item:hover { background: var(--bg-hover); }
+.picker-check { flex: none; width: 14px; color: var(--accent); }
+.picker-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.picker-description { font-size: 11px; color: var(--fg-muted); }
+.picker-confirm { position: absolute; left: 12px; right: 12px; bottom: calc(100% + 6px); z-index: 10; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--danger); border-radius: var(--radius); background: var(--bg-card); box-shadow: var(--shadow); font-size: 13px; }
+.picker-confirm span { flex: 1; }

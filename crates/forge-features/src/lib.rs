@@ -17,7 +17,7 @@ pub use approve_permission::PermissionActions;
 pub use command_box::CommandTextArea;
 pub use folder_choice::{choose_folder, FolderChoice};
 pub use new_session::NewSessionComposer;
-pub use refocus::refocus_workspace;
+pub use refocus::{refocus_composer, refocus_workspace};
 pub use permission_mode::{menu_digit_row, mode_choice, mode_options, mode_rows, mode_value, parse_mode, ModeChoice, ModeRow};
 pub use send_message::SendMessageBox;
 pub use settings::{use_settings, use_settings_provider, ExtensionKind, Settings, SettingsSection, SettingsStatus};
