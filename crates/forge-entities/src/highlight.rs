@@ -39,6 +39,22 @@ pub(crate) fn escape_html(text: &str) -> String {
     escaped
 }
 
+/// The code as HTML for a `<pre>`: highlighted for the language when one matches, else only
+/// escaped.
+pub fn code_html(language: &str, code: &str) -> String {
+    highlight_code(language, code).unwrap_or_else(|| escape_html(code))
+}
+
+/// The language token of a file path: its extension, or `""` for a name without one (a dotfile
+/// like `.gitignore` has none).
+pub fn language_of(path: &str) -> &str {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    match name.rfind('.') {
+        Some(0) | None => "",
+        Some(dot) => &name[dot + 1..],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +90,21 @@ mod tests {
     #[test]
     fn escape_html_escapes_the_five_special_characters() {
         assert_eq!(escape_html("<a href=\"x\">&'</a>"), "&lt;a href=&quot;x&quot;&gt;&amp;&#39;&lt;/a&gt;");
+    }
+
+    #[test]
+    fn code_html_highlights_known_languages_and_escapes_the_rest() {
+        assert!(code_html("rs", "fn main() {}\n").contains("<span class=\"hl-"));
+        assert_eq!(code_html("", "a < b"), "a &lt; b");
+        assert_eq!(code_html("nosuchlang", "<x>"), "&lt;x&gt;");
+    }
+
+    #[test]
+    fn the_language_is_the_file_extension() {
+        assert_eq!(language_of("src/main.rs"), "rs");
+        assert_eq!(language_of("a.b.py"), "py");
+        assert_eq!(language_of("Makefile"), "");
+        assert_eq!(language_of("dir.d/file"), "");
+        assert_eq!(language_of(".gitignore"), "");
     }
 }
