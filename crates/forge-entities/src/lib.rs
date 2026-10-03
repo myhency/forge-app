@@ -18,7 +18,7 @@ pub use diff::{diff_for_tool, diff_for_tool_call, DiffLine, DiffLineKind, FileDi
 pub use diff_view::DiffView;
 pub use markdown::render_markdown;
 pub use message::{MessageBubble, ToolCallLine};
-pub use model_catalog::{model_from_value, model_label, model_options, model_value, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
+pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_options, model_value, ModelRow, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
 pub use permission::PermissionCard;
 pub use relative_time::relative_time;
 pub use sidebar_item::{SessionMarker, SidebarItem};

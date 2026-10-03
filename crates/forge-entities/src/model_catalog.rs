@@ -53,9 +53,81 @@ pub fn model_from_value(value: &str) -> String {
     }
 }
 
+/// One row of the model picker in the composer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelRow {
+    /// `None` is the SDK's default model.
+    pub value: Option<String>,
+    pub label: String,
+    /// The number key that picks the row (1 to 4); only the four known models have one.
+    pub key: Option<usize>,
+    /// A divider is drawn above the row.
+    pub divider_before: bool,
+}
+
+// Claude Code desktop's order. Settings lists the same models in `KNOWN_MODELS` order.
+const MENU_ORDER: [&str; 4] = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-haiku-4-5-20251001"];
+
+/// The rows of the composer's model picker: the four known models with keys 1 to 4, then — when the
+/// session runs on something else — that model, then the default below a divider.
+pub fn model_menu_rows(current: Option<&str>) -> Vec<ModelRow> {
+    let mut rows: Vec<ModelRow> = MENU_ORDER
+        .iter()
+        .enumerate()
+        .map(|(index, id)| ModelRow {
+            value: Some(id.to_string()),
+            label: model_label(Some(id)),
+            key: Some(index + 1),
+            divider_before: false,
+        })
+        .collect();
+    if let Some(id) = current.filter(|id| !is_known(id)) {
+        rows.push(ModelRow { value: Some(id.to_string()), label: format!("Custom: {id}"), key: None, divider_before: true });
+    }
+    let divider_before = !rows.last().is_some_and(|row| row.divider_before);
+    rows.push(ModelRow { value: None, label: "Default model".to_string(), key: None, divider_before });
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_model_rows_follow_the_desktop_order_with_keys_one_to_four() {
+        let rows = model_menu_rows(None);
+        let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(labels, vec!["Opus 5.5", "Sonnet 5.5", "Fable 5.1", "Haiku 4.5", "Default model"]);
+        let keys: Vec<_> = rows.iter().map(|row| row.key).collect();
+        assert_eq!(keys, vec![Some(1), Some(2), Some(3), Some(4), None]);
+        assert_eq!(rows[4].value, None);
+        assert!(rows[4].divider_before);
+    }
+
+    #[test]
+    fn every_menu_model_is_a_known_model() {
+        for id in MENU_ORDER {
+            assert!(is_known(id), "{id}");
+        }
+        assert_eq!(MENU_ORDER.len(), KNOWN_MODELS.len());
+    }
+
+    #[test]
+    fn a_model_outside_the_table_is_offered_so_that_it_can_be_shown_as_current() {
+        let rows = model_menu_rows(Some("my-private-model"));
+        let custom = rows.iter().find(|row| row.value.as_deref() == Some("my-private-model")).expect("a custom row");
+        assert_eq!(custom.label, "Custom: my-private-model");
+        assert_eq!(custom.key, None);
+        assert_eq!(rows.iter().filter(|row| row.divider_before).count(), 1, "one divider, above the custom row");
+        assert_eq!(rows.last().unwrap().value, None);
+    }
+
+    #[test]
+    fn a_known_current_model_is_not_listed_twice() {
+        let rows = model_menu_rows(Some("claude-sonnet-5-5"));
+        assert_eq!(rows.iter().filter(|row| row.value.as_deref() == Some("claude-sonnet-5-5")).count(), 1);
+        assert_eq!(rows.len(), 5);
+    }
 
     #[test]
     fn the_default_comes_first_then_the_known_models() {

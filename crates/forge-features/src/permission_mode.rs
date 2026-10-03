@@ -33,9 +33,109 @@ pub fn parse_mode(value: &str) -> PermissionMode {
         .unwrap_or(PermissionMode::Default)
 }
 
+/// One row of the mode picker in the composer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModeRow {
+    pub mode: PermissionMode,
+    pub label: &'static str,
+    pub description: &'static str,
+    /// The number key that picks the row (1 to 4); the bypass row has none.
+    pub key: Option<usize>,
+    /// A divider is drawn above the row.
+    pub divider_before: bool,
+}
+
+/// The modes in Claude Code desktop's order: four with number keys, then bypass below a divider.
+pub fn mode_rows() -> Vec<ModeRow> {
+    let row = |mode, label, description, key, divider_before| ModeRow { mode, label, description, key, divider_before };
+    vec![
+        row(PermissionMode::Auto, "Auto", "Claude handles permission decisions", Some(1), false),
+        row(PermissionMode::Default, "Ask before edits", "Always ask before making changes", Some(2), false),
+        row(PermissionMode::AcceptEdits, "Accept edits", "Automatically accept all file edits", Some(3), false),
+        row(PermissionMode::Plan, "Plan mode", "Make a plan before changing anything", Some(4), false),
+        row(PermissionMode::BypassPermissions, "Bypass permissions", "Skip every permission check", None, true),
+    ]
+}
+
+/// What choosing a mode does. Bypass turns every check off, so it is not applied by one click: the
+/// picker asks first (Claude Code desktop has a separate "활성화" button for it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModeChoice {
+    Apply,
+    AskFirst,
+}
+
+pub fn mode_choice(mode: PermissionMode) -> ModeChoice {
+    if mode == PermissionMode::BypassPermissions {
+        ModeChoice::AskFirst
+    } else {
+        ModeChoice::Apply
+    }
+}
+
+/// The zero-based row a number key picks, from the physical key (`"Digit2"`, `"Numpad2"`): the
+/// character it types depends on the input method. Only 1 to 4 are keys.
+pub fn menu_digit_row(code: &str) -> Option<usize> {
+    let digit = code.strip_prefix("Digit").or_else(|| code.strip_prefix("Numpad"))?;
+    match digit {
+        "1" => Some(0),
+        "2" => Some(1),
+        "3" => Some(2),
+        "4" => Some(3),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_mode_rows_follow_the_desktop_order_with_keys_one_to_four() {
+        let rows = mode_rows();
+        let modes: Vec<_> = rows.iter().map(|row| row.mode).collect();
+        assert_eq!(
+            modes,
+            vec![
+                PermissionMode::Auto,
+                PermissionMode::Default,
+                PermissionMode::AcceptEdits,
+                PermissionMode::Plan,
+                PermissionMode::BypassPermissions
+            ]
+        );
+        let keys: Vec<_> = rows.iter().map(|row| row.key).collect();
+        assert_eq!(keys, vec![Some(1), Some(2), Some(3), Some(4), None]);
+        assert!(rows[4].divider_before && rows[..4].iter().all(|row| !row.divider_before));
+        assert!(rows.iter().all(|row| !row.description.is_empty()));
+    }
+
+    #[test]
+    fn every_mode_is_in_the_rows_and_the_selector_agrees() {
+        for (mode, _, label) in MODES {
+            let row = mode_rows().into_iter().find(|row| row.mode == mode).expect("a row for the mode");
+            assert_eq!(row.label, label, "the picker and the selector name {mode:?} alike");
+        }
+    }
+
+    #[test]
+    fn only_bypass_asks_first() {
+        for row in mode_rows() {
+            let expected = if row.mode == PermissionMode::BypassPermissions { ModeChoice::AskFirst } else { ModeChoice::Apply };
+            assert_eq!(mode_choice(row.mode), expected, "{:?}", row.mode);
+        }
+    }
+
+    #[test]
+    fn number_keys_one_to_four_pick_rows_by_the_physical_key() {
+        assert_eq!(menu_digit_row("Digit1"), Some(0));
+        assert_eq!(menu_digit_row("Digit4"), Some(3));
+        assert_eq!(menu_digit_row("Numpad2"), Some(1));
+        assert_eq!(menu_digit_row("Digit5"), None);
+        assert_eq!(menu_digit_row("Digit0"), None);
+        assert_eq!(menu_digit_row("KeyR"), None);
+        assert_eq!(menu_digit_row("NumpadAdd"), None);
+    }
 
     #[test]
     fn every_mode_round_trips_through_its_value() {
