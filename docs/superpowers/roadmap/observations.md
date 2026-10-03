@@ -102,3 +102,15 @@ Looked at in Forge's own window through the harness, not in the real app. Differ
 ## Not seen
 
 See the `OBS` table in [backlog.md](backlog.md). In short: any session with real content (tool blocks, permission prompt, diff), the submenus, the changes/files/preview panels, the settings window, shortcuts, split panes, the filter and sidebar-edit menus, and the Artifacts page.
+
+## Round 6: Home dashboard (2026-10-03, Plan 24)
+
+Same app and window. Only the "새로 생성" item was clicked, then the card's tabs and range buttons. Nothing was sent or changed. Numbers are the user's; they are kept here only to show how the ranges differ.
+
+- The card sits under the greeting on the new-session screen, about 800 pt wide at the left of the content column. Top row: tabs "개요" (overview) and "모델" (models) at the left; ranges "전체" (all), "30일", "7d" at the right. Defaults: 개요 and 전체. [PG-05]
+- 개요 has six tiles in two rows of three: "세션" (sessions), "메시지" (messages), "총 토큰" (total tokens, shortened: 2.4B), "활성 일수" (active days), "최다 사용 시간" (peak hour, "오후 9시"), "즐겨 사용한 모델" (favourite model, "Sonnet 5"). Below them a heatmap and one caption line.
+- The range changes the tiles: 전체 158 sessions / 14,710 messages / 12 active days; 30일 153 / 14,625 / 8; 7d 147 / 14,382 / 7. Total tokens, peak hour and favourite model did not change on this data. So sessions are counted by activity inside the range, not by creation date.
+- Heatmap: 7 rows (weekdays, Sunday first: the last column's bottom cell is Saturday 10월 3일, today) by 27 columns (weeks, newest at the right), square cells, grey when empty, blue in several shades by activity. It did **not** change with the range: same cells for 전체, 30일 and 7d. The week ends at today.
+- Caption under the heatmap: "<book>보다 약 N배 더 많은 토큰을 사용했습니다." The book changes with the count (전체 2.4B: "War and Peace" 3270x; 30일 and 7d: "The Great Gatsby" 38462x, 38230x). A joke; skip (as noted in PG-05).
+- 모델 tab: a stacked bar chart of tokens per day, y axis 0 to 800M in steps of 200M, x labels every few bars; below it a legend with one row per model: colour square, name, "<in> 입력 · <out> 출력" (for example "90.8k 입력 · 5.3M 출력") and a percentage of the total (55.0%). Models seen: Sonnet 5, Sonnet 5.5, Opus 5.5, Haiku 4.5, ordered by share, shades of one blue. 전체 shows bars for days with data only, spaced by date (labels 4월 25일 ... 10월 2일, gaps for unused days); 7d shows exactly seven bars with a label under each ("9월 27일" ... "10월 3일"), including a day with no bar. The percentages differ slightly by range.
+- Not seen: hover tooltips on cells and bars, the 30일 bar chart, a dark theme, an empty state for a user with no sessions, how the app counts "총 토큰" (whether cache tokens are in; the legend shows only input and output).
