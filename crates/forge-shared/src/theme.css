@@ -92,7 +92,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 }
 
 /* Conversation */
-.main-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.main-pane { flex: 1; min-width: 400px; display: flex; flex-direction: column; }
 .pane-header { display: flex; align-items: center; gap: 12px; padding: 12px 28px; font-weight: 600; }
 .pane-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .view-switch { display: flex; flex: none; padding: 2px; gap: 2px; border: 1px solid var(--border); border-radius: 8px; font-weight: 400; }
@@ -334,7 +334,7 @@ button.tool-call { appearance: none; background: none; text-align: left; cursor:
 .env-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
 /* The dock: columns right of the chat. */
-.dock-column { position: relative; flex: none; display: flex; flex-direction: column; min-width: 0; max-width: 70vw; padding: 8px; box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
+.dock-column { position: relative; flex: 0 1 auto; display: flex; flex-direction: column; min-width: 260px; max-width: 70vw; padding: 8px; box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
 .dock-column.expanded { flex: 1; max-width: none; }
 .dock-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 5px; cursor: col-resize; z-index: 7; }
 .dock-resize:hover { background: var(--accent-soft); }

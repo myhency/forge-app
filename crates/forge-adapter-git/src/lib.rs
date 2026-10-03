@@ -38,6 +38,11 @@ impl GitCli {
     }
 
     fn run(&self, cwd: &Path, args: &[&str]) -> Result<Output, GitError> {
+        // A folder that is gone also makes the spawn fail with "not found", which must not read
+        // as a missing git.
+        if !cwd.is_dir() {
+            return Err(GitError::Failed(format!("Folder \"{}\" does not exist", cwd.display())));
+        }
         let mut child = Command::new(&self.program)
             .arg("--no-optional-locks")
             .args(args)
@@ -359,5 +364,14 @@ mod tests {
         let error = GitCli::with_program(script.to_string_lossy(), Duration::from_millis(200)).status(dir.path()).unwrap_err();
         assert!(error.to_string().contains("timed out"), "{error}");
         assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn a_folder_that_is_gone_is_not_reported_as_a_missing_git() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("gone");
+        let error = GitCli::new().status(&gone).unwrap_err();
+        assert!(!error.to_string().contains("not installed"), "{error}");
+        assert!(error.to_string().contains("gone"), "{error}");
     }
 }
