@@ -26,8 +26,8 @@ pub use command_box::CommandTextArea;
 pub use effort::{effort_button_label, effort_levels, slider_position, EFFORT_HELP, SLIDER_FASTER, SLIDER_SMARTER};
 pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, Outgoing};
 pub use filter_menu::{
-    current_index, filter_key, group_label, sort_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
-    FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS,
+    current_index, filter_key, group_label, sort_label, status_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
+    FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
 };
 pub use folder_choice::{choose_folder, FolderChoice};
 pub use new_session::NewSessionComposer;

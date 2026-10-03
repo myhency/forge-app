@@ -1,10 +1,10 @@
 use dioxus::prelude::*;
 use forge_features::{
-    current_index, filter_key, group_label, refocus_workspace, sort_label, use_workspace, FilterChoice, FilterMenu,
-    FilterOutcome, FilterRow, FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS,
+    current_index, filter_key, group_label, refocus_workspace, sort_label, status_label, use_workspace, FilterChoice, FilterMenu,
+    FilterOutcome, FilterRow, FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
 };
 
-/// The icon beside "+ New session" and the menu it opens: sort by, group by, show empty groups.
+/// The icon beside "+ New session" and the menu it opens: status, sort by, group by, show empty groups.
 /// The menu takes focus when it opens; arrows move, Right opens a submenu, Left or Escape closes
 /// it, Enter chooses (the keys are the physical ones, so a Korean input method does not matter).
 #[component]
@@ -16,6 +16,10 @@ pub fn SidebarFilterMenu() -> Element {
     let state = menu();
 
     let sub_items: Vec<(String, bool, FilterChoice)> = match FILTER_ROWS[state.top] {
+        FilterRow::Status => STATUS_ITEMS
+            .iter()
+            .map(|item| (status_label(*item).to_string(), prefs.status == *item, FilterChoice::Status(*item)))
+            .collect(),
         FilterRow::Sort => SORT_ITEMS
             .iter()
             .map(|item| (sort_label(*item).to_string(), prefs.sort_by == *item, FilterChoice::Sort(*item)))
@@ -31,7 +35,7 @@ pub fn SidebarFilterMenu() -> Element {
         div { class: "filter-wrap",
             button {
                 class: if open() { "icon-button open" } else { "icon-button" },
-                title: "Sort, group and filter sessions",
+                title: "Filter, sort and group sessions",
                 onclick: move |_| {
                     menu.set(FilterMenu::default());
                     open.set(!open());
@@ -95,6 +99,10 @@ pub fn SidebarFilterMenu() -> Element {
                                 }
                             },
                             match row {
+                                FilterRow::Status => rsx! {
+                                    span { "Status" }
+                                    span { class: "value", "{status_label(prefs.status)} ›" }
+                                },
                                 FilterRow::Sort => rsx! {
                                     span { "Sort by" }
                                     span { class: "value", "{sort_label(prefs.sort_by)} ›" }
