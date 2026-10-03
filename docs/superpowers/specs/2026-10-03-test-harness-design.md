@@ -31,8 +31,8 @@ from the Claude home; `.claude.json` is read from the sibling of that directory.
 ### 1. App change: `FORGE_CONFIG_PATH`
 
 `FORGE_CLAUDE_HOME` does not move Forge's own config (`ProjectDirs("Forge")/config.json`, holding the
-base URL, API key and project state), so a harness run would read and may overwrite the user's real
-settings. Add `FORGE_CONFIG_PATH` to `build_services` in `crates/forge-app/src/main.rs`, as a pure
+base URL, API key, model and the enabled skill, plugin and MCP lists), so a harness run would read and may
+overwrite the user's real settings. Add `FORGE_CONFIG_PATH` to `build_services` in `crates/forge-app/src/main.rs`, as a pure
 function shaped like `claude_paths`: an unset or empty value falls back to `default_config_path()`.
 Built test-first, with the same cases as `claude_paths` (no override, empty override, override).
 
@@ -40,7 +40,7 @@ Built test-first, with the same cases as `claude_paths` (no override, empty over
 
 - `build_fixture.py <dir>` writes the same content every time into a fresh `<dir>`:
   - `<dir>/.claude/` and `<dir>/.claude.json`
-  - `<dir>/forge-config/config.json` with no API key and no open projects
+  - `<dir>/forge-config/config.json` with no base URL and no API key
   - real project directories under `/private/tmp/forge-harness/`
   - scenarios: two folders colliding in one Claude directory (`my_app` gone, `my-app` present), two
     same-named folders (`a/app`, `b/app`), titles (`ai-title` and `custom-title` lines) and real
