@@ -16,6 +16,7 @@ mod section_status;
 mod settings;
 mod settings_draft;
 mod shortcut;
+mod terminal_tabs;
 mod sidebar;
 mod transcript_views;
 mod workspace;
@@ -44,4 +45,5 @@ pub use sidebar::{
     cycle_target, mark_archived, marker_for, menu_key_action, merge_sidebar, open_order, replace_project_sessions, ArchiveAction, DeleteAction, EntryKey,
     LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,
 };
+pub use terminal_tabs::{TabId, TerminalTabs};
 pub use workspace::{use_workspace, use_workspace_provider, Active, Workspace, WorkspaceServices};
