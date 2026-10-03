@@ -6,10 +6,11 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use forge_domain::{
-    Message, MessageRole, PermissionMode, Session, SessionId, SessionSummary, ToolCall, ToolResult,
+    find_snippet, title_matches, Message, MessageRole, PermissionMode, SearchHit, Session, SessionId, SessionSummary,
+    Snippet, ToolCall, ToolResult,
 };
 use forge_ports::{SessionRepositoryError, SessionRepositoryPort};
-use crate::transcript_cwd::{assign_cwds, folder_key, transcripts_newest_first};
+use crate::transcript_cwd::{assign_cwds, folder_key, transcripts_newest_first, Transcript};
 use crate::trash::{SystemTrash, TrashBin};
 use crate::usage::UsageCollector;
 use serde_json::Value;
@@ -185,6 +186,69 @@ pub(crate) async fn created_at_of(path: &Path, updated_at: &str) -> String {
         .and_then(|metadata| metadata.created().ok())
         .and_then(|created| time::OffsetDateTime::from(created).format(&Rfc3339).ok())
         .unwrap_or_else(|| updated_at.to_string())
+}
+
+// The text the user and the assistant wrote in one transcript line; tool input, tool results and
+// thinking are not part of it.
+fn message_texts(line: &Value) -> Vec<String> {
+    if !matches!(line.get("type").and_then(Value::as_str), Some("user" | "assistant")) {
+        return Vec::new();
+    }
+    match line.pointer("/message/content") {
+        Some(Value::String(text)) => vec![text.clone()],
+        Some(Value::Array(blocks)) => blocks
+            .iter()
+            .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|block| block.get("text").and_then(Value::as_str))
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+// The quote around the first match in the transcript's text. A line that cannot hold the query is
+// skipped without being parsed; that shortcut is only taken for a plain ASCII query, because JSON
+// writes quotes and backslashes escaped, so a query with them is not found in the raw line.
+async fn first_snippet(path: &Path, query: &str) -> Option<Snippet> {
+    let file = tokio::fs::File::open(path).await.ok()?;
+    let mut lines = BufReader::new(file).split(b'\n');
+    let shortcut = query.is_ascii() && !query.contains(['"', '\\']);
+    let lowered = query.trim().to_lowercase();
+    loop {
+        let Ok(Some(line)) = lines.next_segment().await else {
+            return None;
+        };
+        // An invalid-UTF-8 line and a half-written last line are skipped.
+        let Ok(text) = std::str::from_utf8(&line) else {
+            continue;
+        };
+        if shortcut && !text.to_lowercase().contains(&lowered) {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(text) else {
+            continue;
+        };
+        if let Some(snippet) = message_texts(&value).iter().find_map(|body| find_snippet(body, query)) {
+            return Some(snippet);
+        }
+    }
+}
+
+async fn search_transcript(transcript: &Transcript, query: &str) -> Option<SearchHit> {
+    let id = transcript.path.file_stem()?.to_str()?.to_string();
+    let title = read_title(&transcript.path).await;
+    let snippet = first_snippet(&transcript.path, query).await;
+    let title_matched = title.as_deref().is_some_and(|title| title_matches(title, query));
+    if snippet.is_none() && !title_matched {
+        return None;
+    }
+    let updated_at = time::OffsetDateTime::from(transcript.modified).format(&Rfc3339).ok()?;
+    let created_at = created_at_of(&transcript.path, &updated_at).await;
+    Some(SearchHit {
+        project: transcript.cwd.clone(),
+        session: SessionSummary { id: SessionId(id), title, updated_at, created_at },
+        snippet,
+    })
 }
 
 fn parse_permission_mode(raw: &str) -> PermissionMode {
@@ -612,6 +676,44 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         .map_err(|e| SessionRepositoryError::DeleteFailed(e.to_string()))?;
         outcome.map_err(SessionRepositoryError::DeleteFailed)
     }
+
+    async fn search_sessions(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>, SessionRepositoryError> {
+        let query = query.trim();
+        if query.is_empty() || limit == 0 {
+            return Ok(Vec::new());
+        }
+        let root = self.claude_home.join("projects");
+        let mut dirs = match tokio::fs::read_dir(&root).await {
+            Ok(dirs) => dirs,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(SessionRepositoryError::SearchFailed(format!("{}: {}", root.display(), e))),
+        };
+        let mut transcripts: Vec<Transcript> = Vec::new();
+        while let Some(entry) = dirs
+            .next_entry()
+            .await
+            .map_err(|e| SessionRepositoryError::SearchFailed(format!("{}: {}", root.display(), e)))?
+        {
+            let dir = entry.path();
+            if !tokio::fs::metadata(&dir).await.map(|m| m.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            transcripts.extend(assign_cwds(transcripts_newest_first(&dir).await).await);
+        }
+        // Newest first across every project, so the scan can stop as soon as the limit is met.
+        transcripts.sort_by(|a, b| b.modified.cmp(&a.modified).then_with(|| a.path.cmp(&b.path)));
+
+        let mut hits = Vec::new();
+        for transcript in &transcripts {
+            if let Some(hit) = search_transcript(transcript, query).await {
+                hits.push(hit);
+                if hits.len() == limit {
+                    break;
+                }
+            }
+        }
+        Ok(hits)
+    }
 }
 
 #[cfg(test)]
@@ -956,6 +1058,170 @@ mod tests {
         let sessions = adapter.list_sessions(&project()).await.unwrap();
 
         assert_ne!(sessions[0].created_at, "yesterday");
+    }
+
+    fn user_in(cwd: &str, text: &str) -> Value {
+        json!({"type": "user", "cwd": cwd, "isSidechain": false, "message": {"role": "user", "content": text}})
+    }
+
+    fn assistant_text(text: &str) -> Value {
+        assistant_block(json!({"type": "text", "text": text}))
+    }
+
+    async fn search(home: &Path, query: &str) -> Vec<SearchHit> {
+        ClaudeSessionAdapter::new(home.to_path_buf()).search_sessions(query, 50).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn search_finds_text_the_user_wrote_and_quotes_it() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[user_in("/Users/test/project", "How do I fix the borrow checker error?")]);
+
+        let hits = search(home.path(), "BORROW").await;
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].session.id, SessionId("s1".to_string()));
+        assert_eq!(hits[0].project, PathBuf::from("/Users/test/project"));
+        let snippet = hits[0].snippet.as_ref().unwrap();
+        assert_eq!(snippet.matched, "borrow");
+        assert_eq!(snippet.before, "How do I fix the ");
+    }
+
+    #[tokio::test]
+    async fn search_finds_text_the_assistant_wrote() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[user_in("/Users/test/project", "hi"), assistant_text("Use an Arc<Mutex<T>> here.")],
+        );
+
+        let hits = search(home.path(), "arc<mutex").await;
+
+        assert_eq!(hits.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn search_ignores_tool_input_tool_results_and_thinking() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_in("/Users/test/project", "hello"),
+                assistant_block(json!({"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "grep needle-word ."}})),
+                user_blocks(json!([{"type": "tool_result", "tool_use_id": "t1", "content": "needle-word found"}])),
+                assistant_block(json!({"type": "thinking", "thinking": "needle-word is on my mind"})),
+            ],
+        );
+
+        assert!(search(home.path(), "needle-word").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_finds_a_title_and_marks_the_hit_as_title_only() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[user_in("/Users/test/project", "hello"), ai_title("Debug and identify error cause")],
+        );
+
+        let hits = search(home.path(), "identify").await;
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].snippet, None);
+        assert_eq!(hits[0].session.title.as_deref(), Some("Debug and identify error cause"));
+    }
+
+    #[tokio::test]
+    async fn two_matches_in_one_session_make_one_hit_with_the_first() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[user_in("/Users/test/project", "first needle"), assistant_text("second needle")],
+        );
+
+        let hits = search(home.path(), "needle").await;
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].snippet.as_ref().unwrap().before, "first ");
+    }
+
+    #[tokio::test]
+    async fn search_matches_korean_text() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[user_in("/Users/test/project", "최적의 로컬 LLM 모델이 뭐야?")]);
+
+        let hits = search(home.path(), "로컬").await;
+
+        assert_eq!(hits[0].snippet.as_ref().unwrap().matched, "로컬");
+    }
+
+    #[tokio::test]
+    async fn a_query_with_json_special_characters_still_finds_text() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[user_in("/Users/test/project", "say \"hello\" and use C:\\temp")],
+        );
+
+        assert_eq!(search(home.path(), "\"hello\"").await.len(), 1);
+        assert_eq!(search(home.path(), "C:\\temp").await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_bad_line_does_not_fail_the_search() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[user_in("/Users/test/project", "needle here")]);
+        let mut bytes = std::fs::read(&path).unwrap();
+        bytes.extend_from_slice(&[0xff, 0xfe, b'\n']);
+        bytes.extend_from_slice(b"{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"te");
+        std::fs::write(&path, bytes).unwrap();
+        write_session(home.path(), &project(), "s2", &[user_in("/Users/test/project", "needle too")]);
+
+        let hits = search(home.path(), "needle").await;
+
+        assert_eq!(hits.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn hits_come_newest_first_across_projects_and_the_limit_applies() {
+        let home = tempfile::tempdir().unwrap();
+        let other = PathBuf::from("/Users/test/other");
+        let old = write_session(home.path(), &project(), "old", &[user_in("/Users/test/project", "needle")]);
+        let new = write_session(home.path(), &other, "new", &[user_in("/Users/test/other", "needle")]);
+        let mid = write_session(home.path(), &project(), "mid", &[user_in("/Users/test/project", "needle")]);
+        set_mtime(&old, 100);
+        set_mtime(&mid, 200);
+        set_mtime(&new, 300);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let all = adapter.search_sessions("needle", 50).await.unwrap();
+        let two = adapter.search_sessions("needle", 2).await.unwrap();
+
+        let ids: Vec<&str> = all.iter().map(|hit| hit.session.id.0.as_str()).collect();
+        assert_eq!(ids, ["new", "mid", "old"]);
+        assert_eq!(two.len(), 2);
+        assert_eq!(two[0].project, PathBuf::from("/Users/test/other"));
+    }
+
+    #[tokio::test]
+    async fn a_blank_query_or_no_projects_finds_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        assert!(adapter.search_sessions("needle", 50).await.unwrap().is_empty());
+
+        write_session(home.path(), &project(), "s1", &[user_in("/Users/test/project", "needle")]);
+        assert!(adapter.search_sessions("   ", 50).await.unwrap().is_empty());
+        assert!(adapter.search_sessions("needle", 0).await.unwrap().is_empty());
     }
 
     #[tokio::test]

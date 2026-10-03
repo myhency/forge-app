@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use forge_domain::{Session, SessionId, SessionSummary};
+use forge_domain::{SearchHit, Session, SessionId, SessionSummary};
 use thiserror::Error;
 
 #[cfg(any(test, feature = "mocks"))]
@@ -19,6 +19,8 @@ pub enum SessionRepositoryError {
     RenameFailed(String),
     #[error("failed to delete session: {0}")]
     DeleteFailed(String),
+    #[error("failed to search sessions: {0}")]
+    SearchFailed(String),
 }
 
 #[cfg_attr(any(test, feature = "mocks"), automock)]
@@ -48,6 +50,10 @@ pub trait SessionRepositoryPort: Send + Sync {
         project_path: &Path,
         session_id: &SessionId,
     ) -> Result<(), SessionRepositoryError>;
+    /// Sessions of every project whose title or message text contains `query` (any case), newest
+    /// first, at most `limit`. A blank query finds nothing. Only what the user and the assistant
+    /// wrote is searched, not tool input, tool results or thinking.
+    async fn search_sessions(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>, SessionRepositoryError>;
 }
 
 #[cfg(test)]
@@ -104,5 +110,22 @@ mod tests {
     fn rename_failed_message_names_the_cause() {
         let error = SessionRepositoryError::RenameFailed("disk full".to_string());
         assert_eq!(error.to_string(), "failed to rename session: disk full");
+    }
+
+    #[test]
+    fn search_failed_message_names_the_cause() {
+        let error = SessionRepositoryError::SearchFailed("no access".to_string());
+        assert_eq!(error.to_string(), "failed to search sessions: no access");
+    }
+
+    #[tokio::test]
+    async fn mock_session_repository_port_can_record_a_search_call() {
+        let mut mock = MockSessionRepositoryPort::new();
+        mock.expect_search_sessions()
+            .withf(|query: &str, limit: &usize| query == "borrow" && *limit == 50)
+            .times(1)
+            .returning(|_, _| Ok(vec![]));
+
+        assert!(mock.search_sessions("borrow", 50).await.unwrap().is_empty());
     }
 }

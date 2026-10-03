@@ -488,6 +488,10 @@ mod tests {
 
     #[async_trait]
     impl SessionRepositoryPort for SlowRepository {
+        async fn search_sessions(&self, _query: &str, _limit: usize) -> Result<Vec<forge_domain::SearchHit>, SessionRepositoryError> {
+            Ok(Vec::new())
+        }
+
         async fn list_sessions(&self, _project_path: &Path) -> Result<Vec<SessionSummary>, SessionRepositoryError> {
             Ok(Vec::new())
         }
