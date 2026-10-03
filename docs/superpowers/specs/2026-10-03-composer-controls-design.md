@@ -40,3 +40,15 @@ Both settings are changed in the session at once, and take effect on the next tu
 ## Testing
 
 Unit tests: wire round trip of the new modes, loader `auto`, `apply_sidecar_event` for the three events, actor with the fake sidecar (forwarded when running, direct when not, view unchanged on `setting_failed`), the menu rows and keys, the bypass confirmation state, vitest for the sidecar commands. Then the harness: open the pickers, change the mode with the number keys, and send a message to see that the sidecar accepted a mode and a model change.
+
+## As built (2026-10-03)
+
+Built as designed: `PermissionMode::Auto`, the two commands and three events, `allowDangerouslySkipPermissions`, `LiveSessionView.model`, the actor's two paths, the pickers with number keys and the bypass confirmation. `Workspace` carries `set_permission_mode` and `set_model` so the widgets do not depend on the domain crate.
+
+Checked in the real window (harness, no message sent): both pickers open with the desktop order, descriptions and keys; key 4 (`key code`, Korean input method on) switched to Plan mode and the cursor went back to the message box; key 1 switched the model to Opus 5.5; choosing Bypass showed the confirmation and left the mode as it was; Cancel closed it.
+
+**Not verified.** The harness session had no sidecar running, so those changes took the "no sidecar" path (the view changes at once). The path with a running sidecar (command out, the SDK's answer back, the view following) is covered by unit tests with a fake sidecar and a stub query, but was not seen with the real SDK: the sidecar cannot start Claude from the tool sandbox used here ("failed to launch", while the binary itself runs). So these are open: whether the SDK accepts `setPermissionMode` for `auto` and `bypassPermissions` mid-session, whether it accepts `setModel`, and what it says when it refuses (that text is shown as the banner). A check needs a running app with a message sent, or the sidecar driven outside the sandbox.
+
+- Left as designed: effort, "더 많은 모델", badges, `dontAsk`.
+- The new-session select got "Auto" through the shared mode table.
+- A new session opened without a resume has no sidecar until its first send (or warm-up), so the first change in it always takes the direct path.
