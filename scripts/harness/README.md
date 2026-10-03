@@ -19,5 +19,8 @@ much); multiply the coordinates you read off by that factor.
 Needs a `python3` that can `import Quartz` (pyobjc; the anaconda one here can, `/usr/bin/python3` cannot: otherwise
 `pip install pyobjc-framework-Quartz`). The scripts only see the window of the app `launch.sh` started, never another
 Forge you have open. The terminal needs Screen Recording and Accessibility permission. A session started from the
-app still runs on the real Claude, and a fake home has no login, so sending a message, IME, dark mode
-and other perception checks are not covered. A blank first capture is retried once.
+app runs on the real Claude with the real login, and the Claude it starts writes its transcript to the
+real `~/.claude/projects/` (here `-private-tmp-forge-harness-my-app/`), not to the fake home: `FORGE_CLAUDE_HOME` only
+changes what Forge reads. Sending a message therefore costs a real turn and leaves a real file to delete by hand.
+Typing: `osascript keystroke` drops letters when a Korean input method is on, and ⌘A / ⌘V did not reach the page;
+`key code N` works for single keys. IME and dark mode are not covered. A blank first capture is retried once.

@@ -232,6 +232,8 @@ export class SidecarSession {
           abortController: this.abortController,
           canUseTool,
           includePartialMessages: true,
+          // The SDK sends thinking with its text omitted unless asked for a summary.
+          thinking: { type: "adaptive", display: "summarized" },
           settingSources: ["project"],
           strictMcpConfig: true,
           skills: skillsPlugin?.skills ?? [],

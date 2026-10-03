@@ -54,7 +54,8 @@ Built: SES-03 (modes, data path, header control) and SES-06 (R and D). Checked i
 - The fixture now holds that session, so the harness shows the three modes.
 - **Keys use the physical key.** The first version matched the character; with a Korean input method the R key types "ㄱ" and nothing happened. The menu now matches `KeyR` and `KeyD` (found in the harness, not by reading the code).
 - **Thinking is grouped.** The loader joins the thinking of a turn into one block shown above the answer, as the turn is one message in Forge. A thought between two tool calls is not shown next to them.
-- **Live thinking is not verified.** The sidecar forwards `thinking_delta` (unit-tested with a stub), but no message was sent from the harness, so whether the SDK emits thinking for the session's model and options was not seen. If it does not, only loaded transcripts show thinking.
-- The sidecar's `tsc` typecheck was not run: TypeScript is not installed in this worktree. Its 69 vitest tests pass.
+- **Live thinking needed an SDK option.** A first real message (harness, `claude-opus-5-5`) showed no thinking. The transcript Claude wrote held a `thinking` block with 0 characters of text and a 924-character signature: the SDK omits the text unless asked. The sidecar now passes `thinking: { type: "adaptive", display: "summarized" }` (`SidecarSession`, covered by a test). A second real message then showed the summary streaming into the Thinking view. What the SDK default was before ("adaptive") is kept; only `display` changed.
+- The summary is short ("A leap year has 366 days, so that's the answer."). It is a summary of the thinking, not the thinking itself.
+- Sidecar: `npm run typecheck` and `npm run build` pass (an earlier `npx tsc` said TypeScript was missing; `npm run` finds it). 70 vitest tests pass.
 - The arrow on an opened tool line stays `▸` in Detailed.
 - Left out as decided: SES-04, SES-05 (`won't?`), SES-09, fork and archive.

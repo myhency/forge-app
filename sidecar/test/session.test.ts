@@ -760,6 +760,19 @@ describe("SidecarSession", () => {
     expect(capturedOptions.includePartialMessages).toBe(true);
   });
 
+  it("asks the SDK for a summary of the thinking, which it omits by default", async () => {
+    let capturedOptions: any;
+    const queryFn: QueryFn = (args) => {
+      capturedOptions = args.options;
+      return toQueryHandle((async function* () {})());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle(startCommand);
+
+    expect(capturedOptions.thinking).toEqual({ type: "adaptive", display: "summarized" });
+  });
+
   it("interrupt calls the query's own interrupt() method instead of aborting the whole session", async () => {
     let interruptCalled = false;
     const queryFn: QueryFn = () => {
