@@ -125,3 +125,12 @@ Same session of looking. Menus were opened and closed with Escape; one letter wa
 - Box: one row, placeholder "작업을 설명하거나 질문하세요", a return-arrow icon at the right (grey when empty, black once a letter is typed). Focus darkens the border. The row under the box has `+`, a microphone, a chevron, then the mode name "자동"; at the right "Sonnet 5.5", "중간" and a circle. [CMP-01..07]
 - Microphone chevron menu (opens upward): heading "마이크" over the input devices of the Mac (the default marked "Default - ...", checked, then each device by name), a divider, and a switch "길게 눌러 녹음" (press and hold to record, on). [CMP-02]
 - The caption under the dashboard's heatmap names a different book on each visit (seen: War and Peace, The Great Gatsby, Harry Potter and the Philosopher's Stone), so it is chosen at random or by the count.
+
+### Round 6, part 3: the right side of the composer's bottom row (2026-10-03)
+
+Popovers were opened with the mouse and closed with Escape; nothing was chosen.
+
+- Model menu (opens upward, right-aligned to the model name): "Opus 5.5" (1), "Sonnet 5.5" with a grey badge "기본값" (checked), "Fable 5.1" with a badge "ⓘ 사용 크레딧 필요" (3), "Haiku 4.5" (4); a divider; "더 많은 모델" with a right chevron. The number keys sit at the right of the rows (2 is hidden by the check). [CMP-04]
+- "더 많은 모델" (opened with Right arrow after pointing at it): a second menu, opening to the **left** of the first, with no numbers: "Sonnet 5", "Opus 5", "Fable 5" (badge "사용 크레딧 필요"), "Opus 4.8", "Opus 4.7", "Opus 4.6", "Sonnet 4.6". The first row is highlighted on opening. The button label for a model from this list was not seen (a model that is in the main list shows its name, "Sonnet 5.5"). [CMP-04]
+- Effort popover ("중간"): header "노력" in grey then the current level; a `?` icon at the right; labels "더 빠르게" and "더 스마트하게" over a six-stop slider with a white thumb and a dot per stop; "추천" under the second stop (the thumb is there, so "중간" is the second stop). The filled part is darker. [CMP-05]
+- Circle popover on a fresh new-session screen: "컨텍스트 윈도우" with the value "0" and an empty bar; a divider; "플랜 사용량 한도 · Pro" with an arrow at the right (a link, not clicked); "세션 한도" with "2시간 1분 후 재설정" and a percentage, a blue bar; "주간 · 모든 모델" with "재설정: (수) 오후 6:00" and a percentage, a blue bar; a divider; "클라우드 세션 크레딧" with a `?` icon and "US$100 중 US$100 남음", an empty bar, and "만료: 11월 5일 오후 4:59 GMT+9". The circle itself is an empty ring on this screen. [CMP-07]
