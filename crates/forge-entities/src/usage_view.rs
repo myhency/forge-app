@@ -1,6 +1,6 @@
 use forge_domain::{ContextUsage, Cost, PriceTable, SessionUsage, TokenUsage};
 
-/// `999`, `1.2k`, `76.2k`, `3.4M`. Rounds to one decimal and moves up a unit instead of printing
+/// `999`, `1.2k`, `76.2k`, `3.4M`, `2.4B`. Rounds to one decimal and moves up a unit instead of printing
 /// `1000.0k`.
 pub fn format_tokens(count: u64) -> String {
     if count < 1_000 {
@@ -11,7 +11,11 @@ pub fn format_tokens(count: u64) -> String {
         return format!("{}.{}k", thousands_tenths / 10, thousands_tenths % 10);
     }
     let millions_tenths = (count as u128 * 10 + 500_000) / 1_000_000;
-    format!("{}.{}M", millions_tenths / 10, millions_tenths % 10)
+    if millions_tenths < 10_000 {
+        return format!("{}.{}M", millions_tenths / 10, millions_tenths % 10);
+    }
+    let billions_tenths = (count as u128 * 10 + 500_000_000) / 1_000_000_000;
+    format!("{}.{}B", billions_tenths / 10, billions_tenths % 10)
 }
 
 /// `$0.00`, `<$0.01` for anything under a cent, otherwise dollars and cents.
@@ -178,7 +182,14 @@ mod tests {
         assert_eq!(format_tokens(999_949), "999.9k");
         assert_eq!(format_tokens(999_950), "1.0M", "never 1000.0k");
         assert_eq!(format_tokens(3_400_000), "3.4M");
-        assert_eq!(format_tokens(4_000_000_000_000), "4000000.0M");
+        assert_eq!(format_tokens(4_000_000_000_000), "4000.0B");
+    }
+
+    #[test]
+    fn billions_get_their_own_unit() {
+        assert_eq!(format_tokens(999_949_999), "999.9M");
+        assert_eq!(format_tokens(999_950_000), "1.0B");
+        assert_eq!(format_tokens(2_400_000_000), "2.4B");
     }
 
     #[test]
