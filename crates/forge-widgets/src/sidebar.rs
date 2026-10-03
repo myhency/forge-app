@@ -1,9 +1,12 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
-use forge_features::{use_settings, use_workspace, Active, EntryKey};
+use forge_features::{use_settings, use_workspace, Active, EntryKey, Heading};
 use forge_shared::{Button, ButtonKind};
+use time::OffsetDateTime;
 
+use crate::filter_menu::SidebarFilterMenu;
 use crate::session_row::SessionRow;
 
 /// The folder's own name for a sidebar heading; the full path stays available as a tooltip. A
@@ -70,24 +73,51 @@ pub fn project_labels(paths: &[PathBuf]) -> Vec<String> {
         .collect()
 }
 
-/// Sessions of every project, grouped by project, with a "+ New session" button on top.
+/// Search and filter on top, then the sessions grouped as the preferences say, then Settings.
 #[component]
 pub fn Sidebar() -> Element {
     let workspace = use_workspace();
     let settings = use_settings();
-    let groups = workspace.sidebar();
-    let labels = project_labels(&groups.iter().map(|group| group.project.path.clone()).collect::<Vec<_>>());
+    let prefs = workspace.prefs();
+    let groups = workspace.arranged_sidebar(OffsetDateTime::now_utc());
+    // Headings of folder groups are told apart when two folders share a name; rows in a date
+    // list show their folder's plain name.
+    let paths: Vec<PathBuf> = groups
+        .iter()
+        .filter_map(|group| match &group.heading {
+            Heading::Project(project) => Some(project.path.clone()),
+            _ => None,
+        })
+        .collect();
+    let labels: HashMap<PathBuf, String> = paths.iter().cloned().zip(project_labels(&paths)).collect();
     let active = workspace.active();
     let notice = workspace.notice();
 
     rsx! {
-        div { class: "sidebar",
+        div { class: "sidebar", style: "width: {prefs.clamped_width()}px",
+            div { class: "sidebar-top",
+                button {
+                    class: "sidebar-search",
+                    title: "Search sessions (⌘K)",
+                    onclick: move |_| workspace.open_search(),
+                    span { "⌕" }
+                    span { "Search" }
+                    span { class: "keys", "⌘K" }
+                }
+                button {
+                    class: "icon-button",
+                    title: "Hide the sidebar",
+                    onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = true),
+                    "‹"
+                }
+            }
             div { class: "sidebar-new",
                 Button {
                     label: "+ New session",
                     kind: ButtonKind::Primary,
                     onclick: move |_| workspace.show_new_session(),
                 }
+                SidebarFilterMenu {}
             }
             if let Some(message) = notice {
                 div { class: "banner error",
@@ -95,38 +125,55 @@ pub fn Sidebar() -> Element {
                     Button { label: "Dismiss", onclick: move |_| workspace.dismiss_notice() }
                 }
             }
-            for (group, label) in groups.into_iter().zip(labels) {
-                div { key: "{group.project.path.display()}",
-                    div { class: "sidebar-group-header",
-                        div {
-                            class: if group.project.exists { "sidebar-group-title" } else { "sidebar-group-title missing" },
-                            title: "{group.project.path.display()}",
-                            "{label}"
-                        }
-                        if group.project.exists {
-                            button {
-                                class: "group-add",
-                                title: "New session in this folder",
-                                onclick: {
-                                    let path = group.project.path.clone();
-                                    move |_| workspace.show_new_session_in(path.clone())
-                                },
-                                "+"
+            for group in groups {
+                div { key: "{group.id}",
+                    match &group.heading {
+                        Heading::None => rsx! {},
+                        Heading::Bucket(bucket) => rsx! {
+                            div { class: "sidebar-group-header",
+                                {group_toggle(workspace, &group.id, group.collapsed, bucket.label().to_string(), String::new(), false)}
                             }
-                        }
+                        },
+                        Heading::Project(project) => rsx! {
+                            div { class: "sidebar-group-header",
+                                {group_toggle(
+                                    workspace,
+                                    &group.id,
+                                    group.collapsed,
+                                    labels.get(&project.path).cloned().unwrap_or_default(),
+                                    project.path.display().to_string(),
+                                    !project.exists,
+                                )}
+                                if project.exists {
+                                    button {
+                                        class: "group-add",
+                                        title: "New session in this folder",
+                                        onclick: {
+                                            let path = project.path.clone();
+                                            move |_| workspace.show_new_session_in(path.clone())
+                                        },
+                                        "+"
+                                    }
+                                }
+                            }
+                        },
                     }
-                    for entry in group.entries.iter() {
+                    for item in group.entries.iter() {
                         SessionRow {
-                            key: "{entry.key.dom_key()}",
-                            project: group.project.path.clone(),
-                            entry: entry.clone(),
-                            active: match &entry.key {
+                            key: "{item.entry.key.dom_key()}",
+                            project: item.project.path.clone(),
+                            entry: item.entry.clone(),
+                            project_name: match group.heading {
+                                Heading::Project(_) => None,
+                                _ => Some(project_label(&item.project.path)),
+                            },
+                            active: match &item.entry.key {
                                 EntryKey::Live(id) => active == Active::Live(*id),
                                 EntryKey::Past { .. } => false,
                             },
                             onopen: {
-                                let project = group.project.clone();
-                                let key = entry.key.clone();
+                                let project = item.project.clone();
+                                let key = item.entry.key.clone();
                                 move |_| match &key {
                                     EntryKey::Live(id) => workspace.select(*id),
                                     EntryKey::Past { session, .. } => {
@@ -144,6 +191,31 @@ pub fn Sidebar() -> Element {
                     span { "Settings" }
                     span { class: "keys", "⌘," }
                 }
+            }
+        }
+    }
+}
+
+// A heading that collapses and expands its group when clicked.
+fn group_toggle(
+    workspace: forge_features::Workspace,
+    id: &str,
+    collapsed: bool,
+    title: String,
+    tooltip: String,
+    missing: bool,
+) -> Element {
+    let id = id.to_string();
+    rsx! {
+        button {
+            class: "group-toggle",
+            title: if collapsed { "Expand" } else { "Collapse" },
+            onclick: move |_| workspace.update_prefs(|prefs| prefs.toggle_collapsed(&id)),
+            span { class: "chevron", if collapsed { "▸" } else { "▾" } }
+            span {
+                class: if missing { "sidebar-group-title missing" } else { "sidebar-group-title" },
+                title: "{tooltip}",
+                "{title}"
             }
         }
     }

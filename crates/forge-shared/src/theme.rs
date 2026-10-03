@@ -31,6 +31,22 @@ mod tests {
             ".settings-nav-item",
             ".setting-row",
             ".text-input",
+            ".sidebar-top",
+            ".sidebar-search",
+            ".icon-button",
+            ".filter-wrap",
+            ".filter-menu",
+            ".filter-submenu",
+            ".menu-backdrop",
+            ".group-toggle",
+            ".sidebar-resize",
+            ".sidebar-rail",
+            ".palette-backdrop",
+            ".palette",
+            ".palette-input",
+            ".palette-row",
+            ".palette-snippet",
+            ".palette-empty",
         ] {
             assert!(THEME_CSS.contains(class), "theme.css is missing {class}");
         }

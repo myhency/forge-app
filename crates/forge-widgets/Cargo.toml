@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 forge-application = { path = "../forge-application" }
 forge-entities = { path = "../forge-entities" }
+forge-domain = { path = "../forge-domain" }
 forge-features = { path = "../forge-features" }
 forge-shared = { path = "../forge-shared" }
 dioxus = { version = "=0.7.10", default-features = false, features = ["lib"] }

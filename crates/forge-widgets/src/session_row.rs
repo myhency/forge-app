@@ -17,7 +17,15 @@ enum RowMode {
 /// One session in the sidebar: the item itself, a `⋯` menu on hover, an in-place rename input and
 /// an inline delete confirmation. The mode is local to the row.
 #[component]
-pub fn SessionRow(project: PathBuf, entry: SidebarEntry, active: bool, onopen: EventHandler<()>) -> Element {
+pub fn SessionRow(
+    project: PathBuf,
+    entry: SidebarEntry,
+    active: bool,
+    onopen: EventHandler<()>,
+    /// Set in date and no-grouping lists, where the heading does not say which project a row is in.
+    #[props(default)]
+    project_name: Option<String>,
+) -> Element {
     let workspace = use_workspace();
     let mut mode = use_signal(|| RowMode::Normal);
     let actions = entry.actions();
@@ -111,11 +119,10 @@ pub fn SessionRow(project: PathBuf, entry: SidebarEntry, active: bool, onopen: E
                 div { class: "sidebar-row",
                     SidebarItem {
                         title: entry.title.clone(),
-                        subtitle: entry
-                            .updated_at
-                            .as_deref()
-                            .map(|updated_at| relative_time(updated_at, now))
-                            .unwrap_or_default(),
+                        subtitle: row_subtitle(
+                            project_name.as_deref(),
+                            entry.updated_at.as_deref().map(|updated_at| relative_time(updated_at, now)),
+                        ),
                         marker: entry.marker,
                         active,
                         onclick: move |_| {
@@ -199,6 +206,16 @@ pub fn SessionRow(project: PathBuf, entry: SidebarEntry, active: bool, onopen: E
     }
 }
 
+/// The grey text at the right of a row: how long ago, and in a date list also the project.
+pub fn row_subtitle(project_name: Option<&str>, ago: Option<String>) -> String {
+    match (project_name, ago.filter(|ago| !ago.is_empty())) {
+        (Some(name), Some(ago)) => format!("{name} · {ago}"),
+        (Some(name), None) => name.to_string(),
+        (None, Some(ago)) => ago,
+        (None, None) => String::new(),
+    }
+}
+
 /// What a rename input should save: the trimmed draft, unless it is empty or the title the session
 /// already has (then closing the input is all that is needed).
 pub fn rename_submit(draft: &str, original: &str) -> Option<String> {
@@ -229,5 +246,13 @@ mod tests {
     fn an_unchanged_title_saves_nothing() {
         assert_eq!(rename_submit("Old", "Old"), None);
         assert_eq!(rename_submit(" Old ", "Old"), None);
+    }
+
+    #[test]
+    fn a_row_subtitle_joins_the_project_and_the_time() {
+        assert_eq!(row_subtitle(None, Some("3d ago".to_string())), "3d ago");
+        assert_eq!(row_subtitle(Some("forge"), Some("3d ago".to_string())), "forge · 3d ago");
+        assert_eq!(row_subtitle(Some("forge"), None), "forge");
+        assert_eq!(row_subtitle(None, None), "");
     }
 }
