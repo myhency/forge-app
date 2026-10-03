@@ -453,6 +453,7 @@ mod tests {
             last_error: None,
             can_send: true,
             unsent: None,
+            unsent_attachments: Vec::new(),
             failed_sends: 0,
             context: None,
             commands: Vec::new(),
@@ -587,6 +588,7 @@ mod tests {
             content: "한".repeat(100),
             thinking: String::new(),
             tool_calls: Vec::new(),
+            attachments: Vec::new(),
         });
 
         let summary = LiveSummary::from_view(&open_view);

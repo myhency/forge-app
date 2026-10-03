@@ -24,6 +24,8 @@ use crate::use_cases::ExtensionsUseCase;
 pub(crate) enum Call {
     Start(StartSessionParams),
     Send(String),
+    /// A send that carried files or images.
+    SendAttached(String, Vec<forge_domain::Attachment>),
     Permission(String, PermissionDecision),
     Interrupt,
     SetMode(PermissionMode),
@@ -112,8 +114,12 @@ impl SidecarPort for FakeSidecar {
         Ok(())
     }
 
-    async fn send_message(&self, text: String) -> Result<(), SidecarError> {
-        self.control.record(Call::Send(text));
+    async fn send_message(&self, text: String, attachments: Vec<forge_domain::Attachment>) -> Result<(), SidecarError> {
+        self.control.record(if attachments.is_empty() {
+            Call::Send(text)
+        } else {
+            Call::SendAttached(text, attachments)
+        });
         if self.control.fail_send.load(Ordering::SeqCst) {
             return Err(SidecarError::ProcessExited);
         }

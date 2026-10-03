@@ -1,4 +1,4 @@
-use forge_domain::{ContextUsage, Message, MessageRole, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand, ToolCall, ToolResult};
+use forge_domain::{Attachment, ContextUsage, Message, MessageRole, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand, ToolCall, ToolResult};
 use forge_ports::SidecarEvent;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,12 +22,13 @@ pub enum SessionUpdate {
     SessionEnded,
 }
 
-pub fn push_user_message(session: &mut Session, text: String) {
+pub fn push_user_message(session: &mut Session, text: String, attachments: Vec<Attachment>) {
     session.messages.push(Message {
         role: MessageRole::User,
         content: text,
         thinking: String::new(),
         tool_calls: Vec::new(),
+        attachments,
     });
 }
 
@@ -312,7 +313,7 @@ mod tests {
     #[test]
     fn push_user_message_appends_a_user_message() {
         let mut session = empty_session();
-        push_user_message(&mut session, "hello".to_string());
+        push_user_message(&mut session, "hello".to_string(), Vec::new());
 
         assert_eq!(session.messages.len(), 1);
         assert_eq!(session.messages[0].role, MessageRole::User);
@@ -320,10 +321,18 @@ mod tests {
     }
 
     #[test]
+    fn push_user_message_keeps_the_attachments() {
+        let mut session = empty_session();
+        let attachment = forge_domain::Attachment { path: "/x/b.txt".into(), kind: forge_domain::AttachmentKind::File };
+        push_user_message(&mut session, "hi".to_string(), vec![attachment.clone()]);
+        assert_eq!(session.messages[0].attachments, vec![attachment]);
+    }
+
+    #[test]
     fn push_user_message_ends_the_previous_assistant_message_so_the_next_delta_starts_fresh() {
         let mut session = empty_session();
         apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "first answer".to_string() });
-        push_user_message(&mut session, "second question".to_string());
+        push_user_message(&mut session, "second question".to_string(), Vec::new());
         apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "second answer".to_string() });
 
         assert_eq!(session.messages.len(), 3);

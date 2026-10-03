@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_domain::{PermissionDecision, Session};
+use forge_domain::{Attachment, PermissionDecision, Session};
 use forge_ports::{SidecarError, SidecarPort};
 
 use crate::event::push_user_message;
@@ -14,9 +14,14 @@ impl SendMessageUseCase {
         Self { sidecar }
     }
 
-    pub async fn execute(&self, session: &mut Session, text: String) -> Result<(), SidecarError> {
-        push_user_message(session, text.clone());
-        self.sidecar.send_message(text).await
+    pub async fn execute(
+        &self,
+        session: &mut Session,
+        text: String,
+        attachments: Vec<Attachment>,
+    ) -> Result<(), SidecarError> {
+        push_user_message(session, text.clone(), attachments.clone());
+        self.sidecar.send_message(text, attachments).await
     }
 }
 
@@ -72,13 +77,13 @@ mod tests {
     async fn send_message_use_case_delegates_to_the_sidecar_port() {
         let mut mock = MockSidecarPort::new();
         mock.expect_send_message()
-            .withf(|text: &String| text == "hello")
+            .withf(|text: &String, _| text == "hello")
             .times(1)
-            .returning(|_| Ok(()));
+            .returning(|_, _| Ok(()));
 
         let use_case = SendMessageUseCase::new(Arc::new(mock));
         let mut session = empty_session();
-        assert!(use_case.execute(&mut session, "hello".to_string()).await.is_ok());
+        assert!(use_case.execute(&mut session, "hello".to_string(), Vec::new()).await.is_ok());
         assert_eq!(session.messages.len(), 1);
         assert_eq!(session.messages[0].role, forge_domain::MessageRole::User);
         assert_eq!(session.messages[0].content, "hello");
@@ -87,12 +92,12 @@ mod tests {
     #[tokio::test]
     async fn send_message_use_case_propagates_a_sidecar_error() {
         let mut mock = MockSidecarPort::new();
-        mock.expect_send_message().returning(|_| Err(SidecarError::ProcessExited));
+        mock.expect_send_message().returning(|_, _| Err(SidecarError::ProcessExited));
 
         let use_case = SendMessageUseCase::new(Arc::new(mock));
         let mut session = empty_session();
         assert!(matches!(
-            use_case.execute(&mut session, "hi".to_string()).await,
+            use_case.execute(&mut session, "hi".to_string(), Vec::new()).await,
             Err(SidecarError::ProcessExited)
         ));
     }

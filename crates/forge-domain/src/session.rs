@@ -39,6 +39,8 @@ pub struct Message {
     /// What the model thought before it answered; empty when it did not think or the file has none.
     pub thinking: String,
     pub tool_calls: Vec<ToolCall>,
+    /// Files and images the person attached to this message (user messages only).
+    pub attachments: Vec<crate::Attachment>,
 }
 
 impl Message {
@@ -48,6 +50,7 @@ impl Message {
             content: String::new(),
             thinking: String::new(),
             tool_calls: Vec::new(),
+            attachments: Vec::new(),
         }
     }
 }

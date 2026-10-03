@@ -21,12 +21,13 @@ async fn main() {
             permission_mode: PermissionMode::AcceptEdits,
             model: None,
             extensions: Default::default(),
+            additional_directories: Vec::new(),
         })
         .await
         .expect("failed to send start_session");
 
     sidecar
-        .send_message("Say hello and create a file named hello.txt with the text 'hi' in it.".to_string())
+        .send_message("Say hello and create a file named hello.txt with the text 'hi' in it.".to_string(), Vec::new())
         .await
         .expect("failed to send message");
 

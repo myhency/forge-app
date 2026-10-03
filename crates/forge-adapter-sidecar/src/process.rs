@@ -120,9 +120,9 @@ impl SidecarPort for SidecarProcess {
         self.send_command(SidecarCommand::start_session(id, params))
     }
 
-    async fn send_message(&self, text: String) -> Result<(), SidecarError> {
+    async fn send_message(&self, text: String, attachments: Vec<forge_domain::Attachment>) -> Result<(), SidecarError> {
         let id = self.next_id();
-        self.send_command(SidecarCommand::SendMessage { id, text })
+        self.send_command(SidecarCommand::send_message(id, text, attachments))
     }
 
     async fn respond_to_permission(

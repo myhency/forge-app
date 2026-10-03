@@ -27,6 +27,7 @@ async fn start(sidecar: &dyn SidecarPort) {
             permission_mode: PermissionMode::Default,
             model: None,
             extensions: Default::default(),
+            additional_directories: Vec::new(),
         })
         .await
         .unwrap();
@@ -38,7 +39,7 @@ async fn start(sidecar: &dyn SidecarPort) {
 
 // Asks the fixture sidecar to echo one of its own environment variables.
 async fn ask_env(sidecar: &dyn SidecarPort, name: &str) -> String {
-    sidecar.send_message(format!("TRIGGER_ENV:{name}")).await.unwrap();
+    sidecar.send_message(format!("TRIGGER_ENV:{name}"), Vec::new()).await.unwrap();
     match sidecar.next_event().await.unwrap() {
         SidecarEvent::AssistantDelta { text } => text,
         other => panic!("unexpected event: {other:?}"),

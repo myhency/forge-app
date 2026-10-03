@@ -7,6 +7,15 @@ use crate::markdown::render_markdown;
 use crate::tool_summary::{tool_call_status, tool_detail_text, tool_input_summary, ToolCallStatus};
 use crate::transcript_view::TranscriptView;
 
+/// The text of a chip on a sent message: an icon and the file name.
+pub fn attachment_label(attachment: &forge_domain::Attachment) -> String {
+    let icon = match attachment.kind {
+        forge_domain::AttachmentKind::Image => "🖼",
+        forge_domain::AttachmentKind::File => "📄",
+    };
+    format!("{icon} {}", attachment.file_name())
+}
+
 #[component]
 pub fn MessageBubble(message: Message, #[props(default)] view: TranscriptView) -> Element {
     if !view.shows(&message) {
@@ -31,6 +40,13 @@ pub fn MessageBubble(message: Message, #[props(default)] view: TranscriptView) -
                 div { class: "content markdown", dangerous_inner_html: "{html}" }
             } else if !message.content.is_empty() {
                 div { class: "content", "{message.content}" }
+            }
+            if !message.attachments.is_empty() {
+                div { class: "chips",
+                    for attachment in message.attachments.iter() {
+                        span { class: "chip", title: "{attachment.path.display()}", "{attachment_label(attachment)}" }
+                    }
+                }
             }
             for tool_call in message.tool_calls.iter() {
                 ToolCallLine { key: "{tool_call.id}", tool_call: tool_call.clone(), detailed: view.expands_tool_calls() }
@@ -92,5 +108,19 @@ fn ToolDetail(tool_call: ToolCall) -> Element {
                 pre { class: "{class}", "{output}" }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::*;
+    use forge_domain::{Attachment, AttachmentKind};
+
+    #[test]
+    fn a_chip_shows_an_icon_and_the_file_name_only() {
+        let image = Attachment { path: "/내 문서/사진 1.png".into(), kind: AttachmentKind::Image };
+        let file = Attachment { path: "/x/notes.txt".into(), kind: AttachmentKind::File };
+        assert_eq!(attachment_label(&image), "🖼 사진 1.png");
+        assert_eq!(attachment_label(&file), "📄 notes.txt");
     }
 }

@@ -12,6 +12,8 @@ pub fn CommandTextArea(
     commands: Vec<SlashCommand>,
     #[props(default)] placeholder: String,
     #[props(default)] disabled: bool,
+    /// Changes when something outside asks for the command list (the `+` menu's "Slash commands").
+    #[props(default)] open_token: u32,
     oninput: EventHandler<String>,
     onsubmit: EventHandler<()>,
 ) -> Element {
@@ -27,6 +29,17 @@ pub fn CommandTextArea(
         let kept = typed_after_change(typed.peek().as_deref(), &value);
         if kept != *typed.peek() {
             typed.set(kept);
+        }
+    }));
+
+    // The `+` menu's "Slash commands" row put `/` in the text and asks for the list: treat the text
+    // as typed, once per token. The first token is the starting value and opens nothing.
+    let mut seen_token = use_signal(|| open_token);
+    use_effect(use_reactive!(|open_token, value| {
+        if open_token != *seen_token.peek() {
+            seen_token.set(open_token);
+            typed.set(Some(value.clone()));
+            dismissed.set(false);
         }
     }));
 

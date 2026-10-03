@@ -280,6 +280,7 @@ fn push_user_message(session: &mut Session, text: String) {
         content: text,
         thinking: String::new(),
         tool_calls: Vec::new(),
+        attachments: Vec::new(),
     });
 }
 

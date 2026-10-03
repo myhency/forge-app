@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_domain::{ContextUsage, PermissionDecision, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand};
+use forge_domain::{Attachment, ContextUsage, PermissionDecision, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand};
 use forge_ports::SidecarFactoryPort;
 use tokio::sync::{mpsc, watch};
 
@@ -43,6 +43,8 @@ pub struct LiveSessionView {
     /// The text of the last message that could not be delivered, so the UI can put it back in the
     /// message box. Cleared by the next send that succeeds.
     pub unsent: Option<String>,
+    /// The files and images of that message, so the UI can attach them again.
+    pub unsent_attachments: Vec<Attachment>,
     /// How many sends have failed so far. The UI restores `unsent` when this number changes.
     pub failed_sends: u32,
     /// How full the context window was after the last finished turn. `None` until a turn has
@@ -55,7 +57,8 @@ pub struct LiveSessionView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LiveCommand {
-    Send(String),
+    Send { text: String, attachments: Vec<Attachment> },
+    AddDirectories(Vec<PathBuf>),
     WarmUp,
     Approve { id: String, decision: PermissionDecision },
     Interrupt,
@@ -80,7 +83,18 @@ impl LiveSessionHandle {
     }
 
     pub fn send(&self, text: String) {
-        let _ = self.commands.send(LiveCommand::Send(text));
+        self.send_with(text, Vec::new());
+    }
+
+    /// Sends a message with files and images attached.
+    pub fn send_with(&self, text: String, attachments: Vec<Attachment>) {
+        let _ = self.commands.send(LiveCommand::Send { text, attachments });
+    }
+
+    /// Folders the session may use besides its own. Only a session whose sidecar has not started
+    /// takes them (the SDK reads them at start); later calls are ignored.
+    pub fn add_directories(&self, directories: Vec<PathBuf>) {
+        let _ = self.commands.send(LiveCommand::AddDirectories(directories));
     }
 
     /// Starts the session's sidecar now instead of at the first send, so its slash commands are known
@@ -167,6 +181,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         last_error: None,
         can_send: init.can_send,
         unsent: None,
+        unsent_attachments: Vec::new(),
         failed_sends: 0,
         context: None,
         commands: init.commands,
@@ -229,6 +244,7 @@ mod tests {
             content: "earlier".to_string(),
             thinking: String::new(),
             tool_calls: Vec::new(),
+            attachments: Vec::new(),
         });
         LiveSessionInit {
             claude_session_id: Some(SessionId("claude-1".to_string())),
@@ -244,6 +260,7 @@ mod tests {
             permission_mode: PermissionMode::AcceptEdits,
             model: Some("model-x".to_string()),
             extensions: ActiveExtensions::default(),
+            additional_directories: Vec::new(),
         }
     }
 
@@ -295,6 +312,40 @@ mod tests {
         assert_eq!(seen.session.messages.len(), 1);
         assert_eq!(seen.session.messages[0].role, MessageRole::User);
         assert_eq!(seen.session.messages[0].content, "hello");
+    }
+
+    #[tokio::test]
+    async fn a_message_with_attachments_reaches_the_sidecar_and_the_history() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        let attachment = forge_domain::Attachment { path: "/x/a b.png".into(), kind: forge_domain::AttachmentKind::Image };
+
+        handle.send_with("look".to_string(), vec![attachment.clone()]);
+        let seen = wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(
+            control.calls(),
+            vec![Call::Start(start_params(None)), Call::SendAttached("look".to_string(), vec![attachment.clone()])]
+        );
+        assert_eq!(seen.session.messages[0].attachments, vec![attachment]);
+    }
+
+    #[tokio::test]
+    async fn added_directories_go_to_the_first_start() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.add_directories(vec!["/extra".into(), "/extra".into()]);
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        let mut expected = start_params(None);
+        expected.additional_directories = vec!["/extra".to_string()];
+        assert_eq!(control.calls(), vec![Call::Start(expected), Call::Send("hi".to_string())]);
     }
 
     #[tokio::test]
@@ -688,6 +739,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_failed_send_keeps_the_attachments_too_and_a_good_one_clears_them() {
+        let (sidecar, control) = fake_sidecar();
+        control.fail_send();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        let attachment = forge_domain::Attachment { path: "/x/a.png".into(), kind: forge_domain::AttachmentKind::Image };
+
+        handle.send_with(String::new(), vec![attachment.clone()]);
+        let seen = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        assert_eq!(seen.unsent, Some(String::new()), "a chips-only message has no text to bring back");
+        assert_eq!(seen.unsent_attachments, vec![attachment]);
+        assert_eq!(seen.failed_sends, 1);
+    }
+
+    #[tokio::test]
     async fn a_successful_send_after_a_failure_clears_the_unsent_text_but_keeps_the_count() {
         let (first, _first_control) = fake_sidecar();
         let (second, _second_control) = fake_sidecar();
@@ -1052,6 +1120,46 @@ mod tests {
 
         assert_eq!(spawns.load(Ordering::SeqCst), 1);
         assert_eq!(control.calls(), vec![Call::Start(start_params(None)), Call::Send("hello".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn directories_added_after_a_warm_up_restart_the_sidecar_so_the_sdk_gets_them() {
+        // `open_new` warms the session up before the new-session screen can add its folders.
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.warm_up();
+        handle.add_directories(vec!["/extra".into()]);
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 2);
+        assert_eq!(first_control.calls(), vec![Call::Start(start_params(None)), Call::Shutdown]);
+        let mut expected = start_params(None);
+        expected.additional_directories = vec!["/extra".to_string()];
+        assert_eq!(second_control.calls(), vec![Call::Start(expected), Call::Send("hi".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn directories_added_after_a_message_was_sent_are_ignored() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("one".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        handle.add_directories(vec!["/late".into()]);
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second message", |v| v.session.messages.len() == 2).await;
+
+        assert_eq!(
+            control.calls(),
+            vec![Call::Start(start_params(None)), Call::Send("one".to_string()), Call::Send("two".to_string())]
+        );
     }
 
     #[tokio::test]

@@ -1,3 +1,4 @@
+mod attachment;
 mod command;
 mod config;
 mod extension;
@@ -7,6 +8,7 @@ mod search;
 mod session;
 mod usage;
 
+pub use attachment::{Attachment, AttachmentKind};
 pub use command::SlashCommand;
 pub use config::{
     normalize_setting, AppConfig, GroupBy, SidebarPrefs, SortBy, DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH,

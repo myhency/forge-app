@@ -1,7 +1,7 @@
 use std::future::pending;
 use std::sync::Arc;
 
-use forge_domain::{ActiveExtensions, PermissionDecision, PermissionMode};
+use forge_domain::{ActiveExtensions, Attachment, PermissionDecision, PermissionMode};
 use forge_ports::{SidecarEvent, SidecarFactoryPort, SidecarPort, StartSessionParams};
 use tokio::sync::{mpsc, watch};
 
@@ -24,6 +24,8 @@ pub(crate) struct Actor {
     /// §17.4); a failed resolution is not stored, so the next start resolves again.
     active: Option<ActiveExtensions>,
     sidecar: Option<Arc<dyn SidecarPort>>,
+    /// Extra folders for the next start (the SDK reads them once, at start).
+    additional_directories: Vec<String>,
     /// The sidecar was started by a warm-up and nothing has been sent to it yet. A failure then is
     /// dropped quietly: nobody asked for anything, and the first send starts a sidecar again.
     warm_only: bool,
@@ -52,6 +54,7 @@ impl Actor {
             extensions,
             active: None,
             sidecar: None,
+            additional_directories: Vec::new(),
             warm_only: false,
             refusal_shown: false,
             dirty: false,
@@ -88,7 +91,8 @@ impl Actor {
 
     async fn handle_command(&mut self, command: LiveCommand) {
         match command {
-            LiveCommand::Send(text) => self.send(text).await,
+            LiveCommand::Send { text, attachments } => self.send(text, attachments).await,
+            LiveCommand::AddDirectories(directories) => self.add_directories(directories).await,
             LiveCommand::WarmUp => self.warm_up().await,
             LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
             LiveCommand::Interrupt => self.interrupt().await,
@@ -99,6 +103,25 @@ impl Actor {
                 self.dirty = true;
             }
             LiveCommand::Close => {}
+        }
+    }
+
+    // The SDK reads the folders once, at start. A sidecar that only a warm-up started (nothing sent
+    // yet, and `open_new` warms every new session up before its folders can be added) is dropped so
+    // the first send starts one that has them. After a message was sent they are ignored.
+    async fn add_directories(&mut self, directories: Vec<std::path::PathBuf>) {
+        if self.sidecar.is_some() && !self.warm_only {
+            return;
+        }
+        for directory in directories {
+            let directory = directory.to_string_lossy().to_string();
+            if !self.additional_directories.contains(&directory) {
+                self.additional_directories.push(directory);
+            }
+        }
+        if self.warm_only {
+            self.warm_only = false;
+            self.discard_sidecar(true).await;
         }
     }
 
@@ -122,7 +145,7 @@ impl Actor {
         }
     }
 
-    async fn send(&mut self, text: String) {
+    async fn send(&mut self, text: String, attachments: Vec<Attachment>) {
         if !self.view.can_send {
             self.view.last_error = Some(CANNOT_SEND.to_string());
             self.refusal_shown = false;
@@ -132,7 +155,7 @@ impl Actor {
         self.warm_only = false;
         if self.sidecar.is_none() {
             if let Err(message) = self.start_sidecar().await {
-                self.keep_unsent(text);
+                self.keep_unsent(text, attachments);
                 self.fail(message, false).await;
                 return;
             }
@@ -142,19 +165,20 @@ impl Actor {
         };
 
         let history_len = self.view.session.messages.len();
-        match SendMessageUseCase::new(sidecar).execute(&mut self.view.session, text.clone()).await {
+        match SendMessageUseCase::new(sidecar).execute(&mut self.view.session, text.clone(), attachments.clone()).await {
             Ok(()) => {
                 self.view.phase = Phase::Running;
                 self.view.last_error = None;
                 self.refusal_shown = false;
                 self.view.unsent = None;
+                self.view.unsent_attachments.clear();
                 self.dirty = true;
             }
             Err(error) => {
                 // The use-case records the message before writing it; a message that was never
                 // delivered must not stay in the history.
                 self.view.session.messages.truncate(history_len);
-                self.keep_unsent(text);
+                self.keep_unsent(text, attachments);
                 self.fail(error.to_string(), false).await;
             }
         }
@@ -162,8 +186,9 @@ impl Actor {
 
     // The message never reached the sidecar: hand its text back through the view so the UI can put
     // it in the message box again instead of losing what the person typed.
-    fn keep_unsent(&mut self, text: String) {
+    fn keep_unsent(&mut self, text: String, attachments: Vec<Attachment>) {
         self.view.unsent = Some(text);
+        self.view.unsent_attachments = attachments;
         self.view.failed_sends += 1;
     }
 
@@ -187,6 +212,7 @@ impl Actor {
                 permission_mode: self.view.session.permission_mode,
                 model: self.model.clone(),
                 extensions: extensions.clone(),
+                additional_directories: self.additional_directories.clone(),
             })
             .await
             .map_err(|e| e.to_string())?;

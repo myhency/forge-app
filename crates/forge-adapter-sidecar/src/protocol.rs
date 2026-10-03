@@ -15,14 +15,34 @@ pub enum SidecarCommand {
         skills: BTreeMap<String, String>,
         plugins: Vec<String>,
         mcp_servers: BTreeMap<String, serde_json::Value>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        additional_directories: Vec<String>,
     },
-    SendMessage { id: String, text: String },
+    SendMessage {
+        id: String,
+        text: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        attachments: Vec<WireAttachment>,
+    },
     PermissionResponse { id: String, permission_request_id: String, decision: WireDecision },
     Interrupt { id: String },
     SetPermissionMode { id: String, mode: WireMode },
     /// `None` is the SDK's default model.
     SetModel { id: String, model: Option<String> },
     Shutdown { id: String },
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WireAttachment {
+    kind: WireAttachmentKind,
+    path: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum WireAttachmentKind {
+    Image,
+    File,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -86,6 +106,24 @@ impl SidecarCommand {
                 .map(|path| path.to_string_lossy().to_string())
                 .collect(),
             mcp_servers: params.extensions.mcp_servers,
+            additional_directories: params.additional_directories,
+        }
+    }
+
+    pub fn send_message(id: String, text: String, attachments: Vec<forge_domain::Attachment>) -> Self {
+        SidecarCommand::SendMessage {
+            id,
+            text,
+            attachments: attachments
+                .into_iter()
+                .map(|attachment| WireAttachment {
+                    kind: match attachment.kind {
+                        forge_domain::AttachmentKind::Image => WireAttachmentKind::Image,
+                        forge_domain::AttachmentKind::File => WireAttachmentKind::File,
+                    },
+                    path: attachment.path.to_string_lossy().to_string(),
+                })
+                .collect(),
         }
     }
 }
@@ -98,6 +136,64 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn send_message_with_attachments_serialises_kind_and_path() {
+        use forge_domain::{Attachment, AttachmentKind};
+        let command = SidecarCommand::send_message(
+            "7".to_string(),
+            "look".to_string(),
+            vec![
+                Attachment { path: "/내 문서/사진 1.png".into(), kind: AttachmentKind::Image },
+                Attachment { path: "/x/b.txt".into(), kind: AttachmentKind::File },
+            ],
+        );
+        let json: serde_json::Value = serde_json::to_value(&command).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "type": "send_message", "id": "7", "text": "look",
+                "attachments": [
+                    { "kind": "image", "path": "/내 문서/사진 1.png" },
+                    { "kind": "file", "path": "/x/b.txt" }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn send_message_without_attachments_leaves_the_field_out() {
+        let command = SidecarCommand::send_message("7".to_string(), "hi".to_string(), Vec::new());
+        let json: serde_json::Value = serde_json::to_value(&command).unwrap();
+        assert_eq!(json, serde_json::json!({ "type": "send_message", "id": "7", "text": "hi" }));
+    }
+
+    fn params_with(additional_directories: Vec<String>) -> StartSessionParams {
+        StartSessionParams {
+            cwd: "/tmp/project".to_string(),
+            resume_session_id: None,
+            permission_mode: PermissionMode::Default,
+            model: None,
+            extensions: ActiveExtensions::default(),
+            additional_directories,
+        }
+    }
+
+    #[test]
+    fn start_session_leaves_additional_directories_out_when_there_are_none() {
+        let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params_with(Vec::new()))).unwrap();
+        assert!(json.get("additional_directories").is_none());
+    }
+
+    #[test]
+    fn start_session_carries_additional_directories_when_there_are_some() {
+        let json = serde_json::to_value(SidecarCommand::start_session(
+            "1".to_string(),
+            params_with(vec!["/extra dir".to_string()]),
+        ))
+        .unwrap();
+        assert_eq!(json["additional_directories"], serde_json::json!(["/extra dir"]));
+    }
+
+    #[test]
     fn start_session_command_serializes_with_the_expected_shape() {
         let command = SidecarCommand::start_session(
             "1".to_string(),
@@ -107,6 +203,7 @@ mod tests {
                 permission_mode: PermissionMode::Default,
                 model: None,
                 extensions: ActiveExtensions::default(),
+                additional_directories: Vec::new(),
             },
         );
 
@@ -143,6 +240,7 @@ mod tests {
                     plugin_paths: vec![PathBuf::from("/plugins/hud")],
                     mcp_servers,
                 },
+                additional_directories: Vec::new(),
             },
         );
 

@@ -2,7 +2,9 @@ use dioxus::prelude::*;
 use forge_entities::model_label;
 use forge_shared::{Button, ButtonKind, Select};
 
+use crate::attachments::folder_label;
 use crate::command_box::CommandTextArea;
+use crate::composer_state::{use_composer_state_provider, ComposerChips};
 use crate::permission_mode::{mode_options, parse_mode};
 use crate::settings::use_settings;
 use crate::workspace::use_workspace;
@@ -10,11 +12,13 @@ use crate::workspace::use_workspace;
 /// The new-session panel: pick a folder and permission mode, type the first message. The session
 /// is only created when that message is sent.
 #[component]
-pub fn NewSessionComposer() -> Element {
+pub fn NewSessionComposer(children: Element) -> Element {
     let workspace = use_workspace();
     let settings = use_settings();
     let mut mode = use_signal(|| "default".to_string());
-    let mut text = use_signal(String::new);
+    let text = use_signal(String::new);
+    let composer = use_composer_state_provider(text);
+    let mut text = text;
 
     // The probe follows the chosen folder: it is replaced when the folder changes, kept when it does
     // not, and ended when this panel goes away (Start, another session, the settings).
@@ -38,8 +42,7 @@ pub fn NewSessionComposer() -> Element {
     // `submit` is used by two handlers, so it may capture only `Copy` values (signals): it looks the
     // folder up again instead of capturing the `selected` string.
     let mut submit = move || {
-        let body = text.read().trim().to_string();
-        if body.is_empty() {
+        if text.read().trim().is_empty() && composer.attachments().is_empty() {
             return;
         }
         let projects = workspace.new_session_projects();
@@ -54,15 +57,31 @@ pub fn NewSessionComposer() -> Element {
         let Some(project) = project else {
             return;
         };
-        workspace.start_new(project, parse_mode(&mode.read()), body);
+        let Some(outgoing) = composer.take_for_new_session(&text.read()) else {
+            return;
+        };
+        workspace.start_new(
+            project,
+            parse_mode(&mode.read()),
+            outgoing.text,
+            outgoing.attachments,
+            composer.take_folders(),
+        );
         text.set(String::new());
     };
     let has_folder = !options.is_empty();
+    let folder_name = workspace.chosen_new_folder().map(|path| folder_label(&path)).unwrap_or_default();
 
     rsx! {
         div { class: "new-session",
             if !has_folder {
                 div { class: "banner info", "No existing project folder was found in your Claude Code history. Use “Open folder…” to choose one." }
+            }
+            div { class: "env-chips",
+                span { class: "chip", "Local" }
+                span { class: "chip",
+                    span { class: "chip-name", "{folder_name}" }
+                }
             }
             div { class: "field",
                 label { "Folder" }
@@ -91,8 +110,13 @@ pub fn NewSessionComposer() -> Element {
                     onchange: move |value| mode.set(value),
                 }
             }
+            if let Some(message) = composer.error() {
+                div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
+            }
+            ComposerChips {}
             CommandTextArea {
                 value: text(),
+                open_token: composer.popup_token(),
                 commands: workspace.new_commands(),
                 placeholder: "What should Claude do?",
                 disabled: !has_folder,
@@ -100,6 +124,7 @@ pub fn NewSessionComposer() -> Element {
                 onsubmit: move |_| submit(),
             }
             div { class: "composer-row",
+                {children}
                 span { class: "spacer" }
                 Button {
                     label: "Start",
