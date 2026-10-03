@@ -118,6 +118,7 @@ pub fn Sidebar() -> Element {
                 }
                 SidebarFilterMenu {}
             }
+            div { class: "sidebar-scroll",
             if let Some(message) = notice {
                 div { class: "banner error",
                     "{message} "
@@ -183,6 +184,7 @@ pub fn Sidebar() -> Element {
                         }
                     }
                 }
+            }
             }
             div { class: "sidebar-footer",
                 button { class: "sidebar-footer-button", onclick: move |_| settings.open(),
