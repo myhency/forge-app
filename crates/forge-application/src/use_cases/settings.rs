@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_domain::{normalize_setting, AppConfig};
+use forge_domain::{normalize_setting, AppConfig, SidebarPrefs};
 use forge_ports::{ConfigError, ConfigRepositoryPort};
 
 /// Reads and changes the settings the UI owns (`base_url`, `api_key`, `model`). Every save loads
@@ -34,6 +34,13 @@ impl SettingsUseCase {
     pub async fn save_model(&self, model: &str) -> Result<AppConfig, ConfigError> {
         let mut config = self.load_for_update().await?;
         config.model = normalize_setting(model);
+        self.config.save(&config).await?;
+        Ok(config)
+    }
+
+    pub async fn save_sidebar(&self, prefs: &SidebarPrefs) -> Result<AppConfig, ConfigError> {
+        let mut config = self.load_for_update().await?;
+        config.sidebar = prefs.clone();
         self.config.save(&config).await?;
         Ok(config)
     }
@@ -177,5 +184,30 @@ mod tests {
             .returning(|| Err(ConfigError::ParseFailed("bad".to_string())));
 
         assert!(SettingsUseCase::new(Arc::new(mock)).saved_model().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn save_sidebar_replaces_only_the_sidebar_preferences() {
+        let mut mock = MockConfigRepositoryPort::new();
+        mock.expect_load().times(1).returning(|| Ok(with_lists()));
+        mock.expect_save()
+            .withf(|c: &AppConfig| {
+                c.sidebar.sort_by == forge_domain::SortBy::Name
+                    && c.sidebar.hidden
+                    && c.base_url.as_deref() == Some("https://old.test")
+                    && c.enabled_skills == vec!["brainstorming".to_string()]
+            })
+            .times(1)
+            .returning(|_| Ok(()));
+        let usecase = SettingsUseCase::new(Arc::new(mock));
+        let prefs = forge_domain::SidebarPrefs {
+            sort_by: forge_domain::SortBy::Name,
+            hidden: true,
+            ..Default::default()
+        };
+
+        let saved = usecase.save_sidebar(&prefs).await.unwrap();
+
+        assert_eq!(saved.sidebar, prefs);
     }
 }

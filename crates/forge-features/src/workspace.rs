@@ -4,13 +4,15 @@ use std::sync::Arc;
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SessionId, SessionSummary, SlashCommand};
+use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
+use time::OffsetDateTime;
 
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 use crate::transcript_views::TranscriptViews;
-use crate::sidebar::{cycle_target, merge_sidebar, open_order, replace_project_sessions, LiveSummary, SidebarGroup};
+use crate::arrange::{arrange, arranged_open_order, ArrangedGroup};
+use crate::sidebar::{cycle_target, merge_sidebar, replace_project_sessions, LiveSummary, SidebarGroup};
 
 /// Everything the workspace needs from the outside, injected once by the composition root.
 #[derive(Clone)]
@@ -51,6 +53,7 @@ pub struct Workspace {
     probe: Signal<Arc<ProbeSlot>>,
     new_commands: Signal<Vec<SlashCommand>>,
     transcript_views: Signal<TranscriptViews>,
+    prefs: Signal<SidebarPrefs>,
 }
 
 /// Creates the workspace, provides it to every descendant and loads the sidebar once. Call it in
@@ -78,10 +81,12 @@ pub fn use_workspace_provider() -> Workspace {
             probe: Signal::new(slot),
             new_commands,
             transcript_views: Signal::new(TranscriptViews::default()),
+            prefs: Signal::new(SidebarPrefs::default()),
         }
     });
     use_context_provider(move || workspace);
     use_hook(move || workspace.reload_past());
+    use_hook(move || workspace.reload_prefs());
     workspace
 }
 
@@ -113,6 +118,57 @@ impl Workspace {
             .map(|entry| LiveSummary::from_view(&entry.view.read()))
             .collect();
         merge_sidebar(&self.past.read(), &open)
+    }
+
+    /// How the sidebar is sorted, grouped and sized.
+    pub fn prefs(&self) -> SidebarPrefs {
+        self.prefs.read().clone()
+    }
+
+    /// Changes the preferences and saves them.
+    pub fn update_prefs(&self, change: impl FnOnce(&mut SidebarPrefs)) {
+        self.change_prefs_unsaved(change);
+        self.save_prefs();
+    }
+
+    /// Changes the preferences on screen only (a drag changes the width many times); call
+    /// `save_prefs` when it ends.
+    pub fn change_prefs_unsaved(&self, change: impl FnOnce(&mut SidebarPrefs)) {
+        let mut prefs = self.prefs;
+        change(&mut prefs.write());
+    }
+
+    pub fn save_prefs(&self) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let prefs = self.prefs();
+        // Root scope: the save must finish even if the control that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
+            if let Err(error) = services.settings.save_sidebar(&prefs).await {
+                this.report(format!("failed to save the sidebar settings: {error}"));
+            }
+        });
+    }
+
+    // A config that cannot be read keeps the defaults; the settings screen reports that file's
+    // problems, so the sidebar does not repeat them.
+    fn reload_prefs(&self) {
+        let services = (*self.services.peek()).clone();
+        let mut prefs = self.prefs;
+        spawn(async move {
+            if let Ok(config) = services.settings.load().await {
+                prefs.set(config.sidebar);
+            }
+        });
+    }
+
+    /// The sidebar as drawn: sorted, grouped and collapsed as the preferences say.
+    pub fn arranged_sidebar(&self, now: OffsetDateTime) -> Vec<ArrangedGroup> {
+        let active = match self.active() {
+            Active::Live(id) => Some(id),
+            Active::NewSession => None,
+        };
+        arrange(&self.sidebar(), &self.prefs.read(), now, active)
     }
 
     /// The project folders a new session can start in: known projects that still exist, plus any
@@ -403,7 +459,10 @@ impl Workspace {
 
     /// Focuses the next (or previous) open session in the order the sidebar draws them.
     pub fn cycle(&self, forward: bool) {
-        let order = open_order(&self.sidebar());
+        // Collapsed groups hide rows but not sessions: Ctrl+Tab still reaches them.
+        let mut prefs = self.prefs();
+        prefs.collapsed.clear();
+        let order = arranged_open_order(&arrange(&self.sidebar(), &prefs, OffsetDateTime::now_utc(), None));
         let current = match self.active() {
             Active::Live(id) => Some(id),
             Active::NewSession => None,
