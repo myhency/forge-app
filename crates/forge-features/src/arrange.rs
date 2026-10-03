@@ -244,6 +244,15 @@ fn arrange_filtered(
     }
 }
 
+/// The open sessions in the order the sidebar draws them, with no row hidden: a collapsed group or
+/// the status filter hides rows, not sessions, and Ctrl+Tab must still reach them.
+pub fn open_session_order(groups: &[SidebarGroup], prefs: &SidebarPrefs, now: OffsetDateTime) -> Vec<LiveSessionId> {
+    let mut prefs = prefs.clone();
+    prefs.collapsed.clear();
+    prefs.status = StatusFilter::All;
+    arranged_open_order(&arrange(groups, &prefs, now, None))
+}
+
 /// The open sessions in the order the sidebar draws them; Ctrl+Tab cycles through this. Pass
 /// groups arranged with no collapsed ids, so a session in a collapsed group can still be reached.
 pub fn arranged_open_order(groups: &[ArrangedGroup]) -> Vec<LiveSessionId> {
@@ -613,5 +622,24 @@ mod tests {
         assert!(hidden.is_empty());
         assert_eq!(shown.len(), 1);
         assert!(shown[0].entries.is_empty());
+    }
+
+    #[test]
+    fn ctrl_tab_order_reaches_open_sessions_whatever_the_filter_and_collapsed_groups_hide() {
+        let open = |title: &str, id: u64, archived: bool| SidebarEntry {
+            key: EntryKey::Live(LiveSessionId(id)),
+            archived,
+            ..entry(title, None, Some("2026-09-29T00:00:00Z"))
+        };
+        let groups = vec![group("/a", vec![open("one", 1, false), open("two", 2, true)])];
+        let prefs = SidebarPrefs {
+            status: StatusFilter::Active,
+            collapsed: vec![folder_group_id(std::path::Path::new("/a"))],
+            ..SidebarPrefs::default()
+        };
+
+        let order = open_session_order(&groups, &prefs, now());
+
+        assert_eq!(order, vec![LiveSessionId(1), LiveSessionId(2)]);
     }
 }

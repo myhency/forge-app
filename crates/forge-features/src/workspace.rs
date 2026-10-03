@@ -12,7 +12,7 @@ use time::OffsetDateTime;
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 use crate::transcript_views::TranscriptViews;
-use crate::arrange::{arrange, arranged_open_order, ArrangedGroup};
+use crate::arrange::{arrange, open_session_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
 use crate::sidebar::{cycle_target, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
 
@@ -631,10 +631,7 @@ impl Workspace {
 
     /// Focuses the next (or previous) open session in the order the sidebar draws them.
     pub fn cycle(&self, forward: bool) {
-        // Collapsed groups hide rows but not sessions: Ctrl+Tab still reaches them.
-        let mut prefs = self.prefs();
-        prefs.collapsed.clear();
-        let order = arranged_open_order(&arrange(&self.sidebar(), &prefs, crate::arrange::now_local(), None));
+        let order = open_session_order(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local());
         let current = match self.active() {
             Active::Live(id) => Some(id),
             Active::NewSession => None,
