@@ -261,8 +261,8 @@ mod tests {
             project_path: PathBuf::from("/work/a"),
             title: Some("A title".to_string()),
             messages: vec![
-                Message { role: MessageRole::User, content: "earlier".to_string(), tool_calls: Vec::new() },
-                Message { role: MessageRole::Assistant, content: "reply".to_string(), tool_calls: Vec::new() },
+                Message { role: MessageRole::User, content: "earlier".to_string(), thinking: String::new(), tool_calls: Vec::new() },
+                Message { role: MessageRole::Assistant, content: "reply".to_string(), thinking: String::new(), tool_calls: Vec::new() },
             ],
             permission_mode: PermissionMode::Default,
             usage: forge_domain::SessionUsage::default(),

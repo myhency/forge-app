@@ -33,6 +33,8 @@ pub enum MessageRole {
 pub struct Message {
     pub role: MessageRole,
     pub content: String,
+    /// What the model thought before it answered; empty when it did not think or the file has none.
+    pub thinking: String,
     pub tool_calls: Vec<ToolCall>,
 }
 
@@ -41,6 +43,7 @@ impl Message {
         Self {
             role,
             content: String::new(),
+            thinking: String::new(),
             tool_calls: Vec::new(),
         }
     }
@@ -77,6 +80,7 @@ mod tests {
         assert_eq!(message.role, MessageRole::Assistant);
         assert_eq!(message.content, "");
         assert!(message.tool_calls.is_empty());
+        assert_eq!(message.thinking, "");
     }
 
     #[test]

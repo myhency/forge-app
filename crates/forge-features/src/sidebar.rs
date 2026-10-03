@@ -513,6 +513,7 @@ mod tests {
         open_view.session.messages.push(Message {
             role: MessageRole::User,
             content: "한".repeat(100),
+            thinking: String::new(),
             tool_calls: Vec::new(),
         });
 

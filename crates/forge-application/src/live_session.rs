@@ -210,6 +210,7 @@ mod tests {
         session.messages.push(forge_domain::Message {
             role: MessageRole::User,
             content: "earlier".to_string(),
+            thinking: String::new(),
             tool_calls: Vec::new(),
         });
         LiveSessionInit {

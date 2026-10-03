@@ -19,6 +19,7 @@ pub fn push_user_message(session: &mut Session, text: String) {
     session.messages.push(Message {
         role: MessageRole::User,
         content: text,
+        thinking: String::new(),
         tool_calls: Vec::new(),
     });
 }
