@@ -8,8 +8,8 @@ Forge status was read from `crates/` on 2026-10-03.
 
 | Id | Feature | Seen | Forge | Size | Plan | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| SES-01 | Fork a session (menu item "포크", key F) | partly | none | M | - | Menu item seen, its effect not. Does it copy the transcript, or start from a point in it? Observe. |
-| SES-02 | Archive a session (menu item "보관", key A), and a way to see and restore archived ones | partly | none | M | - | Where archived sessions go was not seen. Archive is not delete. Compare Forge's delete (spec §19). |
+| SES-01 | Fork a session (menu item "포크", key F) | seen | none | M | Plan 19 (planned) | Seen in round 4: at once, copies the whole transcript into a new session "<title> (fork)" in the same project, opened and selected; folder, model, effort and mode are kept; the original stays. SDK `forkSession` does the copy. |
+| SES-02 | Archive a session (menu item "보관", key A), and a way to see and restore archived ones | seen | none | M | - | Round 4: archived sessions show under the status filter "보관됨" with an archive icon; opened, they are read-only with a bar "보관 해제". Not built in Plan 19 (user put it off). The menu item "보관" itself was not chosen. Compare Forge's delete (spec §19). |
 | SES-03 | View transcript (submenu): 일반 (normal), 사고 과정 (thinking), 자세히 (detailed) | seen | has | S | Plan 15 (built) | Radio choice, normal is the default. Forge: a Normal / Thinking / Detailed control in the chat header. What the desktop app shows for "자세히" was not seen (needs OBS-01); Forge opens each tool call with input and result. |
 | SES-04 | Output style (submenu): only "새 스타일..." | seen | none | S | won't? | No built-in styles listed. What "새 스타일..." does was not tried. |
 | SES-05 | Open in (submenu): 새 창 (new window), 클라우드 (run in the cloud) | seen | none | S | won't? | Not editors or Finder. Cloud runs are out of scope; a new window needs multi-window. The user decides. |
@@ -29,9 +29,9 @@ Forge status was read from `crates/` on 2026-10-03.
 | CMP-02 | Voice input (microphone button with a chevron) | partly | none | L | - | Chevron menu not opened. Needs OS audio and speech; decide if in scope. |
 | CMP-03 | Permission mode menu with five entries: 자동 "Claude가 권한 결정을 처리합니다", 수동 "변경하기 전에 항상 확인", 편집 자동 수락, 계획, 권한 무시 (separate "활성화" button); number keys 1 to 4 | seen | partial | M | Plan 16 (built) | Forge has four modes (default, accept edits, plan, bypass; `permission_mode.rs`) and no "auto" mode. Check the SDK for an auto mode before planning. Bypass needs an extra step to enable. Plan 16: the SDK has `auto`; Forge now has five modes, changed in the composer, bypass asks first. |
 | CMP-04 | Model picker in the composer: Opus 5.5, Sonnet 5.5 (badge "기본값"), Fable 5.1 (badge "사용 크레딧 필요"), Haiku 4.5, "더 많은 모델" submenu; keys 1 to 4 | seen | partial | M | Plan 16 (built) | Forge sets the default model in Settings only, and a choice applies to the next new session (spec §16). Changing the model of a running session was not tried in the app. Plan 16: Forge changes it in the running session with the SDK's `setModel`; "더 많은 모델" and the badges are not built. Seen with the real SDK: Sonnet 5.5 (`claude-sonnet-5-5`) is refused by the bundled Claude Code 2.1.283 and Fable 5.1 needs usage credits; Settings uses the same ids (OTH-07). |
-| CMP-05 | Effort level next to the model ("중간") | partly | none | M | - | Options not opened. Check the SDK for an effort option. |
+| CMP-05 | Effort level next to the model ("중간") | seen | none | M | Plan 19 (planned) | Round 4: a popover with a slider of six stops from "더 빠르게" to "더 스마트하게", the recommended stop marked "추천". The SDK has `applyFlagSettings({effortLevel})`, a query option `effort` and `supportedEffortLevels` per model (five levels); the sixth stop's name is not known. |
 | CMP-06 | Environment chips above the composer on a new session: "로컬" (where it runs), the folder name, an add-folder button | seen | partial | S | Plan 18 (built: "Local" and folder-name chips; the "로컬" menu was not seen) | Forge has a folder choice on the new-session screen (spec §22). The "로컬" chip's menu (other environments) was not opened. |
-| CMP-07 | Circle at the right end of the composer's bottom row | inferred | partial | S | - | Probably context use. Forge has a usage ring (spec §20). Hover it to learn what it shows. |
+| CMP-07 | Circle at the right end of the composer's bottom row | seen | partial | S | won't (Plan 19) | Round 4: a popover with context use (56.4k / 1M), plan limits (session and weekly) and cloud credit. Forge's `UsageRing` already shows context, tokens and cost; plan limits come from the account and cannot be read from transcripts. |
 
 ## PNL: panels and tools in a session
 
@@ -82,4 +82,4 @@ Forge status was read from `crates/` on 2026-10-03.
 | OTH-04 | Split panes | Plan 13 candidates | - |
 | OTH-05 | Plan 12's deferred minors | spec §23.8 | - |
 | OTH-06 | Test harness levels B (scenario runner) and C (SSR render tests) | Plan 13, deferred by the user | - |
-| OTH-07 | Check the model ids in `KNOWN_MODELS` against the bundled Claude Code: `claude-sonnet-5-5` was refused by `setModel` in a running session; Settings and new sessions use the same ids | Plan 16 | - |
+| OTH-07 | Check the model ids in `KNOWN_MODELS` against the bundled Claude Code: `claude-sonnet-5-5` was refused by `setModel` in a running session; Settings and new sessions use the same ids | Plan 16 | Plan 19 (planned) |
