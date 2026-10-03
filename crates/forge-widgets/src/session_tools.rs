@@ -11,6 +11,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
     let terminal_open = workspace.dock(id).is_open(Panel::Terminal);
     let changes_open = workspace.dock(id).is_open(Panel::Changes);
     let files_open = workspace.dock(id).is_open(Panel::Files);
+    let preview_open = workspace.dock(id).is_open(Panel::Preview);
     let sleeping = workspace.prevents_sleep(id);
     rsx! {
         div { class: "pane-tools",
@@ -34,6 +35,17 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                     "aria-pressed": "{changes_open}",
                     onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Changes)),
                     "±"
+                }
+            }
+            if terminal {
+                button {
+                    class: if preview_open { "icon-button active" } else { "icon-button" },
+                    r#type: "button",
+                    title: "Preview",
+                    "aria-label": "Preview",
+                    "aria-pressed": "{preview_open}",
+                    onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Preview)),
+                    "◎"
                 }
             }
             div { class: "picker",

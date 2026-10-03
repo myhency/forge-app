@@ -393,3 +393,10 @@ button.tool-call { appearance: none; background: none; text-align: left; cursor:
 .file-viewer { display: flex; font-family: var(--mono); font-size: 12px; line-height: 1.5; min-width: max-content; }
 .file-gutter { flex: none; margin: 0; padding: 0 8px 0 0; text-align: right; color: var(--fg-muted); user-select: none; }
 .file-code { margin: 0; white-space: pre; }
+
+.preview-bar { flex: none; display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.preview-bar .icon-button:disabled { opacity: 0.4; cursor: default; }
+.preview-url { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; font-size: 12px; }
+.preview-open { flex: none; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; }
+.preview-open:hover { background: var(--bg-hover); }
+.dock-note .error { color: var(--danger); }

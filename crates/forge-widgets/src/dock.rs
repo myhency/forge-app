@@ -6,6 +6,7 @@ use forge_features::{use_workspace, Panel};
 
 use crate::changes_panel::ChangesPanel;
 use crate::files_panel::FilesPanel;
+use crate::preview_panel::PreviewPanel;
 use crate::terminal_panel::TerminalPanel;
 
 // Where a column's left edge was grabbed: the pointer's x and the column's width at that moment.
@@ -65,7 +66,7 @@ pub fn Dock(id: LiveSessionId, cwd: PathBuf) -> Element {
                                     Panel::Terminal => rsx! { TerminalPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
                                     Panel::Changes => rsx! { ChangesPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
                                     Panel::Files => rsx! { FilesPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
-                                    Panel::Preview => rsx! {},
+                                    Panel::Preview => rsx! { PreviewPanel { key: "{panel:?}", id } },
                                 }
                             }
                         }
