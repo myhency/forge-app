@@ -20,7 +20,7 @@ pub use project_port::{ProjectRepositoryError, ProjectRepositoryPort};
 pub use session_port::{SessionRepositoryError, SessionRepositoryPort};
 pub use sidecar_factory_port::SidecarFactoryPort;
 pub use sleep_port::SleepPort;
-pub use terminal_port::{TerminalError, TerminalEvent, TerminalId, TerminalPort, TerminalSession, TerminalSize};
+pub use terminal_port::{TerminalError, TerminalEvent, TerminalId, TerminalPort, TerminalSession, TerminalSize, OUTPUT_BATCH_LIMIT};
 pub use sidecar_port::{
     PermissionRequestId, SidecarError, SidecarEvent, SidecarPort, StartSessionParams,
 };

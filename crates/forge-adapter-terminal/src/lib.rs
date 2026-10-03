@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::mpsc::{channel, Sender};
+use std::sync::{Arc, Mutex};
 
 use forge_ports::{TerminalError, TerminalEvent, TerminalId, TerminalPort, TerminalSession, TerminalSize};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
@@ -10,21 +11,27 @@ use tokio::sync::mpsc::unbounded_channel;
 
 struct Live {
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    // What was typed goes to a thread that owns the pty's writer: a write to a pty blocks while the
+    // shell's program reads nothing (a pasted block of lines while `sleep` runs), and the caller is
+    // the UI thread.
+    input: Sender<Vec<u8>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
 }
 
+type LiveMap = Arc<Mutex<HashMap<TerminalId, Live>>>;
+
 /// Shells in a pseudo-terminal, through `portable-pty`. Each shell has a thread that copies what
-/// it prints into the session's event stream and reports its exit.
+/// it prints into the session's event stream and reports its exit, and a thread that writes what
+/// was typed.
 pub struct PtyTerminal {
     shell: String,
     next: AtomicU64,
-    live: Mutex<HashMap<TerminalId, Live>>,
+    live: LiveMap,
 }
 
 impl PtyTerminal {
     pub fn new(shell: impl Into<String>) -> Self {
-        Self { shell: shell.into(), next: AtomicU64::new(1), live: Mutex::new(HashMap::new()) }
+        Self { shell: shell.into(), next: AtomicU64::new(1), live: Arc::new(Mutex::new(HashMap::new())) }
     }
 }
 
@@ -51,10 +58,23 @@ impl TerminalPort for PtyTerminal {
         let mut child = pair.slave.spawn_command(command).map_err(failed)?;
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().map_err(failed)?;
-        let writer = pair.master.take_writer().map_err(failed)?;
+        let mut writer = pair.master.take_writer().map_err(failed)?;
         let killer = child.clone_killer();
+        let id = TerminalId(self.next.fetch_add(1, Ordering::Relaxed));
+
+        let (input, typed) = channel::<Vec<u8>>();
+        std::thread::spawn(move || {
+            for chunk in typed {
+                if writer.write_all(&chunk).is_err() || writer.flush().is_err() {
+                    break;
+                }
+            }
+            // Dropping the writer sends the shell its end of input; it can block, here and not on
+            // the caller's thread.
+        });
 
         let (sender, events) = unbounded_channel();
+        let live = self.live.clone();
         std::thread::spawn(move || {
             let mut buffer = [0u8; 8192];
             loop {
@@ -67,20 +87,21 @@ impl TerminalPort for PtyTerminal {
                     }
                 }
             }
+            // The shell is over (or being closed): give the pty back before waiting, so a later
+            // `close` finds nothing to signal and cannot hit a process id that was reused.
+            live.lock().unwrap().remove(&id);
             let code = child.wait().ok().map(|status| status.exit_code());
             let _ = sender.send(TerminalEvent::Exited(code));
         });
 
-        let id = TerminalId(self.next.fetch_add(1, Ordering::Relaxed));
-        self.live.lock().unwrap().insert(id, Live { master: pair.master, writer, killer });
-        Ok(TerminalSession { id, events })
+        self.live.lock().unwrap().insert(id, Live { master: pair.master, input, killer });
+        Ok(TerminalSession::new(id, events))
     }
 
     fn write(&self, id: TerminalId, data: &[u8]) -> Result<(), TerminalError> {
-        let mut live = self.live.lock().unwrap();
-        let terminal = live.get_mut(&id).ok_or_else(|| failed("the terminal is closed"))?;
-        terminal.writer.write_all(data).map_err(failed)?;
-        terminal.writer.flush().map_err(failed)
+        let live = self.live.lock().unwrap();
+        let terminal = live.get(&id).ok_or_else(|| failed("the terminal is closed"))?;
+        terminal.input.send(data.to_vec()).map_err(|_| failed("the terminal is closed"))
     }
 
     fn resize(&self, id: TerminalId, size: TerminalSize) -> Result<(), TerminalError> {
@@ -99,7 +120,7 @@ impl TerminalPort for PtyTerminal {
 
 impl Drop for PtyTerminal {
     fn drop(&mut self) {
-        if let Ok(live) = self.live.get_mut() {
+        if let Ok(mut live) = self.live.lock() {
             for (_, mut terminal) in live.drain() {
                 let _ = terminal.killer.kill();
             }
@@ -218,6 +239,37 @@ mod tests {
         assert!(terminal.write(session.id, b"x").is_err());
         assert!(terminal.resize(session.id, SIZE).is_err());
         terminal.close(session.id); // closing twice is ignored
+    }
+
+    #[test]
+    fn a_big_write_to_a_shell_that_is_not_reading_does_not_block_the_caller() {
+        let dir = tempfile::tempdir().unwrap();
+        let terminal = terminal();
+        let session = terminal.open(dir.path(), SIZE).unwrap();
+        // `sleep` reads no input, so the tty's input queue fills after about a kilobyte of lines,
+        // as when a few lines of text are pasted.
+        terminal.write(session.id, b"sleep 4\n").unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        let started = std::time::Instant::now();
+        terminal.write(session.id, "pasted line of text\n".repeat(10_000).as_bytes()).unwrap();
+        assert!(started.elapsed() < Duration::from_secs(1), "write blocked for {:?}", started.elapsed());
+        let started = std::time::Instant::now();
+        terminal.close(session.id);
+        assert!(started.elapsed() < Duration::from_secs(1), "close blocked for {:?}", started.elapsed());
+    }
+
+    #[tokio::test]
+    async fn a_shell_that_exits_gives_its_pty_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let terminal = terminal();
+        let mut session = terminal.open(dir.path(), SIZE).unwrap();
+        terminal.write(session.id, b"exit 0\n").unwrap();
+        loop {
+            if let TerminalEvent::Exited(_) = next(&mut session.events).await {
+                break;
+            }
+        }
+        assert_eq!(terminal.live.lock().unwrap().len(), 0, "the pty of an exited shell stays open");
     }
 
     #[test]

@@ -111,7 +111,7 @@ async fn drive(
                 Ok(FromPage::Size { cols, rows }) => { let _ = terminal.resize(session.id, TerminalSize { cols, rows }); }
                 Err(_) => return,
             },
-            event = session.events.recv() => match event {
+            event = session.recv_batch() => match event {
                 Some(TerminalEvent::Output(bytes)) => {
                     let b = base64::engine::general_purpose::STANDARD.encode(bytes);
                     let _ = page.send(serde_json::json!({ "t": "out", "b": b }));
