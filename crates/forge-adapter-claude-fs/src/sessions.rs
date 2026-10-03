@@ -153,6 +153,7 @@ fn parse_permission_mode(raw: &str) -> PermissionMode {
         "acceptEdits" => PermissionMode::AcceptEdits,
         "bypassPermissions" => PermissionMode::BypassPermissions,
         "plan" => PermissionMode::Plan,
+        "auto" => PermissionMode::Auto,
         _ => PermissionMode::Default,
     }
 }
@@ -1154,8 +1155,10 @@ mod tests {
             (vec![mode_line("acceptEdits")], PermissionMode::AcceptEdits),
             (vec![mode_line("bypassPermissions")], PermissionMode::BypassPermissions),
             (vec![mode_line("plan")], PermissionMode::Plan),
+            (vec![mode_line("auto")], PermissionMode::Auto),
             (vec![mode_line("default")], PermissionMode::Default),
-            (vec![mode_line("auto")], PermissionMode::Default),
+            // A mode the SDK has and Forge does not model (dontAsk) falls back to the default.
+            (vec![mode_line("dontAsk")], PermissionMode::Default),
             (vec![mode_line("acceptEdits"), mode_line("plan")], PermissionMode::Plan),
             (vec![user_text("no mode line")], PermissionMode::Default),
         ];

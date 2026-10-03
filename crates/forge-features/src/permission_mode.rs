@@ -1,10 +1,11 @@
 use forge_domain::PermissionMode;
 
-const MODES: [(PermissionMode, &str, &str); 4] = [
+const MODES: [(PermissionMode, &str, &str); 5] = [
     (PermissionMode::Default, "default", "Ask before edits"),
     (PermissionMode::AcceptEdits, "accept_edits", "Accept edits"),
     (PermissionMode::Plan, "plan", "Plan mode"),
     (PermissionMode::BypassPermissions, "bypass_permissions", "Bypass permissions"),
+    (PermissionMode::Auto, "auto", "Auto"),
 ];
 
 /// `(value, label)` pairs for the mode selector.
@@ -43,6 +44,7 @@ mod tests {
             PermissionMode::AcceptEdits,
             PermissionMode::Plan,
             PermissionMode::BypassPermissions,
+            PermissionMode::Auto,
         ] {
             assert_eq!(parse_mode(mode_value(mode)), mode);
         }
@@ -55,13 +57,13 @@ mod tests {
     }
 
     #[test]
-    fn the_selector_offers_all_four_modes_with_distinct_values() {
+    fn the_selector_offers_all_five_modes_with_distinct_values() {
         let options = mode_options();
-        assert_eq!(options.len(), 4);
+        assert_eq!(options.len(), 5);
         let mut values: Vec<&String> = options.iter().map(|(value, _)| value).collect();
         values.sort();
         values.dedup();
-        assert_eq!(values.len(), 4);
+        assert_eq!(values.len(), 5);
         assert_eq!(options[0].0, "default", "the safest mode is listed first");
     }
 }

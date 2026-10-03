@@ -29,6 +29,7 @@ pub enum WireMode {
     AcceptEdits,
     BypassPermissions,
     Plan,
+    Auto,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -46,6 +47,7 @@ impl From<PermissionMode> for WireMode {
             PermissionMode::AcceptEdits => WireMode::AcceptEdits,
             PermissionMode::BypassPermissions => WireMode::BypassPermissions,
             PermissionMode::Plan => WireMode::Plan,
+            PermissionMode::Auto => WireMode::Auto,
         }
     }
 }
