@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_features::{folder_menu_rows, use_new_session_draft, use_settings, use_workspace};
+use forge_features::{folder_menu_rows, refocus_composer, use_new_session_draft, use_settings, use_workspace};
 
 use crate::composer_controls::{ModePickerView, ModelPickerView, Picker, PickerItem};
 
@@ -23,9 +23,12 @@ pub fn FolderChip() -> Element {
             heading: "Recent",
             current: current_label,
             items,
-            onpick: move |index: usize| match paths.get(index) {
-                Some(path) => workspace.set_new_folder(Some(path.clone())),
-                None => workspace.open_folder(),
+            onpick: move |index: usize| {
+                match paths.get(index) {
+                    Some(path) => workspace.set_new_folder(Some(path.clone())),
+                    None => workspace.open_folder(),
+                }
+                refocus_composer();
             },
         }
     }
