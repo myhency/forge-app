@@ -768,7 +768,7 @@ Expected: PASS.
 
 - [ ] **Step 3: End-to-end acceptance**
 
-Run `scripts/harness/launch.sh`, then `python3 scripts/harness/capture.py`, then Read the PNG. Expected: the sidebar shows `my-app` (with the sessions "Fix the login bug" and "Add a dark theme"), `my_app`'s session folded into the same folder per Plan 12 behavior, and two `app` headings told apart by parent (`a`, `b`). Click the session title "Session in a/app" with `click.py`, capture again and confirm that session opens. Click a point outside the image (`click.py 99999 5`) and confirm it refuses. Then `scripts/harness/stop.sh`.
+Run `scripts/harness/launch.sh`, then `python3 scripts/harness/capture.py`, then Read the PNG. Expected: the sidebar shows `my-app` (with the sessions "Fix the login bug" and "Add a dark theme"), a separate struck-through `my_app` heading for the missing folder, and two `app` headings told apart by parent (`app (a)`, `app (b)`). Click the session title "Session in a/app" with `click.py`, capture again and confirm that session opens. Click a point outside the image (`click.py 99999 5`) and confirm it refuses. Then `scripts/harness/stop.sh`.
 If the screenshot is blank, offset by shadow, or the click lands off target, fix the script (do not hard-code a correction) and re-run.
 
 - [ ] **Step 4: Update the memory notes**
