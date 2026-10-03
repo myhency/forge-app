@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_domain::{normalize_setting, AppConfig, SidebarPrefs};
+use forge_domain::{normalize_setting, AppConfig, ArchivedRef, SidebarPrefs};
 use forge_ports::{ConfigError, ConfigRepositoryPort};
 
 /// Reads and changes the settings the UI owns (`base_url`, `api_key`, `model`). Every save loads
@@ -50,6 +50,16 @@ impl SettingsUseCase {
         let _saving = self.write_lock.lock().await;
         let mut config = self.config.load().await?;
         config.sidebar = prefs.clone();
+        self.config.save(&config).await?;
+        Ok(config)
+    }
+
+    /// Saves which sessions are archived. Like `save_sidebar`, a config that cannot be read is never
+    /// replaced, and it shares the write lock so a quick archive and filter change both survive.
+    pub async fn save_archived(&self, archived: &[ArchivedRef]) -> Result<AppConfig, ConfigError> {
+        let _saving = self.write_lock.lock().await;
+        let mut config = self.config.load().await?;
+        config.archived = archived.to_vec();
         self.config.save(&config).await?;
         Ok(config)
     }
@@ -268,5 +278,39 @@ mod tests {
         let stored = shared.stored.lock().unwrap().clone();
         assert_eq!(stored.model.as_deref(), Some("claude-opus-5-5"), "the model save was lost");
         assert_eq!(stored.sidebar, prefs, "the sidebar save was lost");
+    }
+
+    #[tokio::test]
+    async fn save_archived_replaces_only_the_archived_list() {
+        let mut mock = MockConfigRepositoryPort::new();
+        mock.expect_load().times(1).returning(|| Ok(with_lists()));
+        mock.expect_save()
+            .withf(|c: &AppConfig| {
+                c.archived.len() == 1
+                    && c.archived[0].session_id == "s1"
+                    && c.base_url.as_deref() == Some("https://old.test")
+                    && c.enabled_skills == vec!["brainstorming".to_string()]
+            })
+            .times(1)
+            .returning(|_| Ok(()));
+        let usecase = SettingsUseCase::new(Arc::new(mock));
+        let archived = vec![forge_domain::ArchivedRef { project: "/p".into(), session_id: "s1".to_string() }];
+
+        let saved = usecase.save_archived(&archived).await.unwrap();
+
+        assert_eq!(saved.archived, archived);
+    }
+
+    #[tokio::test]
+    async fn save_archived_does_not_replace_a_config_it_cannot_read() {
+        let mut mock = MockConfigRepositoryPort::new();
+        mock.expect_load()
+            .times(1)
+            .returning(|| Err(ConfigError::ParseFailed("bad".to_string())));
+        mock.expect_save().times(0);
+
+        let result = SettingsUseCase::new(Arc::new(mock)).save_archived(&[]).await;
+
+        assert!(result.is_err());
     }
 }
