@@ -232,12 +232,18 @@ fn apply_assistant_line(session: &mut Session, line: &Value) {
         return;
     };
     let mut texts: Vec<&str> = Vec::new();
+    let mut thoughts: Vec<&str> = Vec::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     for block in blocks {
         match block.get("type").and_then(Value::as_str) {
             Some("text") => {
                 if let Some(text) = block.get("text").and_then(Value::as_str) {
                     texts.push(text);
+                }
+            }
+            Some("thinking") => {
+                if let Some(thought) = block.get("thinking").and_then(Value::as_str).filter(|t| !t.is_empty()) {
+                    thoughts.push(thought);
                 }
             }
             Some("tool_use") => {
@@ -258,7 +264,8 @@ fn apply_assistant_line(session: &mut Session, line: &Value) {
     }
 
     let text = texts.join("\n\n");
-    if text.is_empty() && tool_calls.is_empty() {
+    let thinking = thoughts.join("\n\n");
+    if text.is_empty() && thinking.is_empty() && tool_calls.is_empty() {
         return;
     }
     if !matches!(session.messages.last(), Some(m) if m.role == MessageRole::Assistant) {
@@ -273,6 +280,12 @@ fn apply_assistant_line(session: &mut Session, line: &Value) {
             message.content.push_str("\n\n");
         }
         message.content.push_str(&text);
+    }
+    if !thinking.is_empty() {
+        if !message.thinking.is_empty() {
+            message.thinking.push_str("\n\n");
+        }
+        message.thinking.push_str(&thinking);
     }
     message.tool_calls.extend(tool_calls);
 }
@@ -1021,6 +1034,7 @@ mod tests {
         let assistant = &session.messages[1];
         assert_eq!(assistant.role, MessageRole::Assistant);
         assert_eq!(assistant.content, "Let me look.\n\nDone.");
+        assert_eq!(assistant.thinking, "hmm\n\nok");
         assert_eq!(assistant.tool_calls.len(), 1);
         assert_eq!(assistant.tool_calls[0].id, "t-1");
         assert_eq!(assistant.tool_calls[0].name, "Read");
@@ -1274,7 +1288,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_session_adds_nothing_for_thinking_only_assistant_lines() {
+    async fn load_session_keeps_the_thinking_of_a_line_that_has_nothing_else() {
         let home = tempfile::tempdir().unwrap();
         write_session(
             home.path(),
@@ -1291,9 +1305,28 @@ mod tests {
         let session = load(home.path(), "s1").await.unwrap();
 
         let roles: Vec<MessageRole> = session.messages.iter().map(|m| m.role).collect();
-        assert_eq!(roles, vec![MessageRole::User, MessageRole::User]);
-        assert_eq!(session.messages[0].content, "q");
-        assert_eq!(session.messages[1].content, "q2");
+        assert_eq!(
+            roles,
+            vec![MessageRole::User, MessageRole::Assistant, MessageRole::User, MessageRole::Assistant]
+        );
+        assert_eq!(session.messages[1].thinking, "hmm");
+        assert_eq!(session.messages[1].content, "");
+        assert_eq!(session.messages[3].thinking, "more");
+    }
+
+    #[tokio::test]
+    async fn load_session_ignores_an_empty_thinking_block() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[user_text("q"), assistant_block(json!({"type": "thinking", "thinking": ""}))],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.messages.len(), 1, "no empty assistant message for a blank thought");
     }
 
     #[cfg(unix)]
