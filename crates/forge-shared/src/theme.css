@@ -363,3 +363,19 @@ button.tool-call { appearance: none; background: none; text-align: left; cursor:
 .icon-button.active { background: var(--bg-hover); color: var(--accent); }
 /* The `⋮` menu in the header opens downwards, below its button. */
 .picker-menu.down { top: 100%; bottom: auto; left: auto; right: 0; margin-top: 6px; }
+
+/* Panels that show files: a note, a list at the left and the content at the right. */
+.dock-note { padding: 12px; color: var(--fg-muted); font-size: 13px; }
+.dock-note.error { color: var(--danger); }
+.changes-body { flex: 1; min-height: 0; display: flex; }
+.changes-list { flex: none; width: 40%; margin: 0; padding: 4px; list-style: none; overflow-y: auto; border-right: 1px solid var(--border); box-sizing: border-box; }
+.changes-row { display: flex; align-items: baseline; gap: 6px; width: 100%; padding: 4px 6px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.changes-row:hover { background: var(--bg-hover); }
+.changes-row.selected { background: var(--bg-hover); }
+.change-letter { flex: none; width: 1.2em; font-family: var(--mono); font-weight: 600; color: var(--fg-muted); }
+.change-letter.change-A, .change-letter.change-U { color: var(--hl-string); }
+.change-letter.change-D, .change-letter.change-C { color: var(--danger); }
+.change-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.change-counts { flex: none; color: var(--fg-muted); font-size: 11px; }
+.changes-diff { flex: 1; min-width: 0; overflow: auto; padding: 8px; }
+.changes-diff .diff { max-width: none; margin: 0; }

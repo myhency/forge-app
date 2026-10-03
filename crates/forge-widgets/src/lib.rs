@@ -1,3 +1,4 @@
+mod changes_panel;
 mod chat_window;
 mod composer_controls;
 mod dock;
