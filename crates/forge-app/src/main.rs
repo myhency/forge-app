@@ -103,6 +103,18 @@ fn claude_paths(
     }
 }
 
+// Where Forge keeps its own settings (base URL, API key, model, enabled extensions).
+// `FORGE_CONFIG_PATH` points it at another file so a test run never reads or overwrites the real one.
+fn config_path(
+    override_path: Option<std::ffi::OsString>,
+    default_path: Option<std::path::PathBuf>,
+) -> Option<std::path::PathBuf> {
+    match override_path.filter(|path| !path.is_empty()) {
+        Some(path) => Some(std::path::PathBuf::from(path)),
+        None => default_path,
+    }
+}
+
 // The composition root: the only place that names concrete adapters.
 fn build_services() -> WorkspaceServices {
     let (claude_home, claude_json) = claude_paths(
@@ -111,7 +123,8 @@ fn build_services() -> WorkspaceServices {
         default_claude_json_path(),
     )
     .expect("could not resolve the home directory");
-    let config_path = default_config_path().expect("could not resolve the config directory");
+    let config_path = config_path(std::env::var_os("FORGE_CONFIG_PATH"), default_config_path())
+        .expect("could not resolve the config directory");
     let node = std::env::var("FORGE_NODE").unwrap_or_else(|_| "node".to_string());
     let script = std::env::var("FORGE_SIDECAR_SCRIPT").unwrap_or_else(|_| DEFAULT_SIDECAR_SCRIPT.to_string());
 
@@ -178,6 +191,35 @@ mod tests {
     #[test]
     fn no_default_and_no_override_is_none() {
         assert_eq!(claude_paths(None, None, None), None);
+    }
+
+    #[test]
+    fn with_no_config_override_the_default_config_path_is_used() {
+        assert_eq!(
+            config_path(None, Some("/home/me/.config/Forge/config.json".into())),
+            Some("/home/me/.config/Forge/config.json".into())
+        );
+    }
+
+    #[test]
+    fn an_empty_config_override_counts_as_none() {
+        assert_eq!(
+            config_path(Some("".into()), Some("/home/me/.config/Forge/config.json".into())),
+            Some("/home/me/.config/Forge/config.json".into())
+        );
+    }
+
+    #[test]
+    fn a_config_override_replaces_the_default() {
+        assert_eq!(
+            config_path(Some("/tmp/fixture/forge-config/config.json".into()), None),
+            Some("/tmp/fixture/forge-config/config.json".into())
+        );
+    }
+
+    #[test]
+    fn no_default_and_no_config_override_is_none() {
+        assert_eq!(config_path(None, None), None);
     }
 
     #[test]
