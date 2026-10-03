@@ -42,7 +42,7 @@ pub(crate) fn forked_transcript(
                 continue;
             }
             if let Some(old) = value.get("uuid").and_then(Value::as_str) {
-                ids.entry(old.to_string()).or_insert_with(|| new_uuid());
+                ids.entry(old.to_string()).or_insert_with(&mut new_uuid);
             }
         }
     }
