@@ -5,7 +5,7 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{Attachment, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{FilePickerPort, FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
 use time::OffsetDateTime;
 
@@ -501,7 +501,14 @@ impl Workspace {
     }
 
     /// Opens a new session in `project`, on the saved default model, and sends its first message.
-    pub fn start_new(&self, project: ProjectSummary, mode: PermissionMode, text: String) {
+    pub fn start_new(
+        &self,
+        project: ProjectSummary,
+        mode: PermissionMode,
+        text: String,
+        attachments: Vec<Attachment>,
+        folders: Vec<PathBuf>,
+    ) {
         let this = *self;
         let services = (*self.services.peek()).clone();
         let slot = (*self.probe.peek()).clone();
@@ -519,7 +526,10 @@ impl Workspace {
             match services.registry.open_new(&project, mode, model, commands) {
                 Ok(handle) => {
                     let id = this.attach(handle.clone());
-                    handle.send(text);
+                    if !folders.is_empty() {
+                        handle.add_directories(folders);
+                    }
+                    handle.send_with(text, attachments);
                     this.select(id);
                 }
                 Err(error) => this.report(error.to_string()),

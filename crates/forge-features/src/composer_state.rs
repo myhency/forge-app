@@ -162,6 +162,25 @@ impl ComposerState {
         true
     }
 
+    /// What a new session's first message takes: like `take_for_send`, but the folders do not become
+    /// `@` lines: they go to the SDK as start options (`take_folders`).
+    pub fn take_for_new_session(&self, text: &str) -> Option<Outgoing> {
+        let attachments = self.attachments();
+        let outgoing = plan_send(text, &attachments, &[])?;
+        if !self.check_and_clear(&attachments) {
+            return None;
+        }
+        Some(outgoing)
+    }
+
+    /// The folders for a new session: all of them, since no model has been told about them yet.
+    pub fn take_folders(&self) -> Vec<PathBuf> {
+        let mut list = self.folders;
+        let folders = list.peek().iter().map(|(path, _)| path.clone()).collect();
+        list.write().clear();
+        folders
+    }
+
     /// Takes what a send needs. Checks the chips first: a refusal leaves everything where it is
     /// and sets the error. On success the chips are cleared and the folders marked as told.
     /// Call it only at the moment of sending, so a failed send has lost nothing.
