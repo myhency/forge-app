@@ -1042,7 +1042,7 @@ describe("SidecarSession", () => {
     it("sends the models the SDK lists, with only the effort levels Forge knows", async () => {
       const open = openQuery({
         supportedModels: async () => [
-          { value: "claude-opus-5-5", displayName: "Opus 5.5", supportsEffort: true, supportedEffortLevels: ["low", "high", "ultra"] },
+          { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus 5.5", supportsEffort: true, supportedEffortLevels: ["low", "high", "ultra"] },
           { value: "claude-haiku-4-5-20251001", displayName: "Haiku 4.5", supportsEffort: false },
           { displayName: "no value" },
         ],
@@ -1053,7 +1053,7 @@ describe("SidecarSession", () => {
       expect(events).toContainEqual({
         type: "models_available",
         models: [
-          { value: "claude-opus-5-5", display_name: "Opus 5.5", effort_levels: ["low", "high"] },
+          { value: "opus", resolved_model: "claude-opus-5-5", display_name: "Opus 5.5", effort_levels: ["low", "high"] },
           { value: "claude-haiku-4-5-20251001", display_name: "Haiku 4.5", effort_levels: [] },
         ],
       });

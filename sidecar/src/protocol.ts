@@ -2,7 +2,10 @@ export type WirePermissionMode = "default" | "accept_edits" | "bypass_permission
 export type WireEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface WireAvailableModel {
+  // What the model is called in the SDK's list (`opus`, `default`, or a full id).
   value: string;
+  // The full id it stands for, when the SDK says; a session's model id is matched against both.
+  resolved_model?: string;
   display_name: string;
   effort_levels: WireEffort[];
 }

@@ -108,7 +108,7 @@ mod tests {
             models,
             SidecarEvent::ModelsAvailable {
                 models: vec![forge_domain::AvailableModel {
-                    value: "m".to_string(),
+                    value: "m".to_string(), resolved_model: None,
                     display_name: "M".to_string(),
                     effort_levels: vec![forge_domain::EffortLevel::Low, forge_domain::EffortLevel::High],
                 }]

@@ -6,7 +6,9 @@ pub const DEFAULT_MODEL_VALUE: &str = "__default";
 pub const KNOWN_MODELS: [(&str, &str); 4] = [
     ("claude-fable-5-1", "Fable 5.1"),
     ("claude-opus-5-5", "Opus 5.5"),
-    ("claude-sonnet-5-5", "Sonnet 5.5"),
+    // The id and name the bundled Claude Code lists (`supportedModels()`, checked 2026-10-03, Plan 19).
+    // `claude-sonnet-5-5` is not in that catalog and `setModel` refuses it.
+    ("claude-sonnet-5", "Sonnet 5"),
     ("claude-haiku-4-5-20251001", "Haiku 4.5"),
 ];
 
@@ -66,7 +68,7 @@ pub struct ModelRow {
 }
 
 // Claude Code desktop's order. Settings lists the same models in `KNOWN_MODELS` order.
-const MENU_ORDER: [&str; 4] = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-haiku-4-5-20251001"];
+const MENU_ORDER: [&str; 4] = ["claude-opus-5-5", "claude-sonnet-5", "claude-fable-5-1", "claude-haiku-4-5-20251001"];
 
 /// The rows of the composer's model picker: the four known models with keys 1 to 4, then — when the
 /// session runs on something else — that model, then the default below a divider.
@@ -97,7 +99,7 @@ mod tests {
     fn the_model_rows_follow_the_desktop_order_with_keys_one_to_four() {
         let rows = model_menu_rows(None);
         let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
-        assert_eq!(labels, vec!["Opus 5.5", "Sonnet 5.5", "Fable 5.1", "Haiku 4.5", "Default model"]);
+        assert_eq!(labels, vec!["Opus 5.5", "Sonnet 5", "Fable 5.1", "Haiku 4.5", "Default model"]);
         let keys: Vec<_> = rows.iter().map(|row| row.key).collect();
         assert_eq!(keys, vec![Some(1), Some(2), Some(3), Some(4), None]);
         assert_eq!(rows[4].value, None);
@@ -124,8 +126,8 @@ mod tests {
 
     #[test]
     fn a_known_current_model_is_not_listed_twice() {
-        let rows = model_menu_rows(Some("claude-sonnet-5-5"));
-        assert_eq!(rows.iter().filter(|row| row.value.as_deref() == Some("claude-sonnet-5-5")).count(), 1);
+        let rows = model_menu_rows(Some("claude-sonnet-5"));
+        assert_eq!(rows.iter().filter(|row| row.value.as_deref() == Some("claude-sonnet-5")).count(), 1);
         assert_eq!(rows.len(), 5);
     }
 
@@ -146,8 +148,8 @@ mod tests {
 
     #[test]
     fn a_known_saved_model_is_not_listed_twice() {
-        let options = model_options(Some("claude-sonnet-5-5"));
-        assert_eq!(options.iter().filter(|(value, _)| value == "claude-sonnet-5-5").count(), 1);
+        let options = model_options(Some("claude-sonnet-5"));
+        assert_eq!(options.iter().filter(|(value, _)| value == "claude-sonnet-5").count(), 1);
     }
 
     #[test]

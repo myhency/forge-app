@@ -54,11 +54,12 @@ function toWireModels(raw: unknown): WireAvailableModel[] {
   if (!Array.isArray(raw)) return [];
   const models: WireAvailableModel[] = [];
   for (const item of raw) {
-    const model = item as { value?: unknown; displayName?: unknown; supportsEffort?: unknown; supportedEffortLevels?: unknown } | null;
+    const model = item as { value?: unknown; resolvedModel?: unknown; displayName?: unknown; supportsEffort?: unknown; supportedEffortLevels?: unknown } | null;
     if (typeof model?.value !== "string" || model.value === "") continue;
     const offered = model.supportsEffort === false || !Array.isArray(model.supportedEffortLevels) ? [] : model.supportedEffortLevels;
     models.push({
       value: model.value,
+      ...(typeof model.resolvedModel === "string" && model.resolvedModel !== "" ? { resolved_model: model.resolvedModel } : {}),
       display_name: typeof model.displayName === "string" && model.displayName !== "" ? model.displayName : model.value,
       effort_levels: EFFORT_LEVELS.filter((level) => offered.includes(level)),
     });

@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn the_list_prices_cover_the_models_forge_offers() {
         let prices = PriceTable::list_prices();
-        for id in ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"] {
+        for id in ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"] {
             assert!(prices.rates_for(id).is_some(), "no price for {id}");
         }
     }

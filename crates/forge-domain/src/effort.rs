@@ -29,7 +29,11 @@ impl EffortLevel {
 /// A model the SDK lists for the running session, and the effort levels it takes (empty: none).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AvailableModel {
+    /// What the SDK calls it in its list: an alias (`opus`, `default`) or a full id.
     pub value: String,
+    /// The full id the SDK says `value` stands for; a session's model is matched against both.
+    #[serde(default)]
+    pub resolved_model: Option<String>,
     pub display_name: String,
     #[serde(default)]
     pub effort_levels: Vec<EffortLevel>,

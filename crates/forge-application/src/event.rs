@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn the_model_list_is_reported() {
         let mut session = empty_session();
-        let models = vec![forge_domain::AvailableModel { value: "m".to_string(), display_name: "M".to_string(), effort_levels: vec![] }];
+        let models = vec![forge_domain::AvailableModel { value: "m".to_string(), resolved_model: None, display_name: "M".to_string(), effort_levels: vec![] }];
         let update = apply_sidecar_event(&mut session, &SidecarEvent::ModelsAvailable { models: models.clone() });
 
         assert_eq!(update, SessionUpdate::ModelsAvailable(models));

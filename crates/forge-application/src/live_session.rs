@@ -553,7 +553,7 @@ mod tests {
         wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
 
         let models = vec![forge_domain::AvailableModel {
-            value: "model-x".to_string(),
+            value: "model-x".to_string(), resolved_model: None,
             display_name: "X".to_string(),
             effort_levels: vec![forge_domain::EffortLevel::Low, forge_domain::EffortLevel::High],
         }];
