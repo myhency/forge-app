@@ -27,12 +27,32 @@ pub enum GroupBy {
     Folder,
 }
 
+/// Which sessions the sidebar lists. An unknown stored value reads as `Active`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusFilter {
+    Archived,
+    All,
+    #[default]
+    #[serde(other)]
+    Active,
+}
+
+/// A session the person archived. The Claude transcript is not changed; only Forge's config
+/// remembers it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchivedRef {
+    pub project: std::path::PathBuf,
+    pub session_id: String,
+}
+
 /// How the sidebar looks, kept in the config so it is the same after a restart.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SidebarPrefs {
     pub sort_by: SortBy,
     pub group_by: GroupBy,
+    pub status: StatusFilter,
     /// Whether a project with no sessions still gets a heading.
     pub show_empty: bool,
     /// Ids of the collapsed groups (`arrange` makes them: `folder:<path>`, `date:<bucket>`).
@@ -46,6 +66,7 @@ impl Default for SidebarPrefs {
         Self {
             sort_by: SortBy::default(),
             group_by: GroupBy::default(),
+            status: StatusFilter::default(),
             show_empty: false,
             collapsed: Vec::new(),
             width: DEFAULT_SIDEBAR_WIDTH,
@@ -89,6 +110,8 @@ pub struct AppConfig {
     pub enabled_mcp_servers: Vec<String>,
     #[serde(default)]
     pub sidebar: SidebarPrefs,
+    #[serde(default)]
+    pub archived: Vec<ArchivedRef>,
 }
 
 /// What a settings text field is stored as: trimmed, and `None` when nothing is left.
@@ -122,6 +145,7 @@ mod tests {
         let prefs = SidebarPrefs {
             sort_by: SortBy::Name,
             group_by: GroupBy::Date,
+            status: StatusFilter::All,
             show_empty: true,
             collapsed: vec!["folder:/work/a".to_string()],
             width: 300,
@@ -221,5 +245,42 @@ mod tests {
         assert_eq!(normalize_setting("   \n"), None);
         assert_eq!(normalize_setting(" sk-ant-1 \n"), Some("sk-ant-1".to_string()));
         assert_eq!(normalize_setting("https://x.test"), Some("https://x.test".to_string()));
+    }
+
+    #[test]
+    fn an_old_config_loads_with_nothing_archived_and_the_active_filter() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":null,"api_key":null}"#).unwrap();
+
+        assert!(config.archived.is_empty());
+        assert_eq!(config.sidebar.status, StatusFilter::Active);
+    }
+
+    #[test]
+    fn a_sidebar_saved_before_the_status_filter_existed_still_loads() {
+        let config: AppConfig =
+            serde_json::from_str(r#"{"sidebar":{"sort_by":"name","group_by":"date"}}"#).unwrap();
+
+        assert_eq!(config.sidebar.sort_by, SortBy::Name);
+        assert_eq!(config.sidebar.status, StatusFilter::Active);
+    }
+
+    #[test]
+    fn archived_sessions_and_the_status_filter_survive_a_round_trip() {
+        let config = AppConfig {
+            archived: vec![ArchivedRef { project: "/work/a".into(), session_id: "s1".to_string() }],
+            sidebar: SidebarPrefs { status: StatusFilter::Archived, ..SidebarPrefs::default() },
+            ..AppConfig::default()
+        };
+
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+
+        assert_eq!(back, config);
+    }
+
+    #[test]
+    fn an_unknown_status_value_reads_as_active() {
+        let config: AppConfig = serde_json::from_str(r#"{"sidebar":{"status":"deleted"}}"#).unwrap();
+
+        assert_eq!(config.sidebar.status, StatusFilter::Active);
     }
 }
