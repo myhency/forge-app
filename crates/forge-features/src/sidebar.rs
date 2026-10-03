@@ -587,6 +587,7 @@ mod tests {
             content: "한".repeat(100),
             thinking: String::new(),
             tool_calls: Vec::new(),
+            attachments: Vec::new(),
         });
 
         let summary = LiveSummary::from_view(&open_view);

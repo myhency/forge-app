@@ -229,6 +229,7 @@ mod tests {
             content: "earlier".to_string(),
             thinking: String::new(),
             tool_calls: Vec::new(),
+            attachments: Vec::new(),
         });
         LiveSessionInit {
             claude_session_id: Some(SessionId("claude-1".to_string())),
