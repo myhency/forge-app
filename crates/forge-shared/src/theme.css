@@ -64,9 +64,11 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .sidebar-item:hover .row-menu-button, .row-menu-button:focus-visible, .row-menu-button.open { opacity: 1; }
 .row-menu-button:hover { background: var(--bg-hover); color: var(--fg); }
 .row-menu { position: absolute; right: 4px; top: 100%; z-index: 5; min-width: 150px; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); box-shadow: var(--shadow); }
-.row-menu-item { display: block; width: 100%; padding: 6px 8px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.row-menu-item { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; width: 100%; box-sizing: border-box; padding: 6px 8px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .row-menu-item:hover:not(:disabled) { background: var(--bg-hover); }
 .row-menu-item.danger { color: var(--danger); }
+.row-menu { outline: none; }
+.menu-key { color: var(--fg-muted); font-size: 12px; }
 .row-menu-item:disabled { color: var(--fg-muted); cursor: default; }
 .row-menu-note { padding: 2px 8px 4px; font-size: 11px; color: var(--fg-muted); }
 .sidebar-row { position: relative; }

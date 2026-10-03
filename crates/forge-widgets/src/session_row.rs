@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_entities::{relative_time, SidebarItem};
-use forge_features::{refocus_workspace, use_workspace, DeleteAction, SidebarEntry};
+use forge_features::{menu_key_action, refocus_workspace, use_workspace, DeleteAction, MenuKeyAction, SidebarEntry};
 use forge_shared::{Button, ButtonKind};
 use time::OffsetDateTime;
 
@@ -135,7 +135,42 @@ pub fn SessionRow(project: PathBuf, entry: SidebarEntry, active: bool, onopen: E
                         }
                     }
                     if menu_open {
-                        div { class: "row-menu", onclick: move |event| event.stop_propagation(),
+                        div {
+                            class: "row-menu",
+                            tabindex: "0",
+                            onclick: move |event| event.stop_propagation(),
+                            // The menu takes focus when it opens so its letters work at once.
+                            onmounted: move |mounted| async move {
+                                let _ = mounted.set_focus(true).await;
+                            },
+                            onkeydown: {
+                                let title = entry.title.clone();
+                                move |event: KeyboardEvent| {
+                                    if event.key() == Key::Escape {
+                                        event.stop_propagation();
+                                        mode.set(RowMode::Normal);
+                                        refocus_workspace();
+                                        return;
+                                    }
+                                    let Key::Character(key) = event.key() else { return };
+                                    let modified = event
+                                        .modifiers()
+                                        .intersects(Modifiers::CONTROL | Modifiers::META | Modifiers::ALT);
+                                    match menu_key_action(&key, modified, actions) {
+                                        Some(MenuKeyAction::Rename) => {
+                                            event.stop_propagation();
+                                            event.prevent_default();
+                                            mode.set(RowMode::Renaming(title.clone()));
+                                        }
+                                        Some(MenuKeyAction::Delete) => {
+                                            event.stop_propagation();
+                                            event.prevent_default();
+                                            mode.set(RowMode::ConfirmingDelete);
+                                        }
+                                        None => {}
+                                    }
+                                }
+                            },
                             if actions.can_rename {
                                 button {
                                     class: "row-menu-item",
@@ -143,14 +178,16 @@ pub fn SessionRow(project: PathBuf, entry: SidebarEntry, active: bool, onopen: E
                                         let title = entry.title.clone();
                                         move |_| mode.set(RowMode::Renaming(title.clone()))
                                     },
-                                    "Rename"
+                                    span { "Rename" }
+                                    span { class: "menu-key", "R" }
                                 }
                             }
                             button {
                                 class: "row-menu-item danger",
                                 disabled: actions.delete != DeleteAction::Allowed,
                                 onclick: move |_| mode.set(RowMode::ConfirmingDelete),
-                                "Delete"
+                                span { "Delete" }
+                                span { class: "menu-key", "D" }
                             }
                             if actions.delete == DeleteAction::WhileOpen {
                                 div { class: "row-menu-note", "Close the session first (⌘W) to delete it." }

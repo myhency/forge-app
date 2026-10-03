@@ -24,7 +24,7 @@ pub use settings::{use_settings, use_settings_provider, ExtensionKind, Settings,
 pub use settings_draft::ConnectionDraft;
 pub use shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 pub use sidebar::{
-    cycle_target, marker_for, merge_sidebar, open_order, replace_project_sessions, DeleteAction, EntryKey,
-    LiveSummary, RowActions, SidebarEntry, SidebarGroup,
+    cycle_target, marker_for, menu_key_action, merge_sidebar, open_order, replace_project_sessions, DeleteAction, EntryKey,
+    LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,
 };
 pub use workspace::{use_workspace, use_workspace_provider, Active, Workspace, WorkspaceServices};
