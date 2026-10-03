@@ -9,6 +9,7 @@ forge-ports = { path = "../forge-ports" }
 forge-application = { path = "../forge-application" }
 forge-entities = { path = "../forge-entities" }
 forge-shared = { path = "../forge-shared" }
+time = { version = "0.3.55", features = ["parsing"] }
 dioxus = { version = "=0.7.10", default-features = false, features = ["lib"] }
 
 [dev-dependencies]

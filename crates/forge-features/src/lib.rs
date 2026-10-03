@@ -1,4 +1,5 @@
 mod approve_permission;
+mod arrange;
 mod command_box;
 mod folder_choice;
 mod new_session;
@@ -14,6 +15,7 @@ mod transcript_views;
 mod workspace;
 
 pub use approve_permission::PermissionActions;
+pub use arrange::{arrange, arranged_open_order, folder_group_id, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use command_box::CommandTextArea;
 pub use folder_choice::{choose_folder, FolderChoice};
 pub use new_session::NewSessionComposer;
