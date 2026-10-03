@@ -114,6 +114,7 @@ mod tests {
             enabled_skills: vec!["brainstorming".to_string()],
             enabled_plugins: vec!["playwright@marketplace".to_string()],
             enabled_mcp_servers: vec!["playwright-mcp".to_string()],
+            ..AppConfig::default()
         };
 
         adapter.save(&config).await.unwrap();

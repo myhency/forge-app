@@ -61,6 +61,7 @@ mod tests {
             enabled_skills: vec!["brainstorming".to_string()],
             enabled_plugins: vec!["p@m".to_string()],
             enabled_mcp_servers: vec!["playwright".to_string()],
+            ..AppConfig::default()
         }
     }
 
