@@ -486,7 +486,9 @@ impl Workspace {
     pub fn open_past(&self, project: ProjectSummary, session_id: SessionId) {
         let this = *self;
         let services = (*self.services.peek()).clone();
-        spawn(async move {
+        // Root scope: the search palette closes the moment it opens a session, and a task of the
+        // palette's own scope would be cancelled with it before the session ever opened.
+        dioxus::core::spawn_forever(async move {
             match services.registry.open_existing(&project, session_id).await {
                 Ok(outcome) => {
                     let id = this.ensure_attached(outcome.handle);

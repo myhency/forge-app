@@ -206,13 +206,12 @@ pub fn SessionRow(
     }
 }
 
-/// The grey text at the right of a row: how long ago, and in a date list also the project.
+/// The grey text at the right of a row: how long ago, or in a date or no-grouping list the project
+/// (the date heading already says when, and a longer text squeezes the title to a few letters).
 pub fn row_subtitle(project_name: Option<&str>, ago: Option<String>) -> String {
-    match (project_name, ago.filter(|ago| !ago.is_empty())) {
-        (Some(name), Some(ago)) => format!("{name} · {ago}"),
-        (Some(name), None) => name.to_string(),
-        (None, Some(ago)) => ago,
-        (None, None) => String::new(),
+    match project_name {
+        Some(name) => name.to_string(),
+        None => ago.unwrap_or_default(),
     }
 }
 
@@ -249,9 +248,10 @@ mod tests {
     }
 
     #[test]
-    fn a_row_subtitle_joins_the_project_and_the_time() {
+    fn a_row_subtitle_is_the_project_in_a_date_list_and_the_time_otherwise() {
         assert_eq!(row_subtitle(None, Some("3d ago".to_string())), "3d ago");
-        assert_eq!(row_subtitle(Some("forge"), Some("3d ago".to_string())), "forge · 3d ago");
+        // The time is left out beside a project name: the long subtitle squeezed titles to a few letters.
+        assert_eq!(row_subtitle(Some("forge"), Some("3d ago".to_string())), "forge");
         assert_eq!(row_subtitle(Some("forge"), None), "forge");
         assert_eq!(row_subtitle(None, None), "");
     }
