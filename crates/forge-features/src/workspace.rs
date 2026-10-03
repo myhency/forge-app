@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
 use time::OffsetDateTime;
 
@@ -12,7 +13,12 @@ use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, arranged_open_order, ArrangedGroup};
-use crate::sidebar::{cycle_target, merge_sidebar, replace_project_sessions, LiveSummary, SidebarGroup};
+use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
+use crate::sidebar::{cycle_target, merge_sidebar, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
+
+// Typing waits this long before the transcripts are scanned.
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
+const SEARCH_LIMIT: usize = 50;
 
 /// Everything the workspace needs from the outside, injected once by the composition root.
 #[derive(Clone)]
@@ -54,6 +60,10 @@ pub struct Workspace {
     new_commands: Signal<Vec<SlashCommand>>,
     transcript_views: Signal<TranscriptViews>,
     prefs: Signal<SidebarPrefs>,
+    search_open: Signal<bool>,
+    search_query: Signal<String>,
+    search_hits: Signal<Vec<SearchHit>>,
+    search_task: Signal<Option<dioxus::core::Task>>,
 }
 
 /// Creates the workspace, provides it to every descendant and loads the sidebar once. Call it in
@@ -82,6 +92,10 @@ pub fn use_workspace_provider() -> Workspace {
             new_commands,
             transcript_views: Signal::new(TranscriptViews::default()),
             prefs: Signal::new(SidebarPrefs::default()),
+            search_open: Signal::new(false),
+            search_query: Signal::new(String::new()),
+            search_hits: Signal::new(Vec::new()),
+            search_task: Signal::new(None),
         }
     });
     use_context_provider(move || workspace);
@@ -169,6 +183,82 @@ impl Workspace {
             Active::NewSession => None,
         };
         arrange(&self.sidebar(), &self.prefs.read(), now, active)
+    }
+
+    pub fn search_open(&self) -> bool {
+        *self.search_open.read()
+    }
+
+    /// Opens the palette empty, listing the newest sessions.
+    pub fn open_search(&self) {
+        let mut open = self.search_open;
+        let mut query = self.search_query;
+        let mut hits = self.search_hits;
+        query.set(String::new());
+        hits.set(Vec::new());
+        open.set(true);
+    }
+
+    pub fn close_search(&self) {
+        self.cancel_search();
+        let mut open = self.search_open;
+        open.set(false);
+    }
+
+    pub fn search_query(&self) -> String {
+        self.search_query.read().clone()
+    }
+
+    /// Sets the query. The transcripts are scanned after a short pause, and typing again cancels a
+    /// scan that is still going, so only the answer to the latest query is ever shown.
+    pub fn set_search_query(&self, text: String) {
+        self.cancel_search();
+        let mut query = self.search_query;
+        let mut hits = self.search_hits;
+        query.set(text.clone());
+        // Quotes of an older query would be wrong for this one.
+        hits.set(Vec::new());
+        if text.trim().is_empty() {
+            return;
+        }
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let task = spawn(async move {
+            tokio::time::sleep(SEARCH_DEBOUNCE).await;
+            match services.sessions.search_sessions(&text, SEARCH_LIMIT).await {
+                Ok(found) => hits.set(found),
+                Err(error) => this.report(error.to_string()),
+            }
+        });
+        let mut slot = self.search_task;
+        slot.set(Some(task));
+    }
+
+    fn cancel_search(&self) {
+        let mut slot = self.search_task;
+        let task = slot.write().take();
+        if let Some(task) = task {
+            task.cancel();
+        }
+    }
+
+    /// The palette's rows: the newest sessions for an empty query, else the matches.
+    pub fn search_rows(&self) -> Vec<SearchRow> {
+        let query = self.search_query();
+        if query.trim().is_empty() {
+            recent_rows(&self.sidebar(), RECENT_LIMIT)
+        } else {
+            merge_search(&self.sidebar(), &query, &self.search_hits.read())
+        }
+    }
+
+    /// Opens the session a row stands for and closes the palette.
+    pub fn open_search_row(&self, row: &SearchRow) {
+        match &row.key {
+            EntryKey::Live(id) => self.select(*id),
+            EntryKey::Past { session, .. } => self.open_past(row.project.clone(), session.clone()),
+        }
+        self.close_search();
     }
 
     /// The project folders a new session can start in: known projects that still exist, plus any
@@ -486,6 +576,7 @@ impl Workspace {
             // Opening settings belongs to `Settings::on_key`; the page offers it the event next.
             Shortcut::OpenSettings => return false,
             Shortcut::NewSession => self.show_new_session(),
+            Shortcut::OpenSearch => self.open_search(),
             Shortcut::NextSession => self.cycle(true),
             Shortcut::PreviousSession => self.cycle(false),
             Shortcut::CloseSession => self.close_active(),

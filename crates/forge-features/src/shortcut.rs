@@ -5,9 +5,10 @@ pub enum Shortcut {
     PreviousSession,
     CloseSession,
     OpenSettings,
+    OpenSearch,
 }
 
-/// Claude Code desktop's session shortcuts: Cmd+N new session, Cmd+W close the session, Cmd+, open settings,
+/// Claude Code desktop's session shortcuts: Cmd+N new session, Cmd+W close the session, Cmd+, open settings, Cmd+K search the sessions,
 /// Ctrl+Tab / Ctrl+Shift+Tab cycle. "Cmd" is Ctrl on platforms other than macOS. `key` is the
 /// pressed key: `"Tab"`, or a character in any case.
 pub fn shortcut_for(key: &str, ctrl: bool, meta: bool, shift: bool, mac: bool) -> Option<Shortcut> {
@@ -22,6 +23,7 @@ pub fn shortcut_for(key: &str, ctrl: bool, meta: bool, shift: bool, mac: bool) -
         "n" => Some(Shortcut::NewSession),
         "w" => Some(Shortcut::CloseSession),
         "," => Some(Shortcut::OpenSettings),
+        "k" => Some(Shortcut::OpenSearch),
         _ => None,
     }
 }
@@ -86,11 +88,20 @@ mod tests {
 
     #[test]
     fn while_the_overlay_is_open_only_opening_settings_is_allowed() {
-        for shortcut in [Shortcut::NewSession, Shortcut::NextSession, Shortcut::PreviousSession, Shortcut::CloseSession] {
+        for shortcut in [Shortcut::NewSession, Shortcut::NextSession, Shortcut::PreviousSession, Shortcut::CloseSession, Shortcut::OpenSearch] {
             assert!(shortcut_allowed(shortcut, false), "{shortcut:?} with the overlay closed");
             assert!(!shortcut_allowed(shortcut, true), "{shortcut:?} behind the overlay");
         }
         assert!(shortcut_allowed(Shortcut::OpenSettings, true));
         assert!(shortcut_allowed(Shortcut::OpenSettings, false));
+    }
+
+    #[test]
+    fn cmd_k_opens_the_search_on_a_mac_and_ctrl_k_elsewhere() {
+        assert_eq!(shortcut_for("k", false, true, false, true), Some(Shortcut::OpenSearch));
+        assert_eq!(shortcut_for("K", false, true, false, true), Some(Shortcut::OpenSearch), "caps lock");
+        assert_eq!(shortcut_for("k", true, false, false, false), Some(Shortcut::OpenSearch));
+        assert_eq!(shortcut_for("k", true, false, false, true), None, "Ctrl+K on a Mac");
+        assert_eq!(shortcut_for("k", false, true, true, true), None, "Cmd+Shift+K");
     }
 }
