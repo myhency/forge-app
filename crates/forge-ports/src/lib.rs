@@ -11,6 +11,7 @@ mod sidecar_factory_port;
 mod sidecar_port;
 mod sleep_port;
 mod terminal_port;
+mod usage_stats_port;
 
 pub use browser_port::BrowserPort;
 pub use config_port::{ConfigError, ConfigRepositoryPort};
@@ -27,6 +28,7 @@ pub use session_port::{SessionRepositoryError, SessionRepositoryPort};
 pub use sidecar_factory_port::SidecarFactoryPort;
 pub use sleep_port::SleepPort;
 pub use terminal_port::{TerminalError, TerminalEvent, TerminalId, TerminalPort, TerminalSession, TerminalSize, OUTPUT_BATCH_LIMIT};
+pub use usage_stats_port::{UsageStatsError, UsageStatsPort};
 pub use sidecar_port::{
     PermissionRequestId, SidecarError, SidecarEvent, SidecarPort, StartSessionParams,
 };
@@ -39,6 +41,8 @@ pub use files_port::MockFilesPort;
 pub use git_port::MockGitPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use sleep_port::MockSleepPort;
+#[cfg(any(test, feature = "mocks"))]
+pub use usage_stats_port::MockUsageStatsPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use terminal_port::MockTerminalPort;
 #[cfg(any(test, feature = "mocks"))]
