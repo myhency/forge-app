@@ -9,6 +9,7 @@ mod projects;
 mod transcript_cwd;
 mod trash;
 mod usage;
+mod usage_stats;
 
 pub use sessions::ClaudeSessionAdapter;
 pub use skills::ClaudeSkillAdapter;
@@ -16,6 +17,7 @@ pub use plugins::ClaudePluginAdapter;
 pub use mcp::ClaudeMcpAdapter;
 pub use projects::ClaudeProjectAdapter;
 pub use trash::{SystemTrash, TrashBin};
+pub use usage_stats::ClaudeUsageStatsAdapter;
 
 pub fn default_claude_home() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".claude"))
