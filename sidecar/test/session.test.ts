@@ -747,6 +747,28 @@ describe("SidecarSession", () => {
     expect(received).toEqual(["first", "second"]);
   });
 
+  it("builds image content for a send_message with attachments and passes additional directories", async () => {
+    let captured: any;
+    const received: unknown[] = [];
+    const queryFn: QueryFn = (args) => {
+      captured = args.options;
+      return toQueryHandle((async function* () {
+        for await (const msg of args.prompt as AsyncIterable<{ message: { content: unknown } }>) {
+          received.push(msg.message.content);
+          return;
+        }
+      })());
+    };
+
+    const session = new SidecarSession(queryFn, () => {});
+    const startPromise = session.handle({ ...startCommand, additional_directories: ["/extra"] });
+    await session.handle({ type: "send_message", id: "2", text: "hi", attachments: [{ kind: "file", path: "/x/b.txt" }] });
+    await startPromise;
+
+    expect(captured.additionalDirectories).toEqual(["/extra"]);
+    expect(received).toEqual(["hi\n@/x/b.txt"]);
+  });
+
   it("passes includePartialMessages: true to the SDK options", async () => {
     let capturedOptions: any;
     const queryFn: QueryFn = (args) => {

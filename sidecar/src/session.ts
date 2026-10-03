@@ -1,3 +1,4 @@
+import { buildContent, type ContentBlock } from "./content.js";
 import { buildSkillsPlugin } from "./skills_plugin.js";
 import { turnUsage } from "./usage.js";
 import type { SidecarCommand, SidecarEvent, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
@@ -117,7 +118,7 @@ export class SidecarSession {
         await this.start(command);
         return;
       case "send_message":
-        this.pushUserMessage(command.text);
+        this.pushUserMessage(buildContent(command.text, command.attachments ?? []));
         return;
       case "permission_response": {
         const pending = this.pendingPermissions.get(command.permission_request_id);
@@ -187,8 +188,8 @@ export class SidecarSession {
     return new Promise((resolve) => this.waitingResolvers.push(resolve));
   }
 
-  private pushUserMessage(text: string): void {
-    const message = { type: "user", message: { role: "user", content: text }, parent_tool_use_id: null };
+  private pushUserMessage(content: string | ContentBlock[]): void {
+    const message = { type: "user", message: { role: "user", content }, parent_tool_use_id: null };
     const resolver = this.waitingResolvers.shift();
     if (resolver) {
       resolver(message);
@@ -275,6 +276,7 @@ export class SidecarSession {
           skills: skillsPlugin?.skills ?? [],
           plugins,
           mcpServers: command.mcp_servers ?? {},
+          additionalDirectories: command.additional_directories ?? [],
         },
       });
     } catch (err) {

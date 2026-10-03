@@ -10,6 +10,11 @@ export interface WireTokenUsage {
   web_search_requests: number;
 }
 
+export interface WireAttachment {
+  kind: "image" | "file";
+  path: string;
+}
+
 export interface WireSlashCommand {
   name: string;
   description?: string;
@@ -27,8 +32,9 @@ export type SidecarCommand =
       skills: Record<string, string>;
       plugins: string[];
       mcp_servers: Record<string, unknown>;
+      additional_directories?: string[];
     }
-  | { type: "send_message"; id: string; text: string }
+  | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision }
   | { type: "interrupt"; id: string }
   | { type: "set_permission_mode"; id: string; mode: WirePermissionMode }
