@@ -1633,13 +1633,18 @@ dependencies = [
 name = "forge-widgets"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "dioxus",
  "forge-application",
  "forge-domain",
  "forge-entities",
  "forge-features",
+ "forge-ports",
  "forge-shared",
+ "serde",
+ "serde_json",
  "time",
+ "tokio",
 ]
 
 [[package]]

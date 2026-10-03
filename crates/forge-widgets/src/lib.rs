@@ -1,18 +1,23 @@
 mod chat_window;
 mod composer_controls;
+mod dock;
 mod filter_menu;
 mod new_session_panel;
+mod panel_frame;
 mod plus_menu;
 mod search_palette;
 mod session_row;
 mod settings_overlay;
 mod sidebar;
+mod terminal_panel;
 mod usage_ring;
 
 pub use chat_window::ChatWindow;
+pub use dock::Dock;
 pub use composer_controls::{EffortPicker, ModePicker, ModelPicker};
 pub use filter_menu::SidebarFilterMenu;
 pub use new_session_panel::NewSessionPanel;
+pub use panel_frame::PanelFrame;
 pub use plus_menu::PlusMenu;
 pub use search_palette::SearchPalette;
 pub use session_row::SessionRow;
