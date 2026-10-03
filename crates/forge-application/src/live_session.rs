@@ -1103,6 +1103,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn directories_added_after_a_warm_up_restart_the_sidecar_so_the_sdk_gets_them() {
+        // `open_new` warms the session up before the new-session screen can add its folders.
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.warm_up();
+        handle.add_directories(vec!["/extra".into()]);
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 2);
+        assert_eq!(first_control.calls(), vec![Call::Start(start_params(None)), Call::Shutdown]);
+        let mut expected = start_params(None);
+        expected.additional_directories = vec!["/extra".to_string()];
+        assert_eq!(second_control.calls(), vec![Call::Start(expected), Call::Send("hi".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn directories_added_after_a_message_was_sent_are_ignored() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("one".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        handle.add_directories(vec!["/late".into()]);
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second message", |v| v.session.messages.len() == 2).await;
+
+        assert_eq!(
+            control.calls(),
+            vec![Call::Start(start_params(None)), Call::Send("one".to_string()), Call::Send("two".to_string())]
+        );
+    }
+
+    #[tokio::test]
     async fn a_failed_warm_up_shows_no_error_and_the_first_send_starts_the_sidecar_again() {
         let (sidecar, control) = fake_sidecar();
         let (factory, spawns) = factory_returning(vec![Err(SidecarError::SpawnFailed("no node".to_string())), Ok(sidecar)]);

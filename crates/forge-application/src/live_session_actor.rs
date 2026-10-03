@@ -92,16 +92,7 @@ impl Actor {
     async fn handle_command(&mut self, command: LiveCommand) {
         match command {
             LiveCommand::Send { text, attachments } => self.send(text, attachments).await,
-            LiveCommand::AddDirectories(directories) => {
-                if self.sidecar.is_none() {
-                    for directory in directories {
-                        let directory = directory.to_string_lossy().to_string();
-                        if !self.additional_directories.contains(&directory) {
-                            self.additional_directories.push(directory);
-                        }
-                    }
-                }
-            }
+            LiveCommand::AddDirectories(directories) => self.add_directories(directories).await,
             LiveCommand::WarmUp => self.warm_up().await,
             LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
             LiveCommand::Interrupt => self.interrupt().await,
@@ -112,6 +103,25 @@ impl Actor {
                 self.dirty = true;
             }
             LiveCommand::Close => {}
+        }
+    }
+
+    // The SDK reads the folders once, at start. A sidecar that only a warm-up started (nothing sent
+    // yet, and `open_new` warms every new session up before its folders can be added) is dropped so
+    // the first send starts one that has them. After a message was sent they are ignored.
+    async fn add_directories(&mut self, directories: Vec<std::path::PathBuf>) {
+        if self.sidecar.is_some() && !self.warm_only {
+            return;
+        }
+        for directory in directories {
+            let directory = directory.to_string_lossy().to_string();
+            if !self.additional_directories.contains(&directory) {
+                self.additional_directories.push(directory);
+            }
+        }
+        if self.warm_only {
+            self.warm_only = false;
+            self.discard_sidecar(true).await;
         }
     }
 
