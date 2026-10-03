@@ -27,6 +27,9 @@ pub(crate) struct Actor {
     /// The sidecar was started by a warm-up and nothing has been sent to it yet. A failure then is
     /// dropped quietly: nobody asked for anything, and the first send starts a sidecar again.
     warm_only: bool,
+    /// `last_error` holds the SDK's refusal of a mode or model change. A later change that the SDK
+    /// accepts clears it; any other message stays.
+    refusal_shown: bool,
     /// The view changed since it was last published.
     dirty: bool,
 }
@@ -50,6 +53,7 @@ impl Actor {
             active: None,
             sidecar: None,
             warm_only: false,
+            refusal_shown: false,
             dirty: false,
         }
     }
@@ -121,6 +125,7 @@ impl Actor {
     async fn send(&mut self, text: String) {
         if !self.view.can_send {
             self.view.last_error = Some(CANNOT_SEND.to_string());
+            self.refusal_shown = false;
             self.dirty = true;
             return;
         }
@@ -141,6 +146,7 @@ impl Actor {
             Ok(()) => {
                 self.view.phase = Phase::Running;
                 self.view.last_error = None;
+                self.refusal_shown = false;
                 self.view.unsent = None;
                 self.dirty = true;
             }
@@ -256,13 +262,17 @@ impl Actor {
             SessionUpdate::CommandsAvailable(commands) => self.view.commands = commands,
             // The session already holds the new mode (`apply_sidecar_event`); the model lives here
             // too, so a restarted sidecar starts on it.
-            SessionUpdate::PermissionModeChanged { .. } => {}
+            SessionUpdate::PermissionModeChanged { .. } => self.clear_refusal(),
             SessionUpdate::ModelChanged { model } => {
                 self.model = model.clone();
                 self.view.model = model;
+                self.clear_refusal();
             }
             // A refusal is not a failure of the sidecar: the banner shows it and the session goes on.
-            SessionUpdate::SettingFailed { message } => self.view.last_error = Some(message),
+            SessionUpdate::SettingFailed { message } => {
+                self.view.last_error = Some(message);
+                self.refusal_shown = true;
+            }
             // The sidecar protocol does not distinguish fatal from non-fatal errors, so every
             // `Error` ends this sidecar: its query is over and `start_session` cannot be re-sent.
             SessionUpdate::Errored { message } => self.sidecar_gone(message, true).await,
@@ -278,6 +288,13 @@ impl Actor {
         self.dirty = true;
     }
 
+    fn clear_refusal(&mut self) {
+        if self.refusal_shown {
+            self.view.last_error = None;
+            self.refusal_shown = false;
+        }
+    }
+
     // Marks the session failed and drops its sidecar. Permission requests that can no longer be
     // answered are cleared. `shutdown` asks a still-running sidecar to exit first; the port's
     // `shutdown` waits (bounded) for it, so its cleanup runs before the process is dropped.
@@ -285,6 +302,7 @@ impl Actor {
         self.discard_sidecar(shutdown).await;
         self.view.phase = Phase::Failed;
         self.view.last_error = Some(message);
+        self.refusal_shown = false;
         self.view.pending_permissions.clear();
         self.dirty = true;
     }

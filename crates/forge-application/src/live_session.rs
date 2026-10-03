@@ -398,6 +398,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_refusal_message_goes_away_when_a_later_change_is_accepted() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        control.push(SidecarEvent::SettingFailed { message: "no such model".to_string() });
+        wait_for(&mut view, "the refusal", |v| v.last_error.is_some()).await;
+        control.push(SidecarEvent::ModelSet { model: Some("model-y".to_string()) });
+        let seen = wait_for(&mut view, "the change", |v| v.model.as_deref() == Some("model-y")).await;
+
+        assert_eq!(seen.last_error, None);
+    }
+
+    #[tokio::test]
+    async fn an_accepted_change_leaves_a_message_that_is_not_a_refusal() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        control.push(SidecarEvent::SettingFailed { message: "no such model".to_string() });
+        wait_for(&mut view, "the refusal", |v| v.last_error.is_some()).await;
+        // A later send replaces the banner with its own state; a change accepted after that must
+        // not clear something else.
+        control.push(turn_complete());
+        wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle).await;
+        handle.send("again".to_string());
+        wait_for(&mut view, "the banner to clear", |v| v.phase == Phase::Running && v.last_error.is_none()).await;
+        control.push(SidecarEvent::Error { message: "boom".to_string() });
+        let failed = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        assert_eq!(failed.last_error.as_deref(), Some("boom"));
+    }
+
+    #[tokio::test]
     async fn session_started_records_the_claude_session_id() {
         let (sidecar, control) = fake_sidecar();
         let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);

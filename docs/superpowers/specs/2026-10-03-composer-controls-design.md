@@ -47,8 +47,25 @@ Built as designed: `PermissionMode::Auto`, the two commands and three events, `a
 
 Checked in the real window (harness, no message sent): both pickers open with the desktop order, descriptions and keys; key 4 (`key code`, Korean input method on) switched to Plan mode and the cursor went back to the message box; key 1 switched the model to Opus 5.5; choosing Bypass showed the confirmation and left the mode as it was; Cancel closed it.
 
-**Not verified.** The harness session had no sidecar running, so those changes took the "no sidecar" path (the view changes at once). The path with a running sidecar (command out, the SDK's answer back, the view following) is covered by unit tests with a fake sidecar and a stub query, but was not seen with the real SDK: the sidecar cannot start Claude from the tool sandbox used here ("failed to launch", while the binary itself runs). So these are open: whether the SDK accepts `setPermissionMode` for `auto` and `bypassPermissions` mid-session, whether it accepts `setModel`, and what it says when it refuses (that text is shown as the banner). A check needs a running app with a message sent, or the sidecar driven outside the sandbox.
+**Checked with the real SDK** (harness app, one real message "hello", then changes in the idle session; the transcript the harness left in the real `~/.claude` was deleted afterwards). The view followed the SDK's answer every time, and a refusal showed the SDK's own text as the banner, left the picker on the old value and did not end the session.
+
+| Change | Answer |
+| --- | --- |
+| Mode to Accept edits | accepted |
+| Mode to Bypass permissions (after Enable) | accepted (so `allowDangerouslySkipPermissions` works) |
+| Mode to Auto, on Haiku 4.5 | refused: "Cannot set permission mode to auto: auto mode unavailable for this model" |
+| Model to Opus 5.5 | accepted |
+| Model to Haiku 4.5 | accepted |
+| Model to Sonnet 5.5 (`claude-sonnet-5-5`) | refused: "isn't described by this version's model catalog; update Claude Code, or map it with behavesAs on a modelPicker row" |
+| Model to Fable 5.1 | refused: "API error: 429 Usage credits are required for this model · model not changed" |
+
+Findings:
+
+- **A refusal banner stayed after a later change was accepted.** Fixed: the actor remembers that `last_error` is a refusal (`refusal_shown`) and clears it when the SDK accepts a mode or model change; a failure message is never cleared this way.
+- **`claude-sonnet-5-5` is not known to the bundled Claude Code (2.1.283).** The model ids in `KNOWN_MODELS` also feed Settings' default model and the model of a new session, so those may fail the same way. Not checked; see the backlog note.
+- Not tried: Auto on a model that supports it (Opus 5.5 may), a change while a turn is running, a second turn to see the new model answer.
+- The two paths are both seen now: no sidecar (view changes at once) and a running sidecar (view follows the answer).
 
 - Left as designed: effort, "더 많은 모델", badges, `dontAsk`.
 - The new-session select got "Auto" through the shared mode table.
-- A new session opened without a resume has no sidecar until its first send (or warm-up), so the first change in it always takes the direct path.
+- A session opened without a message has no sidecar until its first send (or warm-up), so the first change in it takes the direct path.
