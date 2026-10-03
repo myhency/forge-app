@@ -956,6 +956,123 @@ describe("SidecarSession", () => {
 
     expect(capturedResult).toEqual({ behavior: "allow", updatedPermissions: suggestions });
   });
+
+  describe("effort and the models the SDK lists", () => {
+    function openQuery(extra: Record<string, unknown> = {}) {
+      let stopped = false;
+      const flags: unknown[] = [];
+      const queryFn: QueryFn = () => {
+        const gen = (async function* () {
+          while (!stopped) {
+            await new Promise((resolve) => setTimeout(resolve, 1));
+            yield { type: "noop" };
+          }
+        })();
+        return Object.assign(
+          gen,
+          { interrupt: async () => undefined, applyFlagSettings: async (settings: unknown) => void flags.push(settings) },
+          extra,
+        );
+      };
+      return { queryFn, flags, stop: () => (stopped = true) };
+    }
+
+    async function running(open: ReturnType<typeof openQuery>) {
+      const events: SidecarEvent[] = [];
+      const session = new SidecarSession(open.queryFn, (e) => events.push(e), { commandsTimeoutMs: 50 });
+      const started = session.handle(startCommand);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { session, events, finish: async () => (open.stop(), await started) };
+    }
+
+    it("sets the effort through applyFlagSettings and says so; null clears it", async () => {
+      const open = openQuery();
+      const { session, events, finish } = await running(open);
+
+      await session.handle({ type: "set_effort", id: "2", effort: "xhigh" });
+      await session.handle({ type: "set_effort", id: "3", effort: null });
+      await finish();
+
+      expect(open.flags).toEqual([{ effortLevel: "xhigh" }, { effortLevel: null }]);
+      expect(events).toContainEqual({ type: "effort_set", effort: "xhigh" });
+      expect(events).toContainEqual({ type: "effort_set", effort: null });
+    });
+
+    it("reports a refusal as setting_failed and not as a change", async () => {
+      const open = openQuery({
+        applyFlagSettings: async () => {
+          throw new Error("effort is capped by your organization");
+        },
+      });
+      const { session, events, finish } = await running(open);
+
+      await session.handle({ type: "set_effort", id: "2", effort: "max" });
+      await finish();
+
+      expect(events).toContainEqual({ type: "setting_failed", message: "effort is capped by your organization" });
+      expect(events.some((e) => e.type === "effort_set" || e.type === "error")).toBe(false);
+    });
+
+    it("says setting_failed when no session runs, and when the SDK cannot change effort", async () => {
+      const idle: SidecarEvent[] = [];
+      await new SidecarSession(() => toQueryHandle((async function* () {})()), (e) => idle.push(e)).handle({ type: "set_effort", id: "1", effort: "low" });
+      expect(idle.map((e) => e.type)).toEqual(["setting_failed"]);
+
+      const open = openQuery({ applyFlagSettings: undefined });
+      const { session, events, finish } = await running(open);
+      await session.handle({ type: "set_effort", id: "2", effort: "low" });
+      await finish();
+      expect(events.some((e) => e.type === "setting_failed")).toBe(true);
+      expect(events.some((e) => e.type === "effort_set")).toBe(false);
+    });
+
+    it("starts the SDK with the effort it is told, and without one when none is", async () => {
+      const seen: any[] = [];
+      const queryFn: QueryFn = (args) => {
+        seen.push(args.options);
+        return toQueryHandle((async function* () {})());
+      };
+      await new SidecarSession(queryFn, () => {}).handle({ ...startCommand, effort: "high" });
+      await new SidecarSession(queryFn, () => {}).handle(startCommand);
+
+      expect(seen[0].effort).toBe("high");
+      expect(seen[1].effort).toBeUndefined();
+    });
+
+    it("sends the models the SDK lists, with only the effort levels Forge knows", async () => {
+      const open = openQuery({
+        supportedModels: async () => [
+          { value: "claude-opus-5-5", displayName: "Opus 5.5", supportsEffort: true, supportedEffortLevels: ["low", "high", "ultra"] },
+          { value: "claude-haiku-4-5-20251001", displayName: "Haiku 4.5", supportsEffort: false },
+          { displayName: "no value" },
+        ],
+      });
+      const { events, finish } = await running(open);
+      await finish();
+
+      expect(events).toContainEqual({
+        type: "models_available",
+        models: [
+          { value: "claude-opus-5-5", display_name: "Opus 5.5", effort_levels: ["low", "high"] },
+          { value: "claude-haiku-4-5-20251001", display_name: "Haiku 4.5", effort_levels: [] },
+        ],
+      });
+    });
+
+    it("sends nothing when the model list fails or is empty", async () => {
+      for (const supportedModels of [
+        async () => {
+          throw new Error("no");
+        },
+        async () => [],
+      ]) {
+        const open = openQuery({ supportedModels });
+        const { events, finish } = await running(open);
+        await finish();
+        expect(events.some((e) => e.type === "models_available")).toBe(false);
+      }
+    });
+  });
 });
 
 describe("isSafeSkillName", () => {

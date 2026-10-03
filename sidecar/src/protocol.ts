@@ -1,4 +1,12 @@
 export type WirePermissionMode = "default" | "accept_edits" | "bypass_permissions" | "plan" | "auto";
+export type WireEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface WireAvailableModel {
+  value: string;
+  display_name: string;
+  effort_levels: WireEffort[];
+}
+
 export type WirePermissionDecision = "allow_once" | "allow_always" | "deny";
 
 export interface WireTokenUsage {
@@ -29,6 +37,7 @@ export type SidecarCommand =
       resume_session_id: string | null;
       permission_mode: WirePermissionMode;
       model: string | null;
+      effort?: WireEffort | null;
       skills: Record<string, string>;
       plugins: string[];
       mcp_servers: Record<string, unknown>;
@@ -39,6 +48,7 @@ export type SidecarCommand =
   | { type: "interrupt"; id: string }
   | { type: "set_permission_mode"; id: string; mode: WirePermissionMode }
   | { type: "set_model"; id: string; model: string | null }
+  | { type: "set_effort"; id: string; effort: WireEffort | null }
   | { type: "shutdown"; id: string };
 
 export type SidecarEvent =
@@ -55,6 +65,9 @@ export type SidecarEvent =
   // refusal is not an `error`: that ends the session.
   | { type: "permission_mode_set"; mode: WirePermissionMode }
   | { type: "model_set"; model: string | null }
+  | { type: "effort_set"; effort: WireEffort | null }
+  // The models the SDK lists for this session and the effort levels each takes; sent once after the start.
+  | { type: "models_available"; models: WireAvailableModel[] }
   | { type: "setting_failed"; message: string }
   | { type: "error"; message: string }
   | { type: "session_ended" };
