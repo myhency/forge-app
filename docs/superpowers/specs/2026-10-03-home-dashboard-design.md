@@ -79,3 +79,25 @@ Plan 24 adds a usage dashboard to the new-session screen and reshapes that scree
 - **Adapter** (with temp `.claude` folders): duplicate `message.id` lines count once; sidechain, meta, synthetic and tool-result lines are skipped; time zone conversion puts a 23:30 UTC message on the next local day (test with an injected offset); a broken line is skipped; the cache does not re-read an unchanged file (a counter) and does re-read a changed one; a missing projects folder gives empty stats.
 - **Features / widgets**: the folder menu rows, the draft mode and model reaching `open_new`, the send icon state; the card's states (Loading, Failed, hidden, Ready) through the existing render approach in `forge-widgets`.
 - **By eye**: run the app through `scripts/harness/launch.sh` with a fixture `FORGE_CLAUDE_HOME` that has a few days of transcripts, and compare with the observations; also with the real `~/.claude` to time the first scan.
+
+## As built (2026-10-03)
+
+Built as designed: `Day`, `UsageStats` and `StatsRange` in `forge-domain`; `UsageStatsPort`; `ClaudeUsageStatsAdapter` (per-file cache keyed by modified time, size and UTC offset); view model in `forge-entities/src/usage_card.rs`; `UsageCard`; and the reshaped new-session screen (chips, folder menu, mode and model pickers, send icon). `format_tokens` gained a `B` unit.
+
+Differences from the spec:
+
+- **Folder menu and pickers** reuse the generic `Picker` (now `pub(crate)` with an optional `heading`, used for "Recent"). `ModePicker` and `ModelPicker` became thin wrappers over `ModePickerView` and `ModelPickerView`, which the new-session screen also uses.
+- **The model draft is `Option<Option<String>>`** (`None` follows the saved default, `Some(None)` is the SDK default), so "Default model" in the picker means the SDK default, not the saved one.
+- **No render tests exist for widgets.** The pure parts are unit tested (domain, adapter, view model, folder rows, send state); the card and the screen were checked by eye in the running app through `scripts/harness/` with a fixture of timed transcripts: tiles, heatmap, Models chart in All and 7d, the folder menu (opens upward, "Recent", checked folder, "Open folder…"), mode "Plan mode" and model "Haiku 4.5" shown after picking, and the send icon turning dark after typing.
+- **Not checked:** that a session started with a chosen model and mode really runs on them (it would send a message on the real account). `open_new` keeps the mode given (`open_new_returns_an_empty_session_that_can_send`), and `start_new` now passes the chosen model to `open_new`; the model path has no test.
+- The 30d chart, dark theme and an empty `~/.claude` were not looked at.
+- Two folders with the same name (`a/app`, `b/app`) both read "app" in the folder menu, because the label is the last path part.
+
+First scan, measured on the real `~/.claude` (313 MB, 156 sessions) in a release build: 0.7 to 0.8 s, then 3 ms from the cache. The app builds in debug during development, where it is slower; no disk cache was added.
+
+Compared with the desktop app's own card on the same data (round 6):
+
+- Match: sessions (156 against 158), active days (12), peak hour (9 PM), favourite model (Sonnet 5).
+- Differ: messages (4,945 against 14,710) and total tokens (1.13B against 2.4B). The desktop numbers equal counting **every** user and assistant transcript line and adding the usage of each line (measured: 14,686 lines, 2.396B). Claude Code writes one line per content block, so the app counts a reply written on three lines three times. Forge counts a reply once (by `message.id`, as the usage ring does). This is a choice, not a bug; switching to the app's way is a small change in `StatsCollector::finish`.
+
+Left: a disk cache for the first scan, hover tooltips on bars, the "More models" submenu, the microphone, other environments, the effort picker on the new-session screen, the folder-with-plus button's own icon (an emoji stands in).
