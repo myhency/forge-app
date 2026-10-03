@@ -1515,6 +1515,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-adapter-sleep"
+version = "0.1.0"
+dependencies = [
+ "forge-ports",
+]
+
+[[package]]
 name = "forge-adapter-terminal"
 version = "0.1.0"
 dependencies = [
