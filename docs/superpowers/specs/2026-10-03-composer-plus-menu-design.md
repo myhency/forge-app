@@ -52,3 +52,19 @@ Evidence: `docs/superpowers/roadmap/observations.md`, round 1 ("`+` menu"): rows
 - `forge-ports`/adapters: the wire form of `send_message` with and without attachments; `start_session` with `additional_directories`.
 - Sidecar (`node --test`): content building for no attachment, one image, one file, mixed; an oversize image and a missing file produce `attachment_failed` and send nothing.
 - Real SDK, before calling it done (as in Plan 16): send one image and one text file in a throwaway folder and see the model describe them; add a folder in an open session and see the model reach it. Then drive the real app with the harness: open the menu, attach, remove, send. Anything not seen is written in the plan's "As built" section.
+
+## As built
+
+Built on branch `plan-18`: the `+` menu (five rows, ⌘U, physical-key digits 1 to 5, Connectors and Plugins submenus with a footer), attachment and folder chips, `send_message` with attachments, `start_session` with `additional_directories`, attachments shown on the sent message, and the environment chips on the new-session screen.
+
+**Checked with the real SDK (0.3.283), before building (Plan Task 1).** A message with a base64 `image` block was described correctly; a file given as `@path` was read; a file outside the project folder raised one ordinary Read permission prompt and was then read. So an open session keeps the `@folder` hint and no row is greyed.
+
+**Seen in the real app (harness, fixture home).** The `+` button in the new-session composer; the menu with the five rows in the spec's order, ⌘U on the first row and arrows on the last two; the Connectors submenu ("None installed" for the fixture, footer "Applies to the next new session."); "Slash commands" putting `/` in the text box and opening the command list; the "Local" and folder-name chips.
+
+**Not seen in the real app.** Attaching a file through the native dialog and ⌘U (a ⌘U sent by script reached another application, so the dialog was never opened); removing a chip; the 5 MB refusal banner; adding a folder; sending a message with attachments from the app (the real SDK was checked by a script, not through Forge); the `@folder` line in an open session; a folder chosen on the new-session screen reaching `additionalDirectories` through the app; toggling a connector or plugin and seeing the next session start with it; ⌘U with the Korean input method; the menu in an open session (only the new-session screen was driven). These rest on unit tests: the wire form (Rust and sidecar), content building, attachment checks, `plan_send`, and the order "folders before the first send" in the live session.
+
+**Deviations from the spec.**
+1. No `attachment_failed` event: the UI checks each file (exists, image at most 5 MB) before sending and keeps text and chips on a refusal. If the sidecar still cannot read an image, it sends the message with `[could not read <path>]` in place of the image.
+2. `FilePickerPort` is its own trait, implemented by `RfdFolderPicker`; `WorkspaceServices` has a `file_picker` field.
+3. The new-session screen keeps its folder select and "Open folder…" button; the chips show "Local" and the folder name beside them. No second "change folder" button.
+4. Chips and added folders live in the composer component (like the draft): switching to another session and back clears them.
