@@ -1,6 +1,7 @@
 mod approve_permission;
 mod arrange;
 mod command_box;
+mod filter_menu;
 mod folder_choice;
 mod new_session;
 mod permission_mode;
@@ -17,6 +18,10 @@ mod workspace;
 pub use approve_permission::PermissionActions;
 pub use arrange::{arrange, arranged_open_order, folder_group_id, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use command_box::CommandTextArea;
+pub use filter_menu::{
+    current_index, filter_key, group_label, sort_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
+    FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS,
+};
 pub use folder_choice::{choose_folder, FolderChoice};
 pub use new_session::NewSessionComposer;
 pub use refocus::{refocus_composer, refocus_workspace};
