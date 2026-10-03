@@ -18,7 +18,7 @@ use crate::usage::token_usage;
 /// writes one line per content block, so an assistant message is kept once per `message.id`, the
 /// last usage winning and the first line's time. Sidechain and meta lines, and messages Claude Code
 /// wrote itself (`<synthetic>`), are skipped. A person's message is a user line with text in it (a
-/// tool result is not). A line without a time that parses is skipped.
+/// tool result is not). A line without a time that parses, and a line copied into a fork, is skipped.
 struct StatsCollector {
     offset: UtcOffset,
     by_message: HashMap<String, Entry>,
@@ -47,6 +47,11 @@ impl StatsCollector {
     fn see(&mut self, line: &Value) {
         let flagged = |key: &str| line.get(key).and_then(Value::as_bool) == Some(true);
         if flagged("isSidechain") || flagged("isMeta") {
+            return;
+        }
+        // A fork (Forge's or Claude Code's) copies the earlier lines with a `forkedFrom`; they were
+        // counted in the original session and are not counted again.
+        if line.get("forkedFrom").is_some() {
             return;
         }
         let Some(when) = self.when(line) else { return };
@@ -357,5 +362,26 @@ mod tests {
         let stats = ClaudeUsageStatsAdapter::new(home.path().to_path_buf()).load(UTC).await.unwrap();
         assert_eq!(stats.sessions.len(), 1);
         assert_eq!(stats.sessions[0].session, SessionId("abc-123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn lines_copied_into_a_fork_are_not_counted_again_but_its_own_lines_are() {
+        let home = tempfile::tempdir().unwrap();
+        let original = [assistant("2026-10-03T10:00:00Z", "m1", "claude-sonnet-5", 100, 100), user_text("2026-10-03T10:00:00Z", "hello")];
+        write(home.path(), "p", "original", &original);
+        let mut copied: Vec<Value> = original.to_vec();
+        for line in &mut copied {
+            line["forkedFrom"] = json!({"sessionId": "original", "messageUuid": "u1"});
+        }
+        copied.push(user_text("2026-10-04T10:00:00Z", "a new question in the fork"));
+        write(home.path(), "p", "fork", &copied);
+
+        let stats = ClaudeUsageStatsAdapter::new(home.path().to_path_buf()).load(UTC).await.unwrap();
+        let messages: u64 = stats.sessions.iter().flat_map(|s| s.rows.iter()).map(|r| r.messages).sum();
+        let tokens: u64 = stats.sessions.iter().flat_map(|s| s.rows.iter()).map(|r| r.tokens.input + r.tokens.output).sum();
+        assert_eq!(messages, 3, "the original's two plus the fork's own one");
+        assert_eq!(tokens, 200, "the copied reply is counted once");
+        let fork = stats.sessions.iter().find(|s| s.session == SessionId("fork".to_string())).unwrap();
+        assert_eq!(fork.rows.len(), 1, "only the fork's own line is a row of the fork");
     }
 }
