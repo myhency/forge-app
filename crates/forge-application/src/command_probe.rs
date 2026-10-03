@@ -48,6 +48,7 @@ pub(crate) fn spawn_probe(
                 permission_mode: PermissionMode::Default,
                 model: None,
                 extensions: active,
+                additional_directories: Vec::new(),
             })
             .await;
         if started.is_ok() {
@@ -143,6 +144,7 @@ pub(crate) mod tests {
                 permission_mode: PermissionMode::Default,
                 model: None,
                 extensions: ActiveExtensions::default(),
+                additional_directories: Vec::new(),
             })]
         );
     }

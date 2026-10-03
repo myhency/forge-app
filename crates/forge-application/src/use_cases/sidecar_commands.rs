@@ -16,7 +16,7 @@ impl SendMessageUseCase {
 
     pub async fn execute(&self, session: &mut Session, text: String) -> Result<(), SidecarError> {
         push_user_message(session, text.clone());
-        self.sidecar.send_message(text).await
+        self.sidecar.send_message(text, Vec::new()).await
     }
 }
 
@@ -72,9 +72,9 @@ mod tests {
     async fn send_message_use_case_delegates_to_the_sidecar_port() {
         let mut mock = MockSidecarPort::new();
         mock.expect_send_message()
-            .withf(|text: &String| text == "hello")
+            .withf(|text: &String, _| text == "hello")
             .times(1)
-            .returning(|_| Ok(()));
+            .returning(|_, _| Ok(()));
 
         let use_case = SendMessageUseCase::new(Arc::new(mock));
         let mut session = empty_session();
@@ -87,7 +87,7 @@ mod tests {
     #[tokio::test]
     async fn send_message_use_case_propagates_a_sidecar_error() {
         let mut mock = MockSidecarPort::new();
-        mock.expect_send_message().returning(|_| Err(SidecarError::ProcessExited));
+        mock.expect_send_message().returning(|_, _| Err(SidecarError::ProcessExited));
 
         let use_case = SendMessageUseCase::new(Arc::new(mock));
         let mut session = empty_session();

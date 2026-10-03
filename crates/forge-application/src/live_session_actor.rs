@@ -187,6 +187,7 @@ impl Actor {
                 permission_mode: self.view.session.permission_mode,
                 model: self.model.clone(),
                 extensions: extensions.clone(),
+                additional_directories: Vec::new(),
             })
             .await
             .map_err(|e| e.to_string())?;

@@ -19,6 +19,7 @@ fn default_params() -> StartSessionParams {
         permission_mode: PermissionMode::Default,
         model: None,
         extensions: Default::default(),
+        additional_directories: Vec::new(),
     }
 }
 
@@ -30,9 +31,32 @@ async fn start_session_and_send_message_round_trip() {
     let started = sidecar.next_event().await.unwrap();
     assert!(matches!(started, SidecarEvent::SessionStarted { .. }));
 
-    sidecar.send_message("hello".to_string()).await.unwrap();
+    sidecar.send_message("hello".to_string(), Vec::new()).await.unwrap();
     match sidecar.next_event().await.unwrap() {
         SidecarEvent::AssistantDelta { text } => assert_eq!(text, "echo:hello"),
+        other => panic!("unexpected event: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn attachments_and_extra_folders_reach_the_sidecar() {
+    let sidecar = SidecarProcess::spawn(&node_binary(), &fixture_path(), &[]).unwrap();
+    let mut params = default_params();
+    params.additional_directories = vec!["/extra".to_string()];
+    sidecar.start_session(params).await.unwrap();
+    sidecar.next_event().await.unwrap();
+
+    sidecar
+        .send_message(
+            "TRIGGER_ATTACHED".to_string(),
+            vec![forge_domain::Attachment { path: "/x/a b.png".into(), kind: forge_domain::AttachmentKind::Image }],
+        )
+        .await
+        .unwrap();
+    match sidecar.next_event().await.unwrap() {
+        SidecarEvent::AssistantDelta { text } => {
+            assert_eq!(text, r#"attached:[{"kind":"image","path":"/x/a b.png"}] dirs:["/extra"]"#)
+        }
         other => panic!("unexpected event: {other:?}"),
     }
 }
@@ -43,7 +67,7 @@ async fn recovers_from_a_malformed_line_without_dropping_the_connection() {
     sidecar.start_session(default_params()).await.unwrap();
     sidecar.next_event().await.unwrap();
 
-    sidecar.send_message("TRIGGER_MALFORMED".to_string()).await.unwrap();
+    sidecar.send_message("TRIGGER_MALFORMED".to_string(), Vec::new()).await.unwrap();
 
     assert!(matches!(sidecar.next_event().await.unwrap(), SidecarEvent::Error { .. }));
     match sidecar.next_event().await.unwrap() {
@@ -58,7 +82,7 @@ async fn handles_a_very_large_event_payload() {
     sidecar.start_session(default_params()).await.unwrap();
     sidecar.next_event().await.unwrap();
 
-    sidecar.send_message("TRIGGER_LARGE".to_string()).await.unwrap();
+    sidecar.send_message("TRIGGER_LARGE".to_string(), Vec::new()).await.unwrap();
     match sidecar.next_event().await.unwrap() {
         SidecarEvent::ToolResult { output, .. } => assert_eq!(output.len(), 200_000),
         other => panic!("unexpected event: {other:?}"),
@@ -72,7 +96,7 @@ async fn interleaves_writes_and_reads_without_deadlock() {
     sidecar.next_event().await.unwrap();
 
     for i in 0..5 {
-        sidecar.send_message(format!("msg-{i}")).await.unwrap();
+        sidecar.send_message(format!("msg-{i}"), Vec::new()).await.unwrap();
         match sidecar.next_event().await.unwrap() {
             SidecarEvent::AssistantDelta { text } => assert_eq!(text, format!("echo:msg-{i}")),
             other => panic!("unexpected event: {other:?}"),
@@ -98,7 +122,7 @@ async fn spawn_applies_the_given_environment_variables() {
     sidecar.start_session(default_params()).await.unwrap();
     sidecar.next_event().await.unwrap();
 
-    sidecar.send_message("TRIGGER_ENV:FORGE_TEST_VALUE".to_string()).await.unwrap();
+    sidecar.send_message("TRIGGER_ENV:FORGE_TEST_VALUE".to_string(), Vec::new()).await.unwrap();
 
     match sidecar.next_event().await.unwrap() {
         SidecarEvent::AssistantDelta { text } => assert_eq!(text, "env:from-spawn"),
@@ -112,7 +136,7 @@ async fn spawn_without_extra_environment_leaves_the_variable_unset() {
     sidecar.start_session(default_params()).await.unwrap();
     sidecar.next_event().await.unwrap();
 
-    sidecar.send_message("TRIGGER_ENV:FORGE_TEST_UNSET_VALUE".to_string()).await.unwrap();
+    sidecar.send_message("TRIGGER_ENV:FORGE_TEST_UNSET_VALUE".to_string(), Vec::new()).await.unwrap();
 
     match sidecar.next_event().await.unwrap() {
         SidecarEvent::AssistantDelta { text } => assert_eq!(text, "env:<unset>"),
@@ -132,7 +156,7 @@ async fn start_session_delivers_the_active_extensions_to_the_sidecar() {
     sidecar.start_session(params).await.unwrap();
     sidecar.next_event().await.unwrap();
 
-    sidecar.send_message("TRIGGER_EXTENSIONS".to_string()).await.unwrap();
+    sidecar.send_message("TRIGGER_EXTENSIONS".to_string(), Vec::new()).await.unwrap();
     match sidecar.next_event().await.unwrap() {
         SidecarEvent::AssistantDelta { text } => {
             let seen: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -155,7 +179,7 @@ async fn a_session_without_extensions_still_sends_empty_lists() {
     sidecar.start_session(default_params()).await.unwrap();
     sidecar.next_event().await.unwrap();
 
-    sidecar.send_message("TRIGGER_EXTENSIONS".to_string()).await.unwrap();
+    sidecar.send_message("TRIGGER_EXTENSIONS".to_string(), Vec::new()).await.unwrap();
     match sidecar.next_event().await.unwrap() {
         SidecarEvent::AssistantDelta { text } => {
             let seen: serde_json::Value = serde_json::from_str(&text).unwrap();

@@ -29,6 +29,7 @@ impl StartSessionUseCase {
                 permission_mode,
                 model,
                 extensions: Default::default(),
+                additional_directories: Vec::new(),
             })
             .await
     }
@@ -67,6 +68,7 @@ impl ResumeSessionUseCase {
                 permission_mode,
                 model: None,
                 extensions: Default::default(),
+                additional_directories: Vec::new(),
             })
             .await?;
 

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use forge_domain::{ActiveExtensions, PermissionDecision, PermissionMode, SlashCommand, TokenUsage};
+use forge_domain::{ActiveExtensions, Attachment, PermissionDecision, PermissionMode, SlashCommand, TokenUsage};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -18,6 +18,8 @@ pub struct StartSessionParams {
     pub model: Option<String>,
     /// The skills, plugins and MCP servers the session starts with.
     pub extensions: ActiveExtensions,
+    /// Folders the session may use besides its own (the SDK's `additionalDirectories`).
+    pub additional_directories: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,7 +65,7 @@ pub enum SidecarError {
 #[async_trait]
 pub trait SidecarPort: Send + Sync {
     async fn start_session(&self, params: StartSessionParams) -> Result<(), SidecarError>;
-    async fn send_message(&self, text: String) -> Result<(), SidecarError>;
+    async fn send_message(&self, text: String, attachments: Vec<Attachment>) -> Result<(), SidecarError>;
     async fn respond_to_permission(
         &self,
         permission_request_id: PermissionRequestId,
@@ -98,6 +100,7 @@ mod tests {
                 permission_mode: PermissionMode::Default,
                 model: None,
                 extensions: ActiveExtensions::default(),
+                additional_directories: Vec::new(),
             })
             .await;
 

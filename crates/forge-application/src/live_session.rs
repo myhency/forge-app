@@ -245,6 +245,7 @@ mod tests {
             permission_mode: PermissionMode::AcceptEdits,
             model: Some("model-x".to_string()),
             extensions: ActiveExtensions::default(),
+            additional_directories: Vec::new(),
         }
     }
 

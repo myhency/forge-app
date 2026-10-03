@@ -42,6 +42,13 @@ rl.on("line", (line) => {
         emit({ type: "assistant_delta", text: `env:${process.env[name] ?? "<unset>"}` });
         return;
       }
+      if (command.text === "TRIGGER_ATTACHED") {
+        emit({
+          type: "assistant_delta",
+          text: `attached:${JSON.stringify(command.attachments ?? [])} dirs:${JSON.stringify(started.additional_directories ?? [])}`,
+        });
+        return;
+      }
       emit({ type: "assistant_delta", text: `echo:${command.text}` });
       return;
     case "permission_response":
