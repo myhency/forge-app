@@ -4,6 +4,7 @@ mod composer_controls;
 mod dock;
 mod files_panel;
 mod filter_menu;
+mod new_session_controls;
 mod new_session_panel;
 mod panel_frame;
 mod plus_menu;

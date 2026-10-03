@@ -465,3 +465,17 @@ button.tool-call { appearance: none; background: none; text-align: left; cursor:
 .preview-open { flex: none; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; }
 .preview-open:hover { background: var(--bg-hover); }
 .dock-note .error { color: var(--danger); }
+
+/* New-session composer: chips above the box, the send icon inside it. */
+.new-session { justify-content: flex-end; }
+.env-chips .chip { padding: 4px 10px; font-size: 13px; }
+.env-chips .picker-button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-hover); color: var(--fg); font-size: 13px; }
+.chip-button { appearance: none; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--fg-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.chip-button:hover { background: var(--bg-hover); color: var(--fg); }
+.composer-box { position: relative; }
+.composer-box textarea { padding-right: 44px; }
+.send-icon { position: absolute; right: 10px; bottom: 10px; width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; color: var(--fg-muted); font-size: 16px; cursor: default; }
+.send-icon.ready { color: var(--fg); cursor: pointer; }
+.send-icon.ready:hover { background: var(--bg-hover); }
+.picker-end .picker-menu { left: auto; right: 0; }
+.picker-heading { padding: 6px 8px 4px; font-size: 11px; color: var(--fg-muted); }
