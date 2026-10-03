@@ -148,6 +148,45 @@ async fn read_title(path: &Path) -> Option<String> {
     titles.title()
 }
 
+// How many lines are read to find the first timestamp. A transcript starts with its first message
+// within a few lines; the bound only stops a pathological file from being read in full.
+const MAX_TIMESTAMP_SCAN_LINES: usize = 20;
+
+async fn first_timestamp(path: &Path) -> Option<String> {
+    let file = tokio::fs::File::open(path).await.ok()?;
+    let mut lines = BufReader::new(file).split(b'\n');
+    for _ in 0..MAX_TIMESTAMP_SCAN_LINES {
+        let Ok(Some(line)) = lines.next_segment().await else {
+            return None;
+        };
+        let Ok(value) = serde_json::from_slice::<Value>(&line) else {
+            continue;
+        };
+        if let Some(stamp) = value
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .filter(|stamp| time::OffsetDateTime::parse(stamp, &Rfc3339).is_ok())
+        {
+            return Some(stamp.to_string());
+        }
+    }
+    None
+}
+
+/// When the session began: the first timestamp the transcript carries, else the file's creation
+/// time (not every file system keeps one), else `updated_at`.
+pub(crate) async fn created_at_of(path: &Path, updated_at: &str) -> String {
+    if let Some(stamp) = first_timestamp(path).await {
+        return stamp;
+    }
+    tokio::fs::metadata(path)
+        .await
+        .ok()
+        .and_then(|metadata| metadata.created().ok())
+        .and_then(|created| time::OffsetDateTime::from(created).format(&Rfc3339).ok())
+        .unwrap_or_else(|| updated_at.to_string())
+}
+
 fn parse_permission_mode(raw: &str) -> PermissionMode {
     match raw {
         "acceptEdits" => PermissionMode::AcceptEdits,
@@ -392,12 +431,14 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
                 continue;
             };
             let title = read_title(&path).await;
+            let created_at = created_at_of(&path, &updated_at).await;
             found.push((
                 modified,
                 SessionSummary {
                     id: SessionId(id),
                     title,
                     updated_at,
+                    created_at,
                 },
             ));
         }
@@ -867,6 +908,54 @@ mod tests {
                 session.updated_at
             );
         }
+    }
+
+    #[tokio::test]
+    async fn list_sessions_reports_when_a_session_began_from_its_first_timestamp() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "stamped",
+            &[
+                json!({"type": "summary"}),
+                json!({"type": "user", "timestamp": "2026-01-02T03:04:05.000Z", "message": {"role": "user", "content": "hi"}}),
+                json!({"type": "user", "timestamp": "2026-02-01T00:00:00.000Z", "message": {"role": "user", "content": "later"}}),
+            ],
+        );
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let sessions = adapter.list_sessions(&project()).await.unwrap();
+
+        assert_eq!(sessions[0].created_at, "2026-01-02T03:04:05.000Z");
+    }
+
+    #[tokio::test]
+    async fn a_transcript_with_no_timestamp_falls_back_to_a_file_time() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "bare", &[user_text("hi")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let sessions = adapter.list_sessions(&project()).await.unwrap();
+
+        let created = &sessions[0].created_at;
+        assert!(created.contains('T') && created.ends_with('Z'), "not RFC 3339 UTC: {created}");
+    }
+
+    #[tokio::test]
+    async fn a_timestamp_that_is_not_a_time_is_ignored() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "odd",
+            &[json!({"type": "user", "timestamp": "yesterday", "message": {"role": "user", "content": "hi"}})],
+        );
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let sessions = adapter.list_sessions(&project()).await.unwrap();
+
+        assert_ne!(sessions[0].created_at, "yesterday");
     }
 
     #[tokio::test]

@@ -32,6 +32,8 @@ pub struct SidebarEntry {
     pub session_id: Option<SessionId>,
     pub title: String,
     pub updated_at: Option<String>,
+    /// When the session began; `None` for an open session that is not on disk yet.
+    pub created_at: Option<String>,
     pub marker: SessionMarker,
 }
 
@@ -193,6 +195,7 @@ pub fn merge_sidebar(
                         .or_else(|| summary.title.clone())
                         .unwrap_or_else(|| UNTITLED.to_string()),
                     updated_at: Some(summary.updated_at.clone()),
+                    created_at: Some(summary.created_at.clone()),
                     marker: open.marker,
                 },
                 None => SidebarEntry {
@@ -200,6 +203,7 @@ pub fn merge_sidebar(
                     session_id: Some(summary.id.clone()),
                     title: summary.title.clone().unwrap_or_else(|| UNTITLED.to_string()),
                     updated_at: Some(summary.updated_at.clone()),
+                    created_at: Some(summary.created_at.clone()),
                     marker: SessionMarker::Idle,
                 },
             };
@@ -222,6 +226,7 @@ pub fn merge_sidebar(
             session_id: open.claude_session_id.clone(),
             title: open.display_title(),
             updated_at: None,
+            created_at: None,
             marker: open.marker,
         };
         match extras.iter_mut().find(|(path, _, _)| *path == open.project_path) {
@@ -317,6 +322,7 @@ mod tests {
             id: SessionId(id.to_string()),
             title: title.map(str::to_string),
             updated_at: format!("2026-09-29T00:00:0{}Z", id.len() % 10),
+            created_at: format!("2026-09-28T00:00:0{}Z", id.len() % 10),
         }
     }
 
@@ -326,6 +332,7 @@ mod tests {
             session_id: session.map(|id| SessionId(id.to_string())),
             title: "t".to_string(),
             updated_at: None,
+            created_at: None,
             marker: SessionMarker::Idle,
         }
     }
@@ -388,6 +395,19 @@ mod tests {
         assert_eq!(past[0].1[0].title.as_deref(), Some("renamed"));
         assert_eq!(past[0].0.session_count, 1);
         assert_eq!(past[1].1.len(), 1, "the other project is untouched");
+    }
+
+    #[test]
+    fn an_entry_keeps_when_its_session_began_and_a_new_session_has_no_time() {
+        let past = vec![(project("/a"), vec![summary("s1", Some("One"))])];
+        let live = vec![open(1, "/a", None, SessionMarker::Idle)];
+
+        let groups = merge_sidebar(&past, &live);
+
+        let on_disk = groups[0].entries.iter().find(|e| e.title == "One").unwrap();
+        assert_eq!(on_disk.created_at.as_deref(), Some("2026-09-28T00:00:02Z"));
+        let fresh = groups[0].entries.iter().find(|e| matches!(e.key, EntryKey::Live(_))).unwrap();
+        assert_eq!(fresh.created_at, None);
     }
 
     #[test]

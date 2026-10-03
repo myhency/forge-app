@@ -21,6 +21,9 @@ pub struct SessionSummary {
     pub id: SessionId,
     pub title: Option<String>,
     pub updated_at: String,
+    /// RFC 3339 time the session began: its first transcript timestamp, else the file's creation
+    /// time, else `updated_at`.
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
