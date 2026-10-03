@@ -89,6 +89,7 @@ fn window_config() -> Config {
                 .with_inner_size(LogicalSize::new(1200.0, 800.0)),
         )
         .with_menu(app_menu())
+        .with_custom_head(forge_shared::xterm_head())
 }
 
 // Where Forge reads Claude's files. `FORGE_CLAUDE_HOME` points it at another Claude home (a test
