@@ -453,6 +453,7 @@ mod tests {
             last_error: None,
             can_send: true,
             unsent: None,
+            unsent_attachments: Vec::new(),
             failed_sends: 0,
             context: None,
             commands: Vec::new(),

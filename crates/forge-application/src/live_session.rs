@@ -43,6 +43,8 @@ pub struct LiveSessionView {
     /// The text of the last message that could not be delivered, so the UI can put it back in the
     /// message box. Cleared by the next send that succeeds.
     pub unsent: Option<String>,
+    /// The files and images of that message, so the UI can attach them again.
+    pub unsent_attachments: Vec<Attachment>,
     /// How many sends have failed so far. The UI restores `unsent` when this number changes.
     pub failed_sends: u32,
     /// How full the context window was after the last finished turn. `None` until a turn has
@@ -179,6 +181,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         last_error: None,
         can_send: init.can_send,
         unsent: None,
+        unsent_attachments: Vec::new(),
         failed_sends: 0,
         context: None,
         commands: init.commands,
@@ -732,6 +735,23 @@ mod tests {
         let seen = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
 
         assert_eq!(seen.unsent, Some("lost?".to_string()));
+        assert_eq!(seen.failed_sends, 1);
+    }
+
+    #[tokio::test]
+    async fn a_failed_send_keeps_the_attachments_too_and_a_good_one_clears_them() {
+        let (sidecar, control) = fake_sidecar();
+        control.fail_send();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        let attachment = forge_domain::Attachment { path: "/x/a.png".into(), kind: forge_domain::AttachmentKind::Image };
+
+        handle.send_with(String::new(), vec![attachment.clone()]);
+        let seen = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        assert_eq!(seen.unsent, Some(String::new()), "a chips-only message has no text to bring back");
+        assert_eq!(seen.unsent_attachments, vec![attachment]);
         assert_eq!(seen.failed_sends, 1);
     }
 

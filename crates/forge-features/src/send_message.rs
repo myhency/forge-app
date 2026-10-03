@@ -22,12 +22,14 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
     // again (unless the person has already started typing something else) instead of losing it.
     use_effect(move || {
         let Some(view) = view else { return };
-        let (failures, unsent) = {
+        let (failures, unsent, unsent_attachments) = {
             let view = view.read();
-            (view.failed_sends, view.unsent.clone())
+            (view.failed_sends, view.unsent.clone(), view.unsent_attachments.clone())
         };
         if failures != *seen_failures.peek() {
             seen_failures.set(failures);
+            // The chips come back whatever is in the box: they are not text the person could be typing over.
+            composer.restore_attachments(unsent_attachments);
             if let Some(text) = unsent {
                 if draft.peek().is_empty() {
                     draft.set(text);

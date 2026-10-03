@@ -89,6 +89,12 @@ impl ComposerState {
         }
     }
 
+    /// Puts the files of a message that could not be sent back as chips (none twice).
+    pub fn restore_attachments(&self, attachments: Vec<Attachment>) {
+        let mut list = self.attachments;
+        add_attachments(&mut list.write(), attachments.into_iter().map(|a| a.path).collect());
+    }
+
     pub fn dismiss_error(&self) {
         let mut error = self.error;
         error.set(None);

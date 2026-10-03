@@ -155,7 +155,7 @@ impl Actor {
         self.warm_only = false;
         if self.sidecar.is_none() {
             if let Err(message) = self.start_sidecar().await {
-                self.keep_unsent(text);
+                self.keep_unsent(text, attachments);
                 self.fail(message, false).await;
                 return;
             }
@@ -165,19 +165,20 @@ impl Actor {
         };
 
         let history_len = self.view.session.messages.len();
-        match SendMessageUseCase::new(sidecar).execute(&mut self.view.session, text.clone(), attachments).await {
+        match SendMessageUseCase::new(sidecar).execute(&mut self.view.session, text.clone(), attachments.clone()).await {
             Ok(()) => {
                 self.view.phase = Phase::Running;
                 self.view.last_error = None;
                 self.refusal_shown = false;
                 self.view.unsent = None;
+                self.view.unsent_attachments.clear();
                 self.dirty = true;
             }
             Err(error) => {
                 // The use-case records the message before writing it; a message that was never
                 // delivered must not stay in the history.
                 self.view.session.messages.truncate(history_len);
-                self.keep_unsent(text);
+                self.keep_unsent(text, attachments);
                 self.fail(error.to_string(), false).await;
             }
         }
@@ -185,8 +186,9 @@ impl Actor {
 
     // The message never reached the sidecar: hand its text back through the view so the UI can put
     // it in the message box again instead of losing what the person typed.
-    fn keep_unsent(&mut self, text: String) {
+    fn keep_unsent(&mut self, text: String, attachments: Vec<Attachment>) {
         self.view.unsent = Some(text);
+        self.view.unsent_attachments = attachments;
         self.view.failed_sends += 1;
     }
 
