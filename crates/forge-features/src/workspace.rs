@@ -1,11 +1,11 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{Attachment, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{ArchivedRef, Attachment, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{FilePickerPort, FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
 use time::OffsetDateTime;
 
@@ -14,7 +14,7 @@ use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, arranged_open_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
-use crate::sidebar::{cycle_target, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
+use crate::sidebar::{cycle_target, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
 
 // Typing waits this long before the transcripts are scanned.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -61,6 +61,7 @@ pub struct Workspace {
     new_commands: Signal<Vec<SlashCommand>>,
     transcript_views: Signal<TranscriptViews>,
     prefs: Signal<SidebarPrefs>,
+    archived: Signal<Vec<ArchivedRef>>,
     search_open: Signal<bool>,
     search_query: Signal<String>,
     search_hits: Signal<Vec<SearchHit>>,
@@ -93,6 +94,7 @@ pub fn use_workspace_provider() -> Workspace {
             new_commands,
             transcript_views: Signal::new(TranscriptViews::default()),
             prefs: Signal::new(SidebarPrefs::default()),
+            archived: Signal::new(Vec::new()),
             search_open: Signal::new(false),
             search_query: Signal::new(String::new()),
             search_hits: Signal::new(Vec::new()),
@@ -132,7 +134,9 @@ impl Workspace {
             .iter()
             .map(|entry| LiveSummary::from_view(&entry.view.read()))
             .collect();
-        merge_sidebar(&self.past.read(), &open)
+        let mut groups = merge_sidebar(&self.past.read(), &open);
+        mark_archived(&mut groups, &self.archived.read());
+        groups
     }
 
     /// How the sidebar is sorted, grouped and sized.
@@ -170,9 +174,11 @@ impl Workspace {
     fn reload_prefs(&self) {
         let services = (*self.services.peek()).clone();
         let mut prefs = self.prefs;
+        let mut archived = self.archived;
         spawn(async move {
             if let Ok(config) = services.settings.load().await {
                 prefs.set(config.sidebar);
+                archived.set(config.archived);
             }
         });
     }
@@ -318,13 +324,48 @@ impl Workspace {
         // Root scope: a disk mutation must finish even if the row that asked for it unmounts.
         dioxus::core::spawn_forever(async move {
             match services.registry.delete(&project, &session).await {
-                Ok(()) => this.reload_project(project),
+                Ok(()) => {
+                    this.set_archived(project.clone(), session.clone(), false);
+                    this.reload_project(project);
+                }
                 Err(error) => {
                     this.report(error.to_string());
                     // A delete can fail half way (transcript trashed, its folder not): reload so
                     // what is gone from disk is gone from the list.
                     this.reload_project(project.clone());
                 }
+            }
+        });
+    }
+
+    /// Whether the person archived this session.
+    pub fn is_archived(&self, project: &Path, session: &SessionId) -> bool {
+        self.archived
+            .read()
+            .iter()
+            .any(|item| item.project == project && item.session_id == session.0)
+    }
+
+    /// Hides a session from the default list. Nothing on disk changes.
+    pub fn archive_session(&self, project: PathBuf, session: SessionId) {
+        self.set_archived(project, session, true);
+    }
+
+    /// Puts an archived session back in the default list.
+    pub fn unarchive_session(&self, project: PathBuf, session: SessionId) {
+        self.set_archived(project, session, false);
+    }
+
+    fn set_archived(&self, project: PathBuf, session: SessionId, archive: bool) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let mut archived = self.archived;
+        toggle_archived(&mut archived.write(), &project, &session.0, archive);
+        let list = self.archived.peek().clone();
+        // Root scope: the save must finish even if the row that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
+            if let Err(error) = services.settings.save_archived(&list).await {
+                this.report(format!("failed to save the archived sessions: {error}"));
             }
         });
     }
@@ -680,6 +721,18 @@ pub(crate) fn shortcut_from_event(event: &KeyboardEvent) -> Option<Shortcut> {
 
 // Every known project with its sessions. A project whose listing fails is kept (empty) and the
 // first failure is reported, so one bad directory never blanks the sidebar.
+/// Adds or removes one session in the archived list; adding twice keeps one entry.
+fn toggle_archived(list: &mut Vec<ArchivedRef>, project: &Path, session: &str, archive: bool) {
+    let same = |item: &ArchivedRef| item.project == project && item.session_id == session;
+    if archive {
+        if !list.iter().any(same) {
+            list.push(ArchivedRef { project: project.to_path_buf(), session_id: session.to_string() });
+        }
+    } else {
+        list.retain(|item| !same(item));
+    }
+}
+
 async fn load_past(
     services: &WorkspaceServices,
 ) -> (Vec<(ProjectSummary, Vec<SessionSummary>)>, Option<String>) {
@@ -699,4 +752,28 @@ async fn load_past(
         }
     }
     (loaded, problem)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use forge_domain::ArchivedRef;
+
+    use super::*;
+
+    #[test]
+    fn archiving_adds_once_and_unarchiving_removes() {
+        let one = ArchivedRef { project: "/a".into(), session_id: "s1".to_string() };
+        let mut list = vec![];
+
+        toggle_archived(&mut list, Path::new("/a"), "s1", true);
+        toggle_archived(&mut list, Path::new("/a"), "s1", true);
+        assert_eq!(list, vec![one]);
+
+        toggle_archived(&mut list, Path::new("/b"), "s1", false);
+        assert_eq!(list.len(), 1, "another project's s1 is a different session");
+        toggle_archived(&mut list, Path::new("/a"), "s1", false);
+        assert!(list.is_empty());
+    }
 }
