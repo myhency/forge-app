@@ -61,6 +61,7 @@ pub fn Dock(id: LiveSessionId, cwd: PathBuf) -> Element {
                             for panel in column.panels.iter().copied() {
                                 match panel {
                                     Panel::Terminal => rsx! { TerminalPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
+                                    Panel::Changes | Panel::Preview | Panel::Files => rsx! {},
                                 }
                             }
                         }
