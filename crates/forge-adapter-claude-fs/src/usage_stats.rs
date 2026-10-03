@@ -10,7 +10,7 @@ use forge_ports::{UsageStatsError, UsageStatsPort};
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
 use time::{OffsetDateTime, UtcOffset};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use std::io::BufRead;
 
 use crate::usage::token_usage;
 
@@ -160,14 +160,16 @@ async fn transcript_files(projects: &Path) -> Result<Vec<PathBuf>, UsageStatsErr
     Ok(files)
 }
 
-async fn read_rows(path: &Path, offset: UtcOffset) -> Vec<StatsRow> {
-    let Ok(file) = tokio::fs::File::open(path).await else { return Vec::new() };
-    let mut reader = BufReader::new(file);
+// Plain blocking reads: it runs on the blocking pool (see `load`), so parsing a large transcript never
+// holds the UI thread.
+fn read_rows(path: &Path, offset: UtcOffset) -> Vec<StatsRow> {
+    let Ok(file) = std::fs::File::open(path) else { return Vec::new() };
+    let mut reader = std::io::BufReader::new(file);
     let mut collector = StatsCollector::new(offset);
     let mut buffer = Vec::new();
     loop {
         buffer.clear();
-        match reader.read_until(b'\n', &mut buffer).await {
+        match reader.read_until(b'\n', &mut buffer) {
             Ok(0) | Err(_) => break,
             Ok(_) => {}
         }
@@ -193,7 +195,8 @@ impl UsageStatsPort for ClaudeUsageStatsAdapter {
             let rows = match cached {
                 Some(rows) => rows,
                 None => {
-                    let rows = read_rows(&path, offset).await;
+                    let read_path = path.clone();
+                    let rows = tokio::task::spawn_blocking(move || read_rows(&read_path, offset)).await.unwrap_or_default();
                     self.reads.fetch_add(1, Ordering::SeqCst);
                     self.cache.lock().unwrap().insert(path.clone(), Cached { key, rows: rows.clone() });
                     rows
