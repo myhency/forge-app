@@ -11,10 +11,10 @@ The README's order put the terminal panel in Plan 20 and Changes, Files and Prev
 | PNL-06 prevent sleep | build | A per-session toggle in the title bar's `⋮` menu. |
 | PNL-02 Changes | build, read only | File list and diff from `git`. No stage, revert or commit. |
 | PNL-04 Files | build, read only | Tree, filter, `?` content search, viewer. The editor, auto save and tab size are not built. |
-| PNL-03 Preview | build, small | Tabs, address bar, an `<iframe>`. Cookie import, element picker and the layout icon are not built. |
+| PNL-03 Preview | build, small | Tabs, address bar, history; the page opens in the system browser (the `<iframe>` spike failed). Cookie import, element picker and the layout icon are not built. |
 | PNL-05 iOS simulator | not built | macOS and Xcode only (backlog: won't). |
 
-Two plans: **21A** the dock, terminal and prevent sleep; **21B** Changes, Files and Preview. 21B starts with a spike (below).
+Two plans: **21A** the dock, terminal and prevent sleep; **21B** Changes, Files and Preview. 21B started with a spike (see Preview).
 
 ## Assumptions (not seen in the real app)
 
@@ -72,12 +72,13 @@ Port `FilesPort`: `list(dir)`, `read(path, limit)`, `search(root, query, limit)`
 
 ## Preview (Plan 21B)
 
-Tabs ("New tab", `+`), back, forward, reload, a URL field, drawn in `forge-widgets/preview_panel.rs`; the page itself is an `<iframe>`. A URL without a scheme gets `http://` for `localhost` and `https://` otherwise.
+Tabs ("New tab", `+`), back, forward, reload, a URL field, drawn in `forge-widgets/preview_panel.rs`. A URL without a scheme gets `http://` for `localhost` and `https://` otherwise.
 
-- **Spike first.** Dioxus 0.7 desktop cannot easily host a second webview, so `<iframe>` is the plan. The first task of 21B loads `http://localhost` and an external site in an `<iframe>` inside the real app. If `localhost` does not work, the preview is reduced to "Open in browser" and the spec is amended before more work.
-- A site that refuses to be framed cannot be detected reliably from an `<iframe>`; the panel keeps an "Open in browser" button in the tab so the user can leave it.
+- **Spike result (2026-10-03): the `<iframe>` does not work.** In the real app an `<iframe>` of `http://localhost` and of `https://example.com` stayed blank and fired no load event. `dioxus-desktop` 0.7.10 (`webview.rs`, navigation handler) refuses every `http(s)://` navigation, frames included, and opens it in the system browser; the check runs before any handler set with `with_navigation_handler`, so it cannot be configured away.
+- **Decision:** the page opens in the system browser. The panel keeps the tabs, the address bar, reload and the per-tab history; "Open in browser" (Enter in the URL field, and reload) hands the current URL to the system browser. The panel shows the URL and a short line that the page is open in the browser. Nothing is drawn inside the panel.
 - History (back, forward) is the tab's own list of URLs held in `forge-features` (pure).
 - No cookie import, no element picker.
+- Backlog (not built): a `forge://` custom protocol that proxies http into an `<iframe>` (HMR sockets, cookies and absolute paths would break), or a child native webview.
 
 ## Where the code goes
 
