@@ -10,6 +10,7 @@ mod permission;
 mod relative_time;
 mod sidebar_item;
 mod tool_summary;
+mod transcript_view;
 mod usage_view;
 
 pub use command_menu::{command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};
@@ -21,6 +22,7 @@ pub use model_catalog::{model_from_value, model_label, model_options, model_valu
 pub use permission::PermissionCard;
 pub use relative_time::relative_time;
 pub use sidebar_item::{SessionMarker, SidebarItem};
-pub use tool_summary::{tool_call_status, tool_input_summary, ToolCallStatus};
+pub use transcript_view::TranscriptView;
+pub use tool_summary::{tool_call_status, tool_detail_text, tool_input_summary, ToolCallStatus};
 pub use extension_rows::{mcp_rows, mcp_summary, plugin_rows, project_label, skill_rows, ExtensionRow};
 pub use usage_view::{format_cost, format_tokens, ring_dash, ring_level, ContextView, ModelLine, RingLevel, UsageView};

@@ -3,11 +3,13 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
+use forge_entities::TranscriptView;
 use forge_domain::{PermissionDecision, PermissionMode, ProjectSummary, SessionId, SessionSummary, SlashCommand};
 use forge_ports::{FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
 
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
+use crate::transcript_views::TranscriptViews;
 use crate::sidebar::{cycle_target, merge_sidebar, open_order, replace_project_sessions, LiveSummary, SidebarGroup};
 
 /// Everything the workspace needs from the outside, injected once by the composition root.
@@ -48,6 +50,7 @@ pub struct Workspace {
     picking: Signal<bool>,
     probe: Signal<Arc<ProbeSlot>>,
     new_commands: Signal<Vec<SlashCommand>>,
+    transcript_views: Signal<TranscriptViews>,
 }
 
 /// Creates the workspace, provides it to every descendant and loads the sidebar once. Call it in
@@ -74,6 +77,7 @@ pub fn use_workspace_provider() -> Workspace {
             picking: Signal::new(false),
             probe: Signal::new(slot),
             new_commands,
+            transcript_views: Signal::new(TranscriptViews::default()),
         }
     });
     use_context_provider(move || workspace);
@@ -211,6 +215,16 @@ impl Workspace {
                 FolderChoice::Rejected(message) => this.report(message),
             }
         });
+    }
+
+    /// How much of the open session the chat shows. Normal until the person changes it.
+    pub fn transcript_view(&self, id: LiveSessionId) -> TranscriptView {
+        self.transcript_views.read().get(id)
+    }
+
+    pub fn set_transcript_view(&self, id: LiveSessionId, view: TranscriptView) {
+        let mut views = self.transcript_views;
+        views.write().set(id, view);
     }
 
     pub fn live_view(&self, id: LiveSessionId) -> Option<Signal<LiveSessionView>> {
@@ -355,6 +369,8 @@ impl Workspace {
         services.registry.close(id);
         let mut live = self.live;
         live.write().retain(|entry| entry.handle.id() != id);
+        let mut views = self.transcript_views;
+        views.write().forget(id);
         if self.active() == Active::Live(id) {
             let next = self.live.peek().last().map(|entry| entry.handle.id());
             match next {

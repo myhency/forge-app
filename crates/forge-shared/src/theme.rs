@@ -58,6 +58,10 @@ mod tests {
             ".diff-line.added",
             ".diff-line.removed",
             ".tool-call.expandable",
+            ".thinking",
+            ".tool-detail",
+            ".view-switch",
+            ".view-option.selected",
         ] {
             assert!(THEME_CSS.contains(selector), "theme.css is missing {selector}");
         }

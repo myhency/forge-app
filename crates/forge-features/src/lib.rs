@@ -10,6 +10,7 @@ mod settings;
 mod settings_draft;
 mod shortcut;
 mod sidebar;
+mod transcript_views;
 mod workspace;
 
 pub use approve_permission::PermissionActions;

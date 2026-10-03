@@ -44,6 +44,19 @@ fn truncate_chars(text: &str, max: usize) -> String {
     truncated
 }
 
+const MAX_DETAIL_CHARS: usize = 4000;
+
+/// A tool call's input or output for the detailed view: cut to 4000 characters with a note of how
+/// much was left out, so one large result cannot fill the chat.
+pub fn tool_detail_text(text: &str) -> String {
+    let total = text.chars().count();
+    if total <= MAX_DETAIL_CHARS {
+        return text.to_string();
+    }
+    let kept: String = text.chars().take(MAX_DETAIL_CHARS).collect();
+    format!("{kept}\n… {} more characters", total - MAX_DETAIL_CHARS)
+}
+
 pub fn tool_call_status(tool_call: &ToolCall) -> ToolCallStatus {
     match &tool_call.result {
         None => ToolCallStatus::Running,
@@ -113,6 +126,19 @@ mod tests {
     #[test]
     fn a_short_summary_is_left_alone() {
         assert_eq!(tool_input_summary(&json!({ "command": "ls" })), "ls");
+    }
+
+    #[test]
+    fn detail_text_keeps_a_short_text_whole() {
+        assert_eq!(tool_detail_text("line 1\nline 2"), "line 1\nline 2");
+    }
+
+    #[test]
+    fn detail_text_is_cut_with_a_count_of_what_is_left() {
+        let text = "한".repeat(4100);
+        let detail = tool_detail_text(&text);
+        assert!(detail.starts_with(&"한".repeat(4000)));
+        assert!(detail.ends_with("… 100 more characters"));
     }
 
     #[test]
