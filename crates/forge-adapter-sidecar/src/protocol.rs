@@ -12,6 +12,7 @@ pub enum SidecarCommand {
         resume_session_id: Option<String>,
         permission_mode: WireMode,
         model: Option<String>,
+        effort: Option<forge_domain::EffortLevel>,
         skills: BTreeMap<String, String>,
         plugins: Vec<String>,
         mcp_servers: BTreeMap<String, serde_json::Value>,
@@ -29,6 +30,8 @@ pub enum SidecarCommand {
     SetPermissionMode { id: String, mode: WireMode },
     /// `None` is the SDK's default model.
     SetModel { id: String, model: Option<String> },
+    /// `None` is the SDK's default effort.
+    SetEffort { id: String, effort: Option<forge_domain::EffortLevel> },
     Shutdown { id: String },
 }
 
@@ -93,6 +96,7 @@ impl SidecarCommand {
             resume_session_id: params.resume_session_id,
             permission_mode: params.permission_mode.into(),
             model: params.model,
+            effort: params.effort,
             skills: params
                 .extensions
                 .skills
@@ -172,9 +176,30 @@ mod tests {
             resume_session_id: None,
             permission_mode: PermissionMode::Default,
             model: None,
+            effort: None,
             extensions: ActiveExtensions::default(),
             additional_directories,
         }
+    }
+
+    #[test]
+    fn set_effort_serializes_a_level_and_the_default_as_null() {
+        let named = SidecarCommand::SetEffort { id: "6".to_string(), effort: Some(forge_domain::EffortLevel::XHigh) };
+        let default = SidecarCommand::SetEffort { id: "7".to_string(), effort: None };
+
+        assert_eq!(serde_json::to_value(&named).unwrap(), serde_json::json!({"type": "set_effort", "id": "6", "effort": "xhigh"}));
+        assert_eq!(serde_json::to_value(&default).unwrap(), serde_json::json!({"type": "set_effort", "id": "7", "effort": null}));
+    }
+
+    #[test]
+    fn start_session_carries_the_effort() {
+        let mut params = params_with(Vec::new());
+        params.effort = Some(forge_domain::EffortLevel::High);
+        let started = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params)).unwrap();
+        assert_eq!(started["effort"], "high");
+
+        let default = serde_json::to_value(SidecarCommand::start_session("2".to_string(), params_with(Vec::new()))).unwrap();
+        assert!(default["effort"].is_null());
     }
 
     #[test]
@@ -202,6 +227,7 @@ mod tests {
                 resume_session_id: None,
                 permission_mode: PermissionMode::Default,
                 model: None,
+                effort: None,
                 extensions: ActiveExtensions::default(),
                 additional_directories: Vec::new(),
             },
@@ -217,6 +243,7 @@ mod tests {
                 "resume_session_id": null,
                 "permission_mode": "default",
                 "model": null,
+                "effort": null,
                 "skills": {},
                 "plugins": [],
                 "mcp_servers": {}
@@ -235,6 +262,7 @@ mod tests {
                 resume_session_id: None,
                 permission_mode: PermissionMode::Default,
                 model: None,
+                effort: None,
                 extensions: ActiveExtensions {
                     skills: BTreeMap::from([("pdf".to_string(), PathBuf::from("/skills/pdf"))]),
                     plugin_paths: vec![PathBuf::from("/plugins/hud")],

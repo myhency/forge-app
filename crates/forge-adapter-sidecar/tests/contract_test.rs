@@ -18,6 +18,7 @@ fn default_params() -> StartSessionParams {
         resume_session_id: None,
         permission_mode: PermissionMode::Default,
         model: None,
+        effort: None,
         extensions: Default::default(),
         additional_directories: Vec::new(),
     }

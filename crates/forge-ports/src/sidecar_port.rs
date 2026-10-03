@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use forge_domain::{ActiveExtensions, Attachment, PermissionDecision, PermissionMode, SlashCommand, TokenUsage};
+use forge_domain::{ActiveExtensions, Attachment, AvailableModel, EffortLevel, PermissionDecision, PermissionMode, SlashCommand, TokenUsage};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -16,6 +16,8 @@ pub struct StartSessionParams {
     pub resume_session_id: Option<String>,
     pub permission_mode: PermissionMode,
     pub model: Option<String>,
+    /// The effort the session starts with; `None` is the SDK's default.
+    pub effort: Option<EffortLevel>,
     /// The skills, plugins and MCP servers the session starts with.
     pub extensions: ActiveExtensions,
     /// Folders the session may use besides its own (the SDK's `additionalDirectories`).
@@ -45,7 +47,11 @@ pub enum SidecarEvent {
     PermissionModeSet { mode: PermissionMode },
     /// The SDK accepted a `set_model`; `None` is its default model.
     ModelSet { model: Option<String> },
-    /// The SDK refused a `set_permission_mode` or `set_model`. The session goes on.
+    /// The SDK accepted a `set_effort`; `None` is its default.
+    EffortSet { effort: Option<EffortLevel> },
+    /// The models the SDK lists for this session and the effort levels each takes. Sent once after the start.
+    ModelsAvailable { models: Vec<AvailableModel> },
+    /// The SDK refused a `set_permission_mode`, `set_model` or `set_effort`. The session goes on.
     SettingFailed { message: String },
     Error { message: String },
     SessionEnded,
@@ -77,6 +83,9 @@ pub trait SidecarPort: Send + Sync {
     /// Asks for a model change in the running session (`None`: the default). The answer comes back
     /// as an event.
     async fn set_model(&self, model: Option<String>) -> Result<(), SidecarError>;
+    /// Asks for an effort change in the running session (`None`: the default). The answer comes back
+    /// as an event.
+    async fn set_effort(&self, effort: Option<EffortLevel>) -> Result<(), SidecarError>;
     async fn shutdown(&self) -> Result<(), SidecarError>;
     async fn next_event(&self) -> Option<SidecarEvent>;
 }
@@ -84,6 +93,28 @@ pub trait SidecarPort: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn effort_events_read_from_the_wire() {
+        let set: SidecarEvent = serde_json::from_str(r#"{"type":"effort_set","effort":"xhigh"}"#).unwrap();
+        assert_eq!(set, SidecarEvent::EffortSet { effort: Some(forge_domain::EffortLevel::XHigh) });
+        let cleared: SidecarEvent = serde_json::from_str(r#"{"type":"effort_set","effort":null}"#).unwrap();
+        assert_eq!(cleared, SidecarEvent::EffortSet { effort: None });
+        let models: SidecarEvent = serde_json::from_str(
+            r#"{"type":"models_available","models":[{"value":"m","display_name":"M","effort_levels":["low","high"]}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            models,
+            SidecarEvent::ModelsAvailable {
+                models: vec![forge_domain::AvailableModel {
+                    value: "m".to_string(),
+                    display_name: "M".to_string(),
+                    effort_levels: vec![forge_domain::EffortLevel::Low, forge_domain::EffortLevel::High],
+                }]
+            }
+        );
+    }
 
     #[tokio::test]
     async fn mock_sidecar_port_can_record_a_start_session_call() {
@@ -99,6 +130,7 @@ mod tests {
                 resume_session_id: None,
                 permission_mode: PermissionMode::Default,
                 model: None,
+                effort: None,
                 extensions: ActiveExtensions::default(),
                 additional_directories: Vec::new(),
             })
