@@ -84,9 +84,33 @@ fn window_config() -> Config {
         .with_menu(app_menu())
 }
 
+// Where Forge reads Claude's files. `FORGE_CLAUDE_HOME` points it at another Claude home (a test
+// fixture) so the app can be run against known data without touching the real `~/.claude`. The
+// matching `.claude.json` is the sibling of that directory, as it is for the real one. Forge only
+// reads from it here; a session started from the app still runs on the real Claude.
+fn claude_paths(
+    override_home: Option<std::ffi::OsString>,
+    default_home: Option<std::path::PathBuf>,
+    default_json: Option<std::path::PathBuf>,
+) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    match override_home.filter(|home| !home.is_empty()) {
+        Some(home) => {
+            let home = std::path::PathBuf::from(home);
+            let json = home.with_file_name(".claude.json");
+            Some((home, json))
+        }
+        None => Some((default_home?, default_json?)),
+    }
+}
+
 // The composition root: the only place that names concrete adapters.
 fn build_services() -> WorkspaceServices {
-    let claude_home = default_claude_home().expect("could not resolve the home directory");
+    let (claude_home, claude_json) = claude_paths(
+        std::env::var_os("FORGE_CLAUDE_HOME"),
+        default_claude_home(),
+        default_claude_json_path(),
+    )
+    .expect("could not resolve the home directory");
     let config_path = default_config_path().expect("could not resolve the config directory");
     let node = std::env::var("FORGE_NODE").unwrap_or_else(|_| "node".to_string());
     let script = std::env::var("FORGE_SIDECAR_SCRIPT").unwrap_or_else(|_| DEFAULT_SIDECAR_SCRIPT.to_string());
@@ -94,7 +118,6 @@ fn build_services() -> WorkspaceServices {
     let config = Arc::new(ConfigFileAdapter::new(config_path));
     let factory = Arc::new(SidecarProcessFactory::new(node, script, config.clone()));
     let settings = Arc::new(SettingsUseCase::new(config.clone()));
-    let claude_json = default_claude_json_path().expect("could not resolve the home directory");
     // With no project open the tabs read the home directory as the project, so only the global
     // definitions (`~/.claude/skills`, the global MCP servers) show.
     let home = claude_home.parent().map(std::path::Path::to_path_buf).unwrap_or_else(|| claude_home.clone());
@@ -125,6 +148,37 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    fn paths(override_home: Option<&str>) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        claude_paths(
+            override_home.map(std::ffi::OsString::from),
+            Some("/home/me/.claude".into()),
+            Some("/home/me/.claude.json".into()),
+        )
+    }
+
+    #[test]
+    fn with_no_override_the_real_claude_paths_are_used() {
+        assert_eq!(paths(None), Some(("/home/me/.claude".into(), "/home/me/.claude.json".into())));
+    }
+
+    #[test]
+    fn an_empty_override_counts_as_none() {
+        assert_eq!(paths(Some("")), paths(None));
+    }
+
+    #[test]
+    fn an_override_moves_the_json_file_beside_it() {
+        assert_eq!(
+            paths(Some("/tmp/fixture/.claude")),
+            Some(("/tmp/fixture/.claude".into(), "/tmp/fixture/.claude.json".into()))
+        );
+    }
+
+    #[test]
+    fn no_default_and_no_override_is_none() {
+        assert_eq!(claude_paths(None, None, None), None);
+    }
 
     #[test]
     fn the_default_sidecar_script_points_into_this_repositorys_sidecar_directory() {
