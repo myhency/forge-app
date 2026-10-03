@@ -2,6 +2,7 @@ mod approve_permission;
 mod arrange;
 mod attachments;
 mod command_box;
+mod effort;
 mod composer_state;
 mod filter_menu;
 mod folder_choice;
@@ -22,6 +23,7 @@ pub use approve_permission::PermissionActions;
 pub use arrange::{arrange, arranged_open_order, folder_group_id, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use attachments::{add_attachments, check_attachments, folder_label, kind_for_path, with_folder_hints, MAX_IMAGE_BYTES};
 pub use command_box::CommandTextArea;
+pub use effort::{effort_button_label, effort_levels, slider_position, EFFORT_HELP, SLIDER_FASTER, SLIDER_SMARTER};
 pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, Outgoing};
 pub use filter_menu::{
     current_index, filter_key, group_label, sort_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,

@@ -1,7 +1,10 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_entities::model_menu_rows;
-use forge_features::{menu_digit_row, mode_choice, mode_rows, refocus_composer, use_workspace, ModeChoice};
+use forge_features::{
+    effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_workspace, ModeChoice,
+    EFFORT_HELP, SLIDER_FASTER, SLIDER_SMARTER,
+};
 use forge_shared::{Button, ButtonKind};
 
 /// One row of a picker's list, whatever it picks.
@@ -196,6 +199,96 @@ pub fn ModelPicker(id: LiveSessionId) -> Element {
                 workspace.set_model(id, values[index].clone());
                 refocus_composer();
             },
+        }
+    }
+}
+
+/// The effort of the open session, changed from the composer with a stepped slider. Only the levels
+/// the session's model takes get a stop; a model that takes none, or that the SDK has not listed,
+/// shows no control.
+#[component]
+pub fn EffortPicker(id: LiveSessionId) -> Element {
+    let workspace = use_workspace();
+    let mut open = use_signal(|| false);
+    let Some(view) = workspace.live_view(id) else { return rsx! {} };
+    let (levels, current) = {
+        let view = view.read();
+        (effort_levels(&view.available_models, view.model.as_deref()), view.effort)
+    };
+    if levels.is_empty() {
+        return rsx! {};
+    }
+    let position = slider_position(&levels, current);
+    let last_stop = levels.len() - 1;
+    let label = effort_button_label(current);
+    rsx! {
+        div { class: "picker",
+            button {
+                class: if open() { "picker-button open" } else { "picker-button" },
+                r#type: "button",
+                title: "Effort",
+                "aria-haspopup": "dialog",
+                "aria-expanded": "{open()}",
+                onclick: move |_| open.set(!open()),
+                span { "{label}" }
+                span { class: "picker-chevron", "▾" }
+            }
+            if open() {
+                div {
+                    class: "picker-backdrop",
+                    onclick: move |_| {
+                        open.set(false);
+                        refocus_composer();
+                    },
+                }
+                div {
+                    class: "picker-menu effort-menu",
+                    role: "dialog",
+                    tabindex: "0",
+                    onmounted: move |mounted| async move {
+                        let _ = mounted.set_focus(true).await;
+                    },
+                    onkeydown: move |event: KeyboardEvent| {
+                        if event.key() == Key::Escape {
+                            event.stop_propagation();
+                            open.set(false);
+                            refocus_composer();
+                        }
+                    },
+                    div { class: "effort-head",
+                        span { class: "picker-title", "Effort" }
+                        span { class: "effort-current", "{label}" }
+                        span { class: "effort-help", title: "{EFFORT_HELP}", "?" }
+                    }
+                    div { class: "effort-ends",
+                        span { "{SLIDER_FASTER}" }
+                        span { "{SLIDER_SMARTER}" }
+                    }
+                    input {
+                        class: "effort-slider",
+                        r#type: "range",
+                        min: "0",
+                        max: "{last_stop}",
+                        step: "1",
+                        value: "{position}",
+                        "aria-label": "Effort",
+                        oninput: {
+                            let levels = levels.clone();
+                            move |event: FormEvent| {
+                                if let Some(level) = event.value().parse::<usize>().ok().and_then(|index| levels.get(index)) {
+                                    workspace.set_effort(id, Some(*level));
+                                }
+                            }
+                        },
+                    }
+                    button {
+                        class: "picker-item",
+                        r#type: "button",
+                        onclick: move |_| workspace.set_effort(id, None),
+                        span { class: "picker-text", span { class: "picker-label", "Use the default" } }
+                    }
+                }
+            }
         }
     }
 }

@@ -10,7 +10,7 @@ mod sidebar;
 mod usage_ring;
 
 pub use chat_window::ChatWindow;
-pub use composer_controls::{ModePicker, ModelPicker};
+pub use composer_controls::{EffortPicker, ModePicker, ModelPicker};
 pub use filter_menu::SidebarFilterMenu;
 pub use new_session_panel::NewSessionPanel;
 pub use plus_menu::PlusMenu;

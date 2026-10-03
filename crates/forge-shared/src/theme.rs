@@ -105,6 +105,17 @@ mod tests {
     }
 
     #[test]
+    fn the_effort_styles_exist_and_use_theme_colors() {
+        for selector in [".effort-menu", ".effort-head", ".effort-ends", ".effort-slider", ".effort-help"] {
+            assert!(THEME_CSS.contains(selector), "theme.css is missing {selector}");
+        }
+        for rule in THEME_CSS.lines().filter(|line| line.starts_with(".effort")) {
+            assert!(!rule.contains('#'), "a hard-coded color in: {rule}");
+            assert!(!rule.contains("rgb"), "a hard-coded color in: {rule}");
+        }
+    }
+
+    #[test]
     fn the_usage_ring_styles_exist() {
         for selector in [".usage-ring", ".usage-ring.warn", ".usage-ring.danger", ".usage-popover", ".usage-backdrop"] {
             assert!(THEME_CSS.contains(selector), "theme.css is missing {selector}");
