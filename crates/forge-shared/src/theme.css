@@ -357,3 +357,9 @@ button.tool-call { appearance: none; background: none; text-align: left; cursor:
 .terminal-exited { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border-top: 1px solid var(--border); font-size: 12px; color: var(--fg-muted); }
 .terminal-restart { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--fg); font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; }
 .terminal-restart:hover { background: var(--bg-hover); }
+
+/* The icons at the right of the chat header. */
+.pane-tools { margin-left: auto; display: flex; align-items: center; gap: 4px; font-weight: 400; }
+.icon-button.active { background: var(--bg-hover); color: var(--accent); }
+/* The `⋮` menu in the header opens downwards, below its button. */
+.picker-menu.down { top: 100%; bottom: auto; left: auto; right: 0; margin-top: 6px; }

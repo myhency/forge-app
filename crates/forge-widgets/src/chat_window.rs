@@ -4,7 +4,9 @@ use forge_entities::{MessageBubble, PermissionCard, TranscriptView};
 use forge_features::{use_workspace, PermissionActions, SendMessageBox};
 
 use crate::composer_controls::{EffortPicker, ModePicker, ModelPicker};
+use crate::dock::Dock;
 use crate::plus_menu::PlusMenu;
+use crate::session_tools::SessionTools;
 use crate::sidebar::project_label;
 use crate::usage_ring::UsageRing;
 
@@ -21,6 +23,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
         .claude_session_id
         .as_ref()
         .is_some_and(|session| workspace.is_archived(&view.project_path, session));
+    let dock_expanded = workspace.dock(id).expanded.is_some() && !archived;
     let heading = format!(
         "{} · {}",
         project_label(&view.project_path),
@@ -28,7 +31,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
     );
 
     rsx! {
-        div { class: "main-pane",
+        div { class: if dock_expanded { "main-pane dock-expanded" } else { "main-pane" },
             div { class: "pane-header",
                 span { class: "pane-title", "{heading}" }
                 div { class: "view-switch", role: "radiogroup", "aria-label": "Transcript view",
@@ -43,6 +46,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                         }
                     }
                 }
+                SessionTools { id, terminal: !archived }
             }
             div { class: "messages",
                 for (index, message) in view.session.messages.iter().enumerate() {
@@ -87,6 +91,9 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     "The project folder no longer exists, so this session can only be viewed."
                 }
             }
+        }
+        if !archived {
+            Dock { id, cwd: view.project_path.clone() }
         }
     }
 }
