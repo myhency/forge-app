@@ -23,3 +23,22 @@ def to_screen_point(px, py, image_size, bounds):
     if not (0 <= px < image_width and 0 <= py < image_height):
         raise ValueError(f"pixel ({px}, {py}) is outside the {image_width}x{image_height} image")
     return x + px * width / image_width, y + py * height / image_height
+
+
+def select_window(listed_windows, pid, owner="forge-app", title="Forge"):
+    """The Forge window of process `pid` as {'id', 'bounds': (x, y, w, h)}, or None.
+
+    Matching the pid keeps the scripts from capturing or clicking another Forge the user has open
+    (a dev build reading the real ~/.claude has the same owner and title). No pid, no window.
+    """
+    if pid is None:
+        return None
+    for window in listed_windows or []:
+        if (
+            window.get("kCGWindowOwnerPID") == pid
+            and window.get("kCGWindowOwnerName") == owner
+            and window.get("kCGWindowName") == title
+        ):
+            b = window["kCGWindowBounds"]
+            return {"id": window["kCGWindowNumber"], "bounds": (b["X"], b["Y"], b["Width"], b["Height"])}
+    return None

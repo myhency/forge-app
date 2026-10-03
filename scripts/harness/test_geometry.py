@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from geometry import png_size, to_screen_point
+from geometry import png_size, select_window, to_screen_point
 
 
 def write_png_header(path, width, height):
@@ -42,6 +42,33 @@ class GeometryTest(unittest.TestCase):
         for point in [(-1, 0), (0, -1), (2400, 0), (0, 1600)]:
             with self.assertRaises(ValueError):
                 to_screen_point(*point, (2400, 1600), (0, 0, 1200, 800))
+
+
+def listed(pid, owner="forge-app", name="Forge", number=1):
+    return {
+        "kCGWindowOwnerPID": pid,
+        "kCGWindowOwnerName": owner,
+        "kCGWindowName": name,
+        "kCGWindowNumber": number,
+        "kCGWindowBounds": {"X": 10.0, "Y": -20.0, "Width": 1200.0, "Height": 800.0},
+    }
+
+
+class SelectWindowTest(unittest.TestCase):
+    def test_picks_the_window_of_the_harness_process(self):
+        windows = [listed(111, number=1), listed(222, number=2)]
+        self.assertEqual(select_window(windows, 222), {"id": 2, "bounds": (10.0, -20.0, 1200.0, 800.0)})
+
+    def test_ignores_another_forge_window_that_is_not_the_harness_process(self):
+        # A dev build the user has open has the same owner and title, but another pid.
+        self.assertIsNone(select_window([listed(111)], 222))
+
+    def test_without_a_harness_pid_there_is_no_window(self):
+        self.assertIsNone(select_window([listed(111)], None))
+
+    def test_ignores_windows_of_other_owners_or_titles(self):
+        windows = [listed(222, owner="Safari"), listed(222, name="Settings")]
+        self.assertIsNone(select_window(windows, 222))
 
 
 if __name__ == "__main__":

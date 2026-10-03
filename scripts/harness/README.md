@@ -16,6 +16,8 @@ so the real `~/.claude` and the real Forge config are never read or written. The
 `click.py` takes pixels of the PNG file. An image viewer may show it scaled down (the viewer says by how
 much); multiply the coordinates you read off by that factor.
 
-Needs the terminal to have Screen Recording and Accessibility permission. A session started from the
+Needs a `python3` that can `import Quartz` (pyobjc; the anaconda one here can, `/usr/bin/python3` cannot: otherwise
+`pip install pyobjc-framework-Quartz`). The scripts only see the window of the app `launch.sh` started, never another
+Forge you have open. The terminal needs Screen Recording and Accessibility permission. A session started from the
 app still runs on the real Claude, and a fake home has no login, so sending a message, IME, dark mode
 and other perception checks are not covered. A blank first capture is retried once.

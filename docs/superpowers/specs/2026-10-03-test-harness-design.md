@@ -73,5 +73,5 @@ Built test-first, with the same cases as `claude_paths` (no override, empty over
 
 - Screen capture and Quartz clicks depend on permissions and on the window being visible; a blank
   first frame is normal and handled by one retry.
-- Quartz is available to the system `python3` on this machine (3.11.7); the README states the
-  dependency.
+- Quartz (pyobjc) is available to the `python3` on this machine's PATH (anaconda 3.11.7) but not to
+  `/usr/bin/python3`; the README states the dependency.
