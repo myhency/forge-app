@@ -1,10 +1,13 @@
+mod changes_panel;
 mod chat_window;
 mod composer_controls;
 mod dock;
+mod files_panel;
 mod filter_menu;
 mod new_session_panel;
 mod panel_frame;
 mod plus_menu;
+mod preview_panel;
 mod search_palette;
 mod session_row;
 mod session_tools;

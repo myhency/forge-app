@@ -10,6 +10,9 @@ use forge_adapter_claude_fs::{
 use forge_adapter_dialog::RfdFolderPicker;
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
+use forge_adapter_browser::SystemBrowser;
+use forge_adapter_files::LocalFiles;
+use forge_adapter_git::GitCli;
 use forge_adapter_sleep::CaffeinateSleep;
 use forge_adapter_terminal::PtyTerminal;
 use forge_application::{ExtensionsUseCase, SessionRegistry, SettingsUseCase};
@@ -164,6 +167,9 @@ fn build_services() -> WorkspaceServices {
         file_picker: picker,
         terminal: Arc::new(PtyTerminal::new(shell)),
         sleep: Arc::new(CaffeinateSleep::new()),
+        git: Arc::new(GitCli::new()),
+        files: Arc::new(LocalFiles::new()),
+        browser: Arc::new(SystemBrowser::new()),
     }
 }
 

@@ -65,6 +65,34 @@ pub fn diff_for_tool(name: &str, input: &Value) -> Option<FileDiff> {
     Some(FileDiff { path, new_content, added, removed, hunks, hidden_lines })
 }
 
+/// Git's unified diff of one file as a `FileDiff`. Lines before the first `@@` (the `diff --git`,
+/// `index`, `---` and `+++` header) are not shown; each `@@` starts a hunk. A binary file or empty
+/// text gives no hunks.
+pub fn parse_unified_diff(path: &str, text: &str) -> FileDiff {
+    let new_content = text.lines().any(|line| line.starts_with("new file mode"));
+    let mut hunks: Vec<Vec<DiffLine>> = Vec::new();
+    for line in text.lines() {
+        if line.starts_with("@@") {
+            hunks.push(Vec::new());
+            continue;
+        }
+        let Some(hunk) = hunks.last_mut() else { continue };
+        let (kind, rest) = match line.chars().next() {
+            Some('+') => (DiffLineKind::Added, &line[1..]),
+            Some('-') => (DiffLineKind::Removed, &line[1..]),
+            Some(' ') => (DiffLineKind::Context, &line[1..]),
+            None => (DiffLineKind::Context, ""),
+            // "\ No newline at end of file" and anything else.
+            Some(_) => continue,
+        };
+        hunk.push(DiffLine { kind, text: rest.trim_end_matches('\r').to_string() });
+    }
+    let count = |kind| hunks.iter().flatten().filter(|line| line.kind == kind).count();
+    let (added, removed) = (count(DiffLineKind::Added), count(DiffLineKind::Removed));
+    let hidden_lines = truncate_hunks(&mut hunks, MAX_DIFF_LINES);
+    FileDiff { path: path.to_string(), new_content, added, removed, hunks, hidden_lines }
+}
+
 fn string_field<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
     object.get(key)?.as_str()
 }
@@ -239,5 +267,61 @@ mod tests {
         let diff = diff_for_tool("Edit", &input).unwrap();
         assert!(started.elapsed() < std::time::Duration::from_secs(2), "took {:?}", started.elapsed());
         assert_eq!((diff.added, diff.removed), (8000, 8000));
+    }
+
+    const MODIFIED: &str = "diff --git a/a.txt b/a.txt\nindex 1..2 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n@@ -10,2 +10,3 @@\n x\n+y\n z\n";
+
+    #[test]
+    fn a_unified_diff_becomes_hunks_with_counts() {
+        let diff = parse_unified_diff("a.txt", MODIFIED);
+        assert_eq!(diff.path, "a.txt");
+        assert!(!diff.new_content);
+        assert_eq!((diff.added, diff.removed, diff.hidden_lines), (2, 1, 0));
+        assert_eq!(diff.hunks.len(), 2);
+        assert_eq!(
+            kinds(&diff),
+            vec![
+                (DiffLineKind::Context, "a"),
+                (DiffLineKind::Removed, "b"),
+                (DiffLineKind::Added, "B"),
+                (DiffLineKind::Context, "c"),
+                (DiffLineKind::Context, "x"),
+                (DiffLineKind::Added, "y"),
+                (DiffLineKind::Context, "z"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_new_file_is_marked_and_the_header_lines_are_not_shown() {
+        let text = "diff --git a/n.txt b/n.txt\nnew file mode 100644\nindex 0..1\n--- /dev/null\n+++ b/n.txt\n@@ -0,0 +1,2 @@\n+one\n+two\n";
+        let diff = parse_unified_diff("n.txt", text);
+        assert!(diff.new_content);
+        assert_eq!((diff.added, diff.removed), (2, 0));
+        assert_eq!(kinds(&diff), vec![(DiffLineKind::Added, "one"), (DiffLineKind::Added, "two")]);
+    }
+
+    #[test]
+    fn a_binary_or_empty_diff_has_no_hunks() {
+        assert!(parse_unified_diff("b.png", "diff --git a/b.png b/b.png\nBinary files a/b.png and b/b.png differ\n").hunks.is_empty());
+        assert!(parse_unified_diff("x", "").hunks.is_empty());
+    }
+
+    #[test]
+    fn no_newline_markers_and_blank_context_lines_are_handled() {
+        let text = "@@ -1,2 +1,2 @@\n-a\n\\ No newline at end of file\n+b\n\n";
+        let diff = parse_unified_diff("f", text);
+        assert_eq!(kinds(&diff), vec![(DiffLineKind::Removed, "a"), (DiffLineKind::Added, "b"), (DiffLineKind::Context, "")]);
+    }
+
+    #[test]
+    fn a_long_diff_is_cut_like_a_tool_call_diff() {
+        let mut text = String::from("@@ -0,0 +1,400 @@\n");
+        for i in 0..400 {
+            text.push_str(&format!("+line {i}\n"));
+        }
+        let diff = parse_unified_diff("big", &text);
+        assert_eq!(diff.added, 400);
+        assert_eq!(diff.hidden_lines, 100);
     }
 }

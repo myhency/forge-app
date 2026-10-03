@@ -6,16 +6,31 @@ pub const DEFAULT_COLUMN_WIDTH: f32 = 480.0;
 pub const MIN_COLUMN_WIDTH: f32 = 280.0;
 pub const MAX_COLUMN_WIDTH: f32 = 900.0;
 
-/// A panel that can sit in the dock. Plan 21B adds Changes, Preview and Files.
+/// A panel that can sit in the dock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Panel {
     Terminal,
+    Changes,
+    Preview,
+    Files,
 }
 
 impl Panel {
     pub fn title(self) -> &'static str {
         match self {
             Panel::Terminal => "Terminal",
+            Panel::Changes => "Changes",
+            Panel::Preview => "Preview",
+            Panel::Files => "Files",
+        }
+    }
+
+    // Changes and Preview share one column.
+    fn partner(self) -> Option<Panel> {
+        match self {
+            Panel::Changes => Some(Panel::Preview),
+            Panel::Preview => Some(Panel::Changes),
+            Panel::Terminal | Panel::Files => None,
         }
     }
 }
@@ -40,14 +55,21 @@ impl DockState {
         self.columns.iter().any(|column| column.panels.contains(&panel))
     }
 
-    /// Opens a closed panel in a new column at the far right, or closes an open one. Opening a
-    /// panel never closes another.
+    /// Opens a closed panel in a new column at the far right, or in its partner's column when the
+    /// partner is open (Changes and Preview), or closes an open one. Opening a panel never closes
+    /// another.
     pub fn toggle(&mut self, panel: Panel) {
         if self.is_open(panel) {
             self.close(panel);
-        } else {
-            self.columns.push(Column { panels: vec![panel], width: DEFAULT_COLUMN_WIDTH });
+            return;
         }
+        if let Some(partner) = panel.partner() {
+            if let Some(column) = self.columns.iter_mut().find(|column| column.panels.contains(&partner)) {
+                column.panels.push(panel);
+                return;
+            }
+        }
+        self.columns.push(Column { panels: vec![panel], width: DEFAULT_COLUMN_WIDTH });
     }
 
     pub fn close(&mut self, panel: Panel) {
@@ -196,5 +218,47 @@ mod tests {
         docks.change(LiveSessionId(1), |dock| dock.toggle(Panel::Terminal));
         docks.change(LiveSessionId(1), |dock| dock.toggle(Panel::Terminal));
         assert!(docks.is_empty());
+    }
+
+    #[test]
+    fn preview_joins_the_changes_column_and_changes_joins_the_preview_column() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Changes);
+        dock.toggle(Panel::Preview);
+        assert_eq!(dock.columns.len(), 1);
+        assert_eq!(dock.columns[0].panels, vec![Panel::Changes, Panel::Preview]);
+
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Preview);
+        dock.toggle(Panel::Changes);
+        assert_eq!(dock.columns.len(), 1);
+        assert_eq!(dock.columns[0].panels, vec![Panel::Preview, Panel::Changes]);
+    }
+
+    #[test]
+    fn files_and_the_terminal_get_their_own_columns() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Changes);
+        dock.toggle(Panel::Files);
+        dock.toggle(Panel::Terminal);
+        assert_eq!(dock.columns.len(), 3);
+    }
+
+    #[test]
+    fn closing_one_of_a_shared_pair_keeps_the_column_for_the_other() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Changes);
+        dock.toggle(Panel::Preview);
+        dock.toggle(Panel::Changes);
+        assert_eq!(dock.columns[0].panels, vec![Panel::Preview]);
+        dock.toggle(Panel::Preview);
+        assert!(dock.columns.is_empty());
+    }
+
+    #[test]
+    fn the_new_panels_have_titles() {
+        assert_eq!(Panel::Changes.title(), "Changes");
+        assert_eq!(Panel::Preview.title(), "Preview");
+        assert_eq!(Panel::Files.title(), "Files");
     }
 }

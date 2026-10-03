@@ -1463,6 +1463,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
+name = "forge-adapter-browser"
+version = "0.1.0"
+dependencies = [
+ "forge-ports",
+]
+
+[[package]]
 name = "forge-adapter-claude-fs"
 version = "0.1.0"
 dependencies = [
@@ -1503,6 +1510,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-adapter-files"
+version = "0.1.0"
+dependencies = [
+ "forge-ports",
+ "tempfile",
+]
+
+[[package]]
+name = "forge-adapter-git"
+version = "0.1.0"
+dependencies = [
+ "forge-ports",
+ "tempfile",
+]
+
+[[package]]
 name = "forge-adapter-sidecar"
 version = "0.1.0"
 dependencies = [
@@ -1536,9 +1559,12 @@ name = "forge-app"
 version = "0.1.0"
 dependencies = [
  "dioxus",
+ "forge-adapter-browser",
  "forge-adapter-claude-fs",
  "forge-adapter-config",
  "forge-adapter-dialog",
+ "forge-adapter-files",
+ "forge-adapter-git",
  "forge-adapter-sidecar",
  "forge-adapter-sleep",
  "forge-adapter-terminal",

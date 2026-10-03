@@ -11,10 +11,10 @@ The README's order put the terminal panel in Plan 20 and Changes, Files and Prev
 | PNL-06 prevent sleep | build | A per-session toggle in the title bar's `⋮` menu. |
 | PNL-02 Changes | build, read only | File list and diff from `git`. No stage, revert or commit. |
 | PNL-04 Files | build, read only | Tree, filter, `?` content search, viewer. The editor, auto save and tab size are not built. |
-| PNL-03 Preview | build, small | Tabs, address bar, an `<iframe>`. Cookie import, element picker and the layout icon are not built. |
+| PNL-03 Preview | build, small | Tabs, address bar, history; the page opens in the system browser (the `<iframe>` spike failed). Cookie import, element picker and the layout icon are not built. |
 | PNL-05 iOS simulator | not built | macOS and Xcode only (backlog: won't). |
 
-Two plans: **21A** the dock, terminal and prevent sleep; **21B** Changes, Files and Preview. 21B starts with a spike (below).
+Two plans: **21A** the dock, terminal and prevent sleep; **21B** Changes, Files and Preview. 21B started with a spike (see Preview).
 
 ## Assumptions (not seen in the real app)
 
@@ -72,18 +72,19 @@ Port `FilesPort`: `list(dir)`, `read(path, limit)`, `search(root, query, limit)`
 
 ## Preview (Plan 21B)
 
-Tabs ("New tab", `+`), back, forward, reload, a URL field, drawn in `forge-widgets/preview_panel.rs`; the page itself is an `<iframe>`. A URL without a scheme gets `http://` for `localhost` and `https://` otherwise.
+Tabs ("New tab", `+`), back, forward, reload, a URL field, drawn in `forge-widgets/preview_panel.rs`. A URL without a scheme gets `http://` for `localhost` and `https://` otherwise.
 
-- **Spike first.** Dioxus 0.7 desktop cannot easily host a second webview, so `<iframe>` is the plan. The first task of 21B loads `http://localhost` and an external site in an `<iframe>` inside the real app. If `localhost` does not work, the preview is reduced to "Open in browser" and the spec is amended before more work.
-- A site that refuses to be framed cannot be detected reliably from an `<iframe>`; the panel keeps an "Open in browser" button in the tab so the user can leave it.
+- **Spike result (2026-10-03): the `<iframe>` does not work.** In the real app an `<iframe>` of `http://localhost` and of `https://example.com` stayed blank and fired no load event. `dioxus-desktop` 0.7.10 (`webview.rs`, navigation handler) refuses every `http(s)://` navigation, frames included, and opens it in the system browser; the check runs before any handler set with `with_navigation_handler`, so it cannot be configured away.
+- **Decision:** the page opens in the system browser. The panel keeps the tabs, the address bar, reload and the per-tab history; "Open in browser" (Enter in the URL field, and reload) hands the current URL to the system browser. The panel shows the URL and a short line that the page is open in the browser. Nothing is drawn inside the panel.
 - History (back, forward) is the tab's own list of URLs held in `forge-features` (pure).
 - No cookie import, no element picker.
+- Backlog (not built): a `forge://` custom protocol that proxies http into an `<iframe>` (HMR sockets, cookies and absolute paths would break), or a child native webview.
 
 ## Where the code goes
 
 | Layer | New |
 | --- | --- |
-| `forge-features` | `dock.rs`, `file_tree.rs`, `git_status.rs` (parse), `preview_tabs.rs`, workspace wiring |
+| `forge-features` | `dock.rs`, `file_tree.rs`, `preview_tabs.rs`, `tool_activity.rs`, `blocking.rs`, workspace wiring (the git status parser lives in `forge-adapter-git`; the diff parser `parse_unified_diff` in `forge-entities`) |
 | `forge-ports` | `terminal_port.rs`, `sleep_port.rs`, `git_port.rs`, `files_port.rs` (with mocks) |
 | adapters | `forge-adapter-terminal` (portable-pty), `forge-adapter-sleep`, `forge-adapter-git`, `forge-adapter-files` |
 | `forge-widgets` | `dock.rs`, `terminal_panel.rs`, `changes_panel.rs`, `files_panel.rs`, `preview_panel.rs`; toolbar in `chat_window.rs` |
@@ -114,3 +115,17 @@ Differences from the design:
 - Found by the final review and fixed: typed text goes to a writer thread (a write to a pty blocks while the shell's program reads nothing, and the caller is the UI thread); the reader thread gives the pty back when the shell is over; output that is already queued reaches the page as one batch (`TerminalSession::recv_batch`, up to 64 KB). The output channel is still unbounded. Nine minor findings are not fixed (zombie shell after a background job, keys typed in a new tab's first 150 ms, a drag stuck after a release outside the window, and others).
 
 Checked in the harness (`scripts/harness`, `my-app` and the missing `my_app`): open and close, a command runs in the session folder, drag resize, tabs, expand and collapse, `exit 3` and Restart, the missing-folder message, Prevent sleep on and off with `pgrep`, switching sessions, closing a session and quitting leave no child process. Plan 21B (Changes, Files, Preview) is next.
+
+## As built (Plan 21B)
+
+Built as designed: Changes, Files and Preview in the dock, `GitPort`/`FilesPort`/`BrowserPort` with `forge-adapter-git` (the `git` CLI, 10 s timeout), `forge-adapter-files` (`std::fs`) and `forge-adapter-browser` (`open`), `FileTree` and `PreviewTabs` in `forge-features`, `parse_unified_diff` and `code_html` in `forge-entities`. Plan: `docs/superpowers/plans/2026-10-03-dock-changes-files-preview.md`.
+
+Differences from the design:
+
+- Preview: the `<iframe>` spike failed, so the page opens in the system browser (see the Preview section). The panel keeps tabs, per-tab history, reload and the address bar.
+- ⇧⌘F and ⇧⌘Y are not built (the shortcut table rejects Shift). Files opens from the header `⋮` menu.
+- "Refresh" is a button in the Changes header, not in a `⋮` menu. The panel also reloads when a tool call of the session finishes.
+- The diff limit is the existing 300-line cut ("… N more lines"), not a "Diff too large to show" message.
+- `GitPort` runs in the top folder of the repository that holds the session folder, so a session in a subfolder sees root-relative paths.
+- Found in the real app: with two columns open the chat pane shrank to nothing and the second column left the window. `.main-pane` now has `min-width: 400px` and a dock column shrinks (`flex: 0 1 auto`, `min-width: 260px`; the drag still clamps at 280). Three panels fit a 1200 px window, tightly: the Preview address field gets very narrow.
+- Checked in the harness (`my-app` as a git repository with a modified, a new and a binary file): Changes list, counts and diff, the binary file's "No textual changes to show", a folder that is not a repository ("No changes to show"), Preview joining the Changes column, tabs, `localhost:3000` opening in the browser, a non-web address refused, Files tree without `.git`, highlighted viewer with line numbers, "Cannot show this file", and a `?` search hit. Not driven by hand: switching sessions with panels open, the missing-folder session, and a tool call finishing in a live session.

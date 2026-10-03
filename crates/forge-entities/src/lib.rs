@@ -14,8 +14,9 @@ mod transcript_view;
 mod usage_view;
 
 pub use command_menu::{command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};
-pub use diff::{diff_for_tool, diff_for_tool_call, DiffLine, DiffLineKind, FileDiff};
+pub use diff::{diff_for_tool, diff_for_tool_call, parse_unified_diff, DiffLine, DiffLineKind, FileDiff};
 pub use diff_view::DiffView;
+pub use highlight::{code_html, language_of};
 pub use markdown::render_markdown;
 pub use message::{MessageBubble, ToolCallLine};
 pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_options, model_value, ModelRow, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
