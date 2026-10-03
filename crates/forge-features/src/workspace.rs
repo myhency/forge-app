@@ -7,12 +7,13 @@ use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{FilePickerPort, FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort};
+use forge_ports::{BrowserPort, FilePickerPort, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort};
 use time::OffsetDateTime;
 
 use crate::dock::{DockState, DockStates};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
+use crate::tool_activity::finished_tool_calls;
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, open_session_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
@@ -34,6 +35,9 @@ pub struct WorkspaceServices {
     pub file_picker: Arc<dyn FilePickerPort>,
     pub terminal: Arc<dyn TerminalPort>,
     pub sleep: Arc<dyn SleepPort>,
+    pub git: Arc<dyn GitPort>,
+    pub files: Arc<dyn FilesPort>,
+    pub browser: Arc<dyn BrowserPort>,
 }
 
 /// What the main pane shows.
@@ -451,6 +455,25 @@ impl Workspace {
 
     pub fn terminal(&self) -> Arc<dyn TerminalPort> {
         self.services.peek().terminal.clone()
+    }
+
+    pub fn git(&self) -> Arc<dyn GitPort> {
+        self.services.peek().git.clone()
+    }
+
+    pub fn files(&self) -> Arc<dyn FilesPort> {
+        self.services.peek().files.clone()
+    }
+
+    pub fn browser(&self) -> Arc<dyn BrowserPort> {
+        self.services.peek().browser.clone()
+    }
+
+    /// How many tool calls of an open session have finished. A panel that shows files on disk
+    /// reads this inside its loader, so it reloads when a tool call finishes. 0 for a session
+    /// that is not open.
+    pub fn finished_tool_calls(&self, id: LiveSessionId) -> usize {
+        self.live_view(id).map(|view| finished_tool_calls(&view.read().session)).unwrap_or(0)
     }
 
     pub fn prevents_sleep(&self, id: LiveSessionId) -> bool {

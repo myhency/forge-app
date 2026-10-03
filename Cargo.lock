@@ -1559,9 +1559,12 @@ name = "forge-app"
 version = "0.1.0"
 dependencies = [
  "dioxus",
+ "forge-adapter-browser",
  "forge-adapter-claude-fs",
  "forge-adapter-config",
  "forge-adapter-dialog",
+ "forge-adapter-files",
+ "forge-adapter-git",
  "forge-adapter-sidecar",
  "forge-adapter-sleep",
  "forge-adapter-terminal",
