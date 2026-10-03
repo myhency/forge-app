@@ -6,6 +6,8 @@ mod project_port;
 mod session_port;
 mod sidecar_factory_port;
 mod sidecar_port;
+mod sleep_port;
+mod terminal_port;
 
 pub use config_port::{ConfigError, ConfigRepositoryPort};
 pub use extension_ports::{
@@ -17,10 +19,16 @@ pub use folder_picker_port::FolderPickerPort;
 pub use project_port::{ProjectRepositoryError, ProjectRepositoryPort};
 pub use session_port::{SessionRepositoryError, SessionRepositoryPort};
 pub use sidecar_factory_port::SidecarFactoryPort;
+pub use sleep_port::SleepPort;
+pub use terminal_port::{TerminalError, TerminalEvent, TerminalId, TerminalPort, TerminalSession, TerminalSize, OUTPUT_BATCH_LIMIT};
 pub use sidecar_port::{
     PermissionRequestId, SidecarError, SidecarEvent, SidecarPort, StartSessionParams,
 };
 
+#[cfg(any(test, feature = "mocks"))]
+pub use sleep_port::MockSleepPort;
+#[cfg(any(test, feature = "mocks"))]
+pub use terminal_port::MockTerminalPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use config_port::MockConfigRepositoryPort;
 #[cfg(any(test, feature = "mocks"))]

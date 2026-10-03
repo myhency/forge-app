@@ -332,3 +332,34 @@ button.tool-call { appearance: none; background: none; text-align: left; cursor:
 .chip-remove { border: none; background: transparent; color: var(--fg-muted); cursor: pointer; font: inherit; line-height: 1; }
 .chip-remove:hover { color: var(--fg); }
 .env-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* The dock: columns right of the chat. */
+.dock-column { position: relative; flex: none; display: flex; flex-direction: column; min-width: 0; max-width: 70vw; padding: 8px; box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
+.dock-column.expanded { flex: 1; max-width: none; }
+.dock-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 5px; cursor: col-resize; z-index: 7; }
+.dock-resize:hover { background: var(--accent-soft); }
+.dock-drag-shield { position: fixed; inset: 0; z-index: 20; cursor: col-resize; }
+.dock-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); overflow: hidden; }
+.dock-header { flex: none; display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.dock-title { font-weight: 600; margin-right: 4px; }
+.dock-tools { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; }
+.dock-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.main-pane.dock-expanded { display: none; }
+
+/* The terminal panel. */
+.terminal-tab { display: inline-flex; align-items: center; flex: none; border-radius: 6px; }
+.terminal-tab.active { background: var(--bg-hover); }
+.terminal-tab-label, .terminal-tab-close { border: none; background: transparent; color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; padding: 2px 6px; }
+.terminal-tab-close { color: var(--fg-muted); padding: 2px 4px; }
+.terminal-view { position: relative; flex: 1; min-height: 0; display: none; padding: 4px 0 0 6px; box-sizing: border-box; }
+.terminal-view.active { display: flex; flex-direction: column; }
+.terminal-host { flex: 1; min-height: 0; }
+.terminal-exited { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border-top: 1px solid var(--border); font-size: 12px; color: var(--fg-muted); }
+.terminal-restart { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--fg); font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; }
+.terminal-restart:hover { background: var(--bg-hover); }
+
+/* The icons at the right of the chat header. */
+.pane-tools { margin-left: auto; display: flex; align-items: center; gap: 4px; font-weight: 400; }
+.icon-button.active { background: var(--bg-hover); color: var(--accent); }
+/* The `⋮` menu in the header opens downwards, below its button. */
+.picker-menu.down { top: 100%; bottom: auto; left: auto; right: 0; margin-top: 6px; }

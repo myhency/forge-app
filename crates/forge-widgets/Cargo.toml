@@ -11,3 +11,8 @@ forge-features = { path = "../forge-features" }
 forge-shared = { path = "../forge-shared" }
 dioxus = { version = "=0.7.10", default-features = false, features = ["lib"] }
 time = "0.3.55"
+forge-ports = { version = "0.1.0", path = "../forge-ports" }
+base64 = "0.22"
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "sync"] }
