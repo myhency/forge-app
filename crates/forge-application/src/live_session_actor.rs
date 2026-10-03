@@ -1,7 +1,7 @@
 use std::future::pending;
 use std::sync::Arc;
 
-use forge_domain::{ActiveExtensions, PermissionDecision, PermissionMode};
+use forge_domain::{ActiveExtensions, Attachment, PermissionDecision, PermissionMode};
 use forge_ports::{SidecarEvent, SidecarFactoryPort, SidecarPort, StartSessionParams};
 use tokio::sync::{mpsc, watch};
 
@@ -24,6 +24,8 @@ pub(crate) struct Actor {
     /// §17.4); a failed resolution is not stored, so the next start resolves again.
     active: Option<ActiveExtensions>,
     sidecar: Option<Arc<dyn SidecarPort>>,
+    /// Extra folders for the next start (the SDK reads them once, at start).
+    additional_directories: Vec<String>,
     /// The sidecar was started by a warm-up and nothing has been sent to it yet. A failure then is
     /// dropped quietly: nobody asked for anything, and the first send starts a sidecar again.
     warm_only: bool,
@@ -52,6 +54,7 @@ impl Actor {
             extensions,
             active: None,
             sidecar: None,
+            additional_directories: Vec::new(),
             warm_only: false,
             refusal_shown: false,
             dirty: false,
@@ -88,7 +91,17 @@ impl Actor {
 
     async fn handle_command(&mut self, command: LiveCommand) {
         match command {
-            LiveCommand::Send(text) => self.send(text).await,
+            LiveCommand::Send { text, attachments } => self.send(text, attachments).await,
+            LiveCommand::AddDirectories(directories) => {
+                if self.sidecar.is_none() {
+                    for directory in directories {
+                        let directory = directory.to_string_lossy().to_string();
+                        if !self.additional_directories.contains(&directory) {
+                            self.additional_directories.push(directory);
+                        }
+                    }
+                }
+            }
             LiveCommand::WarmUp => self.warm_up().await,
             LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
             LiveCommand::Interrupt => self.interrupt().await,
@@ -122,7 +135,7 @@ impl Actor {
         }
     }
 
-    async fn send(&mut self, text: String) {
+    async fn send(&mut self, text: String, attachments: Vec<Attachment>) {
         if !self.view.can_send {
             self.view.last_error = Some(CANNOT_SEND.to_string());
             self.refusal_shown = false;
@@ -142,7 +155,7 @@ impl Actor {
         };
 
         let history_len = self.view.session.messages.len();
-        match SendMessageUseCase::new(sidecar).execute(&mut self.view.session, text.clone()).await {
+        match SendMessageUseCase::new(sidecar).execute(&mut self.view.session, text.clone(), attachments).await {
             Ok(()) => {
                 self.view.phase = Phase::Running;
                 self.view.last_error = None;
@@ -187,7 +200,7 @@ impl Actor {
                 permission_mode: self.view.session.permission_mode,
                 model: self.model.clone(),
                 extensions: extensions.clone(),
-                additional_directories: Vec::new(),
+                additional_directories: self.additional_directories.clone(),
             })
             .await
             .map_err(|e| e.to_string())?;

@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_domain::{ContextUsage, PermissionDecision, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand};
+use forge_domain::{Attachment, ContextUsage, PermissionDecision, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand};
 use forge_ports::SidecarFactoryPort;
 use tokio::sync::{mpsc, watch};
 
@@ -55,7 +55,8 @@ pub struct LiveSessionView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LiveCommand {
-    Send(String),
+    Send { text: String, attachments: Vec<Attachment> },
+    AddDirectories(Vec<PathBuf>),
     WarmUp,
     Approve { id: String, decision: PermissionDecision },
     Interrupt,
@@ -80,7 +81,18 @@ impl LiveSessionHandle {
     }
 
     pub fn send(&self, text: String) {
-        let _ = self.commands.send(LiveCommand::Send(text));
+        self.send_with(text, Vec::new());
+    }
+
+    /// Sends a message with files and images attached.
+    pub fn send_with(&self, text: String, attachments: Vec<Attachment>) {
+        let _ = self.commands.send(LiveCommand::Send { text, attachments });
+    }
+
+    /// Folders the session may use besides its own. Only a session whose sidecar has not started
+    /// takes them (the SDK reads them at start); later calls are ignored.
+    pub fn add_directories(&self, directories: Vec<PathBuf>) {
+        let _ = self.commands.send(LiveCommand::AddDirectories(directories));
     }
 
     /// Starts the session's sidecar now instead of at the first send, so its slash commands are known
@@ -297,6 +309,40 @@ mod tests {
         assert_eq!(seen.session.messages.len(), 1);
         assert_eq!(seen.session.messages[0].role, MessageRole::User);
         assert_eq!(seen.session.messages[0].content, "hello");
+    }
+
+    #[tokio::test]
+    async fn a_message_with_attachments_reaches_the_sidecar_and_the_history() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        let attachment = forge_domain::Attachment { path: "/x/a b.png".into(), kind: forge_domain::AttachmentKind::Image };
+
+        handle.send_with("look".to_string(), vec![attachment.clone()]);
+        let seen = wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(
+            control.calls(),
+            vec![Call::Start(start_params(None)), Call::SendAttached("look".to_string(), vec![attachment.clone()])]
+        );
+        assert_eq!(seen.session.messages[0].attachments, vec![attachment]);
+    }
+
+    #[tokio::test]
+    async fn added_directories_go_to_the_first_start() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.add_directories(vec!["/extra".into(), "/extra".into()]);
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        let mut expected = start_params(None);
+        expected.additional_directories = vec!["/extra".to_string()];
+        assert_eq!(control.calls(), vec![Call::Start(expected), Call::Send("hi".to_string())]);
     }
 
     #[tokio::test]
