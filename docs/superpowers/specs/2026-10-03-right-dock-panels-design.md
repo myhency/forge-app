@@ -35,7 +35,7 @@ pub struct Column { pub panels: Vec<Panel>, pub width: f32 }   // Changes and Pr
 
 - `toggle(panel)`: opens it (a new column at the far right; Preview joins the Changes column when Changes is open, and the reverse) or closes it if open. Opening never closes another panel.
 - `expand(panel)` fills the area right of the sidebar; `collapse()` returns. Closing the expanded panel collapses first.
-- `resize(column, width)` clamps to a minimum and leaves the chat at least a minimum width. Reuses the pointer-drag logic of the sidebar resize.
+- `resize(column, width)` clamps the width to 280–900 px; the chat column keeps a CSS `min-width`. Reuses the pointer-drag logic of the sidebar resize.
 - One `DockState` per session id, held in the workspace state. It is not saved to disk (assumption above; YAGNI).
 
 Widget `forge-widgets/dock.rs` draws the columns; each panel has a header with its own title/controls, `⋮`, expand and close. The toolbar icons (terminal, Changes, Preview) and the `⋮` menu (Files ⇧⌘F, Prevent sleep) live in the chat header (`chat_window.rs`) and show their open state. The chat column narrows as columns open.
