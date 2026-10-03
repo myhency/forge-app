@@ -239,6 +239,17 @@ impl Settings {
         self.catalog.read().mcp.clone().map(|definitions| mcp_rows(&definitions, &enabled))
     }
 
+    /// The MCP servers, as the composer's `+` menu lists them: the same rows as the Settings tab.
+    pub fn connector_rows(&self) -> Result<Vec<ExtensionRow>, String> {
+        self.mcp_tab()
+    }
+
+    /// Points the lists at `project` and reads them again, so the `+` menu shows what Settings would.
+    pub fn prepare_menu(&self, project: PathBuf) {
+        self.set_project(Some(project));
+        self.reload_catalog();
+    }
+
     /// Switches one skill, plugin or MCP server on or off and saves at once. `key` is the row's key.
     pub fn toggle(&self, kind: ExtensionKind, key: String) {
         let extensions = (*self.extensions.peek()).clone();

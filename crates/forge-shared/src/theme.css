@@ -311,3 +311,14 @@ button.tool-call { appearance: none; background: none; text-align: left; cursor:
 .palette-date { grid-row: 1; grid-column: 2; font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
 .palette-snippet { grid-column: 1 / -1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--fg-muted); }
 .palette-empty { padding: 16px; text-align: center; color: var(--fg-muted); }
+
+/* Composer + menu, chips */
+.picker-submenu { left: calc(100% + 4px); bottom: 0; min-width: 220px; }
+.picker-item.disabled { opacity: 0.5; cursor: default; }
+.picker-item .menu-key { margin-left: auto; color: var(--fg-muted); font-size: 11px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; padding: 2px 4px 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-hover); font-size: 12px; }
+.chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-remove { border: none; background: transparent; color: var(--fg-muted); cursor: pointer; font: inherit; line-height: 1; }
+.chip-remove:hover { color: var(--fg); }
+.env-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
