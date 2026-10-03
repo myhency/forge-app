@@ -5,6 +5,7 @@ use forge_ports::SidecarEvent;
 pub enum SessionUpdate {
     SessionStarted { session_id: SessionId },
     MessageDelta { text: String },
+    ThinkingDelta { text: String },
     ToolCallStarted { tool_call: ToolCall },
     ToolCallCompleted { tool_call_id: String },
     PermissionRequested(PermissionRequest),
@@ -41,6 +42,19 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
                 }
             }
             SessionUpdate::MessageDelta { text: text.clone() }
+        }
+        SidecarEvent::ThinkingDelta { text } => {
+            match session.messages.last_mut() {
+                Some(message) if message.role == MessageRole::Assistant => {
+                    message.thinking.push_str(text);
+                }
+                _ => {
+                    let mut message = Message::new(MessageRole::Assistant);
+                    message.thinking.push_str(text);
+                    session.messages.push(message);
+                }
+            }
+            SessionUpdate::ThinkingDelta { text: text.clone() }
         }
         SidecarEvent::ToolUse { tool_call_id, name, input } => {
             let tool_call = ToolCall {
@@ -149,6 +163,30 @@ mod tests {
 
         assert_eq!(session.messages.len(), 1);
         assert_eq!(session.messages[0].content, "Hello");
+    }
+
+    #[test]
+    fn thinking_deltas_grow_the_thinking_of_the_current_assistant_message() {
+        let mut session = empty_session();
+        apply_sidecar_event(&mut session, &SidecarEvent::ThinkingDelta { text: "Let me ".to_string() });
+        let update = apply_sidecar_event(&mut session, &SidecarEvent::ThinkingDelta { text: "think".to_string() });
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "Answer".to_string() });
+
+        assert_eq!(update, SessionUpdate::ThinkingDelta { text: "think".to_string() });
+        assert_eq!(session.messages.len(), 1, "the thought and the answer share one message");
+        assert_eq!(session.messages[0].thinking, "Let me think");
+        assert_eq!(session.messages[0].content, "Answer");
+    }
+
+    #[test]
+    fn thinking_after_a_user_message_starts_an_assistant_message() {
+        let mut session = empty_session();
+        session.messages.push(Message::new(MessageRole::User));
+        apply_sidecar_event(&mut session, &SidecarEvent::ThinkingDelta { text: "hm".to_string() });
+
+        assert_eq!(session.messages.len(), 2);
+        assert_eq!(session.messages[1].role, MessageRole::Assistant);
+        assert_eq!(session.messages[1].thinking, "hm");
     }
 
     #[test]

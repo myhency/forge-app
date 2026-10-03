@@ -25,6 +25,8 @@ pub struct StartSessionParams {
 pub enum SidecarEvent {
     SessionStarted { session_id: String },
     AssistantDelta { text: String },
+    /// A piece of the model's thinking, streamed before its answer.
+    ThinkingDelta { text: String },
     ToolUse { tool_call_id: String, name: String, input: serde_json::Value },
     ToolResult { tool_call_id: String, output: String, is_error: bool },
     PermissionRequest { permission_request_id: String, tool_name: String, input: serde_json::Value },

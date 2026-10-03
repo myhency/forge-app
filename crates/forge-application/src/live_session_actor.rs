@@ -235,6 +235,7 @@ impl Actor {
                 self.sidecar_gone("the session ended unexpectedly".to_string(), true).await;
             }
             SessionUpdate::MessageDelta { .. }
+            | SessionUpdate::ThinkingDelta { .. }
             | SessionUpdate::ToolCallStarted { .. }
             | SessionUpdate::ToolCallCompleted { .. } => {}
         }

@@ -240,6 +240,26 @@ describe("SidecarSession", () => {
     ]);
   });
 
+  it("forwards a streamed thinking delta as a thinking_delta event", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield {
+          type: "stream_event",
+          event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Let me see" } },
+        };
+        yield {
+          type: "stream_event",
+          event: { type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "abc" } },
+        };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events).toEqual([{ type: "thinking_delta", text: "Let me see" }, { type: "session_ended" }]);
+  });
+
   it("forwards a tool_use content block from an assistant message", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>

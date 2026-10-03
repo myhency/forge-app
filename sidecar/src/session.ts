@@ -315,6 +315,8 @@ export class SidecarSession {
         const event = message.event;
         if (event?.type === "content_block_delta" && event.delta?.type === "text_delta") {
           this.emit({ type: "assistant_delta", text: event.delta.text });
+        } else if (event?.type === "content_block_delta" && event.delta?.type === "thinking_delta" && typeof event.delta.thinking === "string") {
+          this.emit({ type: "thinking_delta", text: event.delta.thinking });
         }
         return;
       }
