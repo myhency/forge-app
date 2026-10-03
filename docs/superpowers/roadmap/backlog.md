@@ -38,9 +38,9 @@ Forge status was read from `crates/` on 2026-10-03.
 | Id | Feature | Seen | Forge | Size | Plan | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | PNL-01 | Terminal panel docked on the right: tabs with `+`, expand to full width, close; shows "Working directory ... does not exist" when the folder is gone | seen | none | L | - | Needs a pty on the Rust side. Shell content and keys were not tried (the folder was missing). |
-| PNL-02 | Changes panel (second toolbar icon) | inferred | none | L | - | Not opened. Forge has a diff viewer for Edit/Write calls (spec §18). |
-| PNL-03 | Preview browser panel (globe icon) | inferred | none | L | - | Not opened. |
-| PNL-04 | Files panel (`⋮` menu, ⇧⌘F) | partly | none | L | - | Menu item seen, panel not opened. |
+| PNL-02 | Changes panel (second toolbar icon) | partly | none | L | - | Round 5: a column at the right with a list icon (toggles a file list next to the diff), `⋮` with "새로고침", expand, close; empty text "표시할 변경 사항이 없습니다". Not seen with real changes (diff, file rows, actions). Forge has a diff viewer for Edit/Write calls (spec §18). |
+| PNL-03 | Preview browser panel (globe icon) | partly | none | L | - | Round 5: tabs ("새 탭", `+`), back/forward/reload, a URL field, an element-picker icon, a layout icon, `⋮`, expand, close; a first-run modal offers importing browser cookies. Not seen with a loaded page. Needs an embedded web view; decide scope (cookie import: leave out?). |
+| PNL-04 | Files panel (`⋮` menu, ⇧⌘F) | partly | none | L | - | Round 5: a file tree plus an editor with a filter field (`?` searches inside files) and `⋮` options (tree ⇧⌘Y, preview tab, auto save, Tab indent, word wrap, indent guides, whitespace, scroll past end, tab size 4). Not seen with files. Writing files is new for Forge. |
 | PNL-05 | iOS simulator (`⋮` menu) | partly | none | L | won't? | macOS and Xcode only. Propose leaving out; the user decides. |
 | PNL-06 | "Prevent sleep" toggle, "이 세션에서만" (this session only) | seen | none | S | - | Toggle seen in `⋮`; not switched on. Needs a macOS sleep assertion. |
 | PNL-07 | Toolbar with title, a rename/fork menu under the title chevron, the folder name as a tag | seen | partial | S | - | Forge has a header; compare the details when planning SES. |
