@@ -14,27 +14,20 @@ use std::io::BufRead;
 
 use crate::usage::token_usage;
 
-/// Folds one transcript into rows of (day, hour, model). The rules are `UsageCollector`'s: Claude Code
-/// writes one line per content block, so an assistant message is kept once per `message.id`, the
-/// last usage winning and the first line's time. Sidechain and meta lines, and messages Claude Code
-/// wrote itself (`<synthetic>`), are skipped. A person's message is a user line with text in it (a
-/// tool result is not). A line without a time that parses, and a line copied into a fork, is skipped.
+/// Folds one transcript into rows of (day, hour, model), the way the desktop app's dashboard counts:
+/// every user and assistant line is a message, and an assistant line adds its own `usage`. Claude Code
+/// writes one line per content block, so a reply written on three lines counts three times, as it does
+/// in the app. Sidechain and meta lines, messages Claude Code wrote itself (`<synthetic>`), lines
+/// without a time that parses, and lines copied into a fork (they were counted in the original) are
+/// skipped. A user line is a row with `NO_MODEL` and no tokens.
 struct StatsCollector {
     offset: UtcOffset,
-    by_message: HashMap<String, Entry>,
-    unnamed: Vec<Entry>,
-    prompts: Vec<(Day, u8)>,
-}
-
-struct Entry {
-    when: (Day, u8),
-    model: String,
-    usage: TokenUsage,
+    rows: BTreeMap<(Day, u8, String), (u64, TokenUsage)>,
 }
 
 impl StatsCollector {
     fn new(offset: UtcOffset) -> StatsCollector {
-        StatsCollector { offset, by_message: HashMap::new(), unnamed: Vec::new(), prompts: Vec::new() }
+        StatsCollector { offset, rows: BTreeMap::new() }
     }
 
     fn when(&self, line: &Value) -> Option<(Day, u8)> {
@@ -54,57 +47,29 @@ impl StatsCollector {
         if line.get("forkedFrom").is_some() {
             return;
         }
-        let Some(when) = self.when(line) else { return };
-        match line.get("type").and_then(Value::as_str) {
-            Some("assistant") => self.see_assistant(line, when),
-            Some("user") if is_prompt(line) => self.prompts.push(when),
-            _ => {}
-        }
-    }
-
-    fn see_assistant(&mut self, line: &Value, when: (Day, u8)) {
-        let Some(message) = line.get("message") else { return };
-        let Some(model) = message.get("model").and_then(Value::as_str) else { return };
-        if model.is_empty() || model.starts_with('<') {
-            return;
-        }
-        let usage = message.get("usage").and_then(token_usage).unwrap_or_default();
-        match message.get("id").and_then(Value::as_str) {
-            Some(id) => {
-                let entry = self.by_message.entry(id.to_string()).or_insert_with(|| Entry { when, model: model.to_string(), usage });
-                entry.model = model.to_string();
-                entry.usage = usage;
+        let Some((day, hour)) = self.when(line) else { return };
+        let (model, usage) = match line.get("type").and_then(Value::as_str) {
+            Some("assistant") => {
+                let Some(message) = line.get("message") else { return };
+                let Some(model) = message.get("model").and_then(Value::as_str) else { return };
+                if model.is_empty() || model.starts_with('<') {
+                    return;
+                }
+                (model.to_string(), message.get("usage").and_then(token_usage).unwrap_or_default())
             }
-            None => self.unnamed.push(Entry { when, model: model.to_string(), usage }),
-        }
+            Some("user") => (NO_MODEL.to_string(), TokenUsage::default()),
+            _ => return,
+        };
+        let row = self.rows.entry((day, hour, model)).or_default();
+        row.0 += 1;
+        row.1 += usage;
     }
 
     fn finish(self) -> Vec<StatsRow> {
-        let mut grouped: BTreeMap<(Day, u8, String), (u64, TokenUsage)> = BTreeMap::new();
-        for entry in self.by_message.into_values().chain(self.unnamed) {
-            let slot = grouped.entry((entry.when.0, entry.when.1, entry.model)).or_default();
-            slot.0 += 1;
-            slot.1 += entry.usage;
-        }
-        for (day, hour) in self.prompts {
-            grouped.entry((day, hour, NO_MODEL.to_string())).or_default().0 += 1;
-        }
-        grouped
+        self.rows
             .into_iter()
             .map(|((day, hour, model), (messages, tokens))| StatsRow { day, hour, model, messages, tokens })
             .collect()
-    }
-}
-
-// A user line the person wrote: text, not a tool result.
-fn is_prompt(line: &Value) -> bool {
-    if line.get("toolUseResult").is_some() {
-        return false;
-    }
-    match line.pointer("/message/content") {
-        Some(Value::String(text)) => !text.trim().is_empty(),
-        Some(Value::Array(blocks)) => blocks.iter().any(|block| block.get("type").and_then(Value::as_str) == Some("text")),
-        _ => false,
     }
 }
 
@@ -247,7 +212,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_message_written_on_several_lines_counts_once_with_the_last_usage() {
+    async fn every_line_counts_as_a_message_with_its_own_usage_like_the_desktop_app() {
         let home = tempfile::tempdir().unwrap();
         write(
             home.path(),
@@ -260,13 +225,13 @@ mod tests {
         );
         let rows = rows_of(home.path(), UTC).await;
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].messages, 1);
-        assert_eq!((rows[0].tokens.input, rows[0].tokens.output), (5, 9));
+        assert_eq!(rows[0].messages, 2, "one message written on two lines is two lines");
+        assert_eq!((rows[0].tokens.input, rows[0].tokens.output), (10, 10), "each line adds its own usage");
         assert_eq!((rows[0].day, rows[0].hour), (Day::new(2026, 10, 3), 10));
     }
 
     #[tokio::test]
-    async fn sidechain_meta_synthetic_and_tool_result_lines_are_not_counted() {
+    async fn sidechain_meta_and_synthetic_lines_are_not_counted_but_tool_results_are() {
         let home = tempfile::tempdir().unwrap();
         let mut sidechain = assistant("2026-10-03T10:00:00Z", "m2", "claude-sonnet-5", 100, 100);
         sidechain["isSidechain"] = json!(true);
@@ -287,9 +252,9 @@ mod tests {
             ],
         );
         let rows = rows_of(home.path(), UTC).await;
-        assert_eq!(rows.len(), 1, "only the person's own message is left");
+        assert_eq!(rows.len(), 1, "the user rows are the only ones left");
         assert_eq!(rows[0].model, NO_MODEL);
-        assert_eq!(rows[0].messages, 1);
+        assert_eq!(rows[0].messages, 2, "the tool result and the typed message, as the desktop app counts user lines");
     }
 
     #[tokio::test]
