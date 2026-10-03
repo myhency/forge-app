@@ -1,7 +1,16 @@
-use forge_domain::{GroupBy, SidebarPrefs, SortBy};
+use forge_domain::{GroupBy, SidebarPrefs, SortBy, StatusFilter};
 
+pub const STATUS_ITEMS: [StatusFilter; 3] = [StatusFilter::Active, StatusFilter::Archived, StatusFilter::All];
 pub const SORT_ITEMS: [SortBy; 3] = [SortBy::Name, SortBy::Created, SortBy::Activity];
 pub const GROUP_ITEMS: [GroupBy; 3] = [GroupBy::Folder, GroupBy::Date, GroupBy::Flat];
+
+pub fn status_label(status: StatusFilter) -> &'static str {
+    match status {
+        StatusFilter::Active => "Active",
+        StatusFilter::Archived => "Archived",
+        StatusFilter::All => "All",
+    }
+}
 
 pub fn sort_label(sort_by: SortBy) -> &'static str {
     match sort_by {
@@ -22,16 +31,18 @@ pub fn group_label(group_by: GroupBy) -> &'static str {
 /// The top-level rows of the filter menu, in drawing order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterRow {
+    Status,
     Sort,
     Group,
     ShowEmpty,
 }
 
-pub const FILTER_ROWS: [FilterRow; 3] = [FilterRow::Sort, FilterRow::Group, FilterRow::ShowEmpty];
+pub const FILTER_ROWS: [FilterRow; 4] = [FilterRow::Status, FilterRow::Sort, FilterRow::Group, FilterRow::ShowEmpty];
 
 /// What picking an item changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterChoice {
+    Status(StatusFilter),
     Sort(SortBy),
     Group(GroupBy),
     ToggleShowEmpty,
@@ -40,6 +51,7 @@ pub enum FilterChoice {
 impl FilterChoice {
     pub fn apply(self, prefs: &mut SidebarPrefs) {
         match self {
+            FilterChoice::Status(status) => prefs.status = status,
             FilterChoice::Sort(sort_by) => prefs.sort_by = sort_by,
             FilterChoice::Group(group_by) => prefs.group_by = group_by,
             FilterChoice::ToggleShowEmpty => prefs.show_empty = !prefs.show_empty,
@@ -88,6 +100,7 @@ pub struct FilterMenu {
 /// The position of the current value among the items of a row's submenu.
 pub fn current_index(row: FilterRow, prefs: &SidebarPrefs) -> usize {
     match row {
+        FilterRow::Status => STATUS_ITEMS.iter().position(|item| *item == prefs.status).unwrap_or(0),
         FilterRow::Sort => SORT_ITEMS.iter().position(|item| *item == prefs.sort_by).unwrap_or(0),
         FilterRow::Group => GROUP_ITEMS.iter().position(|item| *item == prefs.group_by).unwrap_or(0),
         FilterRow::ShowEmpty => 0,
@@ -104,6 +117,7 @@ impl FilterMenu {
             (Some(_), FilterKey::Right) => {}
             (Some(index), FilterKey::Enter) => {
                 let choice = match row {
+                    FilterRow::Status => FilterChoice::Status(STATUS_ITEMS[index]),
                     FilterRow::Sort => FilterChoice::Sort(SORT_ITEMS[index]),
                     FilterRow::Group => FilterChoice::Group(GROUP_ITEMS[index]),
                     FilterRow::ShowEmpty => FilterChoice::ToggleShowEmpty,
@@ -132,7 +146,7 @@ impl FilterMenu {
 
 #[cfg(test)]
 mod tests {
-    use forge_domain::{GroupBy, SidebarPrefs, SortBy};
+    use forge_domain::{GroupBy, SidebarPrefs, SortBy, StatusFilter};
 
     use super::*;
 
@@ -145,14 +159,14 @@ mod tests {
     }
 
     #[test]
-    fn up_and_down_move_over_the_three_rows_and_stop_at_the_ends() {
+    fn up_and_down_move_over_the_four_rows_and_stop_at_the_ends() {
         let prefs = SidebarPrefs::default();
         let mut menu = FilterMenu::default();
 
         press(&mut menu, &[FilterKey::Up], &prefs);
         assert_eq!(menu.top, 0);
-        press(&mut menu, &[FilterKey::Down, FilterKey::Down, FilterKey::Down, FilterKey::Down], &prefs);
-        assert_eq!(menu.top, 2);
+        press(&mut menu, &[FilterKey::Down, FilterKey::Down, FilterKey::Down, FilterKey::Down, FilterKey::Down], &prefs);
+        assert_eq!(menu.top, 3);
     }
 
     #[test]
@@ -160,7 +174,7 @@ mod tests {
         let prefs = SidebarPrefs { sort_by: SortBy::Created, ..SidebarPrefs::default() };
         let mut menu = FilterMenu::default();
 
-        press(&mut menu, &[FilterKey::Right], &prefs);
+        press(&mut menu, &[FilterKey::Down, FilterKey::Right], &prefs);
 
         assert_eq!(menu.sub, Some(1));
     }
@@ -170,7 +184,7 @@ mod tests {
         let mut prefs = SidebarPrefs::default();
         let mut menu = FilterMenu::default();
 
-        let outcome = press(&mut menu, &[FilterKey::Down, FilterKey::Right, FilterKey::Down, FilterKey::Enter], &prefs);
+        let outcome = press(&mut menu, &[FilterKey::Down, FilterKey::Down, FilterKey::Right, FilterKey::Down, FilterKey::Enter], &prefs);
 
         assert_eq!(outcome, FilterOutcome::Choose(FilterChoice::Group(GroupBy::Date)));
         if let FilterOutcome::Choose(choice) = outcome {
@@ -200,7 +214,7 @@ mod tests {
         let mut prefs = SidebarPrefs::default();
         let mut menu = FilterMenu::default();
 
-        press(&mut menu, &[FilterKey::Down, FilterKey::Down], &prefs);
+        press(&mut menu, &[FilterKey::Down, FilterKey::Down, FilterKey::Down], &prefs);
         assert_eq!(press(&mut menu, &[FilterKey::Right], &prefs), FilterOutcome::Stay);
         assert_eq!(menu.sub, None);
         let outcome = press(&mut menu, &[FilterKey::Enter], &prefs);
@@ -228,5 +242,29 @@ mod tests {
     fn the_labels_are_the_ones_the_menu_shows() {
         assert_eq!(sort_label(SortBy::Activity), "Activity");
         assert_eq!(group_label(GroupBy::Flat), "None");
+    }
+
+    #[test]
+    fn the_first_row_is_status_and_it_opens_on_the_current_value() {
+        let prefs = SidebarPrefs { status: StatusFilter::Archived, ..SidebarPrefs::default() };
+        let mut menu = FilterMenu::default();
+
+        press(&mut menu, &[FilterKey::Right], &prefs);
+
+        assert_eq!(menu.sub, Some(1));
+        let outcome = press(&mut menu, &[FilterKey::Down, FilterKey::Enter], &prefs);
+        assert_eq!(outcome, FilterOutcome::Choose(FilterChoice::Status(StatusFilter::All)));
+    }
+
+    #[test]
+    fn choosing_a_status_changes_the_preferences() {
+        let mut prefs = SidebarPrefs::default();
+
+        FilterChoice::Status(StatusFilter::Archived).apply(&mut prefs);
+
+        assert_eq!(prefs.status, StatusFilter::Archived);
+        assert_eq!(status_label(StatusFilter::Active), "Active");
+        assert_eq!(status_label(StatusFilter::Archived), "Archived");
+        assert_eq!(status_label(StatusFilter::All), "All");
     }
 }

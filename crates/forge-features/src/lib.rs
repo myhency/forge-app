@@ -26,8 +26,8 @@ pub use command_box::CommandTextArea;
 pub use effort::{effort_button_label, effort_levels, slider_position, EFFORT_HELP, SLIDER_FASTER, SLIDER_SMARTER};
 pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, Outgoing};
 pub use filter_menu::{
-    current_index, filter_key, group_label, sort_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
-    FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS,
+    current_index, filter_key, group_label, sort_label, status_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
+    FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
 };
 pub use folder_choice::{choose_folder, FolderChoice};
 pub use new_session::NewSessionComposer;
@@ -39,7 +39,7 @@ pub use settings::{use_settings, use_settings_provider, ExtensionKind, Settings,
 pub use settings_draft::ConnectionDraft;
 pub use shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 pub use sidebar::{
-    cycle_target, marker_for, menu_key_action, merge_sidebar, open_order, replace_project_sessions, DeleteAction, EntryKey,
+    cycle_target, mark_archived, marker_for, menu_key_action, merge_sidebar, open_order, replace_project_sessions, ArchiveAction, DeleteAction, EntryKey,
     LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,
 };
 pub use workspace::{use_workspace, use_workspace_provider, Active, Workspace, WorkspaceServices};

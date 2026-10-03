@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use forge_application::{LiveSessionId, LiveSessionView, Phase};
-use forge_domain::{MessageRole, ProjectSummary, SessionId, SessionSummary};
+use forge_domain::{ArchivedRef, MessageRole, ProjectSummary, SessionId, SessionSummary};
 use forge_entities::SessionMarker;
 
 const UNTITLED: &str = "Untitled session";
@@ -35,6 +35,16 @@ pub struct SidebarEntry {
     /// When the session began; `None` for an open session that is not on disk yet.
     pub created_at: Option<String>,
     pub marker: SessionMarker,
+    /// The person archived it (Forge's config remembers; `mark_archived` sets this).
+    pub archived: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchiveAction {
+    Archive,
+    Unarchive,
+    /// An open session that is not archived (close it first), or one with no transcript yet.
+    Unavailable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,15 +61,22 @@ pub struct RowActions {
     pub can_rename: bool,
     pub can_fork: bool,
     pub delete: DeleteAction,
+    pub archive: ArchiveAction,
 }
 
 impl SidebarEntry {
     /// What the row's menu offers. A session with no Claude id has no transcript to rename or delete.
     pub fn actions(&self) -> RowActions {
+        let archive = match (&self.key, &self.session_id, self.archived) {
+            (_, None, _) => ArchiveAction::Unavailable,
+            (_, Some(_), true) => ArchiveAction::Unarchive,
+            (EntryKey::Past { .. }, Some(_), false) => ArchiveAction::Archive,
+            (EntryKey::Live(_), Some(_), false) => ArchiveAction::Unavailable,
+        };
         match (&self.key, &self.session_id) {
-            (_, None) => RowActions { can_rename: false, can_fork: false, delete: DeleteAction::Unavailable },
-            (EntryKey::Live(_), Some(_)) => RowActions { can_rename: true, can_fork: true, delete: DeleteAction::WhileOpen },
-            (EntryKey::Past { .. }, Some(_)) => RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Allowed },
+            (_, None) => RowActions { can_rename: false, can_fork: false, delete: DeleteAction::Unavailable, archive },
+            (EntryKey::Live(_), Some(_)) => RowActions { can_rename: true, can_fork: true, delete: DeleteAction::WhileOpen, archive },
+            (EntryKey::Past { .. }, Some(_)) => RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Allowed, archive },
         }
     }
 }
@@ -70,9 +87,10 @@ pub enum MenuKeyAction {
     Rename,
     Fork,
     Delete,
+    ToggleArchive,
 }
 
-/// The single letters the menu shows: R renames, F forks, D deletes (Claude Code desktop's menu keys). A key
+/// The single letters the menu shows: R renames, F forks, A archives or unarchives, D deletes (Claude Code desktop's menu keys). A key
 /// does what its item does, so a key for a disabled item does nothing. Any modifier turns the key
 /// into something else (⌘R reloads), so it is left alone.
 ///
@@ -85,8 +103,23 @@ pub fn menu_key_action(code: &str, modified: bool, actions: RowActions) -> Optio
     match code {
         "KeyR" if actions.can_rename => Some(MenuKeyAction::Rename),
         "KeyF" if actions.can_fork => Some(MenuKeyAction::Fork),
+        "KeyA" if actions.archive != ArchiveAction::Unavailable => Some(MenuKeyAction::ToggleArchive),
         "KeyD" if actions.delete == DeleteAction::Allowed => Some(MenuKeyAction::Delete),
         _ => None,
+    }
+}
+
+/// Sets `archived` on every entry that `archived` names (same project and same session id).
+/// Names with no session are ignored.
+pub fn mark_archived(groups: &mut [SidebarGroup], archived: &[ArchivedRef]) {
+    for group in groups {
+        for entry in &mut group.entries {
+            entry.archived = entry.session_id.as_ref().is_some_and(|id| {
+                archived
+                    .iter()
+                    .any(|item| item.project == group.project.path && item.session_id == id.0)
+            });
+        }
     }
 }
 
@@ -216,6 +249,7 @@ pub fn merge_sidebar(
                     updated_at: Some(summary.updated_at.clone()),
                     created_at: Some(summary.created_at.clone()),
                     marker: open.marker,
+                    archived: false,
                 },
                 None => SidebarEntry {
                     key: EntryKey::Past { project: project.path.clone(), session: summary.id.clone() },
@@ -224,6 +258,7 @@ pub fn merge_sidebar(
                     updated_at: Some(summary.updated_at.clone()),
                     created_at: Some(summary.created_at.clone()),
                     marker: SessionMarker::Idle,
+                    archived: false,
                 },
             };
             groups[index].entries.push(entry);
@@ -247,6 +282,7 @@ pub fn merge_sidebar(
             updated_at: None,
             created_at: None,
             marker: open.marker,
+            archived: false,
         };
         match extras.iter_mut().find(|(path, _, _)| *path == open.project_path) {
             Some((_, _, entries)) => entries.push(entry),
@@ -353,12 +389,13 @@ mod tests {
             updated_at: None,
             created_at: None,
             marker: SessionMarker::Idle,
+            archived: false,
         }
     }
 
     fn actions(can_rename: bool, delete: DeleteAction) -> RowActions {
         // A session that can be renamed has a Claude id, and so can be forked.
-        RowActions { can_rename, can_fork: can_rename, delete }
+        RowActions { can_rename, can_fork: can_rename, delete, archive: ArchiveAction::Archive }
     }
 
     #[test]
@@ -416,26 +453,26 @@ mod tests {
     fn a_modified_key_and_other_keys_do_nothing() {
         let all = actions(true, DeleteAction::Allowed);
         assert_eq!(menu_key_action("KeyR", true, all), None, "⌘R");
-        assert_eq!(menu_key_action("KeyA", false, all), None, "archive is not built");
+        assert_eq!(menu_key_action("KeyX", false, all), None, "a letter with no item");
         assert_eq!(menu_key_action("Enter", false, all), None);
     }
 
     #[test]
     fn a_past_session_can_be_renamed_and_deleted() {
         let past = entry(EntryKey::Past { project: PathBuf::from("/w"), session: SessionId("s".into()) }, Some("s"));
-        assert_eq!(past.actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Allowed });
+        assert_eq!(past.actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Allowed, archive: ArchiveAction::Archive });
     }
 
     #[test]
     fn an_open_session_can_be_renamed_but_not_deleted() {
         let open = entry(EntryKey::Live(LiveSessionId(1)), Some("s"));
-        assert_eq!(open.actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::WhileOpen });
+        assert_eq!(open.actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::WhileOpen, archive: ArchiveAction::Unavailable });
     }
 
     #[test]
     fn an_open_session_without_a_claude_id_has_no_actions() {
         let fresh = entry(EntryKey::Live(LiveSessionId(1)), None);
-        assert_eq!(fresh.actions(), RowActions { can_rename: false, can_fork: false, delete: DeleteAction::Unavailable });
+        assert_eq!(fresh.actions(), RowActions { can_rename: false, can_fork: false, delete: DeleteAction::Unavailable, archive: ArchiveAction::Unavailable });
     }
 
     #[test]
@@ -719,5 +756,94 @@ mod tests {
 
         assert_eq!(cycle_target(&order, Some(LiveSessionId(5)), true), Some(LiveSessionId(5)));
         assert_eq!(cycle_target(&order, Some(LiveSessionId(5)), false), Some(LiveSessionId(5)));
+    }
+
+    fn past_entry(project: &str, id: &str) -> SidebarEntry {
+        entry(EntryKey::Past { project: PathBuf::from(project), session: SessionId(id.to_string()) }, Some(id))
+    }
+
+    fn one_group(project: &str, entries: Vec<SidebarEntry>) -> SidebarGroup {
+        SidebarGroup {
+            project: ProjectSummary {
+                path: PathBuf::from(project),
+                last_active: String::new(),
+                session_count: entries.len(),
+                exists: true,
+            },
+            entries,
+        }
+    }
+
+    fn archived(project: &str, id: &str) -> ArchivedRef {
+        ArchivedRef { project: PathBuf::from(project), session_id: id.to_string() }
+    }
+
+    #[test]
+    fn mark_archived_flags_the_entries_the_list_names() {
+        let mut groups = vec![one_group("/a", vec![past_entry("/a", "s1"), past_entry("/a", "s2")])];
+
+        mark_archived(&mut groups, &[archived("/a", "s2")]);
+
+        assert!(!groups[0].entries[0].archived);
+        assert!(groups[0].entries[1].archived);
+    }
+
+    #[test]
+    fn the_same_session_id_in_another_project_is_not_archived() {
+        let mut groups = vec![
+            one_group("/a", vec![past_entry("/a", "s1")]),
+            one_group("/b", vec![past_entry("/b", "s1")]),
+        ];
+
+        mark_archived(&mut groups, &[archived("/a", "s1")]);
+
+        assert!(groups[0].entries[0].archived);
+        assert!(!groups[1].entries[0].archived, "only /a's s1 was archived");
+    }
+
+    #[test]
+    fn an_archived_id_with_no_session_is_ignored() {
+        let mut groups = vec![one_group("/a", vec![past_entry("/a", "s1")])];
+
+        mark_archived(&mut groups, &[archived("/a", "gone"), archived("/zzz", "s1")]);
+
+        assert!(!groups[0].entries[0].archived);
+    }
+
+    #[test]
+    fn a_past_session_can_be_archived_and_an_archived_one_unarchived() {
+        let mut past = past_entry("/a", "s");
+        assert_eq!(past.actions().archive, ArchiveAction::Archive);
+
+        past.archived = true;
+        assert_eq!(past.actions().archive, ArchiveAction::Unarchive);
+    }
+
+    #[test]
+    fn an_open_session_cannot_be_archived_but_an_open_archived_one_can_be_restored() {
+        let mut open = entry(EntryKey::Live(LiveSessionId(1)), Some("s"));
+        assert_eq!(open.actions().archive, ArchiveAction::Unavailable);
+
+        open.archived = true;
+        assert_eq!(open.actions().archive, ArchiveAction::Unarchive);
+    }
+
+    #[test]
+    fn a_session_with_no_claude_id_cannot_be_archived() {
+        let fresh = entry(EntryKey::Live(LiveSessionId(1)), None);
+        assert_eq!(fresh.actions().archive, ArchiveAction::Unavailable);
+    }
+
+    #[test]
+    fn the_a_key_toggles_archive_by_the_physical_key() {
+        let mut all = actions(true, DeleteAction::Allowed);
+        all.archive = ArchiveAction::Archive;
+        assert_eq!(menu_key_action("KeyA", false, all), Some(MenuKeyAction::ToggleArchive));
+        all.archive = ArchiveAction::Unarchive;
+        assert_eq!(menu_key_action("KeyA", false, all), Some(MenuKeyAction::ToggleArchive));
+        all.archive = ArchiveAction::Unavailable;
+        assert_eq!(menu_key_action("KeyA", false, all), None);
+        all.archive = ArchiveAction::Archive;
+        assert_eq!(menu_key_action("KeyA", true, all), None, "⌘A is select all, not archive");
     }
 }

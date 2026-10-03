@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::path::Path;
 
 use forge_application::LiveSessionId;
-use forge_domain::{GroupBy, ProjectSummary, SidebarPrefs, SortBy};
+use forge_domain::{GroupBy, ProjectSummary, SidebarPrefs, SortBy, StatusFilter};
 use time::format_description::well_known::Rfc3339;
 use std::sync::OnceLock;
 
@@ -163,10 +163,35 @@ pub fn now_local() -> OffsetDateTime {
     now_in(LOCAL_OFFSET.get().copied())
 }
 
-/// The sidebar as it is drawn: `groups` (from `merge_sidebar`) sorted, grouped and collapsed
-/// as `prefs` says. `now` is passed in so the date buckets are testable; `active` is the open
-/// session on screen, whose row stays visible in a collapsed group.
+fn shown(entry: &SidebarEntry, status: StatusFilter) -> bool {
+    match status {
+        StatusFilter::Active => !entry.archived,
+        StatusFilter::Archived => entry.archived,
+        StatusFilter::All => true,
+    }
+}
+
+/// The sidebar as it is drawn: `groups` (from `merge_sidebar`) limited to the sessions `prefs.status`
+/// asks for, then sorted, grouped and collapsed as `prefs` says. `now` is passed in so the date
+/// buckets are testable; `active` is the open session on screen, whose row stays visible in a
+/// collapsed group.
 pub fn arrange(
+    groups: &[SidebarGroup],
+    prefs: &SidebarPrefs,
+    now: OffsetDateTime,
+    active: Option<LiveSessionId>,
+) -> Vec<ArrangedGroup> {
+    let limited: Vec<SidebarGroup> = groups
+        .iter()
+        .map(|group| SidebarGroup {
+            project: group.project.clone(),
+            entries: group.entries.iter().filter(|entry| shown(entry, prefs.status)).cloned().collect(),
+        })
+        .collect();
+    arrange_filtered(&limited, prefs, now, active)
+}
+
+fn arrange_filtered(
     groups: &[SidebarGroup],
     prefs: &SidebarPrefs,
     now: OffsetDateTime,
@@ -219,6 +244,15 @@ pub fn arrange(
     }
 }
 
+/// The open sessions in the order the sidebar draws them, with no row hidden: a collapsed group or
+/// the status filter hides rows, not sessions, and Ctrl+Tab must still reach them.
+pub fn open_session_order(groups: &[SidebarGroup], prefs: &SidebarPrefs, now: OffsetDateTime) -> Vec<LiveSessionId> {
+    let mut prefs = prefs.clone();
+    prefs.collapsed.clear();
+    prefs.status = StatusFilter::All;
+    arranged_open_order(&arrange(groups, &prefs, now, None))
+}
+
 /// The open sessions in the order the sidebar draws them; Ctrl+Tab cycles through this. Pass
 /// groups arranged with no collapsed ids, so a session in a collapsed group can still be reached.
 pub fn arranged_open_order(groups: &[ArrangedGroup]) -> Vec<LiveSessionId> {
@@ -237,7 +271,7 @@ mod tests {
     use std::path::PathBuf;
 
     use forge_application::LiveSessionId;
-    use forge_domain::{GroupBy, ProjectSummary, SessionId, SidebarPrefs, SortBy};
+    use forge_domain::{GroupBy, ProjectSummary, SessionId, SidebarPrefs, SortBy, StatusFilter};
     use forge_entities::SessionMarker;
     use time::format_description::well_known::Rfc3339;
     use time::OffsetDateTime;
@@ -257,6 +291,7 @@ mod tests {
             updated_at: updated.map(str::to_string),
             created_at: created.map(str::to_string),
             marker: SessionMarker::Idle,
+            archived: false,
         }
     }
 
@@ -535,5 +570,76 @@ mod tests {
 
         assert_eq!(now_in(Some(korea)).offset(), korea);
         assert_eq!(now_in(None).offset(), UtcOffset::UTC);
+    }
+
+    fn archived_entry(title: &str) -> SidebarEntry {
+        SidebarEntry { archived: true, ..entry(title, None, Some("2026-09-29T00:00:00Z")) }
+    }
+
+    fn all_titles(arranged: &[ArrangedGroup]) -> Vec<String> {
+        arranged.iter().flat_map(|g| g.entries.iter().map(|i| i.entry.title.clone())).collect()
+    }
+
+    fn with_status(status: StatusFilter, group_by: GroupBy) -> SidebarPrefs {
+        SidebarPrefs { status, ..prefs(SortBy::Name, group_by) }
+    }
+
+    #[test]
+    fn active_hides_archived_entries_and_archived_shows_only_them() {
+        let groups = vec![group("/a", vec![entry("kept", None, None), archived_entry("shelved")])];
+
+        let active = arrange(&groups, &with_status(StatusFilter::Active, GroupBy::Folder), now(), None);
+        let archived = arrange(&groups, &with_status(StatusFilter::Archived, GroupBy::Folder), now(), None);
+        let all = arrange(&groups, &with_status(StatusFilter::All, GroupBy::Folder), now(), None);
+
+        assert_eq!(all_titles(&active), vec!["kept"]);
+        assert_eq!(all_titles(&archived), vec!["shelved"]);
+        assert_eq!(all_titles(&all), vec!["kept", "shelved"]);
+    }
+
+    #[test]
+    fn the_status_filter_applies_in_date_and_flat_grouping_too() {
+        let groups = vec![group("/a", vec![entry("kept", None, Some("2026-09-29T00:00:00Z")), archived_entry("shelved")])];
+
+        for by in [GroupBy::Date, GroupBy::Flat] {
+            let active = arrange(&groups, &with_status(StatusFilter::Active, by), now(), None);
+            assert_eq!(all_titles(&active), vec!["kept"], "{by:?}");
+        }
+    }
+
+    #[test]
+    fn a_project_whose_sessions_are_all_archived_is_an_empty_group_in_the_active_view() {
+        let groups = vec![group("/a", vec![archived_entry("shelved")])];
+
+        let hidden = arrange(&groups, &with_status(StatusFilter::Active, GroupBy::Folder), now(), None);
+        let shown = arrange(
+            &groups,
+            &SidebarPrefs { show_empty: true, ..with_status(StatusFilter::Active, GroupBy::Folder) },
+            now(),
+            None,
+        );
+
+        assert!(hidden.is_empty());
+        assert_eq!(shown.len(), 1);
+        assert!(shown[0].entries.is_empty());
+    }
+
+    #[test]
+    fn ctrl_tab_order_reaches_open_sessions_whatever_the_filter_and_collapsed_groups_hide() {
+        let open = |title: &str, id: u64, archived: bool| SidebarEntry {
+            key: EntryKey::Live(LiveSessionId(id)),
+            archived,
+            ..entry(title, None, Some("2026-09-29T00:00:00Z"))
+        };
+        let groups = vec![group("/a", vec![open("one", 1, false), open("two", 2, true)])];
+        let prefs = SidebarPrefs {
+            status: StatusFilter::Active,
+            collapsed: vec![folder_group_id(std::path::Path::new("/a"))],
+            ..SidebarPrefs::default()
+        };
+
+        let order = open_session_order(&groups, &prefs, now());
+
+        assert_eq!(order, vec![LiveSessionId(1), LiveSessionId(2)]);
     }
 }
