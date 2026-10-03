@@ -1540,6 +1540,8 @@ dependencies = [
  "forge-adapter-config",
  "forge-adapter-dialog",
  "forge-adapter-sidecar",
+ "forge-adapter-sleep",
+ "forge-adapter-terminal",
  "forge-application",
  "forge-features",
  "forge-pages",

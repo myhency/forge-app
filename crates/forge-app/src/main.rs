@@ -10,6 +10,8 @@ use forge_adapter_claude_fs::{
 use forge_adapter_dialog::RfdFolderPicker;
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
+use forge_adapter_sleep::CaffeinateSleep;
+use forge_adapter_terminal::PtyTerminal;
 use forge_application::{ExtensionsUseCase, SessionRegistry, SettingsUseCase};
 use forge_features::WorkspaceServices;
 use forge_pages::WorkspacePage;
@@ -150,7 +152,18 @@ fn build_services() -> WorkspaceServices {
     let projects = Arc::new(ClaudeProjectAdapter::new(claude_home));
     let registry = Arc::new(SessionRegistry::new(factory, sessions.clone(), extensions.clone()).with_warm_up());
     let picker = Arc::new(RfdFolderPicker::new());
-    WorkspaceServices { registry, projects, sessions, settings, extensions, folder_picker: picker.clone(), file_picker: picker }
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    WorkspaceServices {
+        registry,
+        projects,
+        sessions,
+        settings,
+        extensions,
+        folder_picker: picker.clone(),
+        file_picker: picker,
+        terminal: Arc::new(PtyTerminal::new(shell)),
+        sleep: Arc::new(CaffeinateSleep::new()),
+    }
 }
 
 #[component]

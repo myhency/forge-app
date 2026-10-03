@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -6,9 +7,10 @@ use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{FilePickerPort, FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
+use forge_ports::{FilePickerPort, FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort};
 use time::OffsetDateTime;
 
+use crate::dock::{DockState, DockStates};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 use crate::transcript_views::TranscriptViews;
@@ -30,6 +32,8 @@ pub struct WorkspaceServices {
     pub extensions: Arc<ExtensionsUseCase>,
     pub folder_picker: Arc<dyn FolderPickerPort>,
     pub file_picker: Arc<dyn FilePickerPort>,
+    pub terminal: Arc<dyn TerminalPort>,
+    pub sleep: Arc<dyn SleepPort>,
 }
 
 /// What the main pane shows.
@@ -62,6 +66,8 @@ pub struct Workspace {
     transcript_views: Signal<TranscriptViews>,
     prefs: Signal<SidebarPrefs>,
     archived: Signal<Vec<ArchivedRef>>,
+    docks: Signal<DockStates>,
+    sleeping: Signal<HashSet<LiveSessionId>>,
     search_open: Signal<bool>,
     search_query: Signal<String>,
     search_hits: Signal<Vec<SearchHit>>,
@@ -95,6 +101,8 @@ pub fn use_workspace_provider() -> Workspace {
             transcript_views: Signal::new(TranscriptViews::default()),
             prefs: Signal::new(SidebarPrefs::default()),
             archived: Signal::new(Vec::new()),
+            docks: Signal::new(DockStates::default()),
+            sleeping: Signal::new(HashSet::new()),
             search_open: Signal::new(false),
             search_query: Signal::new(String::new()),
             search_hits: Signal::new(Vec::new()),
@@ -431,6 +439,42 @@ impl Workspace {
         self.transcript_views.read().get(id)
     }
 
+    /// The dock of one session: which panels are open and how wide.
+    pub fn dock(&self, id: LiveSessionId) -> DockState {
+        self.docks.read().get(id)
+    }
+
+    pub fn change_dock(&self, id: LiveSessionId, change: impl FnOnce(&mut DockState)) {
+        let mut docks = self.docks;
+        docks.write().change(id, change);
+    }
+
+    pub fn terminal(&self) -> Arc<dyn TerminalPort> {
+        self.services.peek().terminal.clone()
+    }
+
+    pub fn prevents_sleep(&self, id: LiveSessionId) -> bool {
+        self.sleeping.read().contains(&id)
+    }
+
+    /// Turns "Prevent sleep" on or off for one session. If the computer cannot be held awake the
+    /// switch stays off and the person is told why.
+    pub fn set_prevent_sleep(&self, id: LiveSessionId, on: bool) {
+        let services = (*self.services.peek()).clone();
+        let mut sleeping = self.sleeping;
+        if on {
+            match services.sleep.hold(id.0) {
+                Ok(()) => {
+                    sleeping.write().insert(id);
+                }
+                Err(message) => self.report(message),
+            }
+        } else {
+            services.sleep.release(id.0);
+            sleeping.write().remove(&id);
+        }
+    }
+
     pub fn set_transcript_view(&self, id: LiveSessionId, view: TranscriptView) {
         let mut views = self.transcript_views;
         views.write().set(id, view);
@@ -613,6 +657,9 @@ impl Workspace {
         live.write().retain(|entry| entry.handle.id() != id);
         let mut views = self.transcript_views;
         views.write().forget(id);
+        let mut docks = self.docks;
+        docks.write().forget(id);
+        self.set_prevent_sleep(id, false);
         if self.active() == Active::Live(id) {
             let next = self.live.peek().last().map(|entry| entry.handle.id());
             match next {
