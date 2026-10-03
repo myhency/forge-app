@@ -1,57 +1,59 @@
 use dioxus::prelude::*;
-use forge_entities::model_label;
-use forge_shared::{Button, ButtonKind, Select};
+use forge_domain::PermissionMode;
 
-use crate::attachments::folder_label;
 use crate::command_box::CommandTextArea;
 use crate::composer_state::{use_composer_state_provider, ComposerChips};
-use crate::permission_mode::{mode_options, parse_mode};
-use crate::settings::use_settings;
 use crate::workspace::use_workspace;
 
-/// The new-session panel: pick a folder and permission mode, type the first message. The session
-/// is only created when that message is sent.
+/// What was chosen for the new session before it exists: `None` follows the saved default model,
+/// `Some(None)` is the SDK's default, `Some(Some(id))` is that model.
+pub type ModelChoice = Option<Option<String>>;
+
+/// The mode and model picked on the new-session screen. Nothing is saved to settings.
+#[derive(Clone, Copy)]
+pub struct NewSessionDraft {
+    pub mode: Signal<PermissionMode>,
+    pub model: Signal<ModelChoice>,
+}
+
+pub fn use_new_session_draft() -> NewSessionDraft {
+    use_context::<NewSessionDraft>()
+}
+
+/// Whether the send button is ready: there is text or something attached.
+pub fn send_ready(text: &str, attachments: usize) -> bool {
+    !text.trim().is_empty() || attachments > 0
+}
+
+/// The new-session panel: the folder and other chips (`chips`), the first message, and a row of controls
+/// (`children`). The session is only created when that message is sent.
 #[component]
-pub fn NewSessionComposer(children: Element) -> Element {
+pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
     let workspace = use_workspace();
-    let settings = use_settings();
-    let mut mode = use_signal(|| "default".to_string());
+    let draft = use_context_provider(|| NewSessionDraft { mode: Signal::new(PermissionMode::Default), model: Signal::new(None) });
     let text = use_signal(String::new);
     let composer = use_composer_state_provider(text);
     let mut text = text;
 
     // The probe follows the chosen folder: it is replaced when the folder changes, kept when it does
-    // not, and ended when this panel goes away (Start, another session, the settings).
+    // not, and ended when this panel goes away (send, another session, the settings).
     use_effect(move || {
         let folder = workspace.chosen_new_folder();
         spawn(async move { workspace.probe_new_folder(folder) });
     });
     use_drop(move || workspace.probe_new_folder(None));
 
-    let projects = workspace.new_session_projects();
-    let options: Vec<(String, String)> = projects
-        .iter()
-        .map(|project| {
-            let path = project.path.to_string_lossy().to_string();
-            (path.clone(), path)
-        })
-        .collect();
-    let selected = workspace.chosen_new_folder().map(|path| path.to_string_lossy().to_string()).unwrap_or_default();
-    let model = model_label(settings.model().as_deref());
+    let has_folder = !workspace.new_session_projects().is_empty();
 
     // `submit` is used by two handlers, so it may capture only `Copy` values (signals): it looks the
-    // folder up again instead of capturing the `selected` string.
+    // folder up again instead of capturing a string.
     let mut submit = move || {
-        if text.read().trim().is_empty() && composer.attachments().is_empty() {
+        if !send_ready(&text.read(), composer.attachments().len()) {
             return;
         }
         let projects = workspace.new_session_projects();
         let project = match workspace.new_folder() {
-            Some(path) => projects
-                .iter()
-                .find(|project| project.path == path)
-                .cloned()
-                .or_else(|| projects.first().cloned()),
+            Some(path) => projects.iter().find(|project| project.path == path).cloned().or_else(|| projects.first().cloned()),
             None => projects.first().cloned(),
         };
         let Some(project) = project else {
@@ -62,77 +64,59 @@ pub fn NewSessionComposer(children: Element) -> Element {
         };
         workspace.start_new(
             project,
-            parse_mode(&mode.read()),
+            *draft.mode.peek(),
+            draft.model.peek().clone(),
             outgoing.text,
             outgoing.attachments,
             composer.take_folders(),
         );
         text.set(String::new());
     };
-    let has_folder = !options.is_empty();
-    let folder_name = workspace.chosen_new_folder().map(|path| folder_label(&path)).unwrap_or_default();
+    let ready = send_ready(&text.read(), composer.attachments().len());
 
     rsx! {
         div { class: "new-session",
             if !has_folder {
                 div { class: "banner info", "No existing project folder was found in your Claude Code history. Use “Open folder…” to choose one." }
             }
-            div { class: "env-chips",
-                span { class: "chip", "Local" }
-                span { class: "chip",
-                    span { class: "chip-name", "{folder_name}" }
-                }
-            }
-            div { class: "field",
-                label { "Folder" }
-                Select {
-                    value: selected,
-                    options,
-                    disabled: !has_folder,
-                    onchange: move |path: String| workspace.set_new_folder(Some(path.into())),
-                }
-                Button {
-                    label: "Open folder…",
-                    disabled: workspace.picking_folder(),
-                    onclick: move |_| workspace.open_folder(),
-                }
-            }
-            div { class: "field",
-                label { "Model" }
-                span { class: "field-value", "{model}" }
-                span { class: "hint", "Change it in Settings (⌘,)." }
-            }
-            div { class: "field",
-                label { "Mode" }
-                Select {
-                    value: mode(),
-                    options: mode_options(),
-                    onchange: move |value| mode.set(value),
-                }
-            }
+            div { class: "env-chips", {chips} }
             if let Some(message) = composer.error() {
                 div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
             }
             ComposerChips {}
-            CommandTextArea {
-                value: text(),
-                open_token: composer.popup_token(),
-                commands: workspace.new_commands(),
-                placeholder: "What should Claude do?",
-                disabled: !has_folder,
-                oninput: move |value| text.set(value),
-                onsubmit: move |_| submit(),
-            }
-            div { class: "composer-row",
-                {children}
-                span { class: "spacer" }
-                Button {
-                    label: "Start",
-                    kind: ButtonKind::Primary,
+            div { class: "composer-box",
+                CommandTextArea {
+                    value: text(),
+                    open_token: composer.popup_token(),
+                    commands: workspace.new_commands(),
+                    placeholder: "Describe a task or ask a question",
                     disabled: !has_folder,
+                    oninput: move |value| text.set(value),
+                    onsubmit: move |_| submit(),
+                }
+                button {
+                    class: if ready { "send-icon ready" } else { "send-icon" },
+                    r#type: "button",
+                    title: "Send",
+                    disabled: !has_folder || !ready,
                     onclick: move |_| submit(),
+                    "↵"
                 }
             }
+            div { class: "composer-row", {children} }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_send_button_is_ready_with_text_or_an_attachment() {
+        assert!(!send_ready("", 0));
+        assert!(!send_ready("  \n ", 0));
+        assert!(send_ready("hi", 0));
+        assert!(send_ready("", 1));
     }
 }

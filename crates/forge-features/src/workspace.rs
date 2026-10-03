@@ -12,6 +12,7 @@ use time::OffsetDateTime;
 
 use crate::dock::{DockState, DockStates};
 use crate::folder_choice::{choose_folder, FolderChoice};
+use crate::new_session::ModelChoice;
 use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 use crate::tool_activity::finished_tool_calls;
 use crate::transcript_views::TranscriptViews;
@@ -646,6 +647,7 @@ impl Workspace {
         &self,
         project: ProjectSummary,
         mode: PermissionMode,
+        model: ModelChoice,
         text: String,
         attachments: Vec<Attachment>,
         folders: Vec<PathBuf>,
@@ -656,12 +658,15 @@ impl Workspace {
         // Pinned to the root scope: `NewSessionComposer` unmounts if the person clicks elsewhere
         // while the saved model is being read, which would cancel a plain `spawn`.
         dioxus::core::spawn_forever(async move {
-            let model = match services.settings.saved_model().await {
-                Ok(model) => model,
-                Err(error) => {
-                    this.report(format!("failed to load the Forge config: {error}"));
-                    return;
-                }
+            let model = match model {
+                Some(chosen) => chosen,
+                None => match services.settings.saved_model().await {
+                    Ok(model) => model,
+                    Err(error) => {
+                        this.report(format!("failed to load the Forge config: {error}"));
+                        return;
+                    }
+                },
             };
             let commands = slot.end();
             match services.registry.open_new(&project, mode, model, commands) {

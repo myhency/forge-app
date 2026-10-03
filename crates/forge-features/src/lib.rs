@@ -9,6 +9,7 @@ mod dock;
 mod file_tree;
 mod filter_menu;
 mod folder_choice;
+mod folder_menu;
 mod new_session;
 mod permission_mode;
 mod preview_tabs;
@@ -37,7 +38,8 @@ pub use filter_menu::{
     FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
 };
 pub use folder_choice::{choose_folder, FolderChoice};
-pub use new_session::NewSessionComposer;
+pub use folder_menu::{folder_menu_rows, FolderMenuRow, MAX_RECENT_FOLDERS};
+pub use new_session::{send_ready, use_new_session_draft, ModelChoice, NewSessionComposer, NewSessionDraft};
 pub use refocus::{refocus_composer, refocus_workspace};
 pub use permission_mode::{menu_digit_row, mode_choice, mode_options, mode_rows, mode_value, parse_mode, ModeChoice, ModeRow};
 pub use search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
