@@ -90,6 +90,22 @@ pub fn menu_key_action(code: &str, modified: bool, actions: RowActions) -> Optio
     }
 }
 
+/// The project a session that was just made (a fork) opens in: the listed summary when there is
+/// one, else one made from the path. A project can be missing from `past` (a folder added through the
+/// dialog, or a path spelled differently from the listed one), and the copy is on disk already, so
+/// that must not stop it from opening.
+pub fn project_for_open(past: &[(ProjectSummary, Vec<SessionSummary>)], project_path: &std::path::Path) -> ProjectSummary {
+    past.iter()
+        .find(|(project, _)| project.path == project_path)
+        .map(|(project, _)| project.clone())
+        .unwrap_or_else(|| ProjectSummary {
+            path: project_path.to_path_buf(),
+            last_active: String::new(),
+            session_count: 0,
+            exists: project_path.is_dir(),
+        })
+}
+
 /// Puts `sessions` in place of one project's listing and refreshes its count; other projects and
 /// unknown paths are left alone.
 pub fn replace_project_sessions(
@@ -350,6 +366,34 @@ mod tests {
         let all = actions(true, DeleteAction::Allowed);
         assert_eq!(menu_key_action("KeyR", false, all), Some(MenuKeyAction::Rename));
         assert_eq!(menu_key_action("KeyD", false, all), Some(MenuKeyAction::Delete));
+    }
+
+    fn listed(path: &str) -> (ProjectSummary, Vec<SessionSummary>) {
+        (ProjectSummary { path: PathBuf::from(path), last_active: "2026-10-03T00:00:00Z".to_string(), session_count: 1, exists: true }, Vec::new())
+    }
+
+    #[test]
+    fn a_listed_project_is_the_one_a_fork_opens_in() {
+        let past = vec![listed("/work/a"), listed("/work/b")];
+        assert_eq!(project_for_open(&past, std::path::Path::new("/work/b")).path, PathBuf::from("/work/b"));
+        assert_eq!(project_for_open(&past, std::path::Path::new("/work/b")).session_count, 1, "the listed summary, not a made-up one");
+    }
+
+    #[test]
+    fn a_project_that_is_not_listed_still_gets_a_summary_so_the_fork_can_open() {
+        // A folder added through the dialog, or one spelled differently from the listed path
+        // (/tmp/x against /private/tmp/x), is not in `past`; the copy is on disk and must open.
+        let past = vec![listed("/work/a")];
+        let here = std::env::temp_dir();
+        let summary = project_for_open(&past, &here);
+        assert_eq!(summary.path, here);
+        assert!(summary.exists, "a folder that is there can take messages");
+    }
+
+    #[test]
+    fn a_fork_of_a_session_in_a_missing_folder_opens_view_only() {
+        let summary = project_for_open(&[], std::path::Path::new("/definitely/not/here/forge-test"));
+        assert!(!summary.exists);
     }
 
     #[test]

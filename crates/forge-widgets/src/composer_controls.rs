@@ -272,7 +272,9 @@ pub fn EffortPicker(id: LiveSessionId) -> Element {
                         step: "1",
                         value: "{position}",
                         "aria-label": "Effort",
-                        oninput: {
+                        // `onchange`, not `oninput`: it fires when the thumb is released (and once per arrow
+                        // key), so a drag sends one change and the SDK's answers cannot arrive out of order.
+                        onchange: {
                             let levels = levels.clone();
                             move |event: FormEvent| {
                                 if let Some(level) = event.value().parse::<usize>().ok().and_then(|index| levels.get(index)) {

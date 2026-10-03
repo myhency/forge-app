@@ -14,7 +14,7 @@ use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, arranged_open_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
-use crate::sidebar::{cycle_target, merge_sidebar, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
+use crate::sidebar::{cycle_target, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
 
 // Typing waits this long before the transcripts are scanned.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -345,11 +345,8 @@ impl Workspace {
                 Ok(sessions) => replace_project_sessions(&mut past.write(), &project, sessions),
                 Err(error) => return this.report(format!("{}: {error}", project.display())),
             }
-            let summary = past.peek().iter().find(|(p, _)| p.path == project).map(|(p, _)| p.clone());
-            match summary {
-                Some(summary) => this.open_past(summary, new_id),
-                None => this.report(format!("{}: the project is no longer listed", project.display())),
-            }
+            let summary = project_for_open(&past.peek(), &project);
+            this.open_past(summary, new_id);
         });
     }
 
