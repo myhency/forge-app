@@ -5,7 +5,7 @@ use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
 use forge_adapter_claude_fs::{
     default_claude_home, default_claude_json_path, ClaudeMcpAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
-    ClaudeSessionAdapter, ClaudeSkillAdapter,
+    ClaudeSessionAdapter, ClaudeSkillAdapter, ClaudeUsageStatsAdapter,
 };
 use forge_adapter_dialog::RfdFolderPicker;
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
@@ -153,7 +153,7 @@ fn build_services() -> WorkspaceServices {
         home,
     ));
     let sessions = Arc::new(ClaudeSessionAdapter::new(claude_home.clone()));
-    let projects = Arc::new(ClaudeProjectAdapter::new(claude_home));
+    let projects = Arc::new(ClaudeProjectAdapter::new(claude_home.clone()));
     let registry = Arc::new(SessionRegistry::new(factory, sessions.clone(), extensions.clone()).with_warm_up());
     let picker = Arc::new(RfdFolderPicker::new());
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
@@ -170,6 +170,7 @@ fn build_services() -> WorkspaceServices {
         git: Arc::new(GitCli::new()),
         files: Arc::new(LocalFiles::new()),
         browser: Arc::new(SystemBrowser::new()),
+        usage_stats: Arc::new(ClaudeUsageStatsAdapter::new(claude_home.clone())),
     }
 }
 

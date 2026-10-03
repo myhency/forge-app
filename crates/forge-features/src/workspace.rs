@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{BrowserPort, FilePickerPort, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort};
+use forge_ports::{BrowserPort, FilePickerPort, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
 use time::OffsetDateTime;
 
 use crate::dock::{DockState, DockStates};
@@ -38,6 +38,7 @@ pub struct WorkspaceServices {
     pub git: Arc<dyn GitPort>,
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
+    pub usage_stats: Arc<dyn UsageStatsPort>,
 }
 
 /// What the main pane shows.
@@ -459,6 +460,10 @@ impl Workspace {
 
     pub fn git(&self) -> Arc<dyn GitPort> {
         self.services.peek().git.clone()
+    }
+
+    pub fn usage_stats_port(&self) -> Arc<dyn UsageStatsPort> {
+        self.services.peek().usage_stats.clone()
     }
 
     pub fn files(&self) -> Arc<dyn FilesPort> {
