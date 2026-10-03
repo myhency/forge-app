@@ -505,6 +505,10 @@ mod tests {
             Ok(())
         }
 
+        async fn fork_session(&self, _project_path: &Path, _session_id: &SessionId, _title: &str) -> Result<SessionId, SessionRepositoryError> {
+            unimplemented!("not used by these tests")
+        }
+
         async fn delete_session(&self, _project_path: &Path, _session_id: &SessionId) -> Result<(), SessionRepositoryError> {
             Ok(())
         }
