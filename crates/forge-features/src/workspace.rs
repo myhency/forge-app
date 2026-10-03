@@ -5,7 +5,7 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{Attachment, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{Attachment, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{FilePickerPort, FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
 use time::OffsetDateTime;
 
@@ -409,6 +409,13 @@ impl Workspace {
     pub fn set_model(&self, id: LiveSessionId, model: Option<String>) {
         if let Some(handle) = self.handle(id) {
             handle.set_model(model);
+        }
+    }
+
+    /// Changes the effort of the open session (`None`: the SDK's default), from its next turn on.
+    pub fn set_effort(&self, id: LiveSessionId, effort: Option<EffortLevel>) {
+        if let Some(handle) = self.handle(id) {
+            handle.set_effort(effort);
         }
     }
 

@@ -460,6 +460,8 @@ mod tests {
             },
             claude_session_id: None,
             model: None,
+            effort: None,
+            available_models: Vec::new(),
             phase,
             pending_permissions: VecDeque::from(vec![request; pending]),
             last_error: None,

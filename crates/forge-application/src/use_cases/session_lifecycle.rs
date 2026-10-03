@@ -28,6 +28,7 @@ impl StartSessionUseCase {
                 resume_session_id: None,
                 permission_mode,
                 model,
+                effort: None,
                 extensions: Default::default(),
                 additional_directories: Vec::new(),
             })
@@ -67,6 +68,7 @@ impl ResumeSessionUseCase {
                 resume_session_id: Some(session_id.0.clone()),
                 permission_mode,
                 model: None,
+                effort: None,
                 extensions: Default::default(),
                 additional_directories: Vec::new(),
             })

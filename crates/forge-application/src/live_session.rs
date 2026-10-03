@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_domain::{Attachment, ContextUsage, PermissionDecision, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand};
+use forge_domain::{Attachment, AvailableModel, ContextUsage, EffortLevel, PermissionDecision, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand};
 use forge_ports::SidecarFactoryPort;
 use tokio::sync::{mpsc, watch};
 
@@ -34,6 +34,13 @@ pub struct LiveSessionView {
     /// The model this session runs on; `None` is the SDK's default. Changes when the SDK accepts a
     /// change (or at once, while no sidecar is running).
     pub model: Option<String>,
+    /// The effort of this session; `None` is the SDK's default. Changes when the SDK accepts a change
+    /// (or at once, while no sidecar is running). A transcript does not record it, so a resumed
+    /// session starts on `None`.
+    pub effort: Option<EffortLevel>,
+    /// The models the SDK listed for this session, with the effort levels each takes; empty until the
+    /// sidecar has reported.
+    pub available_models: Vec<AvailableModel>,
     pub phase: Phase,
     /// Oldest first; the front is the one the UI shows.
     pub pending_permissions: VecDeque<PermissionRequest>,
@@ -65,6 +72,7 @@ pub enum LiveCommand {
     SetTitle(String),
     SetMode(PermissionMode),
     SetModel(Option<String>),
+    SetEffort(Option<EffortLevel>),
     Close,
 }
 
@@ -131,6 +139,11 @@ impl LiveSessionHandle {
         let _ = self.commands.send(LiveCommand::SetModel(model));
     }
 
+    /// Changes the effort (`None`: the default) the same way.
+    pub fn set_effort(&self, effort: Option<EffortLevel>) {
+        let _ = self.commands.send(LiveCommand::SetEffort(effort));
+    }
+
     pub fn close(&self) {
         let _ = self.commands.send(LiveCommand::Close);
     }
@@ -176,6 +189,8 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         session: init.session,
         claude_session_id: init.claude_session_id,
         model: init.model.clone(),
+        effort: None,
+        available_models: Vec::new(),
         phase: Phase::Idle,
         pending_permissions: VecDeque::new(),
         last_error: None,
@@ -259,6 +274,7 @@ mod tests {
             resume_session_id: resume.map(str::to_string),
             permission_mode: PermissionMode::AcceptEdits,
             model: Some("model-x".to_string()),
+            effort: None,
             extensions: ActiveExtensions::default(),
             additional_directories: Vec::new(),
         }
@@ -463,6 +479,88 @@ mod tests {
         let seen = wait_for(&mut view, "the change", |v| v.model.as_deref() == Some("model-y")).await;
 
         assert_eq!(seen.last_error, None);
+    }
+
+    #[tokio::test]
+    async fn before_a_sidecar_exists_an_effort_change_applies_at_once_and_to_the_next_start() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.set_effort(Some(forge_domain::EffortLevel::High));
+        wait_for(&mut view, "the change", |v| v.effort == Some(forge_domain::EffortLevel::High)).await;
+        handle.send("go".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        let started = control.calls().into_iter().find_map(|call| match call {
+            Call::Start(params) => Some(params),
+            _ => None,
+        });
+        assert_eq!(started.expect("a sidecar was started").effort, Some(forge_domain::EffortLevel::High));
+    }
+
+    #[tokio::test]
+    async fn with_a_sidecar_the_effort_is_sent_and_shown_only_when_the_sidecar_answers() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        handle.set_effort(Some(forge_domain::EffortLevel::Max));
+        for _ in 0..50 {
+            if control.calls().contains(&Call::SetEffort(Some(forge_domain::EffortLevel::Max))) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(control.calls().contains(&Call::SetEffort(Some(forge_domain::EffortLevel::Max))));
+        assert_eq!(handle.snapshot().effort, None, "not shown before the answer");
+
+        control.push(SidecarEvent::EffortSet { effort: Some(forge_domain::EffortLevel::Max) });
+        let seen = wait_for(&mut view, "the answer", |v| v.effort == Some(forge_domain::EffortLevel::Max)).await;
+        assert_eq!(seen.last_error, None);
+    }
+
+    #[tokio::test]
+    async fn a_refused_effort_change_keeps_the_old_level_and_the_refusal_goes_away_when_a_change_is_accepted() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        control.push(SidecarEvent::SettingFailed { message: "capped".to_string() });
+        let refused = wait_for(&mut view, "the refusal", |v| v.last_error.is_some()).await;
+        assert_eq!(refused.effort, None);
+        assert_eq!(refused.phase, Phase::Running);
+
+        control.push(SidecarEvent::EffortSet { effort: Some(forge_domain::EffortLevel::Low) });
+        let seen = wait_for(&mut view, "the change", |v| v.effort == Some(forge_domain::EffortLevel::Low)).await;
+        assert_eq!(seen.last_error, None);
+    }
+
+    #[tokio::test]
+    async fn the_models_the_sdk_lists_are_kept_in_the_view() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        let models = vec![forge_domain::AvailableModel {
+            value: "model-x".to_string(),
+            display_name: "X".to_string(),
+            effort_levels: vec![forge_domain::EffortLevel::Low, forge_domain::EffortLevel::High],
+        }];
+        control.push(SidecarEvent::ModelsAvailable { models: models.clone() });
+        let seen = wait_for(&mut view, "the list", |v| !v.available_models.is_empty()).await;
+
+        assert_eq!(seen.available_models, models);
     }
 
     #[tokio::test]
