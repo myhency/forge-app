@@ -554,7 +554,7 @@ impl Workspace {
         // Collapsed groups hide rows but not sessions: Ctrl+Tab still reaches them.
         let mut prefs = self.prefs();
         prefs.collapsed.clear();
-        let order = arranged_open_order(&arrange(&self.sidebar(), &prefs, OffsetDateTime::now_utc(), None));
+        let order = arranged_open_order(&arrange(&self.sidebar(), &prefs, crate::arrange::now_local(), None));
         let current = match self.active() {
             Active::Live(id) => Some(id),
             Active::NewSession => None,

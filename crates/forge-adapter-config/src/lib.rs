@@ -38,17 +38,21 @@ impl ConfigRepositoryPort for ConfigFileAdapter {
         }
         let json = serde_json::to_string_pretty(config)
             .map_err(|e| ConfigError::WriteFailed(format!("{}: {}", self.path.display(), e)))?;
-        tokio::fs::write(&self.path, json)
-            .await
-            .map_err(|e| ConfigError::WriteFailed(format!("{}: {}", self.path.display(), e)))?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let permissions = std::fs::Permissions::from_mode(0o600);
-            tokio::fs::set_permissions(&self.path, permissions)
-                .await
-                .map_err(|e| ConfigError::WriteFailed(format!("{}: {}", self.path.display(), e)))?;
+        // Written beside the file and moved over it, so a reader never sees a half-written config
+        // (a plain write truncates first). The temporary file is removed if anything fails.
+        let temporary = self.path.with_extension("json.tmp");
+        let write = async {
+            tokio::fs::write(&temporary, json).await?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                tokio::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o600)).await?;
+            }
+            tokio::fs::rename(&temporary, &self.path).await
+        };
+        if let Err(e) = write.await {
+            let _ = tokio::fs::remove_file(&temporary).await;
+            return Err(ConfigError::WriteFailed(format!("{}: {}", self.path.display(), e)));
         }
 
         Ok(())
@@ -189,5 +193,30 @@ mod tests {
         let metadata = tokio::fs::metadata(&path).await.unwrap();
         let mode = metadata.permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
+    }
+
+    // A reader (the settings screen, the sidecar's start-up) must never see a half-written file:
+    // the new content is written beside the old file and moved over it, so the file is replaced
+    // (a new inode) rather than truncated and rewritten in place.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_save_replaces_the_file_instead_of_rewriting_it_in_place() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let adapter = ConfigFileAdapter::new(path.clone());
+
+        adapter.save(&AppConfig::default()).await.unwrap();
+        let first = std::fs::metadata(&path).unwrap().ino();
+        adapter
+            .save(&AppConfig { model: Some("m".to_string()), ..AppConfig::default() })
+            .await
+            .unwrap();
+        let second = std::fs::metadata(&path).unwrap().ino();
+
+        assert_ne!(first, second, "the file was rewritten in place");
+        assert_eq!(adapter.load().await.unwrap().model.as_deref(), Some("m"));
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+        assert_eq!(leftovers.len(), 1, "a temporary file was left behind");
     }
 }

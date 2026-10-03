@@ -20,6 +20,11 @@ use forge_shared::THEME_CSS;
 const DEFAULT_SIDECAR_SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../sidecar/dist/index.js");
 
 fn main() {
+    // The sidebar cuts "Today" and "Yesterday" in the person's own time zone. The offset can only be
+    // read soundly while this is still the only thread, so it is read first of all.
+    if let Ok(offset) = time::UtcOffset::current_local_offset() {
+        forge_features::set_local_offset(offset);
+    }
     dioxus::LaunchBuilder::desktop()
         .with_cfg(window_config())
         .with_context(build_services())

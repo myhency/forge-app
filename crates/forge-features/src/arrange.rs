@@ -4,6 +4,8 @@ use std::path::Path;
 use forge_application::LiveSessionId;
 use forge_domain::{GroupBy, ProjectSummary, SidebarPrefs, SortBy};
 use time::format_description::well_known::Rfc3339;
+use std::sync::OnceLock;
+
 use time::{OffsetDateTime, UtcOffset};
 
 use crate::sidebar::{EntryKey, SidebarEntry, SidebarGroup};
@@ -104,7 +106,8 @@ fn bucket_of(at: Option<OffsetDateTime>, now: OffsetDateTime) -> DateBucket {
     let Some(at) = at else {
         return DateBucket::Today;
     };
-    let days = (now.to_offset(UtcOffset::UTC).date() - at.to_offset(UtcOffset::UTC).date()).whole_days();
+    // Both days are read in `now`'s own offset: a morning session in Korea is today, not yesterday.
+    let days = (now.date() - at.to_offset(now.offset()).date()).whole_days();
     match days {
         days if days <= 0 => DateBucket::Today,
         1 => DateBucket::Yesterday,
@@ -139,6 +142,25 @@ fn all_entries(groups: &[SidebarGroup]) -> Vec<ArrangedEntry> {
                 .map(|entry| ArrangedEntry { project: group.project.clone(), entry: entry.clone() })
         })
         .collect()
+}
+
+static LOCAL_OFFSET: OnceLock<UtcOffset> = OnceLock::new();
+
+/// Tells the sidebar which time zone the person is in. Read it once at start-up, before other
+/// threads exist (`UtcOffset::current_local_offset` is only sound then); never called, dates are
+/// cut in UTC.
+pub fn set_local_offset(offset: UtcOffset) {
+    let _ = LOCAL_OFFSET.set(offset);
+}
+
+/// The current time in `offset`, or in UTC when it is not known.
+pub fn now_in(offset: Option<UtcOffset>) -> OffsetDateTime {
+    OffsetDateTime::now_utc().to_offset(offset.unwrap_or(UtcOffset::UTC))
+}
+
+/// The current time in the person's time zone (see `set_local_offset`).
+pub fn now_local() -> OffsetDateTime {
+    now_in(LOCAL_OFFSET.get().copied())
 }
 
 /// The sidebar as it is drawn: `groups` (from `merge_sidebar`) sorted, grouped and collapsed
@@ -485,5 +507,33 @@ mod tests {
         let arranged = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Folder), now(), None);
 
         assert_eq!(arranged_open_order(&arranged), [LiveSessionId(2), LiveSessionId(1)]);
+    }
+
+    #[test]
+    fn date_buckets_follow_the_day_of_now_in_its_own_offset() {
+        // 12:00 on 3 October in Korea (+09:00) is 03:00Z. A session written at 23:30Z on 2 October
+        // was written at 08:30 this morning there, so it belongs under Today, not Yesterday.
+        let korea = OffsetDateTime::parse("2026-10-03T12:00:00+09:00", &Rfc3339).unwrap();
+        let groups = vec![group(
+            "/a",
+            vec![
+                entry("this-morning", None, Some("2026-10-02T23:30:00Z")),
+                entry("yesterday-evening", None, Some("2026-10-02T10:00:00Z")),
+            ],
+        )];
+
+        let arranged = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Date), korea, None);
+
+        assert_eq!(headings(&arranged), ["Today", "Yesterday"]);
+        assert_eq!(titles(&arranged[0]), ["this-morning"]);
+        assert_eq!(titles(&arranged[1]), ["yesterday-evening"]);
+    }
+
+    #[test]
+    fn the_current_time_is_given_in_the_offset_it_is_asked_for() {
+        let korea = UtcOffset::from_hms(9, 0, 0).unwrap();
+
+        assert_eq!(now_in(Some(korea)).offset(), korea);
+        assert_eq!(now_in(None).offset(), UtcOffset::UTC);
     }
 }

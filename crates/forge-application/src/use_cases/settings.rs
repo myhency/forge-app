@@ -7,11 +7,14 @@ use forge_ports::{ConfigError, ConfigRepositoryPort};
 /// the current config first, so the `enabled_*` lists are never lost.
 pub struct SettingsUseCase {
     config: Arc<dyn ConfigRepositoryPort>,
+    // Every save reads the config, changes one part and writes it back; two at once would each
+    // start from the same file and the later write would drop the earlier change.
+    write_lock: tokio::sync::Mutex<()>,
 }
 
 impl SettingsUseCase {
     pub fn new(config: Arc<dyn ConfigRepositoryPort>) -> Self {
-        Self { config }
+        Self { config, write_lock: tokio::sync::Mutex::new(()) }
     }
 
     pub async fn load(&self) -> Result<AppConfig, ConfigError> {
@@ -24,6 +27,7 @@ impl SettingsUseCase {
     }
 
     pub async fn save_connection(&self, base_url: &str, api_key: &str) -> Result<AppConfig, ConfigError> {
+        let _saving = self.write_lock.lock().await;
         let mut config = self.load_for_update().await?;
         config.base_url = normalize_setting(base_url);
         config.api_key = normalize_setting(api_key);
@@ -32,14 +36,19 @@ impl SettingsUseCase {
     }
 
     pub async fn save_model(&self, model: &str) -> Result<AppConfig, ConfigError> {
+        let _saving = self.write_lock.lock().await;
         let mut config = self.load_for_update().await?;
         config.model = normalize_setting(model);
         self.config.save(&config).await?;
         Ok(config)
     }
 
+    /// Saves how the sidebar looks. Unlike the settings screen's saves, a config that cannot be read
+    /// is never replaced: this runs on a click in the sidebar, and replacing the file would drop the
+    /// API key without the person having asked for anything of the kind.
     pub async fn save_sidebar(&self, prefs: &SidebarPrefs) -> Result<AppConfig, ConfigError> {
-        let mut config = self.load_for_update().await?;
+        let _saving = self.write_lock.lock().await;
+        let mut config = self.config.load().await?;
         config.sidebar = prefs.clone();
         self.config.save(&config).await?;
         Ok(config)
@@ -209,5 +218,55 @@ mod tests {
         let saved = usecase.save_sidebar(&prefs).await.unwrap();
 
         assert_eq!(saved.sidebar, prefs);
+    }
+
+    #[tokio::test]
+    async fn save_sidebar_does_not_replace_a_config_it_cannot_read() {
+        let mut mock = MockConfigRepositoryPort::new();
+        mock.expect_load()
+            .times(1)
+            .returning(|| Err(ConfigError::ParseFailed("trailing comma".to_string())));
+        // No `expect_save`: a save would panic. A sidebar click must never overwrite a config with
+        // an API key in it just because the file could not be read this once.
+        let usecase = SettingsUseCase::new(Arc::new(mock));
+
+        let result = usecase.save_sidebar(&forge_domain::SidebarPrefs::default()).await;
+
+        assert!(matches!(result, Err(ConfigError::ParseFailed(_))));
+    }
+
+    // A config kept in memory whose load and save each yield once, so two saves really interleave.
+    struct SharedConfig {
+        stored: std::sync::Mutex<AppConfig>,
+    }
+
+    #[async_trait::async_trait]
+    impl forge_ports::ConfigRepositoryPort for SharedConfig {
+        async fn load(&self) -> Result<AppConfig, ConfigError> {
+            let snapshot = self.stored.lock().unwrap().clone();
+            tokio::task::yield_now().await;
+            Ok(snapshot)
+        }
+
+        async fn save(&self, config: &AppConfig) -> Result<(), ConfigError> {
+            tokio::task::yield_now().await;
+            *self.stored.lock().unwrap() = config.clone();
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn two_saves_at_once_both_survive() {
+        let shared = Arc::new(SharedConfig { stored: std::sync::Mutex::new(AppConfig::default()) });
+        let usecase = SettingsUseCase::new(shared.clone());
+        let prefs = forge_domain::SidebarPrefs { hidden: true, ..Default::default() };
+
+        let (model, sidebar) = tokio::join!(usecase.save_model("claude-opus-5-5"), usecase.save_sidebar(&prefs));
+        model.unwrap();
+        sidebar.unwrap();
+
+        let stored = shared.stored.lock().unwrap().clone();
+        assert_eq!(stored.model.as_deref(), Some("claude-opus-5-5"), "the model save was lost");
+        assert_eq!(stored.sidebar, prefs, "the sidebar save was lost");
     }
 }

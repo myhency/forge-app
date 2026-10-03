@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use dioxus::prelude::*;
 use forge_features::{use_settings, use_workspace, Active, EntryKey, Heading};
 use forge_shared::{Button, ButtonKind};
-use time::OffsetDateTime;
 
 use crate::filter_menu::SidebarFilterMenu;
 use crate::session_row::SessionRow;
@@ -79,7 +78,7 @@ pub fn Sidebar() -> Element {
     let workspace = use_workspace();
     let settings = use_settings();
     let prefs = workspace.prefs();
-    let groups = workspace.arranged_sidebar(OffsetDateTime::now_utc());
+    let groups = workspace.arranged_sidebar(forge_features::now_local());
     // Headings of folder groups are told apart when two folders share a name; rows in a date
     // list show their folder's plain name.
     let paths: Vec<PathBuf> = groups

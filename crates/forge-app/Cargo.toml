@@ -13,3 +13,4 @@ forge-features = { path = "../forge-features" }
 forge-pages = { path = "../forge-pages" }
 forge-shared = { path = "../forge-shared" }
 dioxus = { version = "=0.7.10", features = ["desktop"] }
+time = { version = "0.3.55", features = ["local-offset"] }

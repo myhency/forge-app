@@ -17,7 +17,7 @@ mod transcript_views;
 mod workspace;
 
 pub use approve_permission::PermissionActions;
-pub use arrange::{arrange, arranged_open_order, folder_group_id, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
+pub use arrange::{arrange, arranged_open_order, folder_group_id, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use command_box::CommandTextArea;
 pub use filter_menu::{
     current_index, filter_key, group_label, sort_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
