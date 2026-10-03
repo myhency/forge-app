@@ -8,6 +8,10 @@ use forge_ports::{ChangedFile, GitError};
 
 use crate::panel_frame::PanelFrame;
 
+// A repository can have thousands of changed files (an untracked `node_modules`); only this many
+// rows are drawn.
+const ROW_LIMIT: usize = 500;
+
 /// The files git says changed in the session's repository, with the diff of the one picked. Read
 /// only. It reloads when "Refresh" is pressed and whenever a tool call of the session finishes.
 #[component]
@@ -18,15 +22,26 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let mut list_open = use_signal(|| true);
     let mut status = use_signal(|| None::<Result<Vec<ChangedFile>, GitError>>);
     let mut diff = use_signal(|| None::<(String, Result<String, GitError>)>);
+    // The count changes only when a tool call finishes; reading the session's view directly in an
+    // effect would rerun it on every streamed chunk of a reply.
+    let finished = use_memo(move || workspace.finished_tool_calls(id));
+    // Each run takes a ticket; a result is kept only if no later run started meanwhile.
+    let mut status_ticket = use_signal(|| 0u64);
+    let mut diff_ticket = use_signal(|| 0u64);
 
     {
         let cwd = cwd.clone();
         use_effect(move || {
             let _ = refresh();
-            let _ = workspace.finished_tool_calls(id);
+            let _ = finished();
+            let ticket = status_ticket.peek().wrapping_add(1);
+            status_ticket.set(ticket);
             let (git, cwd) = (workspace.git(), cwd.clone());
             spawn(async move {
                 let Some(result) = run_blocking(move || git.status(&cwd)).await else { return };
+                if *status_ticket.peek() != ticket {
+                    return;
+                }
                 if let Ok(files) = &result {
                     // Keep the picked file while it is still changed, else pick the first one.
                     let keep = selected.peek().as_ref().is_some_and(|path| files.iter().any(|file| &file.path == path));
@@ -42,7 +57,9 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         let cwd = cwd.clone();
         use_effect(move || {
             let _ = refresh();
-            let _ = workspace.finished_tool_calls(id);
+            let _ = finished();
+            let ticket = diff_ticket.peek().wrapping_add(1);
+            diff_ticket.set(ticket);
             let Some(path) = selected() else {
                 diff.set(None);
                 return;
@@ -51,6 +68,9 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             spawn(async move {
                 let shown = path.clone();
                 let Some(result) = run_blocking(move || git.diff(&cwd, &path)).await else { return };
+                if *diff_ticket.peek() != ticket {
+                    return;
+                }
                 diff.set(Some((shown, result)));
             });
         });
@@ -83,6 +103,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         Some(Ok(files)) if files.is_empty() => rsx! { div { class: "dock-note", "No changes to show" } },
         Some(Ok(files)) => {
             let picked = selected();
+            let hidden = files.len().saturating_sub(ROW_LIMIT);
             let shown = match diff() {
                 Some((path, Ok(text))) if Some(&path) == picked.as_ref() => {
                     let parsed = parse_unified_diff(&path, &text);
@@ -99,7 +120,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 div { class: "changes-body",
                     if list_open() {
                         ul { class: "changes-list",
-                            for file in files.iter() {
+                            for file in files.iter().take(ROW_LIMIT) {
                                 {
                                     let path = file.path.clone();
                                     let letter = file.status.letter();
@@ -124,6 +145,9 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                                         }
                                     }
                                 }
+                            }
+                            if hidden > 0 {
+                                li { class: "dock-note", "… {hidden} more files" }
                             }
                         }
                     }

@@ -4,6 +4,9 @@ use syntect::html::{ClassStyle, ClassedHTMLGenerator};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 
+/// A line longer than this makes `code_html` skip highlighting the whole text.
+pub(crate) const MAX_HIGHLIGHT_LINE: usize = 2000;
+
 const CLASS_STYLE: ClassStyle = ClassStyle::SpacedPrefixed { prefix: "hl-" };
 
 // Loading the bundled syntaxes takes a moment, so it happens once, on the first code block.
@@ -42,6 +45,10 @@ pub(crate) fn escape_html(text: &str) -> String {
 /// The code as HTML for a `<pre>`: highlighted for the language when one matches, else only
 /// escaped.
 pub fn code_html(language: &str, code: &str) -> String {
+    // Highlighting a minified file (one line of many thousands of characters) takes seconds.
+    if code.lines().any(|line| line.len() > MAX_HIGHLIGHT_LINE) {
+        return escape_html(code);
+    }
     highlight_code(language, code).unwrap_or_else(|| escape_html(code))
 }
 
@@ -106,5 +113,14 @@ mod tests {
         assert_eq!(language_of("Makefile"), "");
         assert_eq!(language_of("dir.d/file"), "");
         assert_eq!(language_of(".gitignore"), "");
+    }
+
+    #[test]
+    fn code_with_a_very_long_line_is_only_escaped() {
+        let long = format!("let a = \"{}\";\n", "x".repeat(MAX_HIGHLIGHT_LINE + 1));
+        let html = code_html("rs", &long);
+        assert!(!html.contains("<span"), "a minified line is not highlighted");
+        assert!(html.contains("&quot;"));
+        assert!(code_html("rs", "let a = 1;\n").contains("<span"), "short lines still are");
     }
 }

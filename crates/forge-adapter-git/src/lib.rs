@@ -49,6 +49,8 @@ impl GitCli {
             .current_dir(cwd)
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("LC_ALL", "C")
+            // Paths are names, not patterns: `app/[id]/page.tsx` is one file.
+            .env("GIT_LITERAL_PATHSPECS", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -373,5 +375,21 @@ mod tests {
         let error = GitCli::new().status(&gone).unwrap_err();
         assert!(!error.to_string().contains("not installed"), "{error}");
         assert!(error.to_string().contains("gone"), "{error}");
+    }
+
+    #[test]
+    fn a_path_with_glob_characters_is_a_name_not_a_pattern() {
+        let dir = repo();
+        fs::create_dir_all(dir.path().join("app/[id]")).unwrap();
+        fs::create_dir_all(dir.path().join("app/i")).unwrap();
+        fs::write(dir.path().join("app/[id]/page.tsx"), "one\n").unwrap();
+        fs::write(dir.path().join("app/i/page.tsx"), "two\n").unwrap();
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-q", "-m", "pages"]);
+        fs::write(dir.path().join("app/[id]/page.tsx"), "ONE\n").unwrap();
+        fs::write(dir.path().join("app/i/page.tsx"), "TWO\n").unwrap();
+        let text = GitCli::new().diff(dir.path(), "app/[id]/page.tsx").unwrap();
+        assert!(text.contains("+ONE"), "{text}");
+        assert!(!text.contains("TWO"), "the other file leaked into the diff: {text}");
     }
 }

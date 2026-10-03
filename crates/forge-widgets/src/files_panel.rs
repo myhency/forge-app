@@ -20,7 +20,10 @@ async fn load_dir(files: Arc<dyn FilesPort>, root: PathBuf, dir: String, mut tre
     let key = dir.clone();
     match run_blocking(move || files.list(&root, &dir)).await {
         Some(Ok(entries)) => tree.write().set_children(&key, entries),
-        Some(Err(error)) => problem.set(Some(error.to_string())),
+        // Only the root failing leaves nothing to show. A folder that cannot be read (a link out
+        // of the session folder, no permission) just shows as empty.
+        Some(Err(error)) if key.is_empty() => problem.set(Some(error.to_string())),
+        Some(Err(_)) => tree.write().set_children(&key, Vec::new()),
         None => {}
     }
 }
@@ -173,22 +176,30 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         }
     };
 
+    // Highlighting runs when a file is loaded, not on every render (typing in the filter renders).
+    let shown = use_memo(move || match (opened(), content()) {
+        (Some(path), Some(Ok(FileContent::Text(text)))) => {
+            let language = if text.len() > HIGHLIGHT_LIMIT { "" } else { language_of(&path) };
+            let numbers = (1..=text.lines().count().max(1)).map(|n| n.to_string()).collect::<Vec<_>>().join("\n");
+            let html = code_html(language, &text);
+            Some((path, html, numbers))
+        }
+        _ => None,
+    });
     let viewer = match (opened(), content()) {
         (None, _) => rsx! { div { class: "dock-note", "Pick a file" } },
         (Some(_), None) => rsx! { div { class: "dock-note", "Loading…" } },
         (Some(_), Some(Err(error))) => rsx! { div { class: "dock-note error", "{error}" } },
         (Some(_), Some(Ok(FileContent::Binary | FileContent::TooLarge))) => rsx! { div { class: "dock-note", "Cannot show this file" } },
-        (Some(path), Some(Ok(FileContent::Text(text)))) => {
-            let language = if text.len() > HIGHLIGHT_LIMIT { "" } else { language_of(&path) };
-            let html = code_html(language, &text);
-            let numbers = (1..=text.lines().count().max(1)).map(|n| n.to_string()).collect::<Vec<_>>().join("\n");
-            rsx! {
+        (Some(_), Some(Ok(FileContent::Text(_)))) => match shown() {
+            Some((path, html, numbers)) => rsx! {
                 div { class: "file-viewer", "aria-label": "{path}",
                     pre { class: "file-gutter", "{numbers}" }
                     pre { class: "file-code", dangerous_inner_html: "{html}" }
                 }
-            }
-        }
+            },
+            None => rsx! { div { class: "dock-note", "Loading…" } },
+        },
     };
 
     rsx! {
