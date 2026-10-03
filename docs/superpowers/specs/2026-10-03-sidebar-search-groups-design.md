@@ -111,3 +111,22 @@ A toggle button at the left of the top bar hides the sidebar. No keyboard shortc
 ## Not verified in the real desktop app (to state in the as-built notes)
 
 Enter on a result, the `...` on a result, the "작성" mode, the palette's shortcut, the empty and no-match views, the exact Code-mode date buckets, whether the sidebar resizes. Each is a choice made here, not a copy.
+
+## As built (2026-10-03)
+
+Built as specified: the filter menu (sort by Name / Created / Activity, group by Folder / Date / None, show empty groups), collapsible groups that keep the open session's row, the search palette (title and message text of every session, a quote with the match in bold, project and date, ⌘K, Up / Down / Enter / Escape), hide and resize of the sidebar, all kept in `AppConfig.sidebar` (an old config loads unchanged, an unknown `sort_by` / `group_by` reads as the default, a width outside 200 to 480 is clamped when drawn). `SessionSummary` and `SidebarEntry` got `created_at`; `SessionRepositoryPort` got `search_sessions`. 621 tests pass (561 before the plan).
+
+Differences from this spec, decided while planning or building:
+
+- The filter menu has no number keys: the real menu shows none.
+- A row in a date or no-grouping list shows the project name as its subtitle and no age: the heading says when, and "project · age" squeezed titles to about eight letters (seen in the harness).
+- A session that is open but not yet on disk is searched by its title only (its title already is its first message). The spec said its message text too.
+- The palette runs the query while an input method is composing; the 200 ms wait and the cancel make this harmless. The spec said it would not.
+- Date buckets are cut on UTC calendar days (the `time` crate has no sound local offset). The bucket names (Today, Yesterday, Previous 7 days, Previous 30 days, Older) are a choice: the real app's were not seen.
+- `Workspace::open_past` runs in the root scope (`spawn_forever`). It used to run in its caller's scope, which was fine while only the sidebar called it. The palette closes itself the moment it opens a session, and that cancelled the task before the session opened (found in the harness, fixed there; it cannot be a unit test because it needs a Dioxus runtime).
+
+Not copied from the real app, because it was never seen (each is a choice made here): Enter and `...` on a result, the "작성" mode, the shortcut that opens the palette (`⌘K`), the empty and no-match views, the exact date buckets of Code mode, whether the sidebar resizes. The filter icon sits beside "+ New session", not in a group heading, because date and no-grouping lists have no heading to hold it.
+
+Checked in the running app (the harness, a fake Claude home, nothing sent): the folder view; collapse and expand, with the open session's row kept; the filter menu by mouse and by keys (Group by Date, Group by None); the date buckets; the palette opened by click and by ⌘K; a body-only match (`fail` found "Why does login fail?" in a session titled "Fix the login bug", the word in bold); Enter opens the session and closes the palette; Escape closes it; typing `fail`, deleting and typing `zzz` ends on "No sessions match" (no stale rows); Korean composing input (`ㄹ마ㅣ` typed by key codes) does not break anything and matches nothing, as it should; hide and show; a drag to resize (width 375 saved and kept); every setting kept after a restart.
+
+Not checked: a Korean title found by a Korean query (the fixture has no Korean text), dark mode, ⌘K while the settings overlay is open or the sidebar is hidden, how long a search takes over a large real `~/.claude` (nothing was measured; the scan reads every transcript line by line and stops at the limit of 50 hits, there is no index).

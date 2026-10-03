@@ -65,7 +65,7 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | --- | --- | --- | --- |
 | 15 | Session menu | SES-01..06, SES-09 | Highest value, small; Forge already has rename and delete |
 | 16 | Composer controls | CMP-03, CMP-04, CMP-05 | Model, effort and mode are changed often; needs sidecar and SDK facts first |
-| 17 | Sidebar search and groups | SES-07, SES-08, SES-11 | Grows with the number of sessions |
+| 17 | Sidebar search and groups (built) | SES-07, SES-08, SES-11 | Grows with the number of sessions |
 | 18 | Composer `+` menu | CMP-01, CMP-02, CMP-06 | Attachments are the largest piece; split if needed |
 | 19 | Terminal panel | PNL-01, PNL-06 | First right-hand dock; later panels reuse it |
 | 20 | Changes, files, preview panels | PNL-02, PNL-03, PNL-04 | Needs observation round 2 first |

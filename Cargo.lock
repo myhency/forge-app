@@ -1557,6 +1557,8 @@ dependencies = [
  "forge-ports",
  "forge-shared",
  "serde_json",
+ "time",
+ "tokio",
 ]
 
 [[package]]
@@ -1564,6 +1566,7 @@ name = "forge-pages"
 version = "0.1.0"
 dependencies = [
  "dioxus",
+ "forge-domain",
  "forge-features",
  "forge-widgets",
 ]
@@ -1594,6 +1597,7 @@ version = "0.1.0"
 dependencies = [
  "dioxus",
  "forge-application",
+ "forge-domain",
  "forge-entities",
  "forge-features",
  "forge-shared",

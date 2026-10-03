@@ -14,11 +14,12 @@ Forge status was read from `crates/` on 2026-10-03.
 | SES-04 | Output style (submenu): only "새 스타일..." | seen | none | S | won't? | No built-in styles listed. What "새 스타일..." does was not tried. |
 | SES-05 | Open in (submenu): 새 창 (new window), 클라우드 (run in the cloud) | seen | none | S | won't? | Not editors or Finder. Cloud runs are out of scope; a new window needs multi-window. The user decides. |
 | SES-06 | Single-key shortcuts in the session menu (R rename, F fork, A archive, D delete) | seen | partial | S | Plan 15 (built: R, D) | F and A wait for SES-01 and SES-02. Forge matches the physical key, so R and D work with a Korean input method on. |
-| SES-07 | Sidebar search | partly | none | M | - | Search box seen at the top of the sidebar; what it searches (titles, text) and how results look were not seen. |
-| SES-08 | Project group header tools: `+` new session in that project, filter/sort icon, collapse chevron | partly | partial | M | - | Header, `+` and filter icon seen; the filter's contents were not. Forge has a new-session panel (spec §22). |
+| SES-07 | Sidebar search | seen | partial | M | Plan 17 (built: sessions only) | A palette in the middle of the window over a dimmed app (not a filter of the list): tabs 전체, Artifacts, 세션, 코드, 프로젝트, 예약됨; rows with a kind icon, the title and a quote of the matching text (match in bold) and a relative date. Forge: title and message text of every session, quote, project, date, ⌘K, Up/Down/Enter/Escape; no tabs. Not seen: what Enter and `...` on a row do, the "작성" mode, the shortcut, the empty and no-match views. |
+| SES-08 | Project group header tools: `+` new session in that project, filter/sort icon, collapse chevron | seen | partial | M | Plan 17 (built: sort, group, empty groups, collapse) | Filter menu seen (observations round 3): 상태, 환경, 그룹화 기준 (날짜, 폴더, 상태, 사용자 지정 그룹, 없음), 정렬 기준 (이름, 생성 날짜, 최근 활동), 빈 그룹 표시, PR 상태 표시. Forge built sort (Name / Created / Activity), group by (Folder / Date / None), show empty groups, and the collapse chevron. Not built: status (needs SES-02), environment, PR state, custom groups. Forge puts the filter icon beside "+ New session", not in a group heading. |
 | SES-09 | Recovery screen for a session whose transcript is missing ("CLI 세션 가져오기", archive, delete) and a bar for a missing folder ("폴더 선택", archive) | seen | partial | M | won't (Plan 15) | Forge opens such a session view-only (spec §23). The import action was not tried. Plan 15: the missing-transcript screen cannot occur in Forge, which lists sessions from the transcripts on disk; "폴더 선택" is unchecked. |
 | SES-10 | Edit the sidebar ("사이드바 편집…", under "더보기") | partly | none | S | - | Only the menu item seen. Probably chooses which items show. |
-| SES-11 | Sidebar width, collapse button, back/forward history buttons in the title bar | seen | none | S | - | Collapse and history buttons seen; whether the sidebar resizes was not tried. |
+| SES-11 | Sidebar width, collapse button, back/forward history buttons in the title bar | seen | partial | S | Plan 17 (built: collapse, resize) | Collapse and resize built (a drag handle; the real app was not checked for resizing). Back and forward are SES-12. |
+| SES-12 | Back and forward history buttons in the title bar | seen | none | M | - | Left out of Plan 17 (SES-11); needs a navigation history model. |
 
 ## CMP: composer (the input box)
 
@@ -68,7 +69,8 @@ Forge status was read from `crates/` on 2026-10-03.
 | OBS-04 | Changes, files and preview panels, with a real folder | PNL-02..04 |
 | OBS-05 | Settings window and the keyboard shortcut list | shortcuts, settings parity |
 | OBS-06 | Split panes or several sessions at once (the docs describe them; not seen in this window) | spec §7 "multiple sessions" |
-| OBS-07 | Sidebar filter and "사이드바 편집…" contents, sidebar search results | SES-07, SES-08, SES-10 |
+| OBS-07 | (partly done in Plan 17: filter menu and search results seen) Sidebar filter menu, "사이드바 편집…" contents, sidebar search results | SES-07, SES-08, SES-10 |
+| OBS-08 | The search palette: what Enter and `...` do on a row, the "작성" mode, the shortcut that opens it, the empty and no-match views, and "사이드바 편집…" | SES-07, SES-10 |
 
 ## OTH: carried over from earlier plans
 
