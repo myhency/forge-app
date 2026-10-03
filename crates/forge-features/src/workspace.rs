@@ -329,6 +329,30 @@ impl Workspace {
         });
     }
 
+    /// Forks a session (open or not): the copy is made, the project's list is re-read and the copy is
+    /// opened. A failure shows as a notice and nothing is opened.
+    pub fn fork_session(&self, project: PathBuf, session: SessionId, title: String) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let mut past = self.past;
+        // Root scope: a disk mutation must finish even if the row that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
+            let new_id = match services.registry.fork(&project, &session, &title).await {
+                Ok(id) => id,
+                Err(error) => return this.report(error.to_string()),
+            };
+            match services.sessions.list_sessions(&project).await {
+                Ok(sessions) => replace_project_sessions(&mut past.write(), &project, sessions),
+                Err(error) => return this.report(format!("{}: {error}", project.display())),
+            }
+            let summary = past.peek().iter().find(|(p, _)| p.path == project).map(|(p, _)| p.clone());
+            match summary {
+                Some(summary) => this.open_past(summary, new_id),
+                None => this.report(format!("{}: the project is no longer listed", project.display())),
+            }
+        });
+    }
+
     /// Whether a folder dialog is open; the button is disabled meanwhile so only one can be.
     pub fn picking_folder(&self) -> bool {
         *self.picking.read()

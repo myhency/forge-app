@@ -45,6 +45,18 @@ pub fn normalize_title(raw: &str) -> Result<String, ManageSessionError> {
     Ok(title.to_string())
 }
 
+const FORK_SUFFIX: &str = " (fork)";
+
+/// The title of a fork of a session called `title`: the title and " (fork)", cut so the whole stays
+/// within the title limit. A blank title gives "Session (fork)".
+pub fn fork_title(title: &str) -> String {
+    let base = title.trim();
+    let base = if base.is_empty() { "Session" } else { base };
+    let room = MAX_TITLE_CHARS - FORK_SUFFIX.chars().count();
+    let base: String = base.chars().take(room).collect();
+    format!("{base}{FORK_SUFFIX}")
+}
+
 pub struct OpenOutcome {
     pub handle: LiveSessionHandle,
     /// `true` when the session was already open and `handle` is the existing one.
@@ -184,6 +196,17 @@ impl SessionRegistry {
         }
         self.sessions.delete_session(project_path, session_id).await?;
         Ok(())
+    }
+
+    /// Copies a past or open session into a new one called "<title> (fork)" and returns the new id.
+    /// The source is untouched; an open session's copy holds what is on disk now.
+    pub async fn fork(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        title: &str,
+    ) -> Result<SessionId, ManageSessionError> {
+        Ok(self.sessions.fork_session(project_path, session_id, &fork_title(title)).await?)
     }
 
     fn find_open(&self, session_id: &SessionId) -> Option<LiveSessionHandle> {
@@ -562,6 +585,42 @@ mod tests {
     fn the_limit_applies_after_trimming() {
         let padded = format!("  {}  ", "a".repeat(200));
         assert_eq!(normalize_title(&padded).unwrap().chars().count(), 200);
+    }
+
+    #[test]
+    fn the_fork_title_adds_the_suffix_and_stays_within_the_limit() {
+        assert_eq!(fork_title("Mine"), "Mine (fork)");
+        assert_eq!(fork_title("  Mine  "), "Mine (fork)");
+        assert_eq!(fork_title("   "), "Session (fork)");
+        let long = fork_title(&"a".repeat(300));
+        assert_eq!(long.chars().count(), 200);
+        assert!(long.ends_with(" (fork)"));
+    }
+
+    #[tokio::test]
+    async fn fork_asks_the_repository_for_a_copy_with_the_fork_title() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository
+            .expect_fork_session()
+            .withf(|p: &Path, id: &SessionId, title: &str| p == Path::new("/work/a") && id.0 == "claude-1" && title == "Mine (fork)")
+            .times(1)
+            .returning(|_, _, _| Ok(SessionId("claude-2".to_string())));
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+
+        let new_id = registry.fork(Path::new("/work/a"), &SessionId("claude-1".to_string()), "Mine").await.unwrap();
+
+        assert_eq!(new_id.0, "claude-2");
+    }
+
+    #[tokio::test]
+    async fn a_failed_fork_is_an_error_from_the_repository() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository.expect_fork_session().returning(|_, _, _| Err(SessionRepositoryError::ForkFailed("disk full".to_string())));
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+
+        let result = registry.fork(Path::new("/work/a"), &SessionId("claude-1".to_string()), "Mine").await;
+
+        assert!(matches!(result, Err(ManageSessionError::Repository(SessionRepositoryError::ForkFailed(_)))));
     }
 
     #[tokio::test]

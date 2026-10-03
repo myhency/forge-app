@@ -49,6 +49,7 @@ pub enum DeleteAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RowActions {
     pub can_rename: bool,
+    pub can_fork: bool,
     pub delete: DeleteAction,
 }
 
@@ -56,9 +57,9 @@ impl SidebarEntry {
     /// What the row's menu offers. A session with no Claude id has no transcript to rename or delete.
     pub fn actions(&self) -> RowActions {
         match (&self.key, &self.session_id) {
-            (_, None) => RowActions { can_rename: false, delete: DeleteAction::Unavailable },
-            (EntryKey::Live(_), Some(_)) => RowActions { can_rename: true, delete: DeleteAction::WhileOpen },
-            (EntryKey::Past { .. }, Some(_)) => RowActions { can_rename: true, delete: DeleteAction::Allowed },
+            (_, None) => RowActions { can_rename: false, can_fork: false, delete: DeleteAction::Unavailable },
+            (EntryKey::Live(_), Some(_)) => RowActions { can_rename: true, can_fork: true, delete: DeleteAction::WhileOpen },
+            (EntryKey::Past { .. }, Some(_)) => RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Allowed },
         }
     }
 }
@@ -67,10 +68,11 @@ impl SidebarEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuKeyAction {
     Rename,
+    Fork,
     Delete,
 }
 
-/// The single letters the menu shows: R renames, D deletes (Claude Code desktop's menu keys). A key
+/// The single letters the menu shows: R renames, F forks, D deletes (Claude Code desktop's menu keys). A key
 /// does what its item does, so a key for a disabled item does nothing. Any modifier turns the key
 /// into something else (⌘R reloads), so it is left alone.
 ///
@@ -82,6 +84,7 @@ pub fn menu_key_action(code: &str, modified: bool, actions: RowActions) -> Optio
     }
     match code {
         "KeyR" if actions.can_rename => Some(MenuKeyAction::Rename),
+        "KeyF" if actions.can_fork => Some(MenuKeyAction::Fork),
         "KeyD" if actions.delete == DeleteAction::Allowed => Some(MenuKeyAction::Delete),
         _ => None,
     }
@@ -338,7 +341,8 @@ mod tests {
     }
 
     fn actions(can_rename: bool, delete: DeleteAction) -> RowActions {
-        RowActions { can_rename, delete }
+        // A session that can be renamed has a Claude id, and so can be forked.
+        RowActions { can_rename, can_fork: can_rename, delete }
     }
 
     #[test]
@@ -346,6 +350,15 @@ mod tests {
         let all = actions(true, DeleteAction::Allowed);
         assert_eq!(menu_key_action("KeyR", false, all), Some(MenuKeyAction::Rename));
         assert_eq!(menu_key_action("KeyD", false, all), Some(MenuKeyAction::Delete));
+    }
+
+    #[test]
+    fn the_f_key_forks_when_the_session_has_an_id() {
+        let all = actions(true, DeleteAction::Allowed);
+        assert_eq!(menu_key_action("KeyF", false, all), Some(MenuKeyAction::Fork));
+        assert_eq!(menu_key_action("KeyF", false, actions(true, DeleteAction::WhileOpen)), Some(MenuKeyAction::Fork), "an open session can be forked");
+        assert_eq!(menu_key_action("KeyF", false, actions(false, DeleteAction::Unavailable)), None, "no Claude id yet");
+        assert_eq!(menu_key_action("KeyF", true, all), None, "⌘F");
     }
 
     #[test]
@@ -359,7 +372,6 @@ mod tests {
     fn a_modified_key_and_other_keys_do_nothing() {
         let all = actions(true, DeleteAction::Allowed);
         assert_eq!(menu_key_action("KeyR", true, all), None, "⌘R");
-        assert_eq!(menu_key_action("KeyF", false, all), None, "fork is not built");
         assert_eq!(menu_key_action("KeyA", false, all), None, "archive is not built");
         assert_eq!(menu_key_action("Enter", false, all), None);
     }
@@ -367,19 +379,19 @@ mod tests {
     #[test]
     fn a_past_session_can_be_renamed_and_deleted() {
         let past = entry(EntryKey::Past { project: PathBuf::from("/w"), session: SessionId("s".into()) }, Some("s"));
-        assert_eq!(past.actions(), RowActions { can_rename: true, delete: DeleteAction::Allowed });
+        assert_eq!(past.actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Allowed });
     }
 
     #[test]
     fn an_open_session_can_be_renamed_but_not_deleted() {
         let open = entry(EntryKey::Live(LiveSessionId(1)), Some("s"));
-        assert_eq!(open.actions(), RowActions { can_rename: true, delete: DeleteAction::WhileOpen });
+        assert_eq!(open.actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::WhileOpen });
     }
 
     #[test]
     fn an_open_session_without_a_claude_id_has_no_actions() {
         let fresh = entry(EntryKey::Live(LiveSessionId(1)), None);
-        assert_eq!(fresh.actions(), RowActions { can_rename: false, delete: DeleteAction::Unavailable });
+        assert_eq!(fresh.actions(), RowActions { can_rename: false, can_fork: false, delete: DeleteAction::Unavailable });
     }
 
     #[test]
