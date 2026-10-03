@@ -39,6 +39,12 @@ pub enum SidecarEvent {
     ContextUsage { total_tokens: u64, max_tokens: u64 },
     /// The slash commands the SDK reports; each event replaces the earlier list.
     CommandsAvailable { commands: Vec<SlashCommand> },
+    /// The SDK accepted a `set_permission_mode`.
+    PermissionModeSet { mode: PermissionMode },
+    /// The SDK accepted a `set_model`; `None` is its default model.
+    ModelSet { model: Option<String> },
+    /// The SDK refused a `set_permission_mode` or `set_model`. The session goes on.
+    SettingFailed { message: String },
     Error { message: String },
     SessionEnded,
 }
@@ -64,6 +70,11 @@ pub trait SidecarPort: Send + Sync {
         decision: PermissionDecision,
     ) -> Result<(), SidecarError>;
     async fn interrupt(&self) -> Result<(), SidecarError>;
+    /// Asks for a mode change in the running session. The answer comes back as an event.
+    async fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), SidecarError>;
+    /// Asks for a model change in the running session (`None`: the default). The answer comes back
+    /// as an event.
+    async fn set_model(&self, model: Option<String>) -> Result<(), SidecarError>;
     async fn shutdown(&self) -> Result<(), SidecarError>;
     async fn next_event(&self) -> Option<SidecarEvent>;
 }
@@ -110,6 +121,19 @@ mod tests {
     fn turn_complete_with_no_usage_is_still_a_turn_complete() {
         let event: SidecarEvent = serde_json::from_str(r#"{"type":"turn_complete","usage":{}}"#).unwrap();
         assert_eq!(event, SidecarEvent::TurnComplete { usage: Default::default() });
+    }
+
+    #[test]
+    fn the_answers_to_a_mode_or_model_change_parse() {
+        let mode: SidecarEvent = serde_json::from_str(r#"{"type":"permission_mode_set","mode":"accept_edits"}"#).unwrap();
+        let model: SidecarEvent = serde_json::from_str(r#"{"type":"model_set","model":"claude-opus-5-5"}"#).unwrap();
+        let default: SidecarEvent = serde_json::from_str(r#"{"type":"model_set","model":null}"#).unwrap();
+        let failed: SidecarEvent = serde_json::from_str(r#"{"type":"setting_failed","message":"nope"}"#).unwrap();
+
+        assert_eq!(mode, SidecarEvent::PermissionModeSet { mode: PermissionMode::AcceptEdits });
+        assert_eq!(model, SidecarEvent::ModelSet { model: Some("claude-opus-5-5".to_string()) });
+        assert_eq!(default, SidecarEvent::ModelSet { model: None });
+        assert_eq!(failed, SidecarEvent::SettingFailed { message: "nope".to_string() });
     }
 
     #[test]

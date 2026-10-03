@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_domain::PermissionDecision;
+use forge_domain::{PermissionDecision, PermissionMode};
 use forge_ports::{SidecarError, SidecarEvent, SidecarPort, StartSessionParams};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -141,6 +141,16 @@ impl SidecarPort for SidecarProcess {
     async fn interrupt(&self) -> Result<(), SidecarError> {
         let id = self.next_id();
         self.send_command(SidecarCommand::Interrupt { id })
+    }
+
+    async fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::SetPermissionMode { id, mode: mode.into() })
+    }
+
+    async fn set_model(&self, model: Option<String>) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::SetModel { id, model })
     }
 
     async fn shutdown(&self) -> Result<(), SidecarError> {

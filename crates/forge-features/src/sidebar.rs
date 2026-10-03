@@ -427,6 +427,7 @@ mod tests {
                 usage: forge_domain::SessionUsage::default(),
             },
             claude_session_id: None,
+            model: None,
             phase,
             pending_permissions: VecDeque::from(vec![request; pending]),
             last_error: None,

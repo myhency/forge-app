@@ -19,6 +19,9 @@ pub enum SidecarCommand {
     SendMessage { id: String, text: String },
     PermissionResponse { id: String, permission_request_id: String, decision: WireDecision },
     Interrupt { id: String },
+    SetPermissionMode { id: String, mode: WireMode },
+    /// `None` is the SDK's default model.
+    SetModel { id: String, model: Option<String> },
     Shutdown { id: String },
 }
 
@@ -147,6 +150,31 @@ mod tests {
         assert_eq!(json["skills"], serde_json::json!({"pdf": "/skills/pdf"}));
         assert_eq!(json["plugins"], serde_json::json!(["/plugins/hud"]));
         assert_eq!(json["mcp_servers"], serde_json::json!({"files": {"command": "npx", "args": ["files-mcp"]}}));
+    }
+
+    #[test]
+    fn set_permission_mode_command_serializes_with_the_expected_shape() {
+        let command = SidecarCommand::SetPermissionMode { id: "3".to_string(), mode: PermissionMode::Auto.into() };
+
+        assert_eq!(
+            serde_json::to_value(&command).unwrap(),
+            serde_json::json!({"type": "set_permission_mode", "id": "3", "mode": "auto"})
+        );
+    }
+
+    #[test]
+    fn set_model_command_serializes_a_model_and_the_default_as_null() {
+        let named = SidecarCommand::SetModel { id: "4".to_string(), model: Some("claude-opus-5-5".to_string()) };
+        let default = SidecarCommand::SetModel { id: "5".to_string(), model: None };
+
+        assert_eq!(
+            serde_json::to_value(&named).unwrap(),
+            serde_json::json!({"type": "set_model", "id": "4", "model": "claude-opus-5-5"})
+        );
+        assert_eq!(
+            serde_json::to_value(&default).unwrap(),
+            serde_json::json!({"type": "set_model", "id": "5", "model": null})
+        );
     }
 
     #[test]

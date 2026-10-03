@@ -773,6 +773,119 @@ describe("SidecarSession", () => {
     expect(capturedOptions.thinking).toEqual({ type: "adaptive", display: "summarized" });
   });
 
+  describe("changing the mode and the model of a running session", () => {
+    // A query that stays open until `stop()`, and records what the session asked of it.
+    function openQuery(extra: Record<string, unknown> = {}) {
+      let stopped = false;
+      const calls: { mode?: unknown[]; model?: unknown[] } = { mode: [], model: [] };
+      const queryFn: QueryFn = () => {
+        const gen = (async function* () {
+          while (!stopped) {
+            await new Promise((resolve) => setTimeout(resolve, 1));
+            yield { type: "noop" };
+          }
+        })();
+        return Object.assign(
+          gen,
+          {
+            interrupt: async () => undefined,
+            setPermissionMode: async (mode: unknown) => void calls.mode!.push(mode),
+            setModel: async (model: unknown) => void calls.model!.push(model),
+          },
+          extra,
+        );
+      };
+      return { queryFn, calls, stop: () => (stopped = true) };
+    }
+
+    async function running(open: ReturnType<typeof openQuery>) {
+      const events: SidecarEvent[] = [];
+      const session = new SidecarSession(open.queryFn, (e) => events.push(e));
+      const started = session.handle(startCommand);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { session, events, finish: async () => (open.stop(), await started) };
+    }
+
+    it("sets the SDK permission mode and says so", async () => {
+      const open = openQuery();
+      const { session, events, finish } = await running(open);
+
+      await session.handle({ type: "set_permission_mode", id: "2", mode: "accept_edits" });
+      await session.handle({ type: "set_permission_mode", id: "3", mode: "auto" });
+      await finish();
+
+      expect(open.calls.mode).toEqual(["acceptEdits", "auto"]);
+      expect(events).toContainEqual({ type: "permission_mode_set", mode: "accept_edits" });
+      expect(events).toContainEqual({ type: "permission_mode_set", mode: "auto" });
+    });
+
+    it("sets the model, and null means the SDK default", async () => {
+      const open = openQuery();
+      const { session, events, finish } = await running(open);
+
+      await session.handle({ type: "set_model", id: "2", model: "claude-opus-5-5" });
+      await session.handle({ type: "set_model", id: "3", model: null });
+      await finish();
+
+      expect(open.calls.model).toEqual(["claude-opus-5-5", undefined]);
+      expect(events).toContainEqual({ type: "model_set", model: "claude-opus-5-5" });
+      expect(events).toContainEqual({ type: "model_set", model: null });
+    });
+
+    it("reports a refusal as setting_failed and not as a change", async () => {
+      const open = openQuery({
+        setPermissionMode: async () => {
+          throw new Error("auto mode is not available for this model");
+        },
+        setModel: async () => {
+          throw new Error("unknown model");
+        },
+      });
+      const { session, events, finish } = await running(open);
+
+      await session.handle({ type: "set_permission_mode", id: "2", mode: "auto" });
+      await session.handle({ type: "set_model", id: "3", model: "nope" });
+      await finish();
+
+      expect(events).toContainEqual({ type: "setting_failed", message: "auto mode is not available for this model" });
+      expect(events).toContainEqual({ type: "setting_failed", message: "unknown model" });
+      expect(events.some((e) => e.type === "permission_mode_set" || e.type === "model_set")).toBe(false);
+      expect(events.some((e) => e.type === "error")).toBe(false);
+    });
+
+    it("says setting_failed when no session is running", async () => {
+      const events: SidecarEvent[] = [];
+      const session = new SidecarSession(() => toQueryHandle((async function* () {})()), (e) => events.push(e));
+
+      await session.handle({ type: "set_permission_mode", id: "1", mode: "plan" });
+      await session.handle({ type: "set_model", id: "2", model: "m" });
+
+      expect(events.map((e) => e.type)).toEqual(["setting_failed", "setting_failed"]);
+    });
+
+    it("starts the SDK in auto mode when asked to", async () => {
+      let captured: any;
+      const queryFn: QueryFn = (args) => {
+        captured = args.options;
+        return toQueryHandle((async function* () {})());
+      };
+      await new SidecarSession(queryFn, () => {}).handle({ ...startCommand, permission_mode: "auto" });
+
+      expect(captured.permissionMode).toBe("auto");
+    });
+
+    it("allows bypassPermissions to be chosen later, which the SDK requires", async () => {
+      let captured: any;
+      const queryFn: QueryFn = (args) => {
+        captured = args.options;
+        return toQueryHandle((async function* () {})());
+      };
+      await new SidecarSession(queryFn, () => {}).handle(startCommand);
+
+      expect(captured.allowDangerouslySkipPermissions).toBe(true);
+    });
+  });
+
   it("interrupt calls the query's own interrupt() method instead of aborting the whole session", async () => {
     let interruptCalled = false;
     const queryFn: QueryFn = () => {

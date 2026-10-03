@@ -6,6 +6,8 @@ export type QueryHandle = AsyncIterable<unknown> & {
   interrupt: () => Promise<unknown>;
   getContextUsage?: () => Promise<{ totalTokens: number; maxTokens: number }>;
   supportedCommands?: () => Promise<unknown>;
+  setPermissionMode?: (mode: string) => Promise<unknown>;
+  setModel?: (model?: string) => Promise<unknown>;
 };
 
 export type QueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => QueryHandle;
@@ -57,7 +59,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined>
   });
 }
 
-function toSdkPermissionMode(mode: string): "default" | "acceptEdits" | "bypassPermissions" | "plan" {
+function toSdkPermissionMode(mode: string): "default" | "acceptEdits" | "bypassPermissions" | "plan" | "auto" {
   switch (mode) {
     case "accept_edits":
       return "acceptEdits";
@@ -65,6 +67,8 @@ function toSdkPermissionMode(mode: string): "default" | "acceptEdits" | "bypassP
       return "bypassPermissions";
     case "plan":
       return "plan";
+    case "auto":
+      return "auto";
     default:
       return "default";
   }
@@ -127,6 +131,18 @@ export class SidecarSession {
           await this.activeQuery.interrupt();
         }
         return;
+      case "set_permission_mode":
+        await this.change(
+          (query) => query.setPermissionMode?.(toSdkPermissionMode(command.mode)),
+          { type: "permission_mode_set", mode: command.mode },
+        );
+        return;
+      case "set_model":
+        await this.change(
+          (query) => query.setModel?.(command.model ?? undefined),
+          { type: "model_set", model: command.model },
+        );
+        return;
       case "shutdown":
         this.shuttingDown = true;
         this.abortController.abort();
@@ -136,6 +152,23 @@ export class SidecarSession {
         this.pendingPermissions.clear();
         return;
     }
+  }
+
+  // Applies a change to the running query and answers with `done`, or with `setting_failed` when
+  // there is no query or the SDK refuses. Nothing here ends the session.
+  private async change(apply: (query: QueryHandle) => Promise<unknown> | undefined, done: SidecarEvent): Promise<void> {
+    const query = this.activeQuery;
+    if (!query) {
+      this.emit({ type: "setting_failed", message: "no session is running" });
+      return;
+    }
+    try {
+      await apply(query);
+    } catch (err) {
+      this.emit({ type: "setting_failed", message: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    this.emit(done);
   }
 
   async waitUntilEnded(): Promise<void> {
@@ -232,6 +265,9 @@ export class SidecarSession {
           abortController: this.abortController,
           canUseTool,
           includePartialMessages: true,
+          // The SDK refuses bypassPermissions later unless this is set now. It only lets the mode be
+          // chosen; Forge enters it only when the person confirms.
+          allowDangerouslySkipPermissions: true,
           // The SDK sends thinking with its text omitted unless asked for a summary.
           thinking: { type: "adaptive", display: "summarized" },
           settingSources: ["project"],

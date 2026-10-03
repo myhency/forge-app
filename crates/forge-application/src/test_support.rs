@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_domain::{AppConfig, PermissionDecision, SkillDefinition};
+use forge_domain::{AppConfig, PermissionDecision, PermissionMode, SkillDefinition};
 use forge_ports::{
     MockConfigRepositoryPort, MockMcpRegistryPort, MockPluginRepositoryPort, MockSkillRepositoryPort,
     SkillRepositoryError,
@@ -26,6 +26,8 @@ pub(crate) enum Call {
     Send(String),
     Permission(String, PermissionDecision),
     Interrupt,
+    SetMode(PermissionMode),
+    SetModel(Option<String>),
     Shutdown,
 }
 
@@ -129,6 +131,16 @@ impl SidecarPort for FakeSidecar {
 
     async fn interrupt(&self) -> Result<(), SidecarError> {
         self.control.record(Call::Interrupt);
+        Ok(())
+    }
+
+    async fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), SidecarError> {
+        self.control.record(Call::SetMode(mode));
+        Ok(())
+    }
+
+    async fn set_model(&self, model: Option<String>) -> Result<(), SidecarError> {
+        self.control.record(Call::SetModel(model));
         Ok(())
     }
 

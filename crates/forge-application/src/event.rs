@@ -1,4 +1,4 @@
-use forge_domain::{ContextUsage, Message, MessageRole, PermissionRequest, Session, SessionId, SlashCommand, ToolCall, ToolResult};
+use forge_domain::{ContextUsage, Message, MessageRole, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand, ToolCall, ToolResult};
 use forge_ports::SidecarEvent;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,6 +12,12 @@ pub enum SessionUpdate {
     TurnCompleted,
     ContextUsage(ContextUsage),
     CommandsAvailable(Vec<SlashCommand>),
+    /// The SDK accepted a mode change; the session already holds the new mode.
+    PermissionModeChanged { mode: PermissionMode },
+    /// The SDK accepted a model change (`None`: its default).
+    ModelChanged { model: Option<String> },
+    /// The SDK refused a mode or model change. The session goes on.
+    SettingFailed { message: String },
     Errored { message: String },
     SessionEnded,
 }
@@ -109,6 +115,12 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             max_tokens: *max_tokens,
         }),
         SidecarEvent::CommandsAvailable { commands } => SessionUpdate::CommandsAvailable(commands.clone()),
+        SidecarEvent::PermissionModeSet { mode } => {
+            session.permission_mode = *mode;
+            SessionUpdate::PermissionModeChanged { mode: *mode }
+        }
+        SidecarEvent::ModelSet { model } => SessionUpdate::ModelChanged { model: model.clone() },
+        SidecarEvent::SettingFailed { message } => SessionUpdate::SettingFailed { message: message.clone() },
         SidecarEvent::Error { message } => SessionUpdate::Errored { message: message.clone() },
         SidecarEvent::SessionEnded => SessionUpdate::SessionEnded,
     }
@@ -187,6 +199,35 @@ mod tests {
         assert_eq!(session.messages.len(), 2);
         assert_eq!(session.messages[1].role, MessageRole::Assistant);
         assert_eq!(session.messages[1].thinking, "hm");
+    }
+
+    #[test]
+    fn an_accepted_mode_change_updates_the_session_mode() {
+        let mut session = empty_session();
+        let update = apply_sidecar_event(&mut session, &SidecarEvent::PermissionModeSet { mode: PermissionMode::Auto });
+
+        assert_eq!(session.permission_mode, PermissionMode::Auto);
+        assert_eq!(update, SessionUpdate::PermissionModeChanged { mode: PermissionMode::Auto });
+    }
+
+    #[test]
+    fn an_accepted_model_change_is_reported_and_leaves_the_session_alone() {
+        let mut session = empty_session();
+        let before = session.clone();
+        let update = apply_sidecar_event(&mut session, &SidecarEvent::ModelSet { model: Some("m".to_string()) });
+
+        assert_eq!(session, before);
+        assert_eq!(update, SessionUpdate::ModelChanged { model: Some("m".to_string()) });
+    }
+
+    #[test]
+    fn a_refused_setting_is_reported_and_changes_nothing() {
+        let mut session = empty_session();
+        let before = session.clone();
+        let update = apply_sidecar_event(&mut session, &SidecarEvent::SettingFailed { message: "no".to_string() });
+
+        assert_eq!(session, before);
+        assert_eq!(update, SessionUpdate::SettingFailed { message: "no".to_string() });
     }
 
     #[test]

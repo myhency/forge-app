@@ -1,4 +1,4 @@
-export type WirePermissionMode = "default" | "accept_edits" | "bypass_permissions" | "plan";
+export type WirePermissionMode = "default" | "accept_edits" | "bypass_permissions" | "plan" | "auto";
 export type WirePermissionDecision = "allow_once" | "allow_always" | "deny";
 
 export interface WireTokenUsage {
@@ -31,6 +31,8 @@ export type SidecarCommand =
   | { type: "send_message"; id: string; text: string }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision }
   | { type: "interrupt"; id: string }
+  | { type: "set_permission_mode"; id: string; mode: WirePermissionMode }
+  | { type: "set_model"; id: string; model: string | null }
   | { type: "shutdown"; id: string };
 
 export type SidecarEvent =
@@ -43,6 +45,11 @@ export type SidecarEvent =
   | { type: "turn_complete"; usage: Record<string, WireTokenUsage> }
   | { type: "context_usage"; total_tokens: number; max_tokens: number }
   | { type: "commands_available"; commands: WireSlashCommand[] }
+  // The answer to set_permission_mode / set_model: what the SDK accepted, or why it did not. A
+  // refusal is not an `error`: that ends the session.
+  | { type: "permission_mode_set"; mode: WirePermissionMode }
+  | { type: "model_set"; model: string | null }
+  | { type: "setting_failed"; message: string }
   | { type: "error"; message: string }
   | { type: "session_ended" };
 

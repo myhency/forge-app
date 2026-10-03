@@ -1,7 +1,7 @@
 use std::future::pending;
 use std::sync::Arc;
 
-use forge_domain::{ActiveExtensions, PermissionDecision};
+use forge_domain::{ActiveExtensions, PermissionDecision, PermissionMode};
 use forge_ports::{SidecarEvent, SidecarFactoryPort, SidecarPort, StartSessionParams};
 use tokio::sync::{mpsc, watch};
 
@@ -88,6 +88,8 @@ impl Actor {
             LiveCommand::WarmUp => self.warm_up().await,
             LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
             LiveCommand::Interrupt => self.interrupt().await,
+            LiveCommand::SetMode(mode) => self.set_mode(mode).await,
+            LiveCommand::SetModel(model) => self.set_model(model).await,
             LiveCommand::SetTitle(title) => {
                 self.view.session.title = Some(title);
                 self.dirty = true;
@@ -210,6 +212,31 @@ impl Actor {
         }
     }
 
+    // With a sidecar the SDK decides: the command goes out and the view changes when the answer
+    // comes. Without one nothing can refuse, so the view and the next start take the value now.
+    async fn set_mode(&mut self, mode: PermissionMode) {
+        let Some(sidecar) = self.sidecar.clone() else {
+            self.view.session.permission_mode = mode;
+            self.dirty = true;
+            return;
+        };
+        if let Err(error) = sidecar.set_permission_mode(mode).await {
+            self.fail(error.to_string(), false).await;
+        }
+    }
+
+    async fn set_model(&mut self, model: Option<String>) {
+        let Some(sidecar) = self.sidecar.clone() else {
+            self.model = model.clone();
+            self.view.model = model;
+            self.dirty = true;
+            return;
+        };
+        if let Err(error) = sidecar.set_model(model).await {
+            self.fail(error.to_string(), false).await;
+        }
+    }
+
     async fn apply_event(&mut self, event: SidecarEvent) {
         match apply_sidecar_event(&mut self.view.session, &event) {
             SessionUpdate::SessionStarted { session_id } => {
@@ -227,6 +254,15 @@ impl Actor {
             }
             SessionUpdate::ContextUsage(context) => self.view.context = Some(context),
             SessionUpdate::CommandsAvailable(commands) => self.view.commands = commands,
+            // The session already holds the new mode (`apply_sidecar_event`); the model lives here
+            // too, so a restarted sidecar starts on it.
+            SessionUpdate::PermissionModeChanged { .. } => {}
+            SessionUpdate::ModelChanged { model } => {
+                self.model = model.clone();
+                self.view.model = model;
+            }
+            // A refusal is not a failure of the sidecar: the banner shows it and the session goes on.
+            SessionUpdate::SettingFailed { message } => self.view.last_error = Some(message),
             // The sidecar protocol does not distinguish fatal from non-fatal errors, so every
             // `Error` ends this sidecar: its query is over and `start_session` cannot be re-sent.
             SessionUpdate::Errored { message } => self.sidecar_gone(message, true).await,

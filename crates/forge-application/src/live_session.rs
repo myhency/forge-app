@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_domain::{ContextUsage, PermissionDecision, PermissionRequest, Session, SessionId, SlashCommand};
+use forge_domain::{ContextUsage, PermissionDecision, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand};
 use forge_ports::SidecarFactoryPort;
 use tokio::sync::{mpsc, watch};
 
@@ -31,6 +31,9 @@ pub struct LiveSessionView {
     /// `session.id` is empty until the Claude session id is known.
     pub session: Session,
     pub claude_session_id: Option<SessionId>,
+    /// The model this session runs on; `None` is the SDK's default. Changes when the SDK accepts a
+    /// change (or at once, while no sidecar is running).
+    pub model: Option<String>,
     pub phase: Phase,
     /// Oldest first; the front is the one the UI shows.
     pub pending_permissions: VecDeque<PermissionRequest>,
@@ -57,6 +60,8 @@ pub enum LiveCommand {
     Approve { id: String, decision: PermissionDecision },
     Interrupt,
     SetTitle(String),
+    SetMode(PermissionMode),
+    SetModel(Option<String>),
     Close,
 }
 
@@ -99,6 +104,17 @@ impl LiveSessionHandle {
 
     pub fn interrupt(&self) {
         let _ = self.commands.send(LiveCommand::Interrupt);
+    }
+
+    /// Changes the permission mode from the next turn on. With a sidecar running the view follows
+    /// once the SDK accepts it; without one the view changes now and the next start uses it.
+    pub fn set_permission_mode(&self, mode: PermissionMode) {
+        let _ = self.commands.send(LiveCommand::SetMode(mode));
+    }
+
+    /// Changes the model (`None`: the default) the same way.
+    pub fn set_model(&self, model: Option<String>) {
+        let _ = self.commands.send(LiveCommand::SetModel(model));
     }
 
     pub fn close(&self) {
@@ -145,6 +161,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         project_path: init.project_path,
         session: init.session,
         claude_session_id: init.claude_session_id,
+        model: init.model.clone(),
         phase: Phase::Idle,
         pending_permissions: VecDeque::new(),
         last_error: None,
@@ -295,6 +312,89 @@ mod tests {
             vec![Call::Start(start_params(Some("claude-1"))), Call::Send("continue".to_string())]
         );
         assert_eq!(seen.session.messages.len(), 2, "history plus the new message");
+    }
+
+    #[tokio::test]
+    async fn a_session_shows_the_model_it_was_opened_with() {
+        let (factory, _spawns) = factory_returning(vec![]);
+        let handle = spawn_live_session(new_init(factory));
+
+        assert_eq!(handle.snapshot().model, Some("model-x".to_string()));
+    }
+
+    #[tokio::test]
+    async fn before_a_sidecar_exists_a_mode_and_model_change_apply_at_once_and_to_the_next_start() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.set_permission_mode(PermissionMode::Plan);
+        handle.set_model(None);
+        let seen = wait_for(&mut view, "the changes", |v| v.session.permission_mode == PermissionMode::Plan && v.model.is_none()).await;
+        assert_eq!(seen.model, None);
+
+        handle.send("go".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        let started = control.calls().into_iter().find_map(|call| match call {
+            Call::Start(params) => Some(params),
+            _ => None,
+        });
+        let started = started.expect("a sidecar was started");
+        assert_eq!(started.permission_mode, PermissionMode::Plan);
+        assert_eq!(started.model, None);
+    }
+
+    #[tokio::test]
+    async fn with_a_sidecar_the_change_is_sent_and_shown_only_when_the_sidecar_answers() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        handle.set_permission_mode(PermissionMode::Auto);
+        handle.set_model(Some("model-y".to_string()));
+        // Both were forwarded, and neither is shown yet: the SDK has not said it accepted them.
+        for _ in 0..50 {
+            if control.calls().len() >= 4 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let calls = control.calls();
+        assert!(calls.contains(&Call::SetMode(PermissionMode::Auto)));
+        assert!(calls.contains(&Call::SetModel(Some("model-y".to_string()))));
+        assert_eq!(handle.snapshot().session.permission_mode, PermissionMode::AcceptEdits);
+        assert_eq!(handle.snapshot().model, Some("model-x".to_string()));
+
+        control.push(SidecarEvent::PermissionModeSet { mode: PermissionMode::Auto });
+        control.push(SidecarEvent::ModelSet { model: Some("model-y".to_string()) });
+        let seen = wait_for(&mut view, "the answers", |v| {
+            v.session.permission_mode == PermissionMode::Auto && v.model.as_deref() == Some("model-y")
+        })
+        .await;
+        assert_eq!(seen.last_error, None);
+    }
+
+    #[tokio::test]
+    async fn a_refused_change_shows_a_message_keeps_the_old_value_and_the_session_goes_on() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        handle.set_permission_mode(PermissionMode::Auto);
+        control.push(SidecarEvent::SettingFailed { message: "auto is not available".to_string() });
+        let seen = wait_for(&mut view, "the message", |v| v.last_error.is_some()).await;
+
+        assert_eq!(seen.last_error.as_deref(), Some("auto is not available"));
+        assert_eq!(seen.session.permission_mode, PermissionMode::AcceptEdits);
+        assert_eq!(seen.phase, Phase::Running, "a refusal does not end the turn or the session");
     }
 
     #[tokio::test]
