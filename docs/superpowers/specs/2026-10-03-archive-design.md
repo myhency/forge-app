@@ -73,4 +73,15 @@ Then run the app against a `FORGE_CLAUDE_HOME` fixture and check with screenshot
 
 ## As-built notes
 
-To be filled in when the plan is done: what differed from this spec, and which parts are assumptions not seen in the real app (menu item wording, the A key toggling, the bar's wording).
+Built in Plan 20 (`docs/superpowers/plans/2026-10-03-archive-session.md`). Differences from this spec:
+
+1. **No view-only path.** `open_past` opens a live session that can send when its folder exists, so `ChatWindow` draws the Unarchive bar in place of the message box when the open session is archived. `forge-application` is unchanged.
+2. **`Unarchive` for an open archived session too** (`RowActions.archive`); an open session that is not archived cannot be archived.
+3. **The filter is inside `arrange`**, from `SidebarEntry.archived` and `SidebarPrefs.status`; `Workspace::sidebar()` sets `archived` with `mark_archived`. `arrange` does not take the archived list.
+4. **No selection clearing**: only past (not open) rows can be archived, so the selected session never disappears.
+5. **`GroupBy::Flat`** is the "None" grouping in the code.
+6. A deleted session leaves the archived list (`delete_session` calls `set_archived(.., false)`).
+
+Checked in the running app (harness, fixture): the menu shows Archive with A; the A key (physical key code 0) archives and the row leaves the list; `config.json` holds the id; Status › Archived lists it; opening it shows the bar; Unarchive restores the message box and empties the Archived list. Not checked by hand: a Korean input method (covered by the `KeyA` unit test, which matches the physical key), a restart after archiving (the file was seen to hold the id; the load is the same code as the sidebar prefs).
+
+Assumptions not seen in the real app: the menu wording, the bar's wording, and the 🗄 prefix on an archived row (it is large and shortens the title; a drawn icon would be better, left for later).
