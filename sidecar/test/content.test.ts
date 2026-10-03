@@ -54,4 +54,10 @@ describe("buildContent", () => {
   it("sends attachments alone when the text is empty", () => {
     expect(buildContent("", [{ kind: "file", path: "/x/b.txt" }], read)).toBe("@/x/b.txt");
   });
+
+  it("sends no empty text block when only an image is attached", () => {
+    expect(buildContent("", [{ kind: "image", path: "/x/a.png" }], read)).toEqual([
+      { type: "image", source: { type: "base64", media_type: "image/png", data: png.toString("base64") } },
+    ]);
+  });
 });

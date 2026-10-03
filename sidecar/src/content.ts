@@ -41,5 +41,6 @@ export function buildContent(
   }
   const joined = lines.join("\n");
   if (images.length === 0) return joined;
-  return [...images, { type: "text", text: joined }];
+  // The API refuses an empty text block, so an image sent alone has none.
+  return joined === "" ? images : [...images, { type: "text", text: joined }];
 }
