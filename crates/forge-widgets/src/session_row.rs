@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_entities::{relative_time, SidebarItem};
-use forge_features::{menu_key_action, refocus_workspace, use_workspace, DeleteAction, MenuKeyAction, SidebarEntry};
+use forge_features::{menu_key_action, refocus_workspace, use_workspace, ArchiveAction, DeleteAction, MenuKeyAction, SidebarEntry};
 use forge_shared::{Button, ButtonKind};
 use time::OffsetDateTime;
 
@@ -114,11 +114,14 @@ pub fn SessionRow(
         }
         current => {
             let menu_open = current == RowMode::MenuOpen;
-            let has_menu = actions.can_rename || actions.can_fork || actions.delete != DeleteAction::Unavailable;
+            let has_menu = actions.can_rename
+                || actions.can_fork
+                || actions.archive != ArchiveAction::Unavailable
+                || actions.delete != DeleteAction::Unavailable;
             rsx! {
                 div { class: "sidebar-row",
                     SidebarItem {
-                        title: entry.title.clone(),
+                        title: if entry.archived { format!("🗄 {}", entry.title) } else { entry.title.clone() },
                         subtitle: row_subtitle(
                             project_name.as_deref(),
                             entry.updated_at.as_deref().map(|updated_at| relative_time(updated_at, now)),
@@ -132,7 +135,7 @@ pub fn SessionRow(
                         if has_menu {
                             button {
                                 class: if menu_open { "row-menu-button open" } else { "row-menu-button" },
-                                title: "Rename, fork or delete",
+                                title: "Rename, fork, archive or delete",
                                 onclick: move |event| {
                                     event.stop_propagation();
                                     mode.set(if menu_open { RowMode::Normal } else { RowMode::MenuOpen });
@@ -177,6 +180,18 @@ pub fn SessionRow(
                                             mode.set(RowMode::Normal);
                                             refocus_workspace();
                                         }
+                                        Some(MenuKeyAction::ToggleArchive) => {
+                                            event.stop_propagation();
+                                            event.prevent_default();
+                                            if let Some(id) = session_id.clone() {
+                                                match actions.archive {
+                                                    ArchiveAction::Archive => workspace.archive_session(project.clone(), id),
+                                                    _ => workspace.unarchive_session(project.clone(), id),
+                                                }
+                                            }
+                                            mode.set(RowMode::Normal);
+                                            refocus_workspace();
+                                        }
                                         Some(MenuKeyAction::Delete) => {
                                             event.stop_propagation();
                                             event.prevent_default();
@@ -214,6 +229,27 @@ pub fn SessionRow(
                                     },
                                     span { "Fork" }
                                     span { class: "menu-key", "F" }
+                                }
+                            }
+                            if actions.archive != ArchiveAction::Unavailable {
+                                button {
+                                    class: "row-menu-item",
+                                    onclick: {
+                                        let project = project.clone();
+                                        let session_id = session_id.clone();
+                                        move |_| {
+                                            if let Some(id) = session_id.clone() {
+                                                match actions.archive {
+                                                    ArchiveAction::Archive => workspace.archive_session(project.clone(), id),
+                                                    _ => workspace.unarchive_session(project.clone(), id),
+                                                }
+                                            }
+                                            mode.set(RowMode::Normal);
+                                            refocus_workspace();
+                                        }
+                                    },
+                                    span { if actions.archive == ArchiveAction::Archive { "Archive" } else { "Unarchive" } }
+                                    span { class: "menu-key", "A" }
                                 }
                             }
                             button {

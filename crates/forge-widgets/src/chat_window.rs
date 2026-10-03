@@ -17,6 +17,10 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
     };
     let view = view_signal.read();
     let mode = workspace.transcript_view(id);
+    let archived = view
+        .claude_session_id
+        .as_ref()
+        .is_some_and(|session| workspace.is_archived(&view.project_path, session));
     let heading = format!(
         "{} · {}",
         project_label(&view.project_path),
@@ -53,7 +57,24 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     PermissionActions { id, request_id: request.id.clone() }
                 }
             }
-            if view.can_send {
+            if archived {
+                div { class: "banner info archived-bar",
+                    span { "This session is archived." }
+                    button {
+                        class: "archived-bar-button",
+                        onclick: {
+                            let project = view.project_path.clone();
+                            let session = view.claude_session_id.clone();
+                            move |_| {
+                                if let Some(session) = session.clone() {
+                                    workspace.unarchive_session(project.clone(), session);
+                                }
+                            }
+                        },
+                        "Unarchive"
+                    }
+                }
+            } else if view.can_send {
                 SendMessageBox { id, running: view.phase == Phase::Running, can_send: true,
                     PlusMenu { project: Some(view.project_path.clone()), add_folder_enabled: true }
                     ModePicker { id }

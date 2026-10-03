@@ -120,6 +120,9 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .sidebar .banner { width: auto; margin: 8px 4px; }
 .banner.error { border: 1px solid var(--danger); color: var(--danger); }
 .banner.info { border: 1px solid var(--border); color: var(--fg-muted); }
+.archived-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.archived-bar-button { border: 1px solid var(--border); background: transparent; color: var(--fg); border-radius: var(--radius); padding: 4px 10px; cursor: pointer; }
+.archived-bar-button:hover { background: var(--bg-hover); }
 
 /* Composer: one rounded box */
 .composer { position: relative; display: flex; flex-direction: column; gap: 8px; width: calc(100% - 56px); max-width: 760px; margin: 0 auto 20px; padding: 10px 12px; box-sizing: border-box; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
