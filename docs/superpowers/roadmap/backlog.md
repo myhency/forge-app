@@ -10,9 +10,9 @@ Forge status was read from `crates/` on 2026-10-03.
 | --- | --- | --- | --- | --- | --- | --- |
 | SES-01 | Fork a session (menu item "포크", key F) | partly | none | M | - | Menu item seen, its effect not. Does it copy the transcript, or start from a point in it? Observe. |
 | SES-02 | Archive a session (menu item "보관", key A), and a way to see and restore archived ones | partly | none | M | - | Where archived sessions go was not seen. Archive is not delete. Compare Forge's delete (spec §19). |
-| SES-03 | View transcript (submenu) | partly | none | S | - | Submenu not opened. |
-| SES-04 | Output style (submenu) | partly | none | S | - | Submenu not opened. Check what the SDK offers. |
-| SES-05 | Open in (submenu), for example an editor or Finder | partly | partial | S | - | Forge opens a folder (spec §19). Which targets the app lists was not seen. |
+| SES-03 | View transcript (submenu): 일반 (normal), 사고 과정 (thinking), 자세히 (detailed) | seen | none | S | - | Radio choice, normal is the default. Effect on the chat view not seen (needs OBS-01). |
+| SES-04 | Output style (submenu): only "새 스타일..." | seen | none | S | - | No built-in styles listed. What "새 스타일..." does was not tried. |
+| SES-05 | Open in (submenu): 새 창 (new window), 클라우드 (run in the cloud) | seen | none | S | won't? | Not editors or Finder. Cloud runs are out of scope; a new window needs multi-window. The user decides. |
 | SES-06 | Single-key shortcuts in the session menu (R rename, F fork, A archive, D delete) | seen | none | S | - | Forge has rename and delete in the menu, no keys shown. |
 | SES-07 | Sidebar search | partly | none | M | - | Search box seen at the top of the sidebar; what it searches (titles, text) and how results look were not seen. |
 | SES-08 | Project group header tools: `+` new session in that project, filter/sort icon, collapse chevron | partly | partial | M | - | Header, `+` and filter icon seen; the filter's contents were not. Forge has a new-session panel (spec §22). |
