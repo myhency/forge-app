@@ -1503,6 +1503,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-adapter-files"
+version = "0.1.0"
+dependencies = [
+ "forge-ports",
+ "tempfile",
+]
+
+[[package]]
 name = "forge-adapter-git"
 version = "0.1.0"
 dependencies = [
