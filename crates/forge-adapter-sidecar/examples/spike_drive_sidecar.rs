@@ -20,6 +20,7 @@ async fn main() {
             resume_session_id: None,
             permission_mode: PermissionMode::AcceptEdits,
             model: None,
+            effort: None,
             extensions: Default::default(),
             additional_directories: Vec::new(),
         })

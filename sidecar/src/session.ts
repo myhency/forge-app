@@ -1,7 +1,7 @@
 import { buildContent, type ContentBlock } from "./content.js";
 import { buildSkillsPlugin } from "./skills_plugin.js";
 import { turnUsage } from "./usage.js";
-import type { SidecarCommand, SidecarEvent, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
+import type { SidecarCommand, SidecarEvent, WireAvailableModel, WireEffort, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
 
 export type QueryHandle = AsyncIterable<unknown> & {
   interrupt: () => Promise<unknown>;
@@ -9,6 +9,8 @@ export type QueryHandle = AsyncIterable<unknown> & {
   supportedCommands?: () => Promise<unknown>;
   setPermissionMode?: (mode: string) => Promise<unknown>;
   setModel?: (model?: string) => Promise<unknown>;
+  applyFlagSettings?: (settings: Record<string, unknown>) => Promise<unknown>;
+  supportedModels?: () => Promise<unknown>;
 };
 
 export type QueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => QueryHandle;
@@ -42,6 +44,27 @@ function toWireCommands(raw: unknown): WireSlashCommand[] {
     commands.push(command);
   }
   return commands;
+}
+
+const EFFORT_LEVELS: WireEffort[] = ["low", "medium", "high", "xhigh", "max"];
+
+// The SDK's model list as Forge wants it: the levels are cut to the ones Forge knows, and a model
+// that takes no effort has none.
+function toWireModels(raw: unknown): WireAvailableModel[] {
+  if (!Array.isArray(raw)) return [];
+  const models: WireAvailableModel[] = [];
+  for (const item of raw) {
+    const model = item as { value?: unknown; resolvedModel?: unknown; displayName?: unknown; supportsEffort?: unknown; supportedEffortLevels?: unknown } | null;
+    if (typeof model?.value !== "string" || model.value === "") continue;
+    const offered = model.supportsEffort === false || !Array.isArray(model.supportedEffortLevels) ? [] : model.supportedEffortLevels;
+    models.push({
+      value: model.value,
+      ...(typeof model.resolvedModel === "string" && model.resolvedModel !== "" ? { resolved_model: model.resolvedModel } : {}),
+      display_name: typeof model.displayName === "string" && model.displayName !== "" ? model.displayName : model.value,
+      effort_levels: EFFORT_LEVELS.filter((level) => offered.includes(level)),
+    });
+  }
+  return models;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
@@ -142,6 +165,15 @@ export class SidecarSession {
         await this.change(
           (query) => query.setModel?.(command.model ?? undefined),
           { type: "model_set", model: command.model },
+        );
+        return;
+      case "set_effort":
+        await this.change(
+          (query) =>
+            query.applyFlagSettings
+              ? query.applyFlagSettings({ effortLevel: command.effort })
+              : Promise.reject(new Error("this version of the SDK cannot change the effort")),
+          { type: "effort_set", effort: command.effort },
         );
         return;
       case "shutdown":
@@ -263,6 +295,7 @@ export class SidecarSession {
           resume: command.resume_session_id ?? undefined,
           permissionMode: toSdkPermissionMode(command.permission_mode),
           model: command.model ?? undefined,
+          effort: command.effort ?? undefined,
           abortController: this.abortController,
           canUseTool,
           includePartialMessages: true,
@@ -285,6 +318,7 @@ export class SidecarSession {
     }
     this.activeQuery = query;
     void this.emitSupportedCommands();
+    void this.emitSupportedModels();
 
     try {
       for await (const message of query) {
@@ -324,6 +358,19 @@ export class SidecarSession {
       this.emitCommands(await withTimeout(query.supportedCommands(), this.commandsTimeoutMs));
     } catch {
       // No list from this call; `init` may still bring one.
+    }
+  }
+
+  // A failure, a slow answer or an empty list only means no model list; it never touches the session.
+  private async emitSupportedModels(): Promise<void> {
+    const query = this.activeQuery;
+    if (!query?.supportedModels) return;
+    try {
+      const models = toWireModels(await withTimeout(query.supportedModels(), this.commandsTimeoutMs));
+      if (this.shuttingDown || models.length === 0) return;
+      this.emit({ type: "models_available", models });
+    } catch {
+      // No list from this call.
     }
   }
 

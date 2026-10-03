@@ -153,6 +153,11 @@ impl SidecarPort for SidecarProcess {
         self.send_command(SidecarCommand::SetModel { id, model })
     }
 
+    async fn set_effort(&self, effort: Option<forge_domain::EffortLevel>) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::SetEffort { id, effort })
+    }
+
     async fn shutdown(&self) -> Result<(), SidecarError> {
         let id = self.next_id();
         self.send_command(SidecarCommand::Shutdown { id })?;

@@ -1,7 +1,7 @@
 use std::future::pending;
 use std::sync::Arc;
 
-use forge_domain::{ActiveExtensions, Attachment, PermissionDecision, PermissionMode};
+use forge_domain::{ActiveExtensions, Attachment, EffortLevel, PermissionDecision, PermissionMode};
 use forge_ports::{SidecarEvent, SidecarFactoryPort, SidecarPort, StartSessionParams};
 use tokio::sync::{mpsc, watch};
 
@@ -19,6 +19,7 @@ pub(crate) struct Actor {
     commands: mpsc::UnboundedReceiver<LiveCommand>,
     factory: Arc<dyn SidecarFactoryPort>,
     model: Option<String>,
+    effort: Option<EffortLevel>,
     extensions: Arc<ExtensionsUseCase>,
     /// What the first successful start resolved. An open session keeps it across restarts (spec
     /// §17.4); a failed resolution is not stored, so the next start resolves again.
@@ -29,7 +30,7 @@ pub(crate) struct Actor {
     /// The sidecar was started by a warm-up and nothing has been sent to it yet. A failure then is
     /// dropped quietly: nobody asked for anything, and the first send starts a sidecar again.
     warm_only: bool,
-    /// `last_error` holds the SDK's refusal of a mode or model change. A later change that the SDK
+    /// `last_error` holds the SDK's refusal of a mode, model or effort change. A later change that the SDK
     /// accepts clears it; any other message stays.
     refusal_shown: bool,
     /// The view changed since it was last published.
@@ -51,6 +52,7 @@ impl Actor {
             commands,
             factory,
             model,
+            effort: None,
             extensions,
             active: None,
             sidecar: None,
@@ -98,6 +100,7 @@ impl Actor {
             LiveCommand::Interrupt => self.interrupt().await,
             LiveCommand::SetMode(mode) => self.set_mode(mode).await,
             LiveCommand::SetModel(model) => self.set_model(model).await,
+            LiveCommand::SetEffort(effort) => self.set_effort(effort).await,
             LiveCommand::SetTitle(title) => {
                 self.view.session.title = Some(title);
                 self.dirty = true;
@@ -211,6 +214,7 @@ impl Actor {
                 resume_session_id: self.view.claude_session_id.as_ref().map(|id| id.0.clone()),
                 permission_mode: self.view.session.permission_mode,
                 model: self.model.clone(),
+                effort: self.effort,
                 extensions: extensions.clone(),
                 additional_directories: self.additional_directories.clone(),
             })
@@ -269,6 +273,18 @@ impl Actor {
         }
     }
 
+    async fn set_effort(&mut self, effort: Option<EffortLevel>) {
+        let Some(sidecar) = self.sidecar.clone() else {
+            self.effort = effort;
+            self.view.effort = effort;
+            self.dirty = true;
+            return;
+        };
+        if let Err(error) = sidecar.set_effort(effort).await {
+            self.fail(error.to_string(), false).await;
+        }
+    }
+
     async fn apply_event(&mut self, event: SidecarEvent) {
         match apply_sidecar_event(&mut self.view.session, &event) {
             SessionUpdate::SessionStarted { session_id } => {
@@ -294,6 +310,12 @@ impl Actor {
                 self.view.model = model;
                 self.clear_refusal();
             }
+            SessionUpdate::EffortChanged { effort } => {
+                self.effort = effort;
+                self.view.effort = effort;
+                self.clear_refusal();
+            }
+            SessionUpdate::ModelsAvailable(models) => self.view.available_models = models,
             // A refusal is not a failure of the sidecar: the banner shows it and the session goes on.
             SessionUpdate::SettingFailed { message } => {
                 self.view.last_error = Some(message);

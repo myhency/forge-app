@@ -114,7 +114,7 @@ pub fn SessionRow(
         }
         current => {
             let menu_open = current == RowMode::MenuOpen;
-            let has_menu = actions.can_rename || actions.delete != DeleteAction::Unavailable;
+            let has_menu = actions.can_rename || actions.can_fork || actions.delete != DeleteAction::Unavailable;
             rsx! {
                 div { class: "sidebar-row",
                     SidebarItem {
@@ -132,7 +132,7 @@ pub fn SessionRow(
                         if has_menu {
                             button {
                                 class: if menu_open { "row-menu-button open" } else { "row-menu-button" },
-                                title: "Rename or delete",
+                                title: "Rename, fork or delete",
                                 onclick: move |event| {
                                     event.stop_propagation();
                                     mode.set(if menu_open { RowMode::Normal } else { RowMode::MenuOpen });
@@ -168,6 +168,15 @@ pub fn SessionRow(
                                             event.prevent_default();
                                             mode.set(RowMode::Renaming(title.clone()));
                                         }
+                                        Some(MenuKeyAction::Fork) => {
+                                            event.stop_propagation();
+                                            event.prevent_default();
+                                            if let Some(id) = session_id.clone() {
+                                                workspace.fork_session(project.clone(), id, title.clone());
+                                            }
+                                            mode.set(RowMode::Normal);
+                                            refocus_workspace();
+                                        }
                                         Some(MenuKeyAction::Delete) => {
                                             event.stop_propagation();
                                             event.prevent_default();
@@ -186,6 +195,25 @@ pub fn SessionRow(
                                     },
                                     span { "Rename" }
                                     span { class: "menu-key", "R" }
+                                }
+                            }
+                            if actions.can_fork {
+                                button {
+                                    class: "row-menu-item",
+                                    onclick: {
+                                        let project = project.clone();
+                                        let session_id = session_id.clone();
+                                        let title = entry.title.clone();
+                                        move |_| {
+                                            if let Some(id) = session_id.clone() {
+                                                workspace.fork_session(project.clone(), id, title.clone());
+                                            }
+                                            mode.set(RowMode::Normal);
+                                            refocus_workspace();
+                                        }
+                                    },
+                                    span { "Fork" }
+                                    span { class: "menu-key", "F" }
                                 }
                             }
                             button {

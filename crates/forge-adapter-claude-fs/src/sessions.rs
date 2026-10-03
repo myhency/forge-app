@@ -433,6 +433,10 @@ fn rename_error(path: &Path, e: std::io::Error) -> SessionRepositoryError {
     SessionRepositoryError::RenameFailed(format!("{}: {e}", path.display()))
 }
 
+fn fork_error(path: &Path, e: std::io::Error) -> SessionRepositoryError {
+    SessionRepositoryError::ForkFailed(format!("{}: {e}", path.display()))
+}
+
 #[async_trait]
 impl SessionRepositoryPort for ClaudeSessionAdapter {
     async fn list_sessions(
@@ -678,6 +682,49 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         outcome.map_err(SessionRepositoryError::DeleteFailed)
     }
 
+    async fn fork_session(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        title: &str,
+    ) -> Result<SessionId, SessionRepositoryError> {
+        let old = &session_id.0;
+        if !valid_session_id(old) {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+        let dir = self.project_dir(project_path).await;
+        let source = dir.join(format!("{old}.jsonl"));
+        let bytes = match tokio::fs::read(&source).await {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(SessionRepositoryError::NotFound(session_id.clone()))
+            }
+            Err(e) => return Err(fork_error(&source, e)),
+        };
+        let new = uuid::Uuid::new_v4().to_string();
+        let now = time::OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default();
+        let text = crate::fork::forked_transcript(
+            &String::from_utf8_lossy(&bytes),
+            old,
+            &new,
+            title,
+            &now,
+            || uuid::Uuid::new_v4().to_string(),
+        );
+        // A temporary name that no listing reads, then a rename: a half-written copy is never listed.
+        let target = dir.join(format!("{new}.jsonl"));
+        let temp = dir.join(format!(".{new}.jsonl.tmp"));
+        if let Err(e) = tokio::fs::write(&temp, text).await {
+            let _ = tokio::fs::remove_file(&temp).await;
+            return Err(fork_error(&target, e));
+        }
+        if let Err(e) = tokio::fs::rename(&temp, &target).await {
+            let _ = tokio::fs::remove_file(&temp).await;
+            return Err(fork_error(&target, e));
+        }
+        Ok(SessionId(new))
+    }
+
     async fn search_sessions(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>, SessionRepositoryError> {
         let query = query.trim();
         if query.is_empty() || limit == 0 {
@@ -746,6 +793,85 @@ mod tests {
 
     fn custom_title(title: &str) -> Value {
         json!({"type": "custom-title", "customTitle": title, "sessionId": "s"})
+    }
+
+    fn message(uuid: &str, parent: Option<&str>, text: &str) -> Value {
+        json!({"type": "user", "uuid": uuid, "parentUuid": parent, "sessionId": "s1", "isSidechain": false,
+               "message": {"role": "user", "content": text}})
+    }
+
+    #[tokio::test]
+    async fn fork_makes_a_new_session_that_list_and_load_read_back() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[message("u1", None, "hello"), message("u2", Some("u1"), "again"), custom_title("Old")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let new_id = adapter.fork_session(&project(), &SessionId("s1".to_string()), "Old (fork)").await.unwrap();
+
+        assert_ne!(new_id.0, "s1");
+        let listed = adapter.list_sessions(&project()).await.unwrap();
+        let titles: Vec<(String, Option<String>)> = listed.iter().map(|s| (s.id.0.clone(), s.title.clone())).collect();
+        assert_eq!(listed.len(), 2);
+        assert!(titles.contains(&("s1".to_string(), Some("Old".to_string()))));
+        assert!(titles.contains(&(new_id.0.clone(), Some("Old (fork)".to_string()))));
+        let loaded = adapter.load_session(&project(), &new_id).await.unwrap();
+        assert_eq!(loaded.messages.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn fork_leaves_the_source_untouched_and_no_temporary_file_behind() {
+        let home = tempfile::tempdir().unwrap();
+        let source = write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        let before = std::fs::read(&source).unwrap();
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        adapter.fork_session(&project(), &SessionId("s1".to_string()), "T").await.unwrap();
+
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+        let names: Vec<String> = std::fs::read_dir(source.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.iter().all(|name| name.ends_with(".jsonl")), "{names:?}");
+    }
+
+    #[tokio::test]
+    async fn fork_keeps_a_broken_line_and_the_fork_still_lists() {
+        let home = tempfile::tempdir().unwrap();
+        let path = write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        std::fs::write(&path, format!("{}not json\n", std::fs::read_to_string(&path).unwrap())).unwrap();
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let new_id = adapter.fork_session(&project(), &SessionId("s1".to_string()), "T").await.unwrap();
+
+        let copy = std::fs::read_to_string(path.parent().unwrap().join(format!("{}.jsonl", new_id.0))).unwrap();
+        assert!(copy.lines().any(|line| line == "not json"));
+        assert!(adapter.list_sessions(&project()).await.unwrap().iter().any(|s| s.id == new_id));
+    }
+
+    #[tokio::test]
+    async fn fork_of_a_missing_session_is_not_found_and_creates_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        let other = write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let result = adapter.fork_session(&project(), &SessionId("nope".to_string()), "T").await;
+
+        assert!(matches!(result, Err(SessionRepositoryError::NotFound(_))));
+        assert_eq!(std::fs::read_dir(other.parent().unwrap()).unwrap().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn fork_refuses_ids_that_could_leave_the_project_directory() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        for id in ["../s1", "a/b", "..", "", ".hidden"] {
+            let result = adapter.fork_session(&project(), &SessionId(id.to_string()), "T").await;
+            assert!(matches!(result, Err(SessionRepositoryError::NotFound(_))), "{id:?}");
+        }
     }
 
     #[tokio::test]

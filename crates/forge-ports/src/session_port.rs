@@ -19,6 +19,8 @@ pub enum SessionRepositoryError {
     RenameFailed(String),
     #[error("failed to delete session: {0}")]
     DeleteFailed(String),
+    #[error("failed to fork session: {0}")]
+    ForkFailed(String),
     #[error("failed to search sessions: {0}")]
     SearchFailed(String),
 }
@@ -50,6 +52,14 @@ pub trait SessionRepositoryPort: Send + Sync {
         project_path: &Path,
         session_id: &SessionId,
     ) -> Result<(), SessionRepositoryError>;
+    /// Copies the session's whole transcript into a new session of the same project and gives the
+    /// copy `title`. The source is not touched. Returns the new session's id.
+    async fn fork_session(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        title: &str,
+    ) -> Result<SessionId, SessionRepositoryError>;
     /// Sessions of every project whose title or message text contains `query` (any case), newest
     /// first, at most `limit`. A blank query finds nothing. Only what the user and the assistant
     /// wrote is searched, not tool input, tool results or thinking.

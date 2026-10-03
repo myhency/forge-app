@@ -1,4 +1,4 @@
-use forge_domain::{Attachment, ContextUsage, Message, MessageRole, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand, ToolCall, ToolResult};
+use forge_domain::{Attachment, AvailableModel, ContextUsage, EffortLevel, Message, MessageRole, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand, ToolCall, ToolResult};
 use forge_ports::SidecarEvent;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -16,7 +16,11 @@ pub enum SessionUpdate {
     PermissionModeChanged { mode: PermissionMode },
     /// The SDK accepted a model change (`None`: its default).
     ModelChanged { model: Option<String> },
-    /// The SDK refused a mode or model change. The session goes on.
+    /// The SDK accepted an effort change (`None`: its default).
+    EffortChanged { effort: Option<EffortLevel> },
+    /// The models the SDK listed for this session.
+    ModelsAvailable(Vec<AvailableModel>),
+    /// The SDK refused a mode, model or effort change. The session goes on.
     SettingFailed { message: String },
     Errored { message: String },
     SessionEnded,
@@ -121,6 +125,8 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             SessionUpdate::PermissionModeChanged { mode: *mode }
         }
         SidecarEvent::ModelSet { model } => SessionUpdate::ModelChanged { model: model.clone() },
+        SidecarEvent::EffortSet { effort } => SessionUpdate::EffortChanged { effort: *effort },
+        SidecarEvent::ModelsAvailable { models } => SessionUpdate::ModelsAvailable(models.clone()),
         SidecarEvent::SettingFailed { message } => SessionUpdate::SettingFailed { message: message.clone() },
         SidecarEvent::Error { message } => SessionUpdate::Errored { message: message.clone() },
         SidecarEvent::SessionEnded => SessionUpdate::SessionEnded,
@@ -219,6 +225,25 @@ mod tests {
 
         assert_eq!(session, before);
         assert_eq!(update, SessionUpdate::ModelChanged { model: Some("m".to_string()) });
+    }
+
+    #[test]
+    fn effort_set_is_reported_and_leaves_the_session_alone() {
+        let mut session = empty_session();
+        let before = session.clone();
+        let update = apply_sidecar_event(&mut session, &SidecarEvent::EffortSet { effort: Some(forge_domain::EffortLevel::Low) });
+
+        assert_eq!(session, before);
+        assert_eq!(update, SessionUpdate::EffortChanged { effort: Some(forge_domain::EffortLevel::Low) });
+    }
+
+    #[test]
+    fn the_model_list_is_reported() {
+        let mut session = empty_session();
+        let models = vec![forge_domain::AvailableModel { value: "m".to_string(), resolved_model: None, display_name: "M".to_string(), effort_levels: vec![] }];
+        let update = apply_sidecar_event(&mut session, &SidecarEvent::ModelsAvailable { models: models.clone() });
+
+        assert_eq!(update, SessionUpdate::ModelsAvailable(models));
     }
 
     #[test]

@@ -5,7 +5,7 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{Attachment, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{Attachment, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{FilePickerPort, FolderPickerPort, ProjectRepositoryPort, SessionRepositoryPort};
 use time::OffsetDateTime;
 
@@ -14,7 +14,7 @@ use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, arranged_open_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
-use crate::sidebar::{cycle_target, merge_sidebar, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
+use crate::sidebar::{cycle_target, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
 
 // Typing waits this long before the transcripts are scanned.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -329,6 +329,27 @@ impl Workspace {
         });
     }
 
+    /// Forks a session (open or not): the copy is made, the project's list is re-read and the copy is
+    /// opened. A failure shows as a notice and nothing is opened.
+    pub fn fork_session(&self, project: PathBuf, session: SessionId, title: String) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let mut past = self.past;
+        // Root scope: a disk mutation must finish even if the row that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
+            let new_id = match services.registry.fork(&project, &session, &title).await {
+                Ok(id) => id,
+                Err(error) => return this.report(error.to_string()),
+            };
+            match services.sessions.list_sessions(&project).await {
+                Ok(sessions) => replace_project_sessions(&mut past.write(), &project, sessions),
+                Err(error) => return this.report(format!("{}: {error}", project.display())),
+            }
+            let summary = project_for_open(&past.peek(), &project);
+            this.open_past(summary, new_id);
+        });
+    }
+
     /// Whether a folder dialog is open; the button is disabled meanwhile so only one can be.
     pub fn picking_folder(&self) -> bool {
         *self.picking.read()
@@ -385,6 +406,13 @@ impl Workspace {
     pub fn set_model(&self, id: LiveSessionId, model: Option<String>) {
         if let Some(handle) = self.handle(id) {
             handle.set_model(model);
+        }
+    }
+
+    /// Changes the effort of the open session (`None`: the SDK's default), from its next turn on.
+    pub fn set_effort(&self, id: LiveSessionId, effort: Option<EffortLevel>) {
+        if let Some(handle) = self.handle(id) {
+            handle.set_effort(effort);
         }
     }
 

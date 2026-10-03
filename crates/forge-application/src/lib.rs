@@ -13,7 +13,7 @@ pub use command_probe::CommandProbe;
 pub use event::{apply_sidecar_event, push_user_message, SessionUpdate};
 pub use live_session::{LiveCommand, LiveSessionHandle, LiveSessionId, LiveSessionView, Phase};
 pub use probe_slot::ProbeSlot;
-pub use registry::{normalize_title, ManageSessionError, OpenError, OpenOutcome, SessionRegistry};
+pub use registry::{fork_title, normalize_title, ManageSessionError, OpenError, OpenOutcome, SessionRegistry};
 pub use use_cases::{
     ApprovePermissionUseCase, ExtensionsError, ExtensionsUseCase, InterruptTurnUseCase,
     ResumeSessionError, ResumeSessionUseCase, SendMessageUseCase, SettingsUseCase,
