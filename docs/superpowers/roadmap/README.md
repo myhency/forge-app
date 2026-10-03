@@ -67,10 +67,11 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 16 | Composer controls | CMP-03, CMP-04, CMP-05 | Model, effort and mode are changed often; needs sidecar and SDK facts first |
 | 17 | Sidebar search and groups (built) | SES-07, SES-08, SES-11 | Grows with the number of sessions |
 | 18 | Composer `+` menu (built, CMP-02 voice left out) | CMP-01, CMP-06 | Attachments are the largest piece; split if needed |
-| 19 | Terminal panel | PNL-01, PNL-06 | First right-hand dock; later panels reuse it |
-| 20 | Changes, files, preview panels | PNL-02, PNL-03, PNL-04 | Needs observation round 2 first |
-| 21 | Routines | PG-01 | Needs a scheduler that runs only while the app is open |
-| 22 | Customize: explore | PG-02 | Needs a catalogue source |
-| 23 | Home dashboard | PG-05 | Reads transcripts; no new port if usage already covers it |
+| 19 | Fork and effort (built) | SES-01, CMP-05, OTH-07 | The small items the user chose first |
+| 20 | Terminal panel | PNL-01, PNL-06 | First right-hand dock; later panels reuse it |
+| 21 | Changes, files, preview panels | PNL-02, PNL-03, PNL-04 | Needs observation round 2 first |
+| 22 | Routines | PG-01 | Needs a scheduler that runs only while the app is open |
+| 23 | Customize: explore | PG-02 | Needs a catalogue source |
+| 24 | Home dashboard | PG-05 | Reads transcripts; no new port if usage already covers it |
 
 Plan 13's earlier candidates (packaging the app, chat view extras, trash restore, split panes) and Plan 12's deferred minors (spec §23.8) are not in this table; they are in the backlog under `OTH`.

@@ -68,3 +68,44 @@ Archive and restore (SES-02), CMP-07's plan limits, the effort stop names of the
 Unit tests: the fork copy (uuid map, `parentUuid`, `sessionId`, `forkedFrom`, title line replaced, odd lines kept, ids that escape the directory refused, nothing left behind on failure, a missing source is `NotFound`), the title rule, `menu_key_action` for F, the use case with the mock port, wire round trips for `set_effort`, `effort_set`, `models_available`, the start parameter, `apply_sidecar_event`, the actor with the fake sidecar (both paths, refusal), the effort levels per model, vitest for the sidecar commands. A one-time check that compares the adapter's output with the SDK's `forkSession` on the same transcript.
 
 Then the harness: fork from the menu and with F (Korean input method on), the new row, the opened copy, and the original unchanged; the effort popover and slider; and with the real SDK, one real message, then an effort change in the idle session and the `models_available` rows. OTH-07 is run against the real SDK too.
+
+## As built (2026-10-03)
+
+Built as designed, with the changes below. Fork is a `SessionRepositoryPort::fork_session` (the `claude-fs` adapter, `fork.rs`), the menu has "Fork" and the F key, effort follows the SDK's answer through the same two paths as mode and model, and the sidecar reports `models_available`.
+
+**Changes from the design**
+
+- **`resolved_model`.** The real SDK lists models by alias (`default`, `opus`, `haiku`, `sonnet`) and says the full id each stands for in `resolvedModel`. A session's model is a full id (`claude-opus-5-5`), so matching on the listed name alone never found it. `AvailableModel` and the wire event carry `resolved_model`, and `effort_levels` matches the session's model against the name or the full id.
+- **Sonnet's id.** `claude-sonnet-5-5` is not in the bundled Claude Code's catalog (2.1.283); the SDK lists `sonnet` as `claude-sonnet-5` ("Sonnet 5"). `KNOWN_MODELS` and the composer picker now use `claude-sonnet-5` with the label "Sonnet 5", the SDK's own name. The desktop app calls it "Sonnet 5.5" because its Claude Code is newer; Forge shows the same label once the bundled SDK knows the model.
+- A fork keeps the original message timestamps (the SDK probe rewrote one assistant timestamp to the fork time).
+
+**What the real SDK listed** (`sidecar/scripts/list_models.mjs`, SDK 0.3.283, no message sent; this is the OTH-07 check):
+
+| Listed as (`value`) | Resolves to | Name | Effort levels |
+| --- | --- | --- | --- |
+| `default` | `claude-opus-5-5` | Default (recommended) | low, medium, high, xhigh, max |
+| `opus` | `claude-opus-5-5` | Opus 5.5 | low, medium, high, xhigh, max |
+| `claude-fable-5-1` | `claude-fable-5-1` | Fable 5.1 | low, medium, high, xhigh, max |
+| `haiku` | `claude-haiku-4-5-20251001` | Haiku 4.5 | none (`supportsEffort` absent) |
+| `sonnet` | `claude-sonnet-5` | Sonnet 5 | low, medium, high, xhigh, max |
+| `claude-opus-5`, `claude-fable-5`, `claude-opus-4-8`, `claude-opus-4-7` | the same | Opus 5, Fable 5, Opus 4.8, Opus 4.7 | low, medium, high, xhigh, max |
+| `claude-opus-4-6`, `claude-sonnet-4-6` | the same | Opus 4.6, Sonnet 4.6 | low, medium, high, max |
+
+The first row is `default`, so the rule "a session on the default model uses the first listed model" holds. Haiku, Opus 5.5 (`claude-opus-5-5`), Fable 5.1 ids in `KNOWN_MODELS` were already right (Haiku and Opus as `resolvedModel`).
+
+**Checked in the real window** (harness, the fake Claude home; Forge's own fork code on the fixture sessions):
+
+- Session menu: "Rename R", "Fork F", "Delete D". Clicking "Fork" made "Read the config (fork)" at the top of its project (just now), opened with the whole transcript; the original stayed. The F key (physical key, `key code 3`) did the same for "Fix the login bug" (the Korean input method was not switched on for this run; the key is matched by `event.code()` and unit-tested).
+- The composer of an opened fork showed its placeholder; no cursor was seen after the fork, so the desktop app's focus on the composer is **not matched** (a gap, not planned code in this plan).
+- Effort with the real SDK (one real message "Hello" in a new session in the harness folder; its transcript in the real `~/.claude/projects/-private-tmp-forge-harness-my-app/` was deleted afterwards):
+
+| Step | Result |
+| --- | --- |
+| Before the first message | no effort control (no model list yet) |
+| After the first reply | a button "Default"; the popover shows "Effort Default", a `?`, "Faster" / "Smarter", a five-stop slider with the thumb on High, and "Use the default" |
+| Slider to the fourth stop | accepted: the button and the title read "Extra high" |
+| "Use the default" | accepted: back to "Default" |
+| Model to Haiku 4.5 (key 4) | accepted; the effort control is gone |
+| Model back to Opus 5.5 (key 1) | accepted; the effort control is back (the full id matched through `resolved_model`) |
+
+**Not tried:** an effort refusal from the real SDK (the unit tests cover `setting_failed`), `max` on a model without it, the names of the desktop's six stops, a fork of an open running session, a fork of a session whose project folder is gone, the Korean input method for the F key.
