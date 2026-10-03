@@ -11,6 +11,7 @@ mod relative_time;
 mod sidebar_item;
 mod tool_summary;
 mod transcript_view;
+mod usage_card;
 mod usage_view;
 
 pub use command_menu::{command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};
@@ -26,4 +27,8 @@ pub use sidebar_item::{SessionMarker, SidebarItem};
 pub use transcript_view::TranscriptView;
 pub use tool_summary::{tool_call_status, tool_detail_text, tool_input_summary, ToolCallStatus};
 pub use extension_rows::{mcp_rows, mcp_summary, plugin_rows, project_label, skill_rows, ExtensionRow};
+pub use usage_card::{
+    axis_ticks, chart_layout, dashboard_model_label, day_label, heat_level, hour_label, legend_rows, overview_tiles, with_commas, ChartBar,
+    ChartLayout, LegendRow, Tile,
+};
 pub use usage_view::{format_cost, format_tokens, ring_dash, ring_level, ContextView, ModelLine, RingLevel, UsageView};

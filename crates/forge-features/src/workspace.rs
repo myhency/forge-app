@@ -7,11 +7,12 @@ use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{BrowserPort, FilePickerPort, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort};
+use forge_ports::{BrowserPort, FilePickerPort, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
 use time::OffsetDateTime;
 
 use crate::dock::{DockState, DockStates};
 use crate::folder_choice::{choose_folder, FolderChoice};
+use crate::new_session::ModelChoice;
 use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
 use crate::tool_activity::finished_tool_calls;
 use crate::transcript_views::TranscriptViews;
@@ -38,6 +39,7 @@ pub struct WorkspaceServices {
     pub git: Arc<dyn GitPort>,
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
+    pub usage_stats: Arc<dyn UsageStatsPort>,
 }
 
 /// What the main pane shows.
@@ -461,6 +463,10 @@ impl Workspace {
         self.services.peek().git.clone()
     }
 
+    pub fn usage_stats_port(&self) -> Arc<dyn UsageStatsPort> {
+        self.services.peek().usage_stats.clone()
+    }
+
     pub fn files(&self) -> Arc<dyn FilesPort> {
         self.services.peek().files.clone()
     }
@@ -641,6 +647,7 @@ impl Workspace {
         &self,
         project: ProjectSummary,
         mode: PermissionMode,
+        model: ModelChoice,
         text: String,
         attachments: Vec<Attachment>,
         folders: Vec<PathBuf>,
@@ -651,12 +658,15 @@ impl Workspace {
         // Pinned to the root scope: `NewSessionComposer` unmounts if the person clicks elsewhere
         // while the saved model is being read, which would cancel a plain `spawn`.
         dioxus::core::spawn_forever(async move {
-            let model = match services.settings.saved_model().await {
-                Ok(model) => model,
-                Err(error) => {
-                    this.report(format!("failed to load the Forge config: {error}"));
-                    return;
-                }
+            let model = match model {
+                Some(chosen) => chosen,
+                None => match services.settings.saved_model().await {
+                    Ok(model) => model,
+                    Err(error) => {
+                        this.report(format!("failed to load the Forge config: {error}"));
+                        return;
+                    }
+                },
             };
             let commands = slot.end();
             match services.registry.open_new(&project, mode, model, commands) {

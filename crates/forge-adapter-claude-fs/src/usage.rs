@@ -84,7 +84,7 @@ fn number(value: Option<&Value>) -> u64 {
     value.and_then(Value::as_u64).unwrap_or(0)
 }
 
-fn token_usage(usage: &Value) -> Option<TokenUsage> {
+pub(crate) fn token_usage(usage: &Value) -> Option<TokenUsage> {
     if !usage.is_object() {
         return None;
     }
