@@ -114,3 +114,14 @@ Same app and window. Only the "새로 생성" item was clicked, then the card's 
 - Caption under the heatmap: "<book>보다 약 N배 더 많은 토큰을 사용했습니다." The book changes with the count (전체 2.4B: "War and Peace" 3270x; 30일 and 7d: "The Great Gatsby" 38462x, 38230x). A joke; skip (as noted in PG-05).
 - 모델 tab: a stacked bar chart of tokens per day, y axis 0 to 800M in steps of 200M, x labels every few bars; below it a legend with one row per model: colour square, name, "<in> 입력 · <out> 출력" (for example "90.8k 입력 · 5.3M 출력") and a percentage of the total (55.0%). Models seen: Sonnet 5, Sonnet 5.5, Opus 5.5, Haiku 4.5, ordered by share, shades of one blue. 전체 shows bars for days with data only, spaced by date (labels 4월 25일 ... 10월 2일, gaps for unused days); 7d shows exactly seven bars with a label under each ("9월 27일" ... "10월 3일"), including a day with no bar. The percentages differ slightly by range.
 - Not seen: hover tooltips on cells and bars, the 30일 bar chart, a dark theme, an empty state for a user with no sessions, how the app counts "총 토큰" (whether cache tokens are in; the legend shows only input and output).
+
+### Round 6, part 2: the new-session composer (2026-10-03)
+
+Same session of looking. Menus were opened and closed with Escape; one letter was typed into the box and deleted; nothing was sent. Contents of the "+", mode and model menus are in Round 1 and are not repeated.
+
+- Above the box, left to right: chips "로컬" (laptop icon), the folder name with a folder icon, and a square folder-with-plus button (not clicked: it probably opens a file dialog). A small pixel creature stands on the box's top edge at the right (decoration; it moved between captures). [CMP-06]
+- "로컬" chip menu (opens upward): "로컬" (checked), "클라우드", "원격 제어", "SSH", the last three with a right chevron (submenus, not opened). [CMP-06]
+- Folder chip menu (opens upward): "폴더 없음" (no folder); a divider; a small grey heading "최근" (recent) over a list of folder names, the current one checked, in recency order (8 shown); a divider; "폴더 열기…". [CMP-06]
+- Box: one row, placeholder "작업을 설명하거나 질문하세요", a return-arrow icon at the right (grey when empty, black once a letter is typed). Focus darkens the border. The row under the box has `+`, a microphone, a chevron, then the mode name "자동"; at the right "Sonnet 5.5", "중간" and a circle. [CMP-01..07]
+- Microphone chevron menu (opens upward): heading "마이크" over the input devices of the Mac (the default marked "Default - ...", checked, then each device by name), a divider, and a switch "길게 눌러 녹음" (press and hold to record, on). [CMP-02]
+- The caption under the dashboard's heatmap names a different book on each visit (seen: War and Peace, The Great Gatsby, Harry Potter and the Philosopher's Stone), so it is chosen at random or by the count.
