@@ -32,9 +32,9 @@ Two, both made while reading the code; the user approved the spec, so say so in 
 
 - A message with chips and no text can be sent; an empty message with no chips cannot (Task 8 test).
 - The same file added twice shows one chip (Task 5 test).
-- A path with spaces or non-ASCII characters (`내 문서/사진 1.png`) survives the wire and becomes `@/path with spaces` text (Task 2 and 5 tests).
+- A path with spaces or non-ASCII characters (`내 문서/사진 1.png`) survives the wire and becomes `@/path with spaces` text (Task 3, 4 and 7 tests).
 - A file over 5 MB (image) is refused with the file name in the message; a non-image file of any size is not refused (Task 5 test).
-- A failed send puts the text back and does not lose the chips, because they are only cleared when `send` is called (Task 8 test on the clear-after-send order).
+- A refused or failed send keeps the text and the chips, because `take_for_send` clears them only after the check passes and only at the moment of sending (the refusal is the Task 7 `check_attachments` tests; the order is checked by hand in Task 13 step 4).
 
 ## File Structure
 
@@ -441,18 +441,33 @@ In `forge-adapter-sidecar/src/protocol.rs` tests (next to the `start_session` co
         assert_eq!(json, serde_json::json!({ "type": "send_message", "id": "7", "text": "hi" }));
     }
 
+    fn params_with(additional_directories: Vec<String>) -> StartSessionParams {
+        StartSessionParams {
+            cwd: "/tmp/project".to_string(),
+            resume_session_id: None,
+            permission_mode: PermissionMode::Default,
+            model: None,
+            extensions: ActiveExtensions::default(),
+            additional_directories,
+        }
+    }
+
     #[test]
-    fn start_session_carries_additional_directories_only_when_there_are_some() {
-        let mut params = crate::protocol::tests_support_params();
-        let without: serde_json::Value = serde_json::to_value(SidecarCommand::start_session("1".into(), params.clone())).unwrap();
-        assert!(without.get("additional_directories").is_none());
-        params.additional_directories = vec!["/extra".to_string()];
-        let with: serde_json::Value = serde_json::to_value(SidecarCommand::start_session("1".into(), params)).unwrap();
-        assert_eq!(with["additional_directories"], serde_json::json!(["/extra"]));
+    fn start_session_leaves_additional_directories_out_when_there_are_none() {
+        let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params_with(Vec::new()))).unwrap();
+        assert!(json.get("additional_directories").is_none());
+    }
+
+    #[test]
+    fn start_session_carries_additional_directories_when_there_are_some() {
+        let json = serde_json::to_value(SidecarCommand::start_session(
+            "1".to_string(),
+            params_with(vec!["/extra dir".to_string()]),
+        ))
+        .unwrap();
+        assert_eq!(json["additional_directories"], serde_json::json!(["/extra dir"]));
     }
 ```
-
-(There is no `tests_support_params`: build the `StartSessionParams` literal inline the way the existing tests at `protocol.rs:104` do, instead of calling a helper.)
 
 In `contract_test.rs` add, after the round-trip test:
 
@@ -1007,7 +1022,7 @@ use dioxus::prelude::*;
 use forge_domain::Attachment;
 
 use crate::attachments::{add_attachments, check_attachments, with_folder_hints};
-use crate::workspace::use_workspace_services;
+use crate::workspace::WorkspaceServices;
 
 /// What is in the composer besides what the text area owns: chips for attached files and added
 /// folders, and the small signals the `+` menu uses. Provided by the message box and read by the
@@ -1021,9 +1036,12 @@ pub struct ComposerState {
     error: Signal<Option<String>>,
     popup_token: Signal<u32>,
     picking: Signal<bool>,
+    services: Signal<WorkspaceServices>,
 }
 
 pub fn use_composer_state_provider(draft: Signal<String>) -> ComposerState {
+    // Read here, in the component: an event handler cannot call `use_context`.
+    let services = use_context::<WorkspaceServices>();
     let state = use_hook(move || ComposerState {
         draft,
         attachments: Signal::new(Vec::new()),
@@ -1031,6 +1049,7 @@ pub fn use_composer_state_provider(draft: Signal<String>) -> ComposerState {
         error: Signal::new(None),
         popup_token: Signal::new(0),
         picking: Signal::new(false),
+        services: Signal::new(services),
     });
     use_context_provider(move || state);
     state
@@ -1081,7 +1100,7 @@ impl ComposerState {
         if *self.picking.peek() {
             return;
         }
-        let services = use_workspace_services();
+        let services = (*self.services.peek()).clone();
         let mut picking = self.picking;
         let mut attachments = self.attachments;
         picking.set(true);
@@ -1097,7 +1116,7 @@ impl ComposerState {
         if *self.picking.peek() {
             return;
         }
-        let services = use_workspace_services();
+        let services = (*self.services.peek()).clone();
         let mut picking = self.picking;
         let mut folders = self.folders;
         picking.set(true);
@@ -1153,7 +1172,7 @@ impl ComposerState {
 }
 ```
 
-`workspace.rs`: add `pub(crate) fn use_workspace_services() -> WorkspaceServices { use_context::<WorkspaceServices>() }` (the context the page already provides). `lib.rs`: `mod composer_state;` and `pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerState, Outgoing};` and `pub use attachments::…` from Task 7.
+`lib.rs`: `mod composer_state;` and `pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerState, Outgoing};` and `pub use attachments::…` from Task 7.
 
 Careful with `take_for_send`: `plan_send` can return `None` for "nothing to send" before the check, which is right; a refusal returns `None` too but has set the error.
 
