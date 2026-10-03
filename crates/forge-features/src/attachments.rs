@@ -2,8 +2,12 @@ use std::path::{Path, PathBuf};
 
 use forge_domain::{Attachment, AttachmentKind};
 
-/// The largest image Forge sends. The API refuses much larger ones, and the whole file is read.
+/// The API's limit for one image, counted on the base64 data the sidecar sends.
 pub const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
+
+/// The largest image file whose base64 form stays within `MAX_IMAGE_BYTES` (base64 is 4 bytes for
+/// every 3).
+pub const MAX_IMAGE_FILE_BYTES: u64 = MAX_IMAGE_BYTES / 4 * 3;
 
 const IMAGE_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
 
@@ -37,8 +41,11 @@ pub fn check_attachments(list: &[Attachment], size_of: impl Fn(&Path) -> Option<
         let Some(size) = size_of(&attachment.path) else {
             return Err(format!("{} cannot be read.", attachment.file_name()));
         };
-        if attachment.kind == AttachmentKind::Image && size > MAX_IMAGE_BYTES {
-            return Err(format!("{} is larger than 5 MB.", attachment.file_name()));
+        if attachment.kind == AttachmentKind::Image && size > MAX_IMAGE_FILE_BYTES {
+            return Err(format!(
+                "{} is too large to send as an image: the limit is 5 MB once encoded, about 3.7 MB of file.",
+                attachment.file_name()
+            ));
         }
     }
     Ok(())
@@ -88,18 +95,27 @@ mod tests {
     #[test]
     fn an_image_over_the_limit_is_refused_by_name() {
         let list = vec![att("/a/big photo.png")];
-        let error = check_attachments(&list, |_| Some(MAX_IMAGE_BYTES + 1)).unwrap_err();
+        let error = check_attachments(&list, |_| Some(MAX_IMAGE_FILE_BYTES + 1)).unwrap_err();
         assert!(error.contains("big photo.png"), "{error}");
         assert!(error.contains("5 MB"), "{error}");
     }
 
     #[test]
-    fn an_image_at_the_limit_and_a_huge_text_file_are_fine() {
+    fn an_image_that_is_over_the_limit_once_base64_encoded_is_refused() {
+        // 4.5 MB of file is about 6 MB of base64, which is what the API counts.
+        let list = vec![att("/a/photo.png")];
+        let error = check_attachments(&list, |_| Some(4_500_000)).unwrap_err();
+        assert!(error.contains("photo.png"), "{error}");
+    }
+
+    #[test]
+    fn an_image_that_fits_once_encoded_and_a_huge_text_file_are_fine() {
         let list = vec![att("/a/ok.png"), att("/a/huge.log")];
         assert!(check_attachments(&list, |path| {
-            Some(if path.ends_with("ok.png") { MAX_IMAGE_BYTES } else { u64::MAX })
+            Some(if path.ends_with("ok.png") { MAX_IMAGE_FILE_BYTES } else { u64::MAX })
         })
         .is_ok());
+        assert!(check_attachments(&list[..1], |_| Some(MAX_IMAGE_FILE_BYTES + 1)).is_err());
     }
 
     #[test]
