@@ -14,6 +14,7 @@ mod session_tools;
 mod settings_overlay;
 mod sidebar;
 mod terminal_panel;
+mod usage_card;
 mod usage_ring;
 
 pub use chat_window::ChatWindow;
@@ -22,6 +23,7 @@ pub use composer_controls::{EffortPicker, ModePicker, ModelPicker};
 pub use filter_menu::SidebarFilterMenu;
 pub use new_session_panel::NewSessionPanel;
 pub use panel_frame::PanelFrame;
+pub use usage_card::UsageCard;
 pub use plus_menu::PlusMenu;
 pub use search_palette::SearchPalette;
 pub use session_row::SessionRow;
