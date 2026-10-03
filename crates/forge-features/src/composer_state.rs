@@ -103,8 +103,10 @@ impl ComposerState {
         let mut picking = self.picking;
         let mut attachments = self.attachments;
         picking.set(true);
-        // Root scope: the dialog outlives a re-render of the composer that asked for it.
-        dioxus::core::spawn_forever(async move {
+        // Not `spawn_forever`: the signals written below belong to this composer, so the task must end
+        // with it (switching session while the dialog is open drops them; writing to a dropped signal
+        // panics). The chips are discarded with the composer anyway.
+        spawn(async move {
             let picked = services.file_picker.pick_files().await;
             picking.set(false);
             add_attachments(&mut attachments.write(), picked);
@@ -120,7 +122,7 @@ impl ComposerState {
         let mut picking = self.picking;
         let mut folders = self.folders;
         picking.set(true);
-        dioxus::core::spawn_forever(async move {
+        spawn(async move {
             let picked = services.folder_picker.pick_folder().await;
             picking.set(false);
             let Some(path) = picked else { return };
