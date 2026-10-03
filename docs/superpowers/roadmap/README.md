@@ -68,8 +68,9 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 17 | Sidebar search and groups (built) | SES-07, SES-08, SES-11 | Grows with the number of sessions |
 | 18 | Composer `+` menu (built, CMP-02 voice left out) | CMP-01, CMP-06 | Attachments are the largest piece; split if needed |
 | 19 | Fork and effort (built) | SES-01, CMP-05, OTH-07 | The small items the user chose first |
-| 20 | Terminal panel | PNL-01, PNL-06 | First right-hand dock; later panels reuse it |
-| 21 | Changes, files, preview panels | PNL-02, PNL-03, PNL-04 | Needs observation round 2 first |
+| 20 | Archive (built) | SES-02, SES-06 key A, SES-08 status | Took Plan 20's place; the terminal moved to 21A |
+| 21A | Dock, terminal, prevent sleep (built) | PNL-01, PNL-06 | First right-hand dock; later panels reuse it |
+| 21B | Changes, files, preview panels | PNL-02, PNL-03, PNL-04 | Observation round 5 is done; read-only Files and a small Preview (spec `2026-10-03-right-dock-panels-design.md`) |
 | 22 | Routines | PG-01 | Needs a scheduler that runs only while the app is open |
 | 23 | Customize: explore | PG-02 | Needs a catalogue source |
 | 24 | Home dashboard | PG-05 | Reads transcripts; no new port if usage already covers it |

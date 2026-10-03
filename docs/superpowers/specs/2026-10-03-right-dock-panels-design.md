@@ -99,3 +99,17 @@ Tabs ("New tab", `+`), back, forward, reload, a URL field, drawn in `forge-widge
 ## Not built (to the backlog)
 
 Files editor, auto save and its options; Changes stage/revert/commit; Preview cookie import, element picker, layout icon; the terminal's stacking rule; saving panel layout across restarts.
+
+## As built (Plan 21A)
+
+Built as designed: the dock (`forge-features/dock.rs`, `forge-widgets/dock.rs`), `TerminalPort` with `forge-adapter-terminal` (`portable-pty`, login shell), `SleepPort` with `forge-adapter-sleep` (`caffeinate -i -w <pid>`), xterm.js 5.5.0 and addon-fit 0.10.0 vendored under `crates/forge-shared/assets` and put in the window head with `Config::with_custom_head`, `SessionTools` in the chat header. Plan: `docs/superpowers/plans/2026-10-03-dock-terminal-sleep.md`.
+
+Differences from the design:
+
+- Width: a fixed 280 to 900 px clamp; the chat column keeps a CSS minimum.
+- The dock is not drawn for an archived session, and its terminal icon is hidden there (the real app's archived toolbar has no terminal icon).
+- The page sends the shell a new size only 150 ms after the last change. Without it a drag made zsh redraw its prompt at every step (found in the harness).
+- Leaving a session ends its shells and returning opens a fresh one; the dock layout and the Prevent sleep switch are kept per session. This is a limit of the chat being unmounted when it is not active, not a decision.
+- The `⋮` menu stays open after a click on the switch.
+
+Checked in the harness (`scripts/harness`, `my-app` and the missing `my_app`): open and close, a command runs in the session folder, drag resize, tabs, expand and collapse, `exit 3` and Restart, the missing-folder message, Prevent sleep on and off with `pgrep`, switching sessions, closing a session and quitting leave no child process. Plan 21B (Changes, Files, Preview) is next.

@@ -90,6 +90,15 @@ Same app and window, on a normal session whose folder is empty or missing (so th
 - The terminal icon was not clicked this round (Round 1 saw that panel). Not seen: whether the terminal stacks in the same column as Changes and Preview.
 - Not seen: with real changes and files; the iOS simulator; the "컴퓨터 절전 모드 방지" toggle (seen off in Round 1, not switched).
 
+## Forge compared with the real app, Plan 21A (2026-10-03)
+
+Looked at in Forge's own window through the harness, not in the real app. Differences found:
+
+- Forge's terminal ends its shells when the person leaves the session (the chat is unmounted); the real app was not seen on a session switch.
+- Forge's `⋮` menu stays open after the switch is clicked; the real app's menu was not seen to be used.
+- The header icons are the glyph `>_` and `⋮`; the real app draws its own icons.
+- With the dock open and the chat narrow, the composer's row (mode, model) wraps; not seen in the real app.
+
 ## Not seen
 
 See the `OBS` table in [backlog.md](backlog.md). In short: any session with real content (tool blocks, permission prompt, diff), the submenus, the changes/files/preview panels, the settings window, shortcuts, split panes, the filter and sidebar-edit menus, and the Artifacts page.
