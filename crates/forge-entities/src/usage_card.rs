@@ -130,12 +130,17 @@ pub struct ChartLayout {
     pub ticks: Vec<u64>,
 }
 
+/// The longest span the chart draws: a year. An older day (or a wrong timestamp) is left off rather
+/// than shrinking every bar to nothing.
+pub const MAX_CHART_DAYS: usize = 365;
+
 /// The slots and bars of the per-day token chart. A week is always seven slots; the other ranges
-/// run from the first day with use to `today` (at least `today`).
+/// run from the first day with use to `today` (at least `today`, at most `MAX_CHART_DAYS`).
 pub fn chart_layout(stats: &RangeStats, range: StatsRange, today: Day) -> ChartLayout {
+    let earliest = today.plus_days(1 - MAX_CHART_DAYS as i64);
     let first = match range {
         StatsRange::Last7Days => today.plus_days(-6),
-        _ => stats.days.keys().next().copied().filter(|first| *first <= today).unwrap_or(today),
+        _ => stats.days.keys().next().copied().filter(|first| *first <= today).unwrap_or(today).max(earliest),
     };
     let count = (today.epoch_days() - first.epoch_days() + 1).max(1) as usize;
     let days: Vec<Day> = (0..count).map(|i| first.plus_days(i as i64)).collect();
@@ -308,5 +313,14 @@ mod tests {
     fn days_read_like_the_chart_axis() {
         assert_eq!(day_label(Day::new(2026, 10, 3)), "Oct 3");
         assert_eq!(day_label(Day::new(2026, 4, 25)), "Apr 25");
+    }
+
+    #[test]
+    fn one_very_old_day_does_not_stretch_the_all_time_chart_past_a_year() {
+        let found = range_of(vec![row(Day::new(1970, 1, 1), 1, "a", 1, 5, 0), row(d(3), 1, "a", 1, 5, 0)], StatsRange::All, d(3));
+        let layout = chart_layout(&found, StatsRange::All, d(3));
+        assert_eq!(layout.days.len(), MAX_CHART_DAYS);
+        assert_eq!(*layout.days.last().unwrap(), d(3));
+        assert_eq!(layout.bars.len(), 1, "the day outside the span has no bar");
     }
 }
