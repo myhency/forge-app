@@ -10,13 +10,13 @@ Forge status was read from `crates/` on 2026-10-03.
 | --- | --- | --- | --- | --- | --- | --- |
 | SES-01 | Fork a session (menu item "포크", key F) | partly | none | M | - | Menu item seen, its effect not. Does it copy the transcript, or start from a point in it? Observe. |
 | SES-02 | Archive a session (menu item "보관", key A), and a way to see and restore archived ones | partly | none | M | - | Where archived sessions go was not seen. Archive is not delete. Compare Forge's delete (spec §19). |
-| SES-03 | View transcript (submenu): 일반 (normal), 사고 과정 (thinking), 자세히 (detailed) | seen | none | S | - | Radio choice, normal is the default. Effect on the chat view not seen (needs OBS-01). |
-| SES-04 | Output style (submenu): only "새 스타일..." | seen | none | S | - | No built-in styles listed. What "새 스타일..." does was not tried. |
+| SES-03 | View transcript (submenu): 일반 (normal), 사고 과정 (thinking), 자세히 (detailed) | seen | has | S | Plan 15 (built) | Radio choice, normal is the default. Forge: a Normal / Thinking / Detailed control in the chat header. What the desktop app shows for "자세히" was not seen (needs OBS-01); Forge opens each tool call with input and result. |
+| SES-04 | Output style (submenu): only "새 스타일..." | seen | none | S | won't? | No built-in styles listed. What "새 스타일..." does was not tried. |
 | SES-05 | Open in (submenu): 새 창 (new window), 클라우드 (run in the cloud) | seen | none | S | won't? | Not editors or Finder. Cloud runs are out of scope; a new window needs multi-window. The user decides. |
-| SES-06 | Single-key shortcuts in the session menu (R rename, F fork, A archive, D delete) | seen | none | S | - | Forge has rename and delete in the menu, no keys shown. |
+| SES-06 | Single-key shortcuts in the session menu (R rename, F fork, A archive, D delete) | seen | partial | S | Plan 15 (built: R, D) | F and A wait for SES-01 and SES-02. Forge matches the physical key, so R and D work with a Korean input method on. |
 | SES-07 | Sidebar search | partly | none | M | - | Search box seen at the top of the sidebar; what it searches (titles, text) and how results look were not seen. |
 | SES-08 | Project group header tools: `+` new session in that project, filter/sort icon, collapse chevron | partly | partial | M | - | Header, `+` and filter icon seen; the filter's contents were not. Forge has a new-session panel (spec §22). |
-| SES-09 | Recovery screen for a session whose transcript is missing ("CLI 세션 가져오기", archive, delete) and a bar for a missing folder ("폴더 선택", archive) | seen | partial | M | - | Forge opens such a session view-only (spec §23). The import action was not tried. |
+| SES-09 | Recovery screen for a session whose transcript is missing ("CLI 세션 가져오기", archive, delete) and a bar for a missing folder ("폴더 선택", archive) | seen | partial | M | won\'t (Plan 15) | Forge opens such a session view-only (spec §23). The import action was not tried. Plan 15: the missing-transcript screen cannot occur in Forge, which lists sessions from the transcripts on disk; "폴더 선택" is unchecked. |
 | SES-10 | Edit the sidebar ("사이드바 편집…", under "더보기") | partly | none | S | - | Only the menu item seen. Probably chooses which items show. |
 | SES-11 | Sidebar width, collapse button, back/forward history buttons in the title bar | seen | none | S | - | Collapse and history buttons seen; whether the sidebar resizes was not tried. |
 

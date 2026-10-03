@@ -46,3 +46,15 @@ The desktop app shows "디스크에서 세션을 찾을 수 없음" for a sessio
 ## Testing
 
 Unit tests for the loader, the event, the mode filter and the key mapping. Then a harness run (`scripts/harness/`) with a fixture session that has thinking, to see the three modes and the keys in the real window.
+
+## As built (2026-10-03)
+
+Built: SES-03 (modes, data path, header control) and SES-06 (R and D). Checked in the real window with the harness fixture `Read the config` (thinking, a tool call and its result, one block per line).
+
+- The fixture now holds that session, so the harness shows the three modes.
+- **Keys use the physical key.** The first version matched the character; with a Korean input method the R key types "ㄱ" and nothing happened. The menu now matches `KeyR` and `KeyD` (found in the harness, not by reading the code).
+- **Thinking is grouped.** The loader joins the thinking of a turn into one block shown above the answer, as the turn is one message in Forge. A thought between two tool calls is not shown next to them.
+- **Live thinking is not verified.** The sidecar forwards `thinking_delta` (unit-tested with a stub), but no message was sent from the harness, so whether the SDK emits thinking for the session's model and options was not seen. If it does not, only loaded transcripts show thinking.
+- The sidecar's `tsc` typecheck was not run: TypeScript is not installed in this worktree. Its 69 vitest tests pass.
+- The arrow on an opened tool line stays `▸` in Detailed.
+- Left out as decided: SES-04, SES-05 (`won't?`), SES-09, fork and archive.

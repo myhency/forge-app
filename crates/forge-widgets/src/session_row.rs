@@ -152,11 +152,10 @@ pub fn SessionRow(project: PathBuf, entry: SidebarEntry, active: bool, onopen: E
                                         refocus_workspace();
                                         return;
                                     }
-                                    let Key::Character(key) = event.key() else { return };
                                     let modified = event
                                         .modifiers()
                                         .intersects(Modifiers::CONTROL | Modifiers::META | Modifiers::ALT);
-                                    match menu_key_action(&key, modified, actions) {
+                                    match menu_key_action(&event.code().to_string(), modified, actions) {
                                         Some(MenuKeyAction::Rename) => {
                                             event.stop_propagation();
                                             event.prevent_default();

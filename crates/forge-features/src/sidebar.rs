@@ -71,13 +71,16 @@ pub enum MenuKeyAction {
 /// The single letters the menu shows: R renames, D deletes (Claude Code desktop's menu keys). A key
 /// does what its item does, so a key for a disabled item does nothing. Any modifier turns the key
 /// into something else (⌘R reloads), so it is left alone.
-pub fn menu_key_action(key: &str, modified: bool, actions: RowActions) -> Option<MenuKeyAction> {
+///
+/// `code` is the physical key (`"KeyR"`), not the character it types: with a Korean input method
+/// the R key types "ㄱ", and the menu letter must still work.
+pub fn menu_key_action(code: &str, modified: bool, actions: RowActions) -> Option<MenuKeyAction> {
     if modified {
         return None;
     }
-    match key.to_lowercase().as_str() {
-        "r" if actions.can_rename => Some(MenuKeyAction::Rename),
-        "d" if actions.delete == DeleteAction::Allowed => Some(MenuKeyAction::Delete),
+    match code {
+        "KeyR" if actions.can_rename => Some(MenuKeyAction::Rename),
+        "KeyD" if actions.delete == DeleteAction::Allowed => Some(MenuKeyAction::Delete),
         _ => None,
     }
 }
@@ -332,27 +335,25 @@ mod tests {
     }
 
     #[test]
-    fn r_renames_and_d_deletes_in_either_case() {
+    fn the_r_key_renames_and_the_d_key_deletes() {
         let all = actions(true, DeleteAction::Allowed);
-        assert_eq!(menu_key_action("r", false, all), Some(MenuKeyAction::Rename));
-        assert_eq!(menu_key_action("R", false, all), Some(MenuKeyAction::Rename), "caps lock");
-        assert_eq!(menu_key_action("d", false, all), Some(MenuKeyAction::Delete));
-        assert_eq!(menu_key_action("D", false, all), Some(MenuKeyAction::Delete));
+        assert_eq!(menu_key_action("KeyR", false, all), Some(MenuKeyAction::Rename));
+        assert_eq!(menu_key_action("KeyD", false, all), Some(MenuKeyAction::Delete));
     }
 
     #[test]
     fn a_key_for_a_disabled_item_does_nothing() {
-        assert_eq!(menu_key_action("d", false, actions(true, DeleteAction::WhileOpen)), None, "open session");
-        assert_eq!(menu_key_action("d", false, actions(false, DeleteAction::Unavailable)), None);
-        assert_eq!(menu_key_action("r", false, actions(false, DeleteAction::Unavailable)), None);
+        assert_eq!(menu_key_action("KeyD", false, actions(true, DeleteAction::WhileOpen)), None, "open session");
+        assert_eq!(menu_key_action("KeyD", false, actions(false, DeleteAction::Unavailable)), None);
+        assert_eq!(menu_key_action("KeyR", false, actions(false, DeleteAction::Unavailable)), None);
     }
 
     #[test]
     fn a_modified_key_and_other_keys_do_nothing() {
         let all = actions(true, DeleteAction::Allowed);
-        assert_eq!(menu_key_action("r", true, all), None, "⌘R");
-        assert_eq!(menu_key_action("f", false, all), None, "fork is not built");
-        assert_eq!(menu_key_action("a", false, all), None, "archive is not built");
+        assert_eq!(menu_key_action("KeyR", true, all), None, "⌘R");
+        assert_eq!(menu_key_action("KeyF", false, all), None, "fork is not built");
+        assert_eq!(menu_key_action("KeyA", false, all), None, "archive is not built");
         assert_eq!(menu_key_action("Enter", false, all), None);
     }
 

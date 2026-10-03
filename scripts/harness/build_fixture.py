@@ -28,8 +28,9 @@ def _epoch(day, hour):
     return int(datetime(2026, 9, day, hour, tzinfo=timezone.utc).timestamp())
 
 
-def _session(number, title_type, title, prompt, day, hour):
+def _session(number, title_type, title, prompt, day, hour, with_reply=False):
     return {
+        "with_reply": with_reply,
         "id": f"00000000-0000-4000-8000-{number:012d}",
         "title_type": title_type,
         "title": title,
@@ -45,6 +46,8 @@ SCENARIO = [
     ("my-app", True, [
         _session(1, "custom-title", "Fix the login bug", "Why does login fail?", 30, 12),
         _session(2, "ai-title", "Add a dark theme", "Can you add a dark theme?", 28, 9),
+        # One answered turn with thinking and a tool call, to look at the transcript view modes.
+        _session(6, "custom-title", "Read the config", "What is in the config?", 30, 15, with_reply=True),
     ]),
     ("my_app", False, [
         _session(3, "ai-title", "Old my_app session", "Set up the project", 20, 9),
@@ -75,6 +78,20 @@ def _write_session(project_dir, cwd, session):
          "message": {"role": "user", "content": session["prompt"]}},
         {"type": session["title_type"], title_key: session["title"], "sessionId": session["id"]},
     ]
+    if session["with_reply"]:
+        sid = session["id"]
+        # Claude Code writes each content block of a reply as its own line.
+        def assistant(block):
+            return {"type": "assistant", "sessionId": sid, "message": {"role": "assistant", "content": [block]}}
+        lines += [
+            assistant({"type": "thinking", "thinking": "The user wants the config, so read it first."}),
+            assistant({"type": "text", "text": "Let me read it."}),
+            assistant({"type": "tool_use", "id": "toolu_1", "name": "Read", "input": {"file_path": "config.toml"}}),
+            {"type": "user", "sessionId": sid, "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": "name = \"demo\"\nmode = \"fast\""}]}},
+            assistant({"type": "thinking", "thinking": "It is short, so quote it."}),
+            assistant({"type": "text", "text": "The config sets `name` to demo and `mode` to fast."}),
+        ]
     transcript.write_text("".join(json.dumps(line) + "\n" for line in lines))
     os.utime(transcript, (session["mtime"], session["mtime"]))
 
