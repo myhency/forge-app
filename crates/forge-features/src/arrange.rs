@@ -257,6 +257,7 @@ mod tests {
             updated_at: updated.map(str::to_string),
             created_at: created.map(str::to_string),
             marker: SessionMarker::Idle,
+            archived: false,
         }
     }
 
