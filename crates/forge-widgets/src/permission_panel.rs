@@ -1,8 +1,20 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{PermissionDecision, PermissionMode, PermissionRequest};
-use forge_entities::{diff_for_tool, permission_key, permission_view, DiffView, PermissionKey};
+use forge_entities::{card_takes_focus, diff_for_tool, permission_key, permission_view, DiffView, PermissionKey};
 use forge_features::use_workspace;
+
+// Asks the page whether a text field holds typed text; the card takes focus only when it does not.
+const FOCUSED_TEXT_LEN: &str = "const a = document.activeElement; dioxus.send(a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') ? a.value.length : -1);";
+
+/// Focuses a card that just appeared so its keys work at once, unless the person is typing.
+pub(crate) async fn take_focus_unless_typing(mounted: std::rc::Rc<MountedData>) {
+    let mut probe = document::eval(FOCUSED_TEXT_LEN);
+    let typed_len = probe.recv::<i64>().await.unwrap_or(-1);
+    if card_takes_focus(typed_len) {
+        let _ = mounted.set_focus(true).await;
+    }
+}
 
 /// A permission request above the message box: what Claude wants to do, the change it would make,
 /// and the choice. `1` / Esc deny, `2` / ⇧⌘↩ allow always, `3` / ⌘↩ allow once.
@@ -33,10 +45,8 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
         div {
             class: "permission-panel",
             tabindex: "0",
-            // The card takes focus when it appears so its keys work at once.
-            onmounted: move |mounted| async move {
-                let _ = mounted.set_focus(true).await;
-            },
+            // The card takes focus when it appears so its keys work at once, unless the person is typing.
+            onmounted: move |mounted| take_focus_unless_typing(mounted.data()),
             onkeydown: move |event: KeyboardEvent| {
                 let modifiers = event.modifiers();
                 let other = modifiers.intersects(Modifiers::CONTROL | Modifiers::ALT);

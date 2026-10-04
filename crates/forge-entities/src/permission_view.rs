@@ -40,6 +40,13 @@ pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
     PermissionView { title: format!("Claude wants to {verb} {subject}?"), subject, path, command }
 }
 
+/// Whether a card that just appeared may take keyboard focus: not while the person is typing.
+/// `typed_len` is the length of the text in the focused text field, or -1 when no text field has
+/// focus. Taking focus from typed text would turn the next digit into a decision.
+pub fn card_takes_focus(typed_len: i64) -> bool {
+    typed_len <= 0
+}
+
 /// What a key does on a permission card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionKey {
@@ -138,6 +145,15 @@ mod tests {
         assert_eq!(permission_key("NumpadEnter", false, true, false), Some(PermissionKey::AllowOnce));
         assert_eq!(permission_key("Enter", true, true, false), Some(PermissionKey::AllowAlways));
         assert_eq!(permission_key("Enter", false, false, false), None, "plain Return is not a decision");
+    }
+
+    #[test]
+    fn a_card_never_takes_focus_from_text_the_person_is_typing() {
+        // -1: no text field has focus; otherwise the length of its text.
+        assert!(card_takes_focus(-1));
+        assert!(card_takes_focus(0), "an empty message box is fine to leave");
+        assert!(!card_takes_focus(1));
+        assert!(!card_takes_focus(120));
     }
 
     #[test]

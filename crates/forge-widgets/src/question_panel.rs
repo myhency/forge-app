@@ -74,9 +74,7 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
         div {
             class: "question-panel",
             tabindex: "0",
-            onmounted: move |mounted| async move {
-                let _ = mounted.set_focus(true).await;
-            },
+            onmounted: move |mounted| crate::permission_panel::take_focus_unless_typing(mounted.data()),
             onkeydown: move |event: KeyboardEvent| {
                 let modifiers = event.modifiers();
                 let code = event.code().to_string();

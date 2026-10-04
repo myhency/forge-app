@@ -13,7 +13,7 @@ use crate::sidebar::project_label;
 use crate::usage_ring::UsageRing;
 
 // Watches the message list: `data-away` on the pane tells the CSS whether the button shows.
-const WATCH_SCROLL: &str = "setTimeout(() => { const list = document.querySelector('.messages'); if (!list || list.dataset.watching) return; list.dataset.watching = '1'; const pane = list.closest('.main-pane'); const update = () => { const away = list.scrollHeight - list.scrollTop - list.clientHeight > 80; pane?.setAttribute('data-away', away ? 'true' : 'false'); }; list.addEventListener('scroll', update); new ResizeObserver(update).observe(list); update(); }, 0);";
+const WATCH_SCROLL: &str = "if (!window.__forgeScrollWatch) { window.__forgeScrollWatch = setInterval(() => { const list = document.querySelector('.messages'); if (!list || list.dataset.watching) return; list.dataset.watching = '1'; const pane = list.closest('.main-pane'); const update = () => { const away = list.scrollHeight - list.scrollTop - list.clientHeight > 80; pane?.setAttribute('data-away', away ? 'true' : 'false'); }; list.addEventListener('scroll', update); const resizes = new ResizeObserver(update); resizes.observe(list); const content = list.firstElementChild; if (content) resizes.observe(content); update(); }, 400); }";
 
 #[component]
 fn ScrollToEnd() -> Element {
@@ -124,5 +124,27 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
         if !archived {
             Dock { id, cwd: view.project_path.clone() }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WATCH_SCROLL;
+
+    #[test]
+    fn the_scroll_watch_keeps_looking_for_the_list_so_a_late_or_replaced_list_is_still_watched() {
+        // The list may not exist yet when the script runs, and a new one replaces it when another
+        // session is opened: a one-shot lookup would leave the button dead.
+        assert!(WATCH_SCROLL.contains("setInterval"), "{WATCH_SCROLL}");
+        assert!(WATCH_SCROLL.contains("dataset.watching"));
+        assert!(WATCH_SCROLL.contains("__forgeScrollWatch"), "installed once per page");
+    }
+
+    #[test]
+    fn the_scroll_watch_also_follows_the_growth_of_the_content_not_only_its_own_box() {
+        // `.messages` keeps its size while its content grows (a reply streaming in), so the
+        // observer must be on the content: the list's first child, `.turns`.
+        assert!(WATCH_SCROLL.contains("list.firstElementChild"), "{WATCH_SCROLL}");
+        assert!(WATCH_SCROLL.contains("ResizeObserver"));
     }
 }
