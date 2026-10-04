@@ -17,7 +17,7 @@ Not in 23B: token count in the clock, undo and rewind icons, anything that opens
 ### 2.1 Sidecar (`sidecar/src/`)
 
 - **Denial text.** A denied tool call returns, as the SDK's `message`, the real app's text: `The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.` (today: `Denied by user`). The model then stops, as in the real app. The existing `Interrupted` and `Sidecar is shutting down` messages stay.
-- **New command `answer_question`:** `{type: "answer_question", permission_request_id, answers: {<question text>: <answer>}}`. The sidecar keeps the input of each pending `canUseTool` request (it already keeps `resolve` and `suggestions`). On `answer_question` for a pending `AskUserQuestion` it resolves `{behavior: "allow", updatedInput: {...input, answers}}` (the SDK's contract: answers map a question's text to the chosen label; several labels of a multi-select are joined with `, `; a typed "Other" answer is the typed text). For any other pending request it ignores the command.
+- **New command `answer_question`:** `{type: "answer_question", permission_request_id, answers: {<question text>: <answer>}}`. The sidecar keeps the input of each pending `canUseTool` request (it already keeps `resolve` and `suggestions`). On `answer_question` for a pending `AskUserQuestion` it resolves `{behavior: "allow", updatedInput: {...input, answers}}` (the SDK's contract: answers map a question's text to the chosen label; several labels of a multi-select are joined with `,` and no space, as the real app's transcript shows (`"파랑,초록"`); the answer card shows them with `, `; a typed "Other" answer is the typed text). For any other pending request it ignores the command.
 - **Skipping a question** is a normal `permission_response` with `deny`; for `AskUserQuestion` the sidecar sends `message: "The user skipped the question."` instead of the denial text above.
 - `permission_request` events already carry `tool_name` and `input`; nothing changes on the way out.
 
@@ -30,7 +30,7 @@ Not in 23B: token count in the clock, undo and rewind icons, anything that opens
 
 ### 2.3 Entities (`forge-entities`)
 
-**Questions.** `question.rs`: `pub struct Question { header, text, options: Vec<QuestionOption { label, description }>, multi: bool }` and `pub fn questions_of(input: &Value) -> Vec<Question>` reading `AskUserQuestion`'s input (`questions[].{header, question, options[].{label, description}, multiSelect}`); missing or malformed fields give an empty list, never a panic. `pub fn answers_map(questions, picks) -> BTreeMap<String, String>` builds the answer text (labels joined by `, `, "Other" text as typed).
+**Questions.** `question.rs`: `pub struct Question { header, text, options: Vec<QuestionOption { label, description }>, multi: bool }` and `pub fn questions_of(input: &Value) -> Vec<Question>` reading `AskUserQuestion`'s input (`questions[].{header, question, options[].{label, description}, multiSelect}`); missing or malformed fields give an empty list, never a panic. `pub fn answers_map(questions, picks) -> BTreeMap<String, String>` builds the answer text (labels joined by `,`, "Other" text as typed).
 
 **Running line.** `turn_view.rs` gets the running state:
 - `build_turns(messages, view, running)` becomes `build_turns(messages, view, live: Option<&LiveState>)`, where `LiveState { waiting: Option<Waiting> }` and `Waiting` is `Permission { tool_name, input }` or `Question`. `running` is `live.is_some()`.
@@ -39,7 +39,7 @@ Not in 23B: token count in the clock, undo and rewind icons, anything that opens
   - `Tool` when the last block is a tool call without a result: `label` is the present-tense verb by tool (`Creating` for Write, `Editing` for Edit/MultiEdit/NotebookEdit, `Reading` for Read, `Searching` for Grep/Glob, `Using <name>` for others; for Bash the call's `description`, else the command, as written), `subject` the file name for file tools, empty for Bash and others.
   - `Thinking` when the model is producing text or thinking (the last block is Text or Thinking, or there are no blocks yet in this turn).
   - `NeedsInput` when `Waiting` is set: shown as the pill `Input needed`, with `changes` the `+a −r` of the pending write or edit when it has a diff.
-- Finished turns are unchanged (23A's summary line, card, footer).
+- Finished turns are unchanged (23A's summary line, card, footer), except that an `AskUserQuestion` call is never part of the folded span: it splits the turn into segments, each folded on its own, and the call itself becomes an `Item::Answers` card between them (23A did not build the answer card; this task does). The answer pairs are read from the call's result text, `Your questions have been answered: "<question>"="<answer>", ... You can now continue ...`, matched against the question texts in the call's input. A pending question (no result yet) draws nothing in the transcript.
 
 **Opened tool rows (23A fix).** A tool row without a diff opens to `key: value` lines (key in grey mono, value in normal text, a string value that looks like an absolute path in blue underline), not pretty JSON; a failed row shows its error text first in dark red. A denied call's error is the denial text above, so it shows in full.
 
