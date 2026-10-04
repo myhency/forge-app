@@ -76,3 +76,21 @@ Not in 23C: editing a file in the panel (the real panel is an editor with auto s
 - The delegated click listener works through `document::eval`; if `dioxus.send` from a long-lived page script is not reliable, the fallback is an `onclick` on the answer text container that reads the clicked `<a>` through a small eval round trip.
 - Suggestions depend on the account's settings (`promptSuggestionEnabled`) and limits; no suggestion is a normal state.
 - The real app's rule for which file names in text become links was not observed in detail (only one example); Forge's rule (a path or a unique name from this session's own tool calls) is its own choice.
+
+## 10. As built (2026-10-04)
+
+Built as planned in ten tasks (plan `docs/superpowers/plans/2026-10-04-chat-view-panels.md`): the sidecar forwards `background_tasks`, `task_finished` and `prompt_suggestion` and takes `stop_task`, with `promptSuggestions` and `perTaskStopAffordance` on; the live view holds `background_tasks` (first-seen times) and `suggestion`; `FilesPort::read_tail`; pure rules in `forge-entities` (`file_open.rs`, `links.rs`, `background.rs`); `Workspace::open_file`; the Files panel serves requests and renders markdown with a `</>` switch; a clickable file card, activity row name and answer-text link; the `Background tasks` panel, its pill and a stop button per task; the suggested prompt and Tab.
+
+**Checked by the user by hand in the real app** (the harness could not drive Forge this time; see Lessons): opening a file from the end-of-turn card, from an opened activity row and from the underlined name in an answer; the rendered markdown and the source switch; the notice for a file outside the session folder; the background pill, the panel with command, seconds and output, the turn's stop button leaving the task running and the card's stop button ending it; the suggestion and Tab; and the 23B items that were left (number keys, focus while typing, dark mode). The user answered that all of it worked.
+
+**Found by the final review and fixed:** a task card made before the Bash result named its output file never read the output (the panel starts reading when the card is created and the card was keyed by id only); cards are now keyed by id and whether the output file is known (`card_key`, tested). This case (a second background command started while the Tasks panel is already open) is **not re-checked in the real app** after the fix.
+
+**Left (deferred minors):** a duplicate match arm in `live_session_actor.rs` (an unreachable-pattern warning); a session folder recorded through a symlink (`/tmp/x` against `/private/tmp/x`) refuses every file click, because the check is lexical; the task card always says `Bash`; `task_cards` reads every tool result, not only Bash calls, and `read_tail` does not check for a regular file; a suggestion stays after a failure; `TaskFinished` is unused; file-link spans react only to a click. Tab fills the box but does not clear the suggestion (a ruling: it comes back if the box is emptied).
+
+**Not built, as planned:** editing in the panel, the preview-tab behaviour, finished tasks listed, files outside the folder.
+
+**Lessons**
+- Writing a file with `open(p, 'w')` in the same expression that reads it empties it when the read comes second; a failed script left `theme.css` truncated and the next commit carried it. The theme tests caught it (nine failures); a commit step chained after a test run must follow reading the result.
+- A plain regular expression over a plan's code fences breaks when the code contains fences of its own; parse fences by a line that is exactly three backticks.
+- The harness: the `Open folder` system dialog takes Return only through `osascript key code 36`, a webview context menu can stay open and swallow keys, and a `forge-app` can survive `stop.sh` and `pkill` (check `pgrep` and the process's working directory before killing, because a Forge started by another worktree looks the same).
+- Dioxus: `use_future` does not re-run when a plain prop changes; key the component by whatever it captured at start.

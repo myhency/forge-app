@@ -74,7 +74,7 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 22 | Routines | PG-01 | Needs a scheduler that runs only while the app is open |
 | 23A | Chat view, static look (built) | new (observation round 7) | Spec `2026-10-04-chat-view-static-design.md`: ordered message blocks, folded tool activity, end card, markdown |
 | 23B | Chat view, running look (built) | new | Spinner, live tool labels, stop button, permission and question cards |
-| 23C | Chat view, side panels and suggestions | new | Spec `2026-10-04-chat-view-panels-design.md`: open files from the chat, markdown render and source switch, background-task pill and panel, suggested next prompt |
+| 23C | Chat view, side panels and suggestions (built) | new | Spec `2026-10-04-chat-view-panels-design.md`: open files from the chat, markdown render and source switch, background-task pill and panel, suggested next prompt |
 | later | Customize: explore | PG-02 | Needs a catalogue source; moved back at the user's request |
 | 24 | Home dashboard and new-session composer (built) | PG-05, CMP-06 | Needed a new port `UsageStatsPort`; observation round 6 |
 
