@@ -619,6 +619,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .files-kind-buttons { display: flex; gap: 8px; }
 .files-kind-button { padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; }
 .files-kind-button:hover { background: var(--bg-hover); }
+.files-settings-menu { position: fixed; bottom: auto; right: auto; min-width: 230px; }
 .files-menu-row { position: relative; }
 .files-menu-sub { position: absolute; top: 0; right: calc(100% + 4px); left: auto; bottom: auto; min-width: 90px; }
 .file-link { cursor: pointer; color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
