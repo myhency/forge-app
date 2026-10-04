@@ -523,3 +523,27 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .send-icon.ready:hover { background: var(--bg-hover); }
 .picker-end .picker-menu { left: auto; right: 0; }
 .picker-heading { padding: 6px 8px 4px; font-size: 11px; color: var(--fg-muted); }
+
+.live-line { display: flex; align-items: center; gap: 8px; color: var(--fg-muted); min-height: 24px; }
+.live-label { color: var(--fg-muted); }
+.live-subject { color: var(--fg); }
+.live-clock { color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+.live-dots { color: var(--accent); font-weight: 700; letter-spacing: 2px; animation: live-pulse 1.2s ease-in-out infinite; }
+.live-spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: live-spin 0.8s linear infinite; flex: none; }
+.live-ring { width: 12px; height: 12px; border: 2px solid var(--accent); border-radius: 50%; box-sizing: border-box; flex: none; }
+.needs-input { padding: 1px 10px; border-radius: 999px; background: rgba(217, 119, 6, 0.14); color: var(--accent); }
+@keyframes live-spin { to { transform: rotate(360deg); } }
+@keyframes live-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .live-dots, .live-spinner { animation: none; } }
+
+.answer-card { width: fit-content; max-width: 100%; box-sizing: border-box; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+.answer-pair + .answer-pair { margin-top: 8px; }
+.answer-question { color: var(--fg-muted); }
+.answer-text { color: var(--fg); }
+
+.input-lines { padding: 8px 12px; }
+.input-line { display: flex; gap: 8px; line-height: 1.6; }
+.input-key { flex: none; color: var(--fg-muted); font-family: var(--mono); font-size: 12px; }
+.input-value { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.input-path { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+.tool-error { padding: 8px 12px; color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
