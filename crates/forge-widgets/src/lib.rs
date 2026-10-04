@@ -3,6 +3,7 @@ mod chat_window;
 mod composer_controls;
 mod dock;
 mod files_editor;
+mod files_kinds;
 mod files_panel;
 mod filter_menu;
 mod new_session_controls;
