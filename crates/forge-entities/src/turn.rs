@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 
 use crate::diff::diff_for_tool_call;
 use crate::diff_view::DiffView;
-use crate::markdown::render_markdown;
+use crate::links::{known_paths, render_markdown_linked};
 use crate::message::{attachment_label, ToolDetail};
 use crate::question::AnswerPair;
 use crate::relative_time::relative_time;
@@ -32,20 +32,21 @@ fn CountChips(added: usize, removed: usize) -> Element {
 /// The conversation: user bubbles, answer text, one folded activity line per turn, a card of the
 /// files the turn changed, and a footer under a finished turn.
 #[component]
-pub fn Turns(messages: Vec<Message>, view: TranscriptView, live: Option<LiveState>) -> Element {
+pub fn Turns(messages: Vec<Message>, view: TranscriptView, live: Option<LiveState>, on_open_file: EventHandler<String>) -> Element {
+    let known = known_paths(&messages);
     let items = build_turns(&messages, view, live.as_ref());
     let detailed = view.expands_tool_calls();
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed }
+                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file }
             }
         }
     }
 }
 
 #[component]
-fn TurnItem(item: Item, detailed: bool) -> Element {
+fn TurnItem(item: Item, detailed: bool, known: Vec<String>, on_open_file: EventHandler<String>) -> Element {
     match item {
         Item::User(message) => {
             let text = message.text();
@@ -65,12 +66,12 @@ fn TurnItem(item: Item, detailed: bool) -> Element {
             }
         }
         Item::Text(text) => {
-            let html = render_markdown(&text);
+            let html = render_markdown_linked(&text, &known);
             rsx! { div { class: "turn-text markdown", dangerous_inner_html: "{html}" } }
         }
         Item::Thinking(text) => rsx! { div { class: "thinking", "{text}" } },
-        Item::Activity(activity) => rsx! { ActivityBlock { activity, detailed } },
-        Item::FileCard(card) => rsx! { FileCardView { card } },
+        Item::Activity(activity) => rsx! { ActivityBlock { activity, detailed, on_open_file } },
+        Item::FileCard(card) => rsx! { FileCardView { card, on_open_file } },
         Item::Footer(footer) => rsx! { FooterView { footer } },
         Item::Answers(pairs) => rsx! { AnswerCard { pairs } },
         Item::Live(line) => rsx! { RunningLine { line } },
@@ -78,7 +79,7 @@ fn TurnItem(item: Item, detailed: bool) -> Element {
 }
 
 #[component]
-fn ActivityBlock(activity: Activity, detailed: bool) -> Element {
+fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<String>) -> Element {
     let mut open = use_signal(|| false);
     let shown = open() || detailed;
     let chevron = if shown { "⌄" } else { "›" };
@@ -96,7 +97,7 @@ fn ActivityBlock(activity: Activity, detailed: bool) -> Element {
             if shown {
                 div { class: "activity-box",
                     for (index, row) in activity.rows.iter().enumerate() {
-                        ActivityRow { key: "{index}", row: row.clone(), detailed }
+                        ActivityRow { key: "{index}", row: row.clone(), detailed, on_open_file }
                     }
                 }
             }
@@ -105,16 +106,16 @@ fn ActivityBlock(activity: Activity, detailed: bool) -> Element {
 }
 
 #[component]
-fn ActivityRow(row: Row, detailed: bool) -> Element {
+fn ActivityRow(row: Row, detailed: bool, on_open_file: EventHandler<String>) -> Element {
     match row {
         Row::Narration(text) => rsx! { div { class: "activity-row narration", "{text}" } },
         Row::Thinking(text) => rsx! { div { class: "activity-row narration thinking", "{text}" } },
-        Row::Tool(tool) => rsx! { ToolRowView { tool, detailed } },
+        Row::Tool(tool) => rsx! { ToolRowView { tool, detailed, on_open_file } },
     }
 }
 
 #[component]
-fn ToolRowView(tool: ToolRow, detailed: bool) -> Element {
+fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>) -> Element {
     let mut expanded = use_signal(|| false);
     let open = expanded() || detailed;
     let chevron = if open { "⌄" } else { "›" };
@@ -129,7 +130,21 @@ fn ToolRowView(tool: ToolRow, detailed: bool) -> Element {
                 if !tool.verb.is_empty() {
                     span { class: "row-verb", "{tool.verb}" }
                 }
-                span { class: "row-subject", "{tool.subject}" }
+                if !tool.path.is_empty() {
+                    span {
+                        class: "row-subject file-name-link",
+                        onclick: {
+                            let path = tool.path.clone();
+                            move |event: MouseEvent| {
+                                event.stop_propagation();
+                                on_open_file.call(path.clone());
+                            }
+                        },
+                        "{tool.subject}"
+                    }
+                } else {
+                    span { class: "row-subject", "{tool.subject}" }
+                }
                 if tool.failed {
                     span { class: "row-failed", "failed" }
                 }
@@ -151,7 +166,7 @@ fn ToolRowView(tool: ToolRow, detailed: bool) -> Element {
 }
 
 #[component]
-fn FileCardView(card: FileCard) -> Element {
+fn FileCardView(card: FileCard, on_open_file: EventHandler<String>) -> Element {
     let heading = if card.files.len() == 1 { None } else { Some(format!("{} files edited", card.files.len())) };
     rsx! {
         div { class: "file-card",
@@ -163,7 +178,16 @@ fn FileCardView(card: FileCard) -> Element {
             }
             for file in card.files.iter() {
                 div { key: "{file.path}", class: "file-card-row", title: "{file.path}",
-                    span { class: "file-name", "{file.name}" }
+                    button {
+                        class: "file-name file-name-link",
+                        r#type: "button",
+                        title: "Open {file.path}",
+                        onclick: {
+                            let path = file.path.clone();
+                            move |_| on_open_file.call(path.clone())
+                        },
+                        "{file.name}"
+                    }
                     CountChips { added: file.added, removed: file.removed }
                 }
             }
