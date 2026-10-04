@@ -113,7 +113,6 @@ fn ToolRowView(tool: ToolRow, detailed: bool) -> Element {
     let open = expanded() || detailed;
     let chevron = if open { "⌄" } else { "›" };
     let class = if tool.failed { "activity-row-head failed" } else { "activity-row-head" };
-    let diff = diff_for_tool_call(&tool.call);
     rsx! {
         div { class: "activity-row",
             button {
@@ -132,7 +131,7 @@ fn ToolRowView(tool: ToolRow, detailed: bool) -> Element {
                 span { class: "chevron", "{chevron}" }
             }
             if open {
-                if let Some(diff) = diff {
+                if let Some(diff) = tool.has_diff.then(|| diff_for_tool_call(&tool.call)).flatten() {
                     DiffView { diff }
                 } else {
                     ToolDetail { tool_call: tool.call.clone() }

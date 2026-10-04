@@ -26,6 +26,8 @@ pub struct ToolRow {
     pub path: String,
     pub added: usize,
     pub removed: usize,
+    /// Whether the call has a diff to show (a Write or Edit with a path and content).
+    pub has_diff: bool,
     pub failed: bool,
 }
 
@@ -95,7 +97,9 @@ fn file_name(path: &str) -> String {
 
 fn tool_row(call: &ToolCall) -> ToolRow {
     let kind = tool_kind(&call.name);
-    let (added, removed) = diff_for_tool_call(call).map_or((0, 0), |diff| (diff.added, diff.removed));
+    let diff = diff_for_tool_call(call);
+    let (added, removed) = diff.as_ref().map_or((0, 0), |diff| (diff.added, diff.removed));
+    let has_diff = diff.is_some();
     let summary = tool_input_summary(&call.input);
     let (verb, subject, path) = match kind {
         ToolKind::Created | ToolKind::Edited | ToolKind::Read => {
@@ -123,7 +127,7 @@ fn tool_row(call: &ToolCall) -> ToolRow {
         }
         ToolKind::Other => (call.name.clone(), summary.clone(), String::new()),
     };
-    ToolRow { call: call.clone(), kind, verb, subject, path, added, removed, failed: tool_call_status(call) == ToolCallStatus::Failed }
+    ToolRow { call: call.clone(), kind, verb, subject, path, added, removed, has_diff, failed: tool_call_status(call) == ToolCallStatus::Failed }
 }
 
 fn summarize(tools: &[&ToolRow], failed: usize) -> String {
@@ -162,11 +166,11 @@ fn summarize(tools: &[&ToolRow], failed: usize) -> String {
     text
 }
 
-fn build_activity(blocks: &[Block], view: TranscriptView) -> Activity {
+fn build_activity(blocks: &[Block], tool_rows: &[Option<ToolRow>], view: TranscriptView) -> Activity {
     let mut rows = Vec::new();
-    for block in blocks {
+    for (block, tool) in blocks.iter().zip(tool_rows) {
         match block {
-            Block::Tool(call) => rows.push(Row::Tool(tool_row(call))),
+            Block::Tool(_) => rows.extend(tool.clone().map(Row::Tool)),
             Block::Text(text) if !text.trim().is_empty() => rows.push(Row::Narration(text.clone())),
             Block::Thinking(text) if view.shows_thinking() && !text.trim().is_empty() => rows.push(Row::Thinking(text.clone())),
             _ => {}
@@ -179,12 +183,10 @@ fn build_activity(blocks: &[Block], view: TranscriptView) -> Activity {
     Activity { rows, summary, added, removed, failed }
 }
 
-fn build_card(blocks: &[Block]) -> Option<FileCard> {
+fn build_card(tool_rows: &[Option<ToolRow>]) -> Option<FileCard> {
     let mut files: Vec<CardFile> = Vec::new();
-    for block in blocks {
-        let Block::Tool(call) = block else { continue };
-        let row = tool_row(call);
-        if !matches!(row.kind, ToolKind::Created | ToolKind::Edited) || diff_for_tool_call(call).is_none() {
+    for row in tool_rows.iter().flatten() {
+        if !matches!(row.kind, ToolKind::Created | ToolKind::Edited) || !row.has_diff {
             continue;
         }
         match files.iter_mut().find(|file| file.path == row.path) {
@@ -192,7 +194,7 @@ fn build_card(blocks: &[Block]) -> Option<FileCard> {
                 file.added += row.added;
                 file.removed += row.removed;
             }
-            None => files.push(CardFile { name: row.subject, path: row.path, added: row.added, removed: row.removed }),
+            None => files.push(CardFile { name: row.subject.clone(), path: row.path.clone(), added: row.added, removed: row.removed }),
         }
     }
     if files.is_empty() {
@@ -207,6 +209,11 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
         return;
     }
     let start = items.len();
+    // Each tool call's row, and so its diff, is worked out once per build.
+    let tool_rows: Vec<Option<ToolRow>> = blocks
+        .iter()
+        .map(|block| if let Block::Tool(call) = block { Some(tool_row(call)) } else { None })
+        .collect();
     let first = blocks.iter().position(|block| matches!(block, Block::Tool(_)));
     let last = blocks.iter().rposition(|block| matches!(block, Block::Tool(_)));
     let mut closing: Vec<&str> = Vec::new();
@@ -214,7 +221,7 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
         if let (Some(first), Some(last)) = (first, last) {
             if index >= first && index <= last {
                 if index == first {
-                    items.push(Item::Activity(build_activity(&blocks[first..=last], view)));
+                    items.push(Item::Activity(build_activity(&blocks[first..=last], &tool_rows[first..=last], view)));
                 }
                 continue;
             }
@@ -234,10 +241,19 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
         return;
     }
     if ended {
-        if let Some(card) = build_card(&blocks) {
+        if let Some(card) = build_card(&tool_rows) {
             items.push(Item::FileCard(card));
         }
-        items.push(Item::Footer(Footer { text: closing.join("\n\n"), at }));
+        // A turn that ends in a tool call has no text after it: copy the last text it has.
+        let text = if closing.is_empty() {
+            blocks.iter().rev().find_map(|block| match block {
+                Block::Text(text) if !text.trim().is_empty() => Some(text.clone()),
+                _ => None,
+            }).unwrap_or_default()
+        } else {
+            closing.join("\n\n")
+        };
+        items.push(Item::Footer(Footer { text, at }));
     }
 }
 
@@ -529,6 +545,27 @@ mod tests {
         let Item::Footer(footer) = items.last().unwrap() else { panic!() };
         assert_eq!(footer.at.as_deref(), Some("2026-10-04T01:00:09Z"));
         assert_eq!(footer.text, "a\n\nb");
+    }
+
+    #[test]
+    fn the_footer_copies_the_last_text_even_when_a_tool_call_comes_after_it() {
+        let messages = vec![Message::user("go"), assistant(vec![text("what I did"), bash("t-1", Some("Run it"))])];
+        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let Item::Footer(footer) = items.last().unwrap() else { panic!("footer") };
+        assert_eq!(footer.text, "what I did");
+    }
+
+    #[test]
+    fn a_tool_row_knows_whether_it_has_a_diff_so_nobody_computes_it_again() {
+        let rows_of = |block: Block| {
+            let items = build_turns(&[Message::user("go"), assistant(vec![block])], TranscriptView::Normal, false);
+            let Row::Tool(row) = activity(&items).rows[0].clone() else { panic!() };
+            row
+        };
+        assert!(rows_of(write("t-1", "/p/a.py")).has_diff);
+        assert!(rows_of(edit("t-2", "/p/a.py")).has_diff);
+        assert!(!rows_of(bash("t-3", None)).has_diff);
+        assert!(!rows_of(tool("t-4", "Write", json!({"content": "x"}), Some(false))).has_diff);
     }
 
     #[test]
