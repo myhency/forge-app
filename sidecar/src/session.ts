@@ -19,9 +19,16 @@ type PermissionResult =
   | { behavior: "allow"; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[] }
   | { behavior: "deny"; message: string };
 
+export const DENIED_MESSAGE =
+  "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
+export const QUESTION_SKIPPED_MESSAGE = "The user skipped the question.";
+const QUESTION_TOOL = "AskUserQuestion";
+
 interface PendingPermission {
   resolve: (result: PermissionResult) => void;
   suggestions?: unknown[];
+  toolName: string;
+  input: Record<string, unknown>;
 }
 
 const CONTEXT_USAGE_TIMEOUT_MS = 3000;
@@ -98,9 +105,9 @@ function toSdkPermissionMode(mode: string): "default" | "acceptEdits" | "bypassP
   }
 }
 
-function decisionToResult(decision: WirePermissionDecision, suggestions: unknown[] | undefined): PermissionResult {
+function decisionToResult(decision: WirePermissionDecision, suggestions: unknown[] | undefined, toolName: string): PermissionResult {
   if (decision === "deny") {
-    return { behavior: "deny", message: "Denied by user" };
+    return { behavior: "deny", message: toolName === QUESTION_TOOL ? QUESTION_SKIPPED_MESSAGE : DENIED_MESSAGE };
   }
   if (decision === "allow_always") {
     return { behavior: "allow", updatedPermissions: suggestions };
@@ -146,7 +153,14 @@ export class SidecarSession {
       case "permission_response": {
         const pending = this.pendingPermissions.get(command.permission_request_id);
         if (!pending) return;
-        pending.resolve(decisionToResult(command.decision, pending.suggestions));
+        pending.resolve(decisionToResult(command.decision, pending.suggestions, pending.toolName));
+        this.pendingPermissions.delete(command.permission_request_id);
+        return;
+      }
+      case "answer_question": {
+        const pending = this.pendingPermissions.get(command.permission_request_id);
+        if (!pending || pending.toolName !== QUESTION_TOOL) return;
+        pending.resolve({ behavior: "allow", updatedInput: { ...pending.input, answers: command.answers } });
         this.pendingPermissions.delete(command.permission_request_id);
         return;
       }
@@ -258,7 +272,7 @@ export class SidecarSession {
         input,
       });
       return new Promise<PermissionResult>((resolve) => {
-        this.pendingPermissions.set(permissionRequestId, { resolve, suggestions: options.suggestions });
+        this.pendingPermissions.set(permissionRequestId, { resolve, suggestions: options.suggestions, toolName, input });
         // The real SDK always supplies `signal`; the optional chain only tolerates test doubles that omit it.
         options.signal?.addEventListener(
           "abort",

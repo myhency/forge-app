@@ -1,3 +1,5 @@
+use std::time::{Duration, SystemTime};
+
 use dioxus::prelude::*;
 use forge_domain::Message;
 use time::OffsetDateTime;
@@ -6,9 +8,11 @@ use crate::diff::diff_for_tool_call;
 use crate::diff_view::DiffView;
 use crate::markdown::render_markdown;
 use crate::message::{attachment_label, ToolDetail};
+use crate::question::AnswerPair;
 use crate::relative_time::relative_time;
+use crate::tool_summary::elapsed_label;
 use crate::transcript_view::TranscriptView;
-use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, Row, ToolRow};
+use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolRow};
 
 fn counts(added: usize, removed: usize) -> Option<(String, String)> {
     (added > 0 || removed > 0).then(|| (format!("+{added}"), format!("−{removed}")))
@@ -28,8 +32,8 @@ fn CountChips(added: usize, removed: usize) -> Element {
 /// The conversation: user bubbles, answer text, one folded activity line per turn, a card of the
 /// files the turn changed, and a footer under a finished turn.
 #[component]
-pub fn Turns(messages: Vec<Message>, view: TranscriptView, running: bool) -> Element {
-    let items = build_turns(&messages, view, running);
+pub fn Turns(messages: Vec<Message>, view: TranscriptView, live: Option<LiveState>) -> Element {
+    let items = build_turns(&messages, view, live.as_ref());
     let detailed = view.expands_tool_calls();
     rsx! {
         div { class: "turns",
@@ -68,6 +72,8 @@ fn TurnItem(item: Item, detailed: bool) -> Element {
         Item::Activity(activity) => rsx! { ActivityBlock { activity, detailed } },
         Item::FileCard(card) => rsx! { FileCardView { card } },
         Item::Footer(footer) => rsx! { FooterView { footer } },
+        Item::Answers(pairs) => rsx! { AnswerCard { pairs } },
+        Item::Live(line) => rsx! { RunningLine { line } },
     }
 }
 
@@ -132,6 +138,9 @@ fn ToolRowView(tool: ToolRow, detailed: bool) -> Element {
             }
             if open {
                 if let Some(diff) = tool.has_diff.then(|| diff_for_tool_call(&tool.call)).flatten() {
+                    if let Some(error) = tool.error.clone() {
+                        div { class: "tool-error", "{error}" }
+                    }
                     DiffView { diff }
                 } else {
                     ToolDetail { tool_call: tool.call.clone() }
@@ -180,6 +189,68 @@ fn FooterView(footer: Footer) -> Element {
             }
             if !time.is_empty() {
                 span { class: "footer-time", "{time}" }
+            }
+        }
+    }
+}
+
+/// The seconds of a running turn. Only this component re-renders each second; the transcript above
+/// it is not rebuilt.
+#[component]
+fn Clock(started: Option<SystemTime>) -> Element {
+    let mut now = use_signal(SystemTime::now);
+    use_future(move || async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            now.set(SystemTime::now());
+        }
+    });
+    let Some(started) = started else { return rsx! {} };
+    let seconds = now().duration_since(started).map(|elapsed| elapsed.as_secs()).unwrap_or(0);
+    let label = elapsed_label(seconds);
+    rsx! { span { class: "live-clock", "{label}" } }
+}
+
+/// What the running turn is doing right now: a tool, the model writing, or a question for the person.
+#[component]
+fn RunningLine(line: LiveLine) -> Element {
+    match line.kind {
+        LiveKind::Tool => rsx! {
+            div { class: "live-line",
+                span { class: "live-spinner" }
+                span { class: "live-label", "{line.label}" }
+                if !line.subject.is_empty() {
+                    span { class: "live-subject", "{line.subject}" }
+                }
+                Clock { started: line.started }
+            }
+        },
+        LiveKind::Thinking => rsx! {
+            div { class: "live-line",
+                span { class: "live-dots", "···" }
+                Clock { started: line.started }
+            }
+        },
+        LiveKind::NeedsInput => rsx! {
+            div { class: "live-line",
+                span { class: "live-ring" }
+                span { class: "needs-input", "{line.label} ›" }
+                CountChips { added: line.added, removed: line.removed }
+            }
+        },
+    }
+}
+
+/// A finished question: each question in grey and its answer in black, in a narrow bordered card.
+#[component]
+fn AnswerCard(pairs: Vec<AnswerPair>) -> Element {
+    rsx! {
+        div { class: "answer-card",
+            for pair in pairs.iter() {
+                div { key: "{pair.question}", class: "answer-pair",
+                    div { class: "answer-question", "{pair.question}" }
+                    div { class: "answer-text", "{pair.answer}" }
+                }
             }
         }
     }

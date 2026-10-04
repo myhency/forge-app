@@ -80,13 +80,21 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                 {children}
                 span { class: "spacer" }
                 if running {
-                    Button { label: "Stop", kind: ButtonKind::Danger, onclick: stop }
-                }
-                Button {
-                    label: "Send",
-                    kind: ButtonKind::Primary,
-                    disabled: !can_send,
-                    onclick: move |_| submit(),
+                    button {
+                        class: "stop-button",
+                        r#type: "button",
+                        title: "Stop",
+                        "aria-label": "Stop",
+                        onclick: stop,
+                        span { class: "stop-dot" }
+                    }
+                } else {
+                    Button {
+                        label: "Send",
+                        kind: ButtonKind::Primary,
+                        disabled: !can_send,
+                        onclick: move |_| submit(),
+                    }
                 }
             }
         }

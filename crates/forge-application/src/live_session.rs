@@ -42,6 +42,8 @@ pub struct LiveSessionView {
     /// sidecar has reported.
     pub available_models: Vec<AvailableModel>,
     pub phase: Phase,
+    /// When the running turn was sent; `None` while no turn runs.
+    pub turn_started: Option<std::time::SystemTime>,
     /// Oldest first; the front is the one the UI shows.
     pub pending_permissions: VecDeque<PermissionRequest>,
     pub last_error: Option<String>,
@@ -68,6 +70,7 @@ pub enum LiveCommand {
     AddDirectories(Vec<PathBuf>),
     WarmUp,
     Approve { id: String, decision: PermissionDecision },
+    AnswerQuestion { id: String, answers: std::collections::BTreeMap<String, String> },
     Interrupt,
     SetTitle(String),
     SetMode(PermissionMode),
@@ -116,6 +119,11 @@ impl LiveSessionHandle {
             id: permission_request_id,
             decision,
         });
+    }
+
+    /// Answers an `AskUserQuestion` request (see `SidecarPort::answer_question`).
+    pub fn answer_question(&self, permission_request_id: String, answers: std::collections::BTreeMap<String, String>) {
+        let _ = self.commands.send(LiveCommand::AnswerQuestion { id: permission_request_id, answers });
     }
 
     /// Shows `title` as the session's title. Called after the new title is stored, so the view
@@ -192,6 +200,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         effort: None,
         available_models: Vec::new(),
         phase: Phase::Idle,
+        turn_started: None,
         pending_permissions: VecDeque::new(),
         last_error: None,
         can_send: init.can_send,
@@ -673,6 +682,68 @@ mod tests {
             .calls()
             .iter()
             .any(|call| matches!(call, Call::Permission(..))));
+    }
+
+    fn question_request(id: &str) -> SidecarEvent {
+        SidecarEvent::PermissionRequest {
+            permission_request_id: id.to_string(),
+            tool_name: "AskUserQuestion".to_string(),
+            input: serde_json::json!({ "questions": [] }),
+        }
+    }
+
+    #[tokio::test]
+    async fn answering_a_question_pops_it_and_reaches_the_sidecar() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("ask me".to_string());
+        control.push(question_request("q-1"));
+        wait_for(&mut view, "the question", |v| v.pending_permissions.len() == 1).await;
+
+        let answers = BTreeMap::from([("Q?".to_string(), "A".to_string())]);
+        handle.answer_question("q-1".to_string(), answers.clone());
+        wait_for(&mut view, "the question answered", |v| v.pending_permissions.is_empty()).await;
+
+        assert!(control.calls().contains(&Call::Answer("q-1".to_string(), answers)));
+    }
+
+    #[tokio::test]
+    async fn answering_an_unknown_question_does_not_reach_the_sidecar() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        handle.answer_question("nope".to_string(), BTreeMap::new());
+        handle.interrupt(); // commands run in order
+        for _ in 0..200 {
+            if control.calls().contains(&Call::Interrupt) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(!control.calls().iter().any(|call| matches!(call, Call::Answer(..))));
+    }
+
+    #[tokio::test]
+    async fn the_turn_clock_starts_on_send_and_stops_when_the_turn_ends() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        assert!(handle.snapshot().turn_started.is_none());
+
+        handle.send("hi".to_string());
+        let running = wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        assert!(running.turn_started.is_some());
+
+        control.push(turn_complete());
+        let idle = wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle).await;
+        assert!(idle.turn_started.is_none());
     }
 
     #[tokio::test]

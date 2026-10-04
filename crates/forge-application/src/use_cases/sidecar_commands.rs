@@ -43,6 +43,24 @@ impl ApprovePermissionUseCase {
     }
 }
 
+pub struct AnswerQuestionUseCase {
+    sidecar: Arc<dyn SidecarPort>,
+}
+
+impl AnswerQuestionUseCase {
+    pub fn new(sidecar: Arc<dyn SidecarPort>) -> Self {
+        Self { sidecar }
+    }
+
+    pub async fn execute(
+        &self,
+        permission_request_id: String,
+        answers: std::collections::BTreeMap<String, String>,
+    ) -> Result<(), SidecarError> {
+        self.sidecar.answer_question(permission_request_id, answers).await
+    }
+}
+
 pub struct InterruptTurnUseCase {
     sidecar: Arc<dyn SidecarPort>,
 }
@@ -126,5 +144,17 @@ mod tests {
 
         let use_case = InterruptTurnUseCase::new(Arc::new(mock));
         assert!(use_case.execute().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn answer_question_use_case_delegates_to_the_sidecar_port() {
+        let mut mock = MockSidecarPort::new();
+        mock.expect_answer_question()
+            .withf(|id, answers| id == "q-1" && answers.get("Q?").map(String::as_str) == Some("A"))
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let use_case = AnswerQuestionUseCase::new(Arc::new(mock));
+        let answers = std::collections::BTreeMap::from([("Q?".to_string(), "A".to_string())]);
+        assert!(use_case.execute("q-1".to_string(), answers).await.is_ok());
     }
 }

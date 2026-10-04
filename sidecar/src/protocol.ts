@@ -48,6 +48,7 @@ export type SidecarCommand =
     }
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision }
+  | { type: "answer_question"; id: string; permission_request_id: string; answers: Record<string, string> }
   | { type: "interrupt"; id: string }
   | { type: "set_permission_mode"; id: string; mode: WirePermissionMode }
   | { type: "set_model"; id: string; model: string | null }

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { isSafeSkillName } from "../src/skills_plugin.js";
-import { SidecarSession, type QueryFn } from "../src/session.js";
+import { SidecarSession, DENIED_MESSAGE, QUESTION_SKIPPED_MESSAGE, type QueryFn } from "../src/session.js";
 import type { SidecarCommand, SidecarEvent } from "../src/protocol.js";
 
 function toQueryHandle(gen: AsyncGenerator<unknown>, extra: Record<string, unknown> = {}): ReturnType<QueryFn> {
@@ -700,6 +700,91 @@ describe("SidecarSession", () => {
     await expect(
       session.handle({ type: "permission_response", id: "1", permission_request_id: "does-not-exist", decision: "deny" }),
     ).resolves.toBeUndefined();
+  });
+
+  it("denies a tool call with the real app's text so the model stops", async () => {
+    let result: any;
+    const queryFn: QueryFn = (args) => {
+      const canUseTool = (args.options as any).canUseTool;
+      return toQueryHandle((async function* () {
+        result = await canUseTool("Write", { file_path: "/tmp/a.txt", content: "x" }, { requestId: "d-1" });
+        yield { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "." } } };
+      })());
+    };
+    const session = new SidecarSession(queryFn, () => undefined);
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await session.handle({ type: "permission_response", id: "9", permission_request_id: "d-1", decision: "deny" });
+    await started;
+
+    expect(result).toEqual({ behavior: "deny", message: DENIED_MESSAGE });
+    expect(DENIED_MESSAGE).toBe(
+      "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+    );
+  });
+
+  it("denies a skipped question with its own message", async () => {
+    let result: any;
+    const queryFn: QueryFn = (args) => {
+      const canUseTool = (args.options as any).canUseTool;
+      return toQueryHandle((async function* () {
+        result = await canUseTool("AskUserQuestion", { questions: [] }, { requestId: "q-0" });
+        yield { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "." } } };
+      })());
+    };
+    const session = new SidecarSession(queryFn, () => undefined);
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await session.handle({ type: "permission_response", id: "9", permission_request_id: "q-0", decision: "deny" });
+    await started;
+
+    expect(result).toEqual({ behavior: "deny", message: QUESTION_SKIPPED_MESSAGE });
+    expect(QUESTION_SKIPPED_MESSAGE).toBe("The user skipped the question.");
+  });
+
+  it("answers a pending AskUserQuestion with updatedInput.answers", async () => {
+    let result: any;
+    const input = { questions: [{ question: "Q?", header: "H", options: [], multiSelect: false }] };
+    const queryFn: QueryFn = (args) => {
+      const canUseTool = (args.options as any).canUseTool;
+      return toQueryHandle((async function* () {
+        result = await canUseTool("AskUserQuestion", input, { requestId: "q-1" });
+        yield { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "." } } };
+      })());
+    };
+    const session = new SidecarSession(queryFn, () => undefined);
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await session.handle({ type: "answer_question", id: "9", permission_request_id: "q-1", answers: { "Q?": "파랑,초록" } });
+    await started;
+
+    expect(result).toEqual({ behavior: "allow", updatedInput: { ...input, answers: { "Q?": "파랑,초록" } } });
+  });
+
+  it("ignores answer_question for an unknown id and for a request that is not a question", async () => {
+    let result: any;
+    let settled = false;
+    const queryFn: QueryFn = (args) => {
+      const canUseTool = (args.options as any).canUseTool;
+      return toQueryHandle((async function* () {
+        const pending = canUseTool("Bash", { command: "ls" }, { requestId: "b-1" });
+        pending.then((r: any) => { result = r; settled = true; });
+        yield { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "." } } };
+        await pending;
+      })());
+    };
+    const session = new SidecarSession(queryFn, () => undefined);
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await session.handle({ type: "answer_question", id: "1", permission_request_id: "nope", answers: {} });
+    await session.handle({ type: "answer_question", id: "2", permission_request_id: "b-1", answers: { a: "b" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+
+    await session.handle({ type: "permission_response", id: "3", permission_request_id: "b-1", decision: "allow_once" });
+    await started;
+    expect(result).toEqual({ behavior: "allow" });
   });
 
   it("translates the wire protocol's snake_case permission_mode into the SDK's camelCase PermissionMode", async () => {

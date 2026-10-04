@@ -77,6 +77,13 @@ pub trait SidecarPort: Send + Sync {
         permission_request_id: PermissionRequestId,
         decision: PermissionDecision,
     ) -> Result<(), SidecarError>;
+    /// Answers a pending `AskUserQuestion` request: each question's text maps to the chosen
+    /// label(s) (several labels joined by `,`) or the text typed under "Other".
+    async fn answer_question(
+        &self,
+        permission_request_id: PermissionRequestId,
+        answers: BTreeMap<String, String>,
+    ) -> Result<(), SidecarError>;
     async fn interrupt(&self) -> Result<(), SidecarError>;
     /// Asks for a mode change in the running session. The answer comes back as an event.
     async fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), SidecarError>;
