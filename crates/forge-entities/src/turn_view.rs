@@ -32,6 +32,8 @@ pub struct ToolRow {
     /// Whether the call has a diff to show (a Write or Edit with a path and content).
     pub has_diff: bool,
     pub failed: bool,
+    /// What a failed call said (a denial tells what was rejected); shown in red above the opened row.
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -181,7 +183,7 @@ fn tool_row(call: &ToolCall) -> ToolRow {
         }
         ToolKind::Other => (call.name.clone(), summary.clone(), String::new()),
     };
-    ToolRow { call: call.clone(), kind, verb, subject, path, added, removed, has_diff, failed: tool_call_status(call) == ToolCallStatus::Failed }
+    ToolRow { call: call.clone(), kind, verb, subject, path, added, removed, has_diff, failed: tool_call_status(call) == ToolCallStatus::Failed, error: call.result.as_ref().filter(|result| result.is_error).map(|result| result.output.clone()) }
 }
 
 fn summarize(tools: &[&ToolRow], failed: usize) -> String {
@@ -677,6 +679,28 @@ mod tests {
         assert!(rows_of(edit("t-2", "/p/a.py")).has_diff);
         assert!(!rows_of(bash("t-3", None)).has_diff);
         assert!(!rows_of(tool("t-4", "Write", json!({"content": "x"}), Some(false))).has_diff);
+    }
+
+    #[test]
+    fn a_failed_row_carries_its_error_text_so_an_opened_diff_can_show_it() {
+        let denied = Block::Tool(ToolCall {
+            id: "t-1".to_string(),
+            name: "Write".to_string(),
+            input: json!({"file_path": "/p/a.py", "content": "x"}),
+            result: Some(ToolResult { output: "The user doesn't want to proceed.".to_string(), is_error: true }),
+        });
+        let items = build_turns(&[Message::user("go"), assistant(vec![denied])], TranscriptView::Normal, None);
+        let Row::Tool(row) = &activity(&items).rows[0] else { panic!() };
+        assert_eq!(row.error.as_deref(), Some("The user doesn't want to proceed."));
+    }
+
+    #[test]
+    fn a_row_that_did_not_fail_has_no_error_text() {
+        let items = build_turns(&[Message::user("go"), assistant(vec![write("t-1", "/p/a.py"), tool("t-2", "Bash", json!({"command": "ls"}), None)])], TranscriptView::Normal, None);
+        for row in &activity(&items).rows {
+            let Row::Tool(row) = row else { continue };
+            assert_eq!(row.error, None);
+        }
     }
 
     #[test]

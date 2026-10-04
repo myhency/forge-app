@@ -138,6 +138,9 @@ fn ToolRowView(tool: ToolRow, detailed: bool) -> Element {
             }
             if open {
                 if let Some(diff) = tool.has_diff.then(|| diff_for_tool_call(&tool.call)).flatten() {
+                    if let Some(error) = tool.error.clone() {
+                        div { class: "tool-error", "{error}" }
+                    }
                     DiffView { diff }
                 } else {
                     ToolDetail { tool_call: tool.call.clone() }
