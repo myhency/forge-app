@@ -6,6 +6,7 @@ mod files_editor;
 mod files_kinds;
 mod files_menu;
 mod files_panel;
+mod files_state;
 mod files_tabs;
 mod filter_menu;
 mod new_session_controls;

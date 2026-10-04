@@ -1,20 +1,24 @@
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_entities::{code_html, is_markdown, language_of, render_markdown};
-use forge_features::{parse_files_query, run_blocking, use_workspace, FileTree, FilesQuery, Panel};
-use forge_ports::{ContentHit, FileContent, FilesError, FilesPort};
+use forge_entities::is_markdown;
+use forge_features::{parse_files_query, run_blocking, use_workspace, Banner, EditorTabs, FileTree, FilesQuery, Panel};
+use forge_ports::{ContentHit, FilesPort};
 
+use crate::files_editor::{use_editor_channel, use_editor_driver, FromPage};
+use crate::files_kinds::{FileKindView, TabKind};
+use crate::files_menu::FilesMenu;
+use crate::files_state::FilesCtx;
+use crate::files_tabs::{FilesTabs, TabView};
 use crate::panel_frame::PanelFrame;
 
 // Typing waits this long before the files are searched.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
 const SEARCH_LIMIT: usize = 100;
-// Highlighting a file larger than this would keep the UI busy, so it is shown as plain text.
-const HIGHLIGHT_LIMIT: usize = 200_000;
 
 async fn load_dir(files: Arc<dyn FilesPort>, root: PathBuf, dir: String, mut tree: Signal<FileTree>, mut problem: Signal<Option<String>>) {
     let key = dir.clone();
@@ -28,19 +32,38 @@ async fn load_dir(files: Arc<dyn FilesPort>, root: PathBuf, dir: String, mut tre
     }
 }
 
-/// A file tree with a filter field, and a read only viewer for the picked file. A filter that
-/// starts with `?` searches inside the files instead.
+/// The Files panel: a file tree with a filter field (a filter that starts with `?` searches inside
+/// the files), tabs, and an editor that saves by itself. See `files_state.rs` for what the panel does.
 #[component]
 pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let workspace = use_workspace();
     let mut tree = use_signal(FileTree::default);
-    let mut problem = use_signal(|| None::<String>);
+    let problem = use_signal(|| None::<String>);
     let mut filter = use_signal(String::new);
-    let mut tree_open = use_signal(|| true);
-    let mut opened = use_signal(|| None::<String>);
-    let mut content = use_signal(|| None::<Result<FileContent, FilesError>>);
     let mut hits = use_signal(|| None::<Vec<ContentHit>>);
-    let mut source = use_signal(|| false);
+
+    let handle = use_editor_channel();
+    let ctx = FilesCtx {
+        workspace,
+        cwd: cwd.clone(),
+        handle: handle.clone(),
+        tabs: use_signal(EditorTabs::default),
+        kinds: use_signal(HashMap::new),
+        docs: use_signal(HashMap::new),
+        markdown: use_signal(HashMap::new),
+        source: use_signal(HashSet::new),
+        pending: use_signal(HashMap::new),
+        confirm: use_signal(|| None),
+        queue: use_signal(Vec::new),
+        fallback: use_signal(HashMap::new),
+        ready: use_signal(|| false),
+        unavailable: use_signal(|| false),
+    };
+    let host_id = format!("forge-editor-{}", id.0);
+    let on_event = {
+        let ctx = ctx.clone();
+        use_callback(move |event: FromPage| ctx.on_event(event))
+    };
 
     {
         let cwd = cwd.clone();
@@ -73,55 +96,77 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             }
         });
     }
-
-    let open_file = {
-        let cwd = cwd.clone();
-        move |path: String| {
-            opened.set(Some(path.clone()));
-            source.set(false);
-            content.set(None);
-            let (files, root) = (workspace.files(), cwd.clone());
-            spawn(async move {
-                let wanted = path.clone();
-                let Some(result) = run_blocking(move || files.read(&root, &path)).await else { return };
-                if opened.peek().as_deref() == Some(wanted.as_str()) {
-                    content.set(Some(result));
-                }
-            });
-        }
-    };
-
-    // A click in the chat asked for a file: show it (the request is read when the panel mounts, too).
+    // The settings go to the page once it is ready and whenever they change.
     {
-        let mut open_file = open_file.clone();
+        let (handle, ready) = (handle.clone(), ctx.ready);
         use_effect(move || {
-            if let Some(path) = workspace.file_request(id) {
-                workspace.clear_file_request(id);
-                open_file(path);
+            let prefs = workspace.editor_prefs();
+            if ready() {
+                handle.settings(&prefs);
             }
         });
     }
+    // A click in the chat asked for a file: show it (the request is read when the panel mounts, too).
+    {
+        let ctx = ctx.clone();
+        use_effect(move || {
+            if let Some(path) = workspace.file_request(id) {
+                workspace.clear_file_request(id);
+                ctx.open(path);
+            }
+        });
+    }
+    // A tool call of the session finished: tabs with no edits show the file as it is now. A memo, so
+    // a streamed reply (which rewrites the view per chunk) does not rerun it.
+    {
+        let ctx = ctx.clone();
+        let finished = use_memo(move || workspace.finished_tool_calls(id));
+        let mut seen = use_signal(|| *finished.peek());
+        use_effect(move || {
+            let now = finished();
+            if now != *seen.peek() {
+                seen.set(now);
+                ctx.refresh_all();
+            }
+        });
+    }
+    use_editor_driver(host_id.clone(), &handle, on_event);
+
+    let prefs = workspace.editor_prefs();
+    let selected = ctx.tabs.read().selected().map(str::to_string);
+    let kind = selected.as_ref().and_then(|path| ctx.kinds.read().get(path).cloned());
+    let banner = selected.as_ref().and_then(|path| ctx.docs.read().get(path).and_then(|doc| doc.banner.clone()));
+    let tab_views: Vec<TabView> = ctx.tabs.read().tabs().iter().map(|tab| TabView { path: tab.path.clone(), preview: tab.preview }).collect();
+    let unavailable = *ctx.unavailable.read();
+    let is_text = kind.as_ref().is_some_and(TabKind::shows_editor);
+    let markdown_selected = is_text && selected.as_deref().is_some_and(is_markdown);
+    let source_on = selected.as_ref().is_some_and(|path| ctx.source.read().contains(path));
+    let shows_editor = is_text && !unavailable && (!markdown_selected || source_on);
 
     let tools = rsx! {
         button {
-            class: if tree_open() { "icon-button active" } else { "icon-button" },
+            class: if prefs.tree { "icon-button active" } else { "icon-button" },
             r#type: "button",
             title: "File tree",
             "aria-label": "File tree",
-            "aria-pressed": "{tree_open()}",
-            onclick: move |_| tree_open.set(!tree_open()),
+            "aria-pressed": "{prefs.tree}",
+            onclick: move |_| workspace.update_editor_prefs(|prefs| prefs.tree = !prefs.tree),
             "☰"
         }
-        if opened().as_deref().is_some_and(is_markdown) {
+        if markdown_selected {
             button {
                 class: "icon-button files-source-toggle",
                 r#type: "button",
-                title: if source() { "Show rendered" } else { "Show source" },
-                "aria-label": if source() { "Show rendered" } else { "Show source" },
-                onclick: move |_| source.set(!source()),
-                if source() { "👁" } else { "</>" }
+                title: if source_on { "Show rendered" } else { "Show source" },
+                "aria-label": if source_on { "Show rendered" } else { "Show source" },
+                onclick: {
+                    let (ctx, path) = (ctx.clone(), selected.clone().unwrap_or_default());
+                    move |_| ctx.toggle_source(&path)
+                },
+                if source_on { "👁" } else { "</>" }
             }
         }
+        FilesMenu {}
     };
 
     let typed = filter();
@@ -139,9 +184,8 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                                 class: "files-hit",
                                 r#type: "button",
                                 onclick: {
-                                    let path = hit.path.clone();
-                                    let mut open_file = open_file.clone();
-                                    move |_| open_file(path.clone())
+                                    let (path, ctx) = (hit.path.clone(), ctx.clone());
+                                    move |_| ctx.open(path.clone())
                                 },
                                 span { class: "files-hit-path", "{hit.path}:{hit.line}" }
                                 span { class: "files-hit-text", "{hit.text}" }
@@ -161,21 +205,20 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             let note = if typed.trim().is_empty() { "Folder is empty" } else { "No files match" };
             rsx! { div { class: "dock-note", "{note}" } }
         } else {
-            let current = opened();
+            let current = selected.clone();
             rsx! {
                 ul { class: "files-list",
                     for row in rows {
                         {
                             let indent = format!("padding-left: {}px", 6 + row.depth * 14);
                             let mark = if !row.is_dir { " " } else if row.expanded { "▾" } else { "▸" };
-                            let selected = current.as_deref() == Some(row.path.as_str());
+                            let is_selected = current.as_deref() == Some(row.path.as_str());
                             let path = row.path.clone();
-                            let (is_dir, cwd) = (row.is_dir, cwd.clone());
-                            let mut open_file = open_file.clone();
+                            let (is_dir, cwd, ctx) = (row.is_dir, cwd.clone(), ctx.clone());
                             rsx! {
                                 li { key: "{row.path}",
                                     button {
-                                        class: if selected { "files-row selected" } else { "files-row" },
+                                        class: if is_selected { "files-row selected" } else { "files-row" },
                                         r#type: "button",
                                         style: "{indent}",
                                         onclick: move |_| {
@@ -184,7 +227,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                                                     spawn(load_dir(workspace.files(), cwd.clone(), path.clone(), tree, problem));
                                                 }
                                             } else {
-                                                open_file(path.clone());
+                                                ctx.open(path.clone());
                                             }
                                         },
                                         span { class: "files-mark", "{mark}" }
@@ -199,34 +242,82 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         }
     };
 
-    // Highlighting runs when a file is loaded, not on every render (typing in the filter renders).
-    let shown = use_memo(move || match (opened(), content()) {
-        (Some(path), Some(Ok(FileContent::Text { text, .. }))) => {
-            let language = if text.len() > HIGHLIGHT_LIMIT { "" } else { language_of(&path) };
-            let numbers = (1..=text.lines().count().max(1)).map(|n| n.to_string()).collect::<Vec<_>>().join("\n");
-            let html = code_html(language, &text);
-            let rendered = is_markdown(&path).then(|| render_markdown(&text));
-            Some((path, html, numbers, rendered))
+    let banner_view = match banner {
+        Some(Banner::Conflict) => {
+            let (cancel_ctx, overwrite_ctx, key) = (ctx.clone(), ctx.clone(), selected.clone().unwrap_or_default());
+            let cancel_key = key.clone();
+            rsx! {
+                div { class: "files-banner", role: "alert",
+                    span { "{Banner::Conflict.message()}" }
+                    button { r#type: "button", onclick: move |_| cancel_ctx.reload(cancel_key.clone()), "Cancel" }
+                    button { r#type: "button", onclick: move |_| overwrite_ctx.save_from_editor(&key, true), "Overwrite" }
+                }
+            }
         }
-        _ => None,
-    });
-    let viewer = match (opened(), content()) {
+        Some(Banner::SaveFailed(reason)) => {
+            let (retry_ctx, dismiss_ctx, key) = (ctx.clone(), ctx.clone(), selected.clone().unwrap_or_default());
+            let dismiss_key = key.clone();
+            rsx! {
+                div { class: "files-banner", role: "alert",
+                    span { "Could not save: {reason}" }
+                    button { r#type: "button", onclick: move |_| retry_ctx.save_from_editor(&key, false), "Retry" }
+                    button { r#type: "button", onclick: move |_| dismiss_ctx.dismiss_banner(&dismiss_key), "Dismiss" }
+                }
+            }
+        }
+        None => rsx! {},
+    };
+
+    let notice = kind.as_ref().and_then(TabKind::notice);
+    let confirm_view = match ctx.confirm.read().clone() {
+        Some((path, _)) => {
+            let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+            let (save, discard, cancel) = (ctx.clone(), ctx.clone(), ctx.clone());
+            rsx! {
+                div { class: "files-banner", role: "alertdialog",
+                    span { "Save changes to {name}?" }
+                    button { r#type: "button", onclick: move |_| save.confirm_save(), "Save" }
+                    button { r#type: "button", onclick: move |_| discard.confirm_discard(), "Don't save" }
+                    button { r#type: "button", onclick: move |_| cancel.confirm_cancel(), "Cancel" }
+                }
+            }
+        }
+        None => rsx! {},
+    };
+
+    let content = match (&selected, &kind) {
         (None, _) => rsx! { div { class: "dock-note", "Pick a file" } },
-        (Some(_), None) => rsx! { div { class: "dock-note", "Loading…" } },
-        (Some(_), Some(Err(error))) => rsx! { div { class: "dock-note error", "{error}" } },
-        (Some(_), Some(Ok(FileContent::Binary | FileContent::TooLarge | FileContent::Image { .. }))) => rsx! { div { class: "dock-note", "Cannot show this file" } },
-        (Some(_), Some(Ok(FileContent::Text { .. }))) => match shown() {
-            Some((path, _, _, Some(markdown))) if !source() => rsx! {
-                div { class: "file-viewer file-markdown markdown", "aria-label": "{path}", dangerous_inner_html: "{markdown}" }
-            },
-            Some((path, html, numbers, _)) => rsx! {
-                div { class: "file-viewer", "aria-label": "{path}",
-                    pre { class: "file-gutter", "{numbers}" }
-                    pre { class: "file-code", dangerous_inner_html: "{html}" }
+        (Some(_), None | Some(TabKind::Loading)) => rsx! { div { class: "dock-note", "Loading…" } },
+        (Some(_), Some(TabKind::Failed(message))) => rsx! { div { class: "dock-note error", "{message}" } },
+        (Some(path), Some(TabKind::Text { .. })) if unavailable => match ctx.fallback.read().get(path).cloned() {
+            Some((html, numbers)) => rsx! {
+                div { class: "dock-note", "The editor could not be loaded, so this file is shown read only." }
+                div { class: "changes-diff",
+                    div { class: "file-viewer", "aria-label": "{path}",
+                        pre { class: "file-gutter", "{numbers}" }
+                        pre { class: "file-code", dangerous_inner_html: "{html}" }
+                    }
                 }
             },
             None => rsx! { div { class: "dock-note", "Loading…" } },
         },
+        (Some(path), Some(TabKind::Text { .. })) if markdown_selected && !source_on => {
+            let html = ctx.markdown.read().get(path).cloned().unwrap_or_default();
+            rsx! { div { class: "changes-diff", div { class: "file-viewer file-markdown markdown", "aria-label": "{path}", dangerous_inner_html: "{html}" } } }
+        }
+        (Some(_), Some(TabKind::Text { .. })) => rsx! {},
+        (Some(path), Some(other)) => {
+            let (anyway_ctx, reveal_ctx) = (ctx.clone(), ctx.clone());
+            let (anyway_path, reveal_path) = (path.clone(), path.clone());
+            rsx! {
+                FileKindView {
+                    kind: other.clone(),
+                    path: path.clone(),
+                    on_anyway: move |_| anyway_ctx.show_anyway(anyway_path.clone()),
+                    on_reveal: move |_| reveal_ctx.reveal(&reveal_path),
+                }
+            }
+        }
     };
 
     rsx! {
@@ -244,10 +335,48 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 }
             }
             div { class: "changes-body",
-                if tree_open() {
+                if prefs.tree {
                     div { class: "files-side", {list} }
                 }
-                div { class: "changes-diff", {viewer} }
+                div { class: "files-main",
+                    FilesTabs {
+                        tabs: tab_views,
+                        selected: selected.clone(),
+                        on_select: {
+                            let ctx = ctx.clone();
+                            move |path: String| ctx.select(&path)
+                        },
+                        on_close: {
+                            let ctx = ctx.clone();
+                            move |path: String| ctx.close(path)
+                        },
+                        on_reorder: {
+                            let ctx = ctx.clone();
+                            move |(from, to): (String, String)| ctx.reorder(&from, &to)
+                        },
+                        on_keep: {
+                            let ctx = ctx.clone();
+                            move |path: String| ctx.keep(&path)
+                        },
+                        on_close_others: {
+                            let ctx = ctx.clone();
+                            move |path: String| ctx.close_others(path)
+                        },
+                        on_close_all: {
+                            let ctx = ctx.clone();
+                            move |_| ctx.close_all()
+                        },
+                    }
+                    {banner_view}
+                    {confirm_view}
+                    if let Some(text) = notice {
+                        div { class: "dock-note", "{text}" }
+                    }
+                    div { class: "files-view",
+                        div { id: "{host_id}", class: if shows_editor { "files-editor" } else { "files-editor hidden" } }
+                        {content}
+                    }
+                }
             }
         }
     }
