@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,7 +10,7 @@ use forge_domain::{ArchivedRef, Attachment, EffortLevel, PermissionDecision, Per
 use forge_ports::{BrowserPort, FilePickerPort, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
 use time::OffsetDateTime;
 
-use crate::dock::{DockState, DockStates};
+use crate::dock::{DockState, DockStates, Panel};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::new_session::ModelChoice;
 use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
@@ -73,6 +73,7 @@ pub struct Workspace {
     prefs: Signal<SidebarPrefs>,
     archived: Signal<Vec<ArchivedRef>>,
     docks: Signal<DockStates>,
+    file_requests: Signal<HashMap<LiveSessionId, String>>,
     sleeping: Signal<HashSet<LiveSessionId>>,
     search_open: Signal<bool>,
     search_query: Signal<String>,
@@ -108,6 +109,7 @@ pub fn use_workspace_provider() -> Workspace {
             prefs: Signal::new(SidebarPrefs::default()),
             archived: Signal::new(Vec::new()),
             docks: Signal::new(DockStates::default()),
+            file_requests: Signal::new(HashMap::new()),
             sleeping: Signal::new(HashSet::new()),
             search_open: Signal::new(false),
             search_query: Signal::new(String::new()),
@@ -453,6 +455,43 @@ impl Workspace {
     pub fn change_dock(&self, id: LiveSessionId, change: impl FnOnce(&mut DockState)) {
         let mut docks = self.docks;
         docks.write().change(id, change);
+    }
+
+    /// Opens a file in the session's Files panel. The path must be absolute and inside the session
+    /// folder; anything else only sets a notice. The panel opens if it is closed and shows the file
+    /// once it is mounted.
+    pub fn open_file(&self, id: LiveSessionId, absolute_path: String) {
+        let Some(view) = self.live_view(id) else { return };
+        let folder = view.read().project_path.clone();
+        let Some(relative) = forge_entities::relative_to_folder(&folder, &absolute_path) else {
+            let mut notice = self.notice;
+            notice.set(Some("Only files inside the session folder can be opened here.".to_string()));
+            return;
+        };
+        self.change_dock(id, |dock| {
+            if !dock.is_open(Panel::Files) {
+                dock.toggle(Panel::Files);
+            }
+        });
+        let mut requests = self.file_requests;
+        requests.write().insert(id, relative);
+    }
+
+    /// The same for the session on screen (a click in the page does not know its session).
+    pub fn open_file_in_active(&self, absolute_path: String) {
+        if let Active::Live(id) = self.active() {
+            self.open_file(id, absolute_path);
+        }
+    }
+
+    /// The file a click asked the Files panel of this session to show, if any.
+    pub fn file_request(&self, id: LiveSessionId) -> Option<String> {
+        self.file_requests.read().get(&id).cloned()
+    }
+
+    pub fn clear_file_request(&self, id: LiveSessionId) {
+        let mut requests = self.file_requests;
+        requests.write().remove(&id);
     }
 
     pub fn terminal(&self) -> Arc<dyn TerminalPort> {
