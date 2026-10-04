@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use forge_ports::BrowserPort;
@@ -47,6 +48,26 @@ impl BrowserPort for SystemBrowser {
             Err(format!("{} could not open the address", self.program))
         }
     }
+
+    fn reveal(&self, path: &Path) -> Result<(), String> {
+        if !path.is_absolute() {
+            return Err("Only an absolute path can be shown in Finder".to_string());
+        }
+        // `-R` reveals instead of opening; the path is one argument, never part of a command line.
+        let status = Command::new(&self.program)
+            .arg("-R")
+            .arg(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|error| format!("Could not run {}: {error}", self.program))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("{} could not show the file in Finder", self.program))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -76,5 +97,19 @@ mod tests {
         assert!(SystemBrowser::with_program("false").open("https://example.com").is_err());
         let error = SystemBrowser::with_program("forge-no-such-program").open("https://example.com").unwrap_err();
         assert!(error.contains("forge-no-such-program"), "{error}");
+    }
+
+    #[test]
+    fn revealing_with_a_missing_program_says_it_could_not_run() {
+        let browser = SystemBrowser::with_program("/nonexistent/forge-open");
+        let error = browser.reveal(std::path::Path::new("/tmp")).unwrap_err();
+        assert!(error.contains("Could not run"), "{error}");
+    }
+
+    #[test]
+    fn revealing_a_relative_path_is_refused_before_any_program_runs() {
+        let browser = SystemBrowser::with_program("/nonexistent/forge-open");
+        let error = browser.reveal(std::path::Path::new("relative/a.txt")).unwrap_err();
+        assert!(error.contains("absolute"), "{error}");
     }
 }

@@ -538,6 +538,13 @@ impl Workspace {
         self.services.peek().browser.clone()
     }
 
+    /// Shows a file in Finder; a failure becomes a notice.
+    pub fn reveal(&self, path: &Path) {
+        if let Err(message) = self.browser().reveal(path) {
+            self.report(message);
+        }
+    }
+
     /// How many tool calls of an open session have finished. A panel that shows files on disk
     /// reads this inside its loader, so it reloads when a tool call finishes. 0 for a session
     /// that is not open.
