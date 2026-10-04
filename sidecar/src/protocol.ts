@@ -32,6 +32,12 @@ export interface WireSlashCommand {
   argument_hint?: string;
 }
 
+export interface WireBackgroundTask {
+  task_id: string;
+  description: string;
+  task_type: string;
+}
+
 export type SidecarCommand =
   | {
       type: "start_session";
@@ -49,6 +55,7 @@ export type SidecarCommand =
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision }
   | { type: "answer_question"; id: string; permission_request_id: string; answers: Record<string, string> }
+  | { type: "stop_task"; id: string; task_id: string }
   | { type: "interrupt"; id: string }
   | { type: "set_permission_mode"; id: string; mode: WirePermissionMode }
   | { type: "set_model"; id: string; model: string | null }
@@ -70,6 +77,10 @@ export type SidecarEvent =
   | { type: "permission_mode_set"; mode: WirePermissionMode }
   | { type: "model_set"; model: string | null }
   | { type: "effort_set"; effort: WireEffort | null }
+  // The SDK's full set of background tasks (replace semantics), a finished one, and a predicted next prompt.
+  | { type: "background_tasks"; tasks: WireBackgroundTask[] }
+  | { type: "task_finished"; task_id: string; status: "completed" | "failed" | "stopped"; summary: string }
+  | { type: "prompt_suggestion"; text: string }
   // The models the SDK lists for this session and the effort levels each takes; sent once after the start.
   | { type: "models_available"; models: WireAvailableModel[] }
   | { type: "setting_failed"; message: string }

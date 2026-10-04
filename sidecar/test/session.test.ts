@@ -787,6 +787,114 @@ describe("SidecarSession", () => {
     expect(result).toEqual({ behavior: "allow" });
   });
 
+  function systemMessages(...messages: unknown[]): ReturnType<QueryFn> {
+    return toQueryHandle((async function* () {
+      for (const message of messages) yield message;
+    })());
+  }
+
+  it("forwards the SDK's background task set, leaving ambient tasks out", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      systemMessages({
+        type: "system",
+        subtype: "background_tasks_changed",
+        tasks: [
+          { task_id: "b1", task_type: "local_bash", description: "Sleep for 60 seconds" },
+          { task_id: "a1", task_type: "agent", description: "ambient", ambient: true },
+          { task_type: "local_bash", description: "no id" },
+        ],
+      });
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events).toContainEqual({
+      type: "background_tasks",
+      tasks: [{ task_id: "b1", description: "Sleep for 60 seconds", task_type: "local_bash" }],
+    });
+  });
+
+  it("forwards an empty background task set too, so the last task can end", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () => systemMessages({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+    expect(events).toContainEqual({ type: "background_tasks", tasks: [] });
+  });
+
+  it("forwards a finished task, ignoring a status it does not know", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      systemMessages(
+        { type: "system", subtype: "task_notification", task_id: "b1", status: "completed", summary: "done", output_file: "/x" },
+        { type: "system", subtype: "task_notification", task_id: "b2", status: "weird", summary: "?", output_file: "/y" },
+      );
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const finished = events.filter((e) => e.type === "task_finished");
+    expect(finished).toEqual([{ type: "task_finished", task_id: "b1", status: "completed", summary: "done" }]);
+  });
+
+  it("forwards a prompt suggestion and drops an empty one", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      systemMessages({ type: "prompt_suggestion", suggestion: "run the tests" }, { type: "prompt_suggestion", suggestion: "" });
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events.filter((e) => e.type === "prompt_suggestion")).toEqual([{ type: "prompt_suggestion", text: "run the tests" }]);
+  });
+
+  it("starts the query with prompt suggestions and the per-task stop declaration", async () => {
+    let options: any;
+    const queryFn: QueryFn = (args) => {
+      options = args.options;
+      return toQueryHandle((async function* () {})());
+    };
+    const session = new SidecarSession(queryFn, () => undefined);
+    await session.handle(startCommand);
+    expect(options.promptSuggestions).toBe(true);
+    expect(options.perTaskStopAffordance).toBe(true);
+  });
+
+  it("stops a task through the SDK, and shows a refusal as setting_failed without ending the session", async () => {
+    const events: SidecarEvent[] = [];
+    const stopped: string[] = [];
+    let release!: () => void;
+    const queryFn: QueryFn = () =>
+      toQueryHandle(
+        (async function* () {
+          await new Promise<void>((resolve) => (release = resolve));
+        })(),
+        {
+          stopTask: async (taskId: string) => {
+            if (taskId === "gone") throw new Error("no such task");
+            stopped.push(taskId);
+          },
+        },
+      );
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await session.handle({ type: "stop_task", id: "5", task_id: "b1" });
+    await session.handle({ type: "stop_task", id: "6", task_id: "gone" });
+    release();
+    await started;
+
+    expect(stopped).toEqual(["b1"]);
+    expect(events).toContainEqual({ type: "setting_failed", message: "no such task" });
+    expect(events.some((e) => e.type === "error")).toBe(false);
+  });
+
+  it("answers stop_task with setting_failed when no session is running", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(() => toQueryHandle((async function* () {})()), (e) => events.push(e));
+    await session.handle({ type: "stop_task", id: "1", task_id: "b1" });
+    expect(events).toContainEqual({ type: "setting_failed", message: "no session is running" });
+  });
+
   it("translates the wire protocol's snake_case permission_mode into the SDK's camelCase PermissionMode", async () => {
     let capturedPermissionMode: unknown;
     const queryFn: QueryFn = (args) => {

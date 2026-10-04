@@ -11,6 +11,7 @@ export type QueryHandle = AsyncIterable<unknown> & {
   setModel?: (model?: string) => Promise<unknown>;
   applyFlagSettings?: (settings: Record<string, unknown>) => Promise<unknown>;
   supportedModels?: () => Promise<unknown>;
+  stopTask?: (taskId: string) => Promise<void>;
 };
 
 export type QueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => QueryHandle;
@@ -190,6 +191,19 @@ export class SidecarSession {
           { type: "effort_set", effort: command.effort },
         );
         return;
+      case "stop_task": {
+        const query = this.activeQuery;
+        if (!query?.stopTask) {
+          this.emit({ type: "setting_failed", message: "no session is running" });
+          return;
+        }
+        try {
+          await query.stopTask(command.task_id);
+        } catch (err) {
+          this.emit({ type: "setting_failed", message: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
       case "shutdown":
         this.shuttingDown = true;
         this.abortController.abort();
@@ -324,6 +338,9 @@ export class SidecarSession {
           plugins,
           mcpServers: command.mcp_servers ?? {},
           additionalDirectories: command.additional_directories ?? [],
+          // Forge shows a stop button per background task and predicts the next prompt.
+          promptSuggestions: true,
+          perTaskStopAffordance: true,
         },
       });
     } catch (err) {
@@ -410,6 +427,25 @@ export class SidecarSession {
         if (message.subtype === "init") {
           this.emit({ type: "session_started", session_id: message.session_id });
           this.emitCommands(message.slash_commands, true);
+        } else if (message.subtype === "background_tasks_changed") {
+          const tasks = (Array.isArray(message.tasks) ? message.tasks : [])
+            .filter((task: any) => task && !task.ambient && typeof task.task_id === "string" && task.task_id !== "")
+            .map((task: any) => ({
+              task_id: task.task_id as string,
+              description: typeof task.description === "string" ? task.description : "",
+              task_type: typeof task.task_type === "string" ? task.task_type : "",
+            }));
+          this.emit({ type: "background_tasks", tasks });
+        } else if (message.subtype === "task_notification") {
+          const status = message.status;
+          if (typeof message.task_id === "string" && (status === "completed" || status === "failed" || status === "stopped")) {
+            this.emit({ type: "task_finished", task_id: message.task_id, status, summary: typeof message.summary === "string" ? message.summary : "" });
+          }
+        }
+        return;
+      case "prompt_suggestion":
+        if (typeof message.suggestion === "string" && message.suggestion !== "") {
+          this.emit({ type: "prompt_suggestion", text: message.suggestion });
         }
         return;
       case "stream_event": {
