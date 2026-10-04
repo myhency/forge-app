@@ -11,6 +11,8 @@ mod relative_time;
 mod sidebar_item;
 mod tool_summary;
 mod transcript_view;
+mod turn;
+mod turn_view;
 mod usage_card;
 mod usage_view;
 
@@ -19,12 +21,14 @@ pub use diff::{diff_for_tool, diff_for_tool_call, parse_unified_diff, DiffLine, 
 pub use diff_view::DiffView;
 pub use highlight::{code_html, language_of};
 pub use markdown::render_markdown;
-pub use message::{MessageBubble, ToolCallLine};
+pub use message::attachment_label;
 pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_options, model_value, ModelRow, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
 pub use permission::PermissionCard;
 pub use relative_time::relative_time;
 pub use sidebar_item::{SessionMarker, SidebarItem};
 pub use transcript_view::TranscriptView;
+pub use turn::Turns;
+pub use turn_view::{build_turns, Activity, CardFile, FileCard, Footer, Item, Row, ToolKind, ToolRow};
 pub use tool_summary::{tool_call_status, tool_detail_text, tool_input_summary, ToolCallStatus};
 pub use extension_rows::{mcp_rows, mcp_summary, plugin_rows, project_label, skill_rows, ExtensionRow};
 pub use usage_card::{

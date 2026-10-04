@@ -22,7 +22,7 @@ pub use permission::{PermissionDecision, PermissionMode};
 pub use project::ProjectSummary;
 pub use search::{find_snippet, split_at_match, title_matches, SearchHit, Snippet};
 pub use session::{
-    Message, MessageRole, PermissionRequest, Session, SessionId, SessionSummary, ToolCall,
+    Block, Message, MessageRole, PermissionRequest, Session, SessionId, SessionSummary, ToolCall,
     ToolResult,
 };
 pub use usage::{ContextUsage, Cost, CostSummary, PriceTable, Rates, SessionUsage, TokenUsage};

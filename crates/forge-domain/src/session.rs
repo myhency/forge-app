@@ -33,25 +33,104 @@ pub enum MessageRole {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum Block {
+    Text(String),
+    /// What the model thought before it answered.
+    Thinking(String),
+    Tool(ToolCall),
+}
+
+/// One message, its parts in the order they happened: an assistant reply can be text, a tool call,
+/// more text, another tool call.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Message {
     pub role: MessageRole,
-    pub content: String,
-    /// What the model thought before it answered; empty when it did not think or the file has none.
-    pub thinking: String,
-    pub tool_calls: Vec<ToolCall>,
+    pub blocks: Vec<Block>,
     /// Files and images the person attached to this message (user messages only).
     pub attachments: Vec<crate::Attachment>,
+    /// RFC 3339 time of the last transcript line of this message; `None` for a message built live.
+    pub at: Option<String>,
 }
 
 impl Message {
     pub fn new(role: MessageRole) -> Self {
-        Self {
-            role,
-            content: String::new(),
-            thinking: String::new(),
-            tool_calls: Vec::new(),
-            attachments: Vec::new(),
+        Self { role, blocks: Vec::new(), attachments: Vec::new(), at: None }
+    }
+
+    pub fn user(text: impl Into<String>) -> Self {
+        let mut message = Self::new(MessageRole::User);
+        let text = text.into();
+        if !text.is_empty() {
+            message.blocks.push(Block::Text(text));
         }
+        message
+    }
+
+    pub fn assistant_text(text: impl Into<String>) -> Self {
+        let mut message = Self::new(MessageRole::Assistant);
+        message.blocks.push(Block::Text(text.into()));
+        message
+    }
+
+    /// All text blocks, joined by a blank line.
+    pub fn text(&self) -> String {
+        self.joined(|block| match block {
+            Block::Text(text) => Some(text.as_str()),
+            _ => None,
+        })
+    }
+
+    /// All thinking blocks, joined by a blank line.
+    pub fn thinking(&self) -> String {
+        self.joined(|block| match block {
+            Block::Thinking(text) => Some(text.as_str()),
+            _ => None,
+        })
+    }
+
+    fn joined<'a>(&'a self, pick: impl Fn(&'a Block) -> Option<&'a str>) -> String {
+        self.blocks.iter().filter_map(pick).collect::<Vec<_>>().join("\n\n")
+    }
+
+    pub fn tool_calls(&self) -> impl Iterator<Item = &ToolCall> {
+        self.blocks.iter().filter_map(|block| match block {
+            Block::Tool(call) => Some(call),
+            _ => None,
+        })
+    }
+
+    pub fn tool_calls_mut(&mut self) -> impl Iterator<Item = &mut ToolCall> {
+        self.blocks.iter_mut().filter_map(|block| match block {
+            Block::Tool(call) => Some(call),
+            _ => None,
+        })
+    }
+
+    /// Streamed text: extends the last block when it is text, otherwise starts a block.
+    pub fn push_text(&mut self, text: &str) {
+        match self.blocks.last_mut() {
+            Some(Block::Text(existing)) => existing.push_str(text),
+            _ => self.blocks.push(Block::Text(text.to_string())),
+        }
+    }
+
+    pub fn push_thinking(&mut self, text: &str) {
+        match self.blocks.last_mut() {
+            Some(Block::Thinking(existing)) => existing.push_str(text),
+            _ => self.blocks.push(Block::Thinking(text.to_string())),
+        }
+    }
+
+    pub fn push_text_block(&mut self, text: String) {
+        self.blocks.push(Block::Text(text));
+    }
+
+    pub fn push_thinking_block(&mut self, text: String) {
+        self.blocks.push(Block::Thinking(text));
+    }
+
+    pub fn push_tool(&mut self, call: ToolCall) {
+        self.blocks.push(Block::Tool(call));
     }
 }
 
@@ -80,13 +159,81 @@ pub struct PermissionRequest {
 mod tests {
     use super::*;
 
+    fn call(id: &str) -> ToolCall {
+        ToolCall { id: id.to_string(), name: "Bash".to_string(), input: serde_json::json!({}), result: None }
+    }
+
     #[test]
     fn message_new_starts_empty() {
         let message = Message::new(MessageRole::Assistant);
         assert_eq!(message.role, MessageRole::Assistant);
-        assert_eq!(message.content, "");
-        assert!(message.tool_calls.is_empty());
-        assert_eq!(message.thinking, "");
+        assert!(message.blocks.is_empty());
+        assert_eq!(message.text(), "");
+        assert_eq!(message.thinking(), "");
+        assert_eq!(message.tool_calls().count(), 0);
+        assert_eq!(message.at, None);
+    }
+
+    #[test]
+    fn a_user_message_has_one_text_block_unless_it_is_empty() {
+        assert_eq!(Message::user("hi").blocks, vec![Block::Text("hi".to_string())]);
+        assert!(Message::user("").blocks.is_empty());
+        assert_eq!(Message::user("hi").role, MessageRole::User);
+    }
+
+    #[test]
+    fn push_text_extends_the_last_text_block() {
+        let mut message = Message::new(MessageRole::Assistant);
+        message.push_text("Hel");
+        message.push_text("lo");
+        assert_eq!(message.blocks, vec![Block::Text("Hello".to_string())]);
+    }
+
+    #[test]
+    fn push_text_after_a_tool_call_starts_a_new_block() {
+        let mut message = Message::new(MessageRole::Assistant);
+        message.push_text("before");
+        message.push_tool(call("t-1"));
+        message.push_text("after");
+        assert_eq!(
+            message.blocks,
+            vec![Block::Text("before".to_string()), Block::Tool(call("t-1")), Block::Text("after".to_string())]
+        );
+    }
+
+    #[test]
+    fn push_thinking_extends_thinking_but_not_text() {
+        let mut message = Message::new(MessageRole::Assistant);
+        message.push_thinking("a");
+        message.push_thinking("b");
+        message.push_text("answer");
+        message.push_thinking("c");
+        assert_eq!(
+            message.blocks,
+            vec![Block::Thinking("ab".to_string()), Block::Text("answer".to_string()), Block::Thinking("c".to_string())]
+        );
+    }
+
+    #[test]
+    fn block_pushes_always_start_a_new_block_and_text_joins_with_a_blank_line() {
+        let mut message = Message::new(MessageRole::Assistant);
+        message.push_text_block("one".to_string());
+        message.push_text_block("two".to_string());
+        message.push_thinking_block("x".to_string());
+        message.push_thinking_block("y".to_string());
+        assert_eq!(message.blocks.len(), 4);
+        assert_eq!(message.text(), "one\n\ntwo");
+        assert_eq!(message.thinking(), "x\n\ny");
+    }
+
+    #[test]
+    fn tool_calls_mut_lets_a_result_be_attached() {
+        let mut message = Message::new(MessageRole::Assistant);
+        message.push_tool(call("t-1"));
+        for tool_call in message.tool_calls_mut() {
+            tool_call.result = Some(ToolResult { output: "ok".to_string(), is_error: false });
+        }
+        assert_eq!(message.tool_calls().next().unwrap().result.as_ref().unwrap().output, "ok");
     }
 
     #[test]

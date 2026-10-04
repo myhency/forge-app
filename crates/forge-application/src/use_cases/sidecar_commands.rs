@@ -86,7 +86,7 @@ mod tests {
         assert!(use_case.execute(&mut session, "hello".to_string(), Vec::new()).await.is_ok());
         assert_eq!(session.messages.len(), 1);
         assert_eq!(session.messages[0].role, forge_domain::MessageRole::User);
-        assert_eq!(session.messages[0].content, "hello");
+        assert_eq!(session.messages[0].text(), "hello");
     }
 
     #[tokio::test]

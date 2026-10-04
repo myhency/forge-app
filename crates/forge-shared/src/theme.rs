@@ -20,8 +20,16 @@ mod tests {
             ".sidebar-footer",
             ".main-pane",
             ".messages",
-            ".message",
-            ".tool-call",
+            ".turns",
+            ".turn-user",
+            ".user-bubble",
+            ".activity-head",
+            ".activity-box",
+            ".activity-row-head",
+            ".count-added",
+            ".count-removed",
+            ".file-card",
+            ".turn-footer",
             ".permission-card",
             ".composer",
             ".status-dot",
@@ -76,7 +84,6 @@ mod tests {
             ".diff",
             ".diff-line.added",
             ".diff-line.removed",
-            ".tool-call.expandable",
             ".thinking",
             ".tool-detail",
             ".view-switch",
@@ -95,7 +102,7 @@ mod tests {
         let start = THEME_CSS.rfind("@media (prefers-color-scheme: dark)").unwrap();
         let block = &THEME_CSS[start..];
         let dark = &block[..block.find("\n}").unwrap()];
-        for definition in ["--hl-keyword:", "--hl-string:", "--diff-added-bg:", "--diff-removed-bg:"] {
+        for definition in ["--hl-keyword:", "--hl-string:", "--diff-added-bg:", "--diff-removed-bg:", "--link:"] {
             assert!(dark.contains(definition), "the dark palette does not define {definition}");
         }
     }

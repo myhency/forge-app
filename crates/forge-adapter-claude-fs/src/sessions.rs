@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use forge_domain::{
-    find_snippet, title_matches, Message, MessageRole, PermissionMode, SearchHit, Session, SessionId, SessionSummary,
+    find_snippet, title_matches, Block, Message, MessageRole, PermissionMode, SearchHit, Session, SessionId, SessionSummary,
     Snippet, ToolCall, ToolResult,
 };
 use forge_ports::{SessionRepositoryError, SessionRepositoryPort};
@@ -275,13 +275,7 @@ fn flatten_tool_result_content(content: Option<&Value>) -> String {
 }
 
 fn push_user_message(session: &mut Session, text: String) {
-    session.messages.push(Message {
-        role: MessageRole::User,
-        content: text,
-        thinking: String::new(),
-        tool_calls: Vec::new(),
-        attachments: Vec::new(),
-    });
+    session.messages.push(Message::user(text));
 }
 
 fn attach_tool_result(session: &mut Session, block: &Value) {
@@ -296,7 +290,7 @@ fn attach_tool_result(session: &mut Session, block: &Value) {
             .unwrap_or(false),
     };
     'search: for message in session.messages.iter_mut().rev() {
-        for tool_call in message.tool_calls.iter_mut() {
+        for tool_call in message.tool_calls_mut() {
             if tool_call.id == tool_use_id {
                 tool_call.result = Some(result);
                 break 'search;
@@ -336,19 +330,17 @@ fn apply_assistant_line(session: &mut Session, line: &Value) {
     let Some(blocks) = line.pointer("/message/content").and_then(Value::as_array) else {
         return;
     };
-    let mut texts: Vec<&str> = Vec::new();
-    let mut thoughts: Vec<&str> = Vec::new();
-    let mut tool_calls: Vec<ToolCall> = Vec::new();
+    let mut parsed: Vec<Block> = Vec::new();
     for block in blocks {
         match block.get("type").and_then(Value::as_str) {
             Some("text") => {
-                if let Some(text) = block.get("text").and_then(Value::as_str) {
-                    texts.push(text);
+                if let Some(text) = block.get("text").and_then(Value::as_str).filter(|t| !t.is_empty()) {
+                    parsed.push(Block::Text(text.to_string()));
                 }
             }
             Some("thinking") => {
                 if let Some(thought) = block.get("thinking").and_then(Value::as_str).filter(|t| !t.is_empty()) {
-                    thoughts.push(thought);
+                    parsed.push(Block::Thinking(thought.to_string()));
                 }
             }
             Some("tool_use") => {
@@ -356,21 +348,18 @@ fn apply_assistant_line(session: &mut Session, line: &Value) {
                     block.get("id").and_then(Value::as_str),
                     block.get("name").and_then(Value::as_str),
                 ) {
-                    tool_calls.push(ToolCall {
+                    parsed.push(Block::Tool(ToolCall {
                         id: id.to_string(),
                         name: name.to_string(),
                         input: block.get("input").cloned().unwrap_or(Value::Null),
                         result: None,
-                    });
+                    }));
                 }
             }
             _ => {}
         }
     }
-
-    let text = texts.join("\n\n");
-    let thinking = thoughts.join("\n\n");
-    if text.is_empty() && thinking.is_empty() && tool_calls.is_empty() {
+    if parsed.is_empty() {
         return;
     }
     if !matches!(session.messages.last(), Some(m) if m.role == MessageRole::Assistant) {
@@ -380,19 +369,10 @@ fn apply_assistant_line(session: &mut Session, line: &Value) {
         .messages
         .last_mut()
         .expect("an assistant message was just ensured");
-    if !text.is_empty() {
-        if !message.content.is_empty() {
-            message.content.push_str("\n\n");
-        }
-        message.content.push_str(&text);
+    message.blocks.extend(parsed);
+    if let Some(stamp) = line.get("timestamp").and_then(Value::as_str) {
+        message.at = Some(stamp.to_string());
     }
-    if !thinking.is_empty() {
-        if !message.thinking.is_empty() {
-            message.thinking.push_str("\n\n");
-        }
-        message.thinking.push_str(&thinking);
-    }
-    message.tool_calls.extend(tool_calls);
 }
 
 fn apply_line(session: &mut Session, line: &Value) {
@@ -1484,10 +1464,10 @@ mod tests {
         assert_eq!(session.permission_mode, PermissionMode::Default);
         assert_eq!(session.messages.len(), 2);
         assert_eq!(session.messages[0].role, MessageRole::User);
-        assert_eq!(session.messages[0].content, "hi");
+        assert_eq!(session.messages[0].text(), "hi");
         assert_eq!(session.messages[1].role, MessageRole::Assistant);
-        assert_eq!(session.messages[1].content, "hello");
-        assert!(session.messages[1].tool_calls.is_empty());
+        assert_eq!(session.messages[1].text(), "hello");
+        assert!(session.messages[1].tool_calls().next().is_none());
     }
 
     #[tokio::test]
@@ -1516,16 +1496,115 @@ mod tests {
         assert_eq!(session.messages.len(), 2);
         let assistant = &session.messages[1];
         assert_eq!(assistant.role, MessageRole::Assistant);
-        assert_eq!(assistant.content, "Let me look.\n\nDone.");
-        assert_eq!(assistant.thinking, "hmm\n\nok");
-        assert_eq!(assistant.tool_calls.len(), 1);
-        assert_eq!(assistant.tool_calls[0].id, "t-1");
-        assert_eq!(assistant.tool_calls[0].name, "Read");
-        assert_eq!(assistant.tool_calls[0].input, json!({"path": "a.txt"}));
+        assert_eq!(assistant.text(), "Let me look.\n\nDone.");
+        assert_eq!(assistant.thinking(), "hmm\n\nok");
+        assert_eq!(assistant.tool_calls().count(), 1);
+        assert_eq!(assistant.tool_calls().nth(0).unwrap().id, "t-1");
+        assert_eq!(assistant.tool_calls().nth(0).unwrap().name, "Read");
+        assert_eq!(assistant.tool_calls().nth(0).unwrap().input, json!({"path": "a.txt"}));
         assert_eq!(
-            assistant.tool_calls[0].result,
+            assistant.tool_calls().nth(0).unwrap().result,
             Some(ToolResult { output: "file body".to_string(), is_error: false })
         );
+    }
+
+    #[tokio::test]
+    async fn load_session_keeps_text_and_tool_calls_in_the_order_they_happened() {
+        let home = tempfile::tempdir().unwrap();
+        let tool = |id: &str| {
+            assistant_block(json!({"type": "tool_use", "id": id, "name": "Bash", "input": {"command": "ls"}}))
+        };
+        let result = |id: &str| user_blocks(json!([{"type": "tool_result", "tool_use_id": id, "content": "ok"}]));
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("go"),
+                assistant_block(json!({"type": "text", "text": "first"})),
+                tool("t-1"),
+                result("t-1"),
+                assistant_block(json!({"type": "text", "text": "between"})),
+                tool("t-2"),
+                result("t-2"),
+                assistant_block(json!({"type": "text", "text": "last"})),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.messages.len(), 2);
+        let shape: Vec<String> = session.messages[1]
+            .blocks
+            .iter()
+            .map(|block| match block {
+                Block::Text(text) => format!("text:{text}"),
+                Block::Thinking(text) => format!("thinking:{text}"),
+                Block::Tool(call) => format!("tool:{}", call.id),
+            })
+            .collect();
+        assert_eq!(shape, vec!["text:first", "tool:t-1", "text:between", "tool:t-2", "text:last"]);
+        assert!(session.messages[1].tool_calls().all(|call| call.result.is_some()));
+    }
+
+    #[tokio::test]
+    async fn load_session_keeps_the_order_inside_one_line() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("go"),
+                json!({"type": "assistant", "isSidechain": false, "message": {"role": "assistant", "content": [
+                    {"type": "thinking", "thinking": "hm"},
+                    {"type": "text", "text": "a"},
+                    {"type": "tool_use", "id": "t-1", "name": "Read", "input": {"file_path": "x"}},
+                    {"type": "text", "text": "b"}
+                ]}}),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(
+            session.messages[1].blocks,
+            vec![
+                Block::Thinking("hm".to_string()),
+                Block::Text("a".to_string()),
+                Block::Tool(ToolCall {
+                    id: "t-1".to_string(),
+                    name: "Read".to_string(),
+                    input: json!({"file_path": "x"}),
+                    result: None
+                }),
+                Block::Text("b".to_string()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn load_session_reads_the_time_of_an_assistant_message_from_its_last_line() {
+        let home = tempfile::tempdir().unwrap();
+        let at = |stamp: &str, text: &str| {
+            json!({"type": "assistant", "isSidechain": false, "timestamp": stamp,
+                   "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}})
+        };
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("go"),
+                at("2026-10-04T01:00:00.000Z", "one"),
+                at("2026-10-04T01:00:05.000Z", "two"),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.messages[1].at.as_deref(), Some("2026-10-04T01:00:05.000Z"));
+        assert_eq!(session.messages[0].at, None);
     }
 
     #[tokio::test]
@@ -1552,7 +1631,7 @@ mod tests {
 
         let session = load(home.path(), "s1").await.unwrap();
 
-        let calls = &session.messages[1].tool_calls;
+        let calls: Vec<&ToolCall> = session.messages[1].tool_calls().collect();
         assert_eq!(
             calls[0].result,
             Some(ToolResult { output: "boom".to_string(), is_error: true })
@@ -1580,7 +1659,7 @@ mod tests {
         let session = load(home.path(), "s1").await.unwrap();
 
         assert_eq!(session.messages.len(), 2);
-        assert!(session.messages[1].tool_calls[0].result.is_none());
+        assert!(session.messages[1].tool_calls().nth(0).unwrap().result.is_none());
     }
 
     #[tokio::test]
@@ -1600,7 +1679,7 @@ mod tests {
 
         assert_eq!(session.messages.len(), 1);
         assert_eq!(session.messages[0].role, MessageRole::User);
-        assert_eq!(session.messages[0].content, "one\ntwo");
+        assert_eq!(session.messages[0].text(), "one\ntwo");
     }
 
     #[tokio::test]
@@ -1625,7 +1704,7 @@ mod tests {
             roles,
             vec![MessageRole::User, MessageRole::Assistant, MessageRole::User, MessageRole::Assistant]
         );
-        let contents: Vec<&str> = session.messages.iter().map(|m| m.content.as_str()).collect();
+        let contents: Vec<String> = session.messages.iter().map(|m| m.text()).collect();
         assert_eq!(contents, vec!["q1", "a1", "q2", "a2"]);
     }
 
@@ -1699,8 +1778,8 @@ mod tests {
         let session = load(home.path(), "s1").await.unwrap();
 
         assert_eq!(session.messages.len(), 2);
-        assert_eq!(session.messages[0].content, "real question");
-        assert_eq!(session.messages[1].content, "real answer");
+        assert_eq!(session.messages[0].text(), "real question");
+        assert_eq!(session.messages[1].text(), "real answer");
     }
 
     #[tokio::test]
@@ -1794,9 +1873,9 @@ mod tests {
             roles,
             vec![MessageRole::User, MessageRole::Assistant, MessageRole::User, MessageRole::Assistant]
         );
-        assert_eq!(session.messages[1].thinking, "hmm");
-        assert_eq!(session.messages[1].content, "");
-        assert_eq!(session.messages[3].thinking, "more");
+        assert_eq!(session.messages[1].thinking(), "hmm");
+        assert_eq!(session.messages[1].text(), "");
+        assert_eq!(session.messages[3].thinking(), "more");
     }
 
     #[tokio::test]
@@ -1882,7 +1961,7 @@ mod tests {
 
         let session = load(home.path(), "s1").await.unwrap();
 
-        let contents: Vec<&str> = session.messages.iter().map(|m| m.content.as_str()).collect();
+        let contents: Vec<String> = session.messages.iter().map(|m| m.text()).collect();
         assert_eq!(contents, vec!["real question", "second question", "real answer"]);
     }
 
