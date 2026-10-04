@@ -77,6 +77,6 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 23C | Chat view, side panels and suggestions (built) | new | Spec `2026-10-04-chat-view-panels-design.md`: open files from the chat, markdown render and source switch, background-task pill and panel, suggested next prompt |
 | later | Customize: explore | PG-02 | Needs a catalogue source; moved back at the user's request |
 | 24 | Home dashboard and new-session composer (built) | PG-05, CMP-06 | Needed a new port `UsageStatsPort`; observation round 6 |
-| 25A | Files panel as an editor (built, not yet seen in the real window) | PNL-04 | CodeMirror bundle, auto save and conflict banner, tabs; 25B line comments and 25C search and right click items next |
+| 25A | Files panel as an editor (built, checked in the real window) | PNL-04 | CodeMirror bundle, auto save and conflict banner, tabs; 25B line comments and 25C search and right click items next |
 
 Plan 13's earlier candidates (packaging the app, chat view extras, trash restore, split panes) and Plan 12's deferred minors (spec §23.8) are not in this table; they are in the backlog under `OTH`.

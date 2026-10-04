@@ -108,7 +108,7 @@ pub fn FilesTabs(
                     menu.set(None);
                 },
             }
-            div { class: "picker-menu files-tab-menu", role: "menu", style: "left: {x}px; top: {y}px;",
+            div { class: "picker-menu files-tab-menu", role: "menu", style: "left: min({x}px, calc(100vw - 210px)); top: {y}px;",
                 button {
                     class: if preview { "picker-item" } else { "picker-item disabled" },
                     r#type: "button",

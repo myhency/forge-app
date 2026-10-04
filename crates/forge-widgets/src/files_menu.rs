@@ -63,6 +63,16 @@ const GROUPS: [&[Item]; 3] = [
     &[Item::Wrap, Item::Guides, Item::Whitespace, Item::ScrollPastEnd],
 ];
 
+// The menu is `position: fixed` (the header scrolls sideways, which would clip a menu inside it), so it
+// is placed from where the button was clicked: just below it, its right side near the click.
+const MENU_WIDTH: f64 = 230.0;
+const MENU_GAP: f64 = 18.0;
+const WINDOW_MARGIN: f64 = 8.0;
+
+fn menu_origin(click_x: f64, click_y: f64) -> (f64, f64) {
+    ((click_x - MENU_WIDTH).max(WINDOW_MARGIN), click_y + MENU_GAP)
+}
+
 /// The `⋮` menu in the Files panel header: the editor settings. A tick click keeps the menu open
 /// and takes effect at once. `Tab size` opens a small menu to the left.
 #[component]
@@ -70,6 +80,7 @@ pub fn FilesMenu() -> Element {
     let workspace = use_workspace();
     let mut open = use_signal(|| false);
     let mut sizes = use_signal(|| false);
+    let mut origin = use_signal(|| (0.0_f64, 0.0_f64));
     let prefs = workspace.editor_prefs();
     let tab_size = prefs.clamped_tab_size();
     rsx! {
@@ -81,7 +92,9 @@ pub fn FilesMenu() -> Element {
                 "aria-label": "Editor settings",
                 "aria-haspopup": "menu",
                 "aria-expanded": "{open()}",
-                onclick: move |_| {
+                onclick: move |event: MouseEvent| {
+                    let point = event.client_coordinates();
+                    origin.set(menu_origin(point.x, point.y));
                     sizes.set(false);
                     open.set(!open());
                 },
@@ -90,9 +103,10 @@ pub fn FilesMenu() -> Element {
             if open() {
                 div { class: "picker-backdrop", onclick: move |_| open.set(false) }
                 div {
-                    class: "picker-menu down",
+                    class: "picker-menu files-settings-menu",
                     role: "menu",
                     tabindex: "0",
+                    style: "left: {origin().0}px; top: {origin().1}px;",
                     onmounted: move |mounted| async move {
                         let _ = mounted.set_focus(true).await;
                     },
@@ -183,6 +197,13 @@ mod tests {
             }
             assert_eq!(after.tab_size, before.tab_size);
         }
+    }
+
+    #[test]
+    fn the_menu_opens_below_the_click_and_keeps_inside_the_window_on_the_left() {
+        assert_eq!(menu_origin(1000.0, 50.0), (770.0, 68.0));
+        // A click near the left edge must not push the menu off the screen.
+        assert_eq!(menu_origin(100.0, 50.0), (8.0, 68.0));
     }
 
     #[test]

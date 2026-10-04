@@ -51,6 +51,7 @@ mod tests {
             ".files-kind",
             ".files-kind-button",
             ".files-menu-sub",
+            ".files-settings-menu",
             ".file-link",
             ".file-name-link",
             ".task-pill",
