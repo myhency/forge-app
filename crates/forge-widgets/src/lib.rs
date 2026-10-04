@@ -7,6 +7,7 @@ mod filter_menu;
 mod new_session_controls;
 mod new_session_panel;
 mod panel_frame;
+mod permission_panel;
 mod plus_menu;
 mod preview_panel;
 mod search_palette;

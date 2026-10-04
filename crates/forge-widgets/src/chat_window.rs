@@ -1,10 +1,11 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
-use forge_entities::{live_state, PermissionCard, TranscriptView, Turns};
-use forge_features::{use_workspace, PermissionActions, SendMessageBox};
+use forge_entities::{live_state, TranscriptView, Turns};
+use forge_features::{use_workspace, SendMessageBox};
 
 use crate::composer_controls::{EffortPicker, ModePicker, ModelPicker};
 use crate::dock::Dock;
+use crate::permission_panel::PermissionPanel;
 use crate::plus_menu::PlusMenu;
 use crate::session_tools::SessionTools;
 use crate::sidebar::project_label;
@@ -59,9 +60,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 div { class: "banner error", "{error}" }
             }
             if let Some(request) = view.pending_permissions.front() {
-                PermissionCard { request: request.clone(),
-                    PermissionActions { id, request_id: request.id.clone() }
-                }
+                PermissionPanel { key: "{request.id}", id, request: request.clone() }
             }
             if archived {
                 div { class: "banner info archived-bar",
