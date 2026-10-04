@@ -14,8 +14,8 @@ mod usage_stats;
 pub use attachment::{Attachment, AttachmentKind};
 pub use command::SlashCommand;
 pub use config::{
-    normalize_setting, AppConfig, ArchivedRef, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH,
-    MIN_SIDEBAR_WIDTH,
+    normalize_setting, AppConfig, ArchivedRef, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,
+    MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
 };
 pub use effort::{AvailableModel, EffortLevel};
 pub use extension::{ActiveExtensions, McpServerDefinition, PluginDefinition, SkillDefinition};

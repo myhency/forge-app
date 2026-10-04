@@ -95,6 +95,53 @@ impl SidebarPrefs {
     }
 }
 
+pub const DEFAULT_TAB_SIZE: u8 = 4;
+
+/// How the Files panel's editor behaves: the settings of its `⋮` menu. They are kept for the whole
+/// of Forge, not per session. A field missing from the stored config reads as its default.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EditorPrefs {
+    /// Whether the file tree is shown.
+    pub tree: bool,
+    /// Whether a file opens in an italic preview tab that the next file replaces.
+    pub preview_tabs: bool,
+    pub auto_save: bool,
+    /// Whether the Tab key indents (else it moves focus).
+    pub tab_indent: bool,
+    pub wrap: bool,
+    pub indent_guides: bool,
+    pub whitespace: bool,
+    pub scroll_past_end: bool,
+    pub tab_size: u8,
+}
+
+impl Default for EditorPrefs {
+    fn default() -> Self {
+        Self {
+            tree: true,
+            preview_tabs: true,
+            auto_save: true,
+            tab_indent: true,
+            wrap: true,
+            indent_guides: true,
+            whitespace: false,
+            scroll_past_end: false,
+            tab_size: DEFAULT_TAB_SIZE,
+        }
+    }
+}
+
+impl EditorPrefs {
+    /// The tab size to use: a hand-edited value other than 2, 4 or 8 reads as 4.
+    pub fn clamped_tab_size(&self) -> u8 {
+        match self.tab_size {
+            2 | 4 | 8 => self.tab_size,
+            _ => DEFAULT_TAB_SIZE,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct AppConfig {
     pub base_url: Option<String>,
@@ -110,6 +157,8 @@ pub struct AppConfig {
     pub enabled_mcp_servers: Vec<String>,
     #[serde(default)]
     pub sidebar: SidebarPrefs,
+    #[serde(default)]
+    pub editor: EditorPrefs,
     #[serde(default)]
     pub archived: Vec<ArchivedRef>,
 }
@@ -282,5 +331,45 @@ mod tests {
         let config: AppConfig = serde_json::from_str(r#"{"sidebar":{"status":"deleted"}}"#).unwrap();
 
         assert_eq!(config.sidebar.status, StatusFilter::Active);
+    }
+
+    #[test]
+    fn an_old_config_without_editor_preferences_loads_with_the_defaults() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":null,"api_key":null}"#).unwrap();
+
+        assert_eq!(config.editor, EditorPrefs::default());
+        let editor = &config.editor;
+        assert!(editor.tree && editor.preview_tabs && editor.auto_save && editor.tab_indent && editor.wrap && editor.indent_guides);
+        assert!(!editor.whitespace && !editor.scroll_past_end);
+        assert_eq!(editor.tab_size, DEFAULT_TAB_SIZE);
+    }
+
+    #[test]
+    fn editor_preferences_survive_a_round_trip() {
+        let prefs = EditorPrefs { tree: false, auto_save: false, wrap: false, whitespace: true, tab_size: 8, ..EditorPrefs::default() };
+        let config = AppConfig { editor: prefs.clone(), ..AppConfig::default() };
+
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+
+        assert_eq!(back.editor, prefs);
+    }
+
+    #[test]
+    fn a_config_that_names_only_some_editor_fields_keeps_the_defaults_for_the_rest() {
+        let config: AppConfig = serde_json::from_str(r#"{"editor":{"wrap":false}}"#).unwrap();
+
+        assert!(!config.editor.wrap);
+        assert!(config.editor.tree);
+        assert_eq!(config.editor.tab_size, 4);
+    }
+
+    #[test]
+    fn a_tab_size_other_than_2_4_or_8_is_used_as_4() {
+        for stored in [0u8, 1, 3, 5, 16, 255] {
+            assert_eq!(EditorPrefs { tab_size: stored, ..EditorPrefs::default() }.clamped_tab_size(), 4, "stored {stored}");
+        }
+        for stored in [2u8, 4, 8] {
+            assert_eq!(EditorPrefs { tab_size: stored, ..EditorPrefs::default() }.clamped_tab_size(), stored);
+        }
     }
 }

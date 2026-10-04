@@ -6,7 +6,7 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{ArchivedRef, Attachment, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{ArchivedRef, Attachment, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
 use time::OffsetDateTime;
 
@@ -71,6 +71,7 @@ pub struct Workspace {
     new_commands: Signal<Vec<SlashCommand>>,
     transcript_views: Signal<TranscriptViews>,
     prefs: Signal<SidebarPrefs>,
+    editor: Signal<EditorPrefs>,
     archived: Signal<Vec<ArchivedRef>>,
     docks: Signal<DockStates>,
     file_requests: Signal<HashMap<LiveSessionId, String>>,
@@ -107,6 +108,7 @@ pub fn use_workspace_provider() -> Workspace {
             new_commands,
             transcript_views: Signal::new(TranscriptViews::default()),
             prefs: Signal::new(SidebarPrefs::default()),
+            editor: Signal::new(EditorPrefs::default()),
             archived: Signal::new(Vec::new()),
             docks: Signal::new(DockStates::default()),
             file_requests: Signal::new(HashMap::new()),
@@ -185,15 +187,37 @@ impl Workspace {
         });
     }
 
+    /// How the Files panel's editor behaves (its `⋮` menu).
+    pub fn editor_prefs(&self) -> EditorPrefs {
+        self.editor.read().clone()
+    }
+
+    /// Changes the editor preferences and saves them.
+    pub fn update_editor_prefs(&self, change: impl FnOnce(&mut EditorPrefs)) {
+        let mut editor = self.editor;
+        change(&mut editor.write());
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let prefs = self.editor_prefs();
+        // Root scope: the save must finish even if the menu that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
+            if let Err(error) = services.settings.save_editor(&prefs).await {
+                this.report(format!("failed to save the editor settings: {error}"));
+            }
+        });
+    }
+
     // A config that cannot be read keeps the defaults; the settings screen reports that file's
     // problems, so the sidebar does not repeat them.
     fn reload_prefs(&self) {
         let services = (*self.services.peek()).clone();
         let mut prefs = self.prefs;
         let mut archived = self.archived;
+        let mut editor = self.editor;
         spawn(async move {
             if let Ok(config) = services.settings.load().await {
                 prefs.set(config.sidebar);
+                editor.set(config.editor);
                 archived.set(config.archived);
             }
         });
@@ -512,6 +536,13 @@ impl Workspace {
 
     pub fn browser(&self) -> Arc<dyn BrowserPort> {
         self.services.peek().browser.clone()
+    }
+
+    /// Shows a file in Finder; a failure becomes a notice.
+    pub fn reveal(&self, path: &Path) {
+        if let Err(message) = self.browser().reveal(path) {
+            self.report(message);
+        }
     }
 
     /// How many tool calls of an open session have finished. A panel that shows files on disk

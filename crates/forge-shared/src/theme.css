@@ -595,6 +595,32 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 
 .file-markdown { padding: 12px 16px; overflow: auto; display: block; }
 .files-source-toggle { font-family: var(--mono); font-size: 12px; }
+
+/* The Files panel as an editor: tabs, banners, the editor, and screens for other kinds of file. */
+.files-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.files-tabs { flex: none; display: flex; gap: 2px; padding: 4px; overflow-x: auto; border-bottom: 1px solid var(--border); }
+.files-tab { flex: none; display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 8px; border-radius: 6px; font-size: 12px; cursor: pointer; user-select: none; }
+.files-tab:hover, .files-tab.selected { background: var(--bg-hover); }
+.files-tab.preview .files-tab-name { font-style: italic; }
+.files-tab-close { border: none; border-radius: 4px; background: transparent; color: var(--fg-muted); font: inherit; font-size: 12px; line-height: 1; padding: 2px 4px; cursor: pointer; }
+.files-tab-close:hover { background: var(--border); color: var(--fg); }
+.files-tab-menu { position: fixed; bottom: auto; right: auto; }
+.files-banner { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-hover); border-bottom: 1px solid var(--border); font-size: 12px; }
+.files-banner span { flex: 1; min-width: 0; }
+.files-banner button { flex: none; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; }
+.files-banner button:hover { background: var(--bg); }
+.files-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.files-editor { flex: 1; min-width: 0; min-height: 0; }
+.files-editor.hidden { display: none; }
+.files-kind { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; text-align: center; font-size: 13px; }
+.files-kind img { max-width: 100%; max-height: 100%; }
+.files-kind-title { margin: 0; font-size: 14px; }
+.files-kind-sub { margin: 0; color: var(--fg-muted); font-size: 12px; overflow-wrap: anywhere; }
+.files-kind-buttons { display: flex; gap: 8px; }
+.files-kind-button { padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; }
+.files-kind-button:hover { background: var(--bg-hover); }
+.files-menu-row { position: relative; }
+.files-menu-sub { position: absolute; top: 0; right: calc(100% + 4px); left: auto; bottom: auto; min-width: 90px; }
 .file-link { cursor: pointer; color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
 .file-link code { color: inherit; }
 .file-name-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: transparent; }
