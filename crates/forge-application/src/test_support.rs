@@ -27,6 +27,7 @@ pub(crate) enum Call {
     /// A send that carried files or images.
     SendAttached(String, Vec<forge_domain::Attachment>),
     Permission(String, PermissionDecision),
+    Answer(String, std::collections::BTreeMap<String, String>),
     Interrupt,
     SetMode(PermissionMode),
     SetModel(Option<String>),
@@ -133,6 +134,15 @@ impl SidecarPort for FakeSidecar {
         decision: PermissionDecision,
     ) -> Result<(), SidecarError> {
         self.control.record(Call::Permission(permission_request_id, decision));
+        Ok(())
+    }
+
+    async fn answer_question(
+        &self,
+        permission_request_id: String,
+        answers: std::collections::BTreeMap<String, String>,
+    ) -> Result<(), SidecarError> {
+        self.control.record(Call::Answer(permission_request_id, answers));
         Ok(())
     }
 

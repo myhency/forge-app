@@ -611,6 +611,12 @@ impl Workspace {
         }
     }
 
+    pub fn answer_question(&self, id: LiveSessionId, request_id: String, answers: std::collections::BTreeMap<String, String>) {
+        if let Some(handle) = self.handle(id) {
+            handle.answer_question(request_id, answers);
+        }
+    }
+
     /// Reloads the sidebar's past sessions from disk.
     pub fn reload_past(&self) {
         let services = (*self.services.peek()).clone();

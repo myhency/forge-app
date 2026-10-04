@@ -7,7 +7,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::event::{apply_sidecar_event, SessionUpdate};
 use crate::live_session::{LiveCommand, LiveSessionView, Phase};
-use crate::use_cases::{ApprovePermissionUseCase, ExtensionsUseCase, InterruptTurnUseCase, SendMessageUseCase};
+use crate::use_cases::{AnswerQuestionUseCase, ApprovePermissionUseCase, ExtensionsUseCase, InterruptTurnUseCase, SendMessageUseCase};
 
 const CANNOT_SEND: &str = "the project folder no longer exists, so this session can only be viewed";
 
@@ -97,6 +97,7 @@ impl Actor {
             LiveCommand::AddDirectories(directories) => self.add_directories(directories).await,
             LiveCommand::WarmUp => self.warm_up().await,
             LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
+            LiveCommand::AnswerQuestion { id, answers } => self.answer_question(id, answers).await,
             LiveCommand::Interrupt => self.interrupt().await,
             LiveCommand::SetMode(mode) => self.set_mode(mode).await,
             LiveCommand::SetModel(model) => self.set_model(model).await,
@@ -171,6 +172,7 @@ impl Actor {
         match SendMessageUseCase::new(sidecar).execute(&mut self.view.session, text.clone(), attachments.clone()).await {
             Ok(()) => {
                 self.view.phase = Phase::Running;
+                self.view.turn_started = Some(std::time::SystemTime::now());
                 self.view.last_error = None;
                 self.refusal_shown = false;
                 self.view.unsent = None;
@@ -223,6 +225,20 @@ impl Actor {
         self.active = Some(extensions);
         self.sidecar = Some(sidecar);
         Ok(())
+    }
+
+    async fn answer_question(&mut self, id: String, answers: std::collections::BTreeMap<String, String>) {
+        let Some(position) = self.view.pending_permissions.iter().position(|request| request.id == id) else {
+            return;
+        };
+        let Some(sidecar) = self.sidecar.clone() else {
+            return;
+        };
+        self.view.pending_permissions.remove(position);
+        self.dirty = true;
+        if let Err(error) = AnswerQuestionUseCase::new(sidecar).execute(id, answers).await {
+            self.fail(error.to_string(), false).await;
+        }
     }
 
     async fn approve(&mut self, id: String, decision: PermissionDecision) {
@@ -298,6 +314,7 @@ impl Actor {
             // it silently), and a stale card would hide the next real one.
             SessionUpdate::TurnCompleted => {
                 self.view.phase = Phase::Idle;
+                self.view.turn_started = None;
                 self.view.pending_permissions.clear();
             }
             SessionUpdate::ContextUsage(context) => self.view.context = Some(context),
@@ -349,6 +366,7 @@ impl Actor {
     async fn fail(&mut self, message: String, shutdown: bool) {
         self.discard_sidecar(shutdown).await;
         self.view.phase = Phase::Failed;
+        self.view.turn_started = None;
         self.view.last_error = Some(message);
         self.refusal_shown = false;
         self.view.pending_permissions.clear();

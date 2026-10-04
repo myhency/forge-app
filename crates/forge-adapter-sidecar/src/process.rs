@@ -138,6 +138,15 @@ impl SidecarPort for SidecarProcess {
         })
     }
 
+    async fn answer_question(
+        &self,
+        permission_request_id: String,
+        answers: std::collections::BTreeMap<String, String>,
+    ) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::AnswerQuestion { id, permission_request_id, answers })
+    }
+
     async fn interrupt(&self) -> Result<(), SidecarError> {
         let id = self.next_id();
         self.send_command(SidecarCommand::Interrupt { id })

@@ -26,6 +26,7 @@ pub enum SidecarCommand {
         attachments: Vec<WireAttachment>,
     },
     PermissionResponse { id: String, permission_request_id: String, decision: WireDecision },
+    AnswerQuestion { id: String, permission_request_id: String, answers: BTreeMap<String, String> },
     Interrupt { id: String },
     SetPermissionMode { id: String, mode: WireMode },
     /// `None` is the SDK's default model.
@@ -319,6 +320,24 @@ mod tests {
                 "id": "2",
                 "permission_request_id": "perm-1",
                 "decision": "allow_always"
+            })
+        );
+    }
+
+    #[test]
+    fn answer_question_command_serializes_with_the_expected_shape() {
+        let command = SidecarCommand::AnswerQuestion {
+            id: "7".to_string(),
+            permission_request_id: "q-1".to_string(),
+            answers: std::collections::BTreeMap::from([("Q?".to_string(), "파랑,초록".to_string())]),
+        };
+        assert_eq!(
+            serde_json::to_value(&command).unwrap(),
+            serde_json::json!({
+                "type": "answer_question",
+                "id": "7",
+                "permission_request_id": "q-1",
+                "answers": {"Q?": "파랑,초록"}
             })
         );
     }
