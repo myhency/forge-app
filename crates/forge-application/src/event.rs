@@ -27,13 +27,9 @@ pub enum SessionUpdate {
 }
 
 pub fn push_user_message(session: &mut Session, text: String, attachments: Vec<Attachment>) {
-    session.messages.push(Message {
-        role: MessageRole::User,
-        content: text,
-        thinking: String::new(),
-        tool_calls: Vec::new(),
-        attachments,
-    });
+    let mut message = Message::user(text);
+    message.attachments = attachments;
+    session.messages.push(message);
 }
 
 pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> SessionUpdate {
@@ -43,12 +39,10 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
         },
         SidecarEvent::AssistantDelta { text } => {
             match session.messages.last_mut() {
-                Some(message) if message.role == MessageRole::Assistant => {
-                    message.content.push_str(text);
-                }
+                Some(message) if message.role == MessageRole::Assistant => message.push_text(text),
                 _ => {
                     let mut message = Message::new(MessageRole::Assistant);
-                    message.content.push_str(text);
+                    message.push_text(text);
                     session.messages.push(message);
                 }
             }
@@ -56,12 +50,10 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
         }
         SidecarEvent::ThinkingDelta { text } => {
             match session.messages.last_mut() {
-                Some(message) if message.role == MessageRole::Assistant => {
-                    message.thinking.push_str(text);
-                }
+                Some(message) if message.role == MessageRole::Assistant => message.push_thinking(text),
                 _ => {
                     let mut message = Message::new(MessageRole::Assistant);
-                    message.thinking.push_str(text);
+                    message.push_thinking(text);
                     session.messages.push(message);
                 }
             }
@@ -79,10 +71,10 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
                 .last_mut()
                 .filter(|m| m.role == MessageRole::Assistant)
             {
-                Some(message) => message.tool_calls.push(tool_call.clone()),
+                Some(message) => message.push_tool(tool_call.clone()),
                 None => {
                     let mut message = Message::new(MessageRole::Assistant);
-                    message.tool_calls.push(tool_call.clone());
+                    message.push_tool(tool_call.clone());
                     session.messages.push(message);
                 }
             }
@@ -90,7 +82,7 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
         }
         SidecarEvent::ToolResult { tool_call_id, output, is_error } => {
             'search: for message in session.messages.iter_mut().rev() {
-                for tool_call in message.tool_calls.iter_mut() {
+                for tool_call in message.tool_calls_mut() {
                     if &tool_call.id == tool_call_id {
                         tool_call.result = Some(ToolResult {
                             output: output.clone(),
@@ -171,7 +163,7 @@ mod tests {
 
         assert_eq!(session.messages.len(), 1);
         assert_eq!(session.messages[0].role, MessageRole::Assistant);
-        assert_eq!(session.messages[0].content, "Hello");
+        assert_eq!(session.messages[0].text(), "Hello");
     }
 
     #[test]
@@ -181,7 +173,7 @@ mod tests {
         apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "lo".to_string() });
 
         assert_eq!(session.messages.len(), 1);
-        assert_eq!(session.messages[0].content, "Hello");
+        assert_eq!(session.messages[0].text(), "Hello");
     }
 
     #[test]
@@ -193,8 +185,8 @@ mod tests {
 
         assert_eq!(update, SessionUpdate::ThinkingDelta { text: "think".to_string() });
         assert_eq!(session.messages.len(), 1, "the thought and the answer share one message");
-        assert_eq!(session.messages[0].thinking, "Let me think");
-        assert_eq!(session.messages[0].content, "Answer");
+        assert_eq!(session.messages[0].thinking(), "Let me think");
+        assert_eq!(session.messages[0].text(), "Answer");
     }
 
     #[test]
@@ -205,7 +197,7 @@ mod tests {
 
         assert_eq!(session.messages.len(), 2);
         assert_eq!(session.messages[1].role, MessageRole::Assistant);
-        assert_eq!(session.messages[1].thinking, "hm");
+        assert_eq!(session.messages[1].thinking(), "hm");
     }
 
     #[test]
@@ -264,7 +256,7 @@ mod tests {
 
         assert_eq!(session.messages.len(), 2);
         assert_eq!(session.messages[1].role, MessageRole::Assistant);
-        assert_eq!(session.messages[1].content, "Hi");
+        assert_eq!(session.messages[1].text(), "Hi");
     }
 
     #[test]
@@ -280,10 +272,10 @@ mod tests {
             },
         );
 
-        assert_eq!(session.messages[0].tool_calls.len(), 1);
-        assert_eq!(session.messages[0].tool_calls[0].id, "t-1");
-        assert_eq!(session.messages[0].tool_calls[0].name, "Bash");
-        assert!(session.messages[0].tool_calls[0].result.is_none());
+        assert_eq!(session.messages[0].tool_calls().count(), 1);
+        assert_eq!(session.messages[0].tool_calls().nth(0).unwrap().id, "t-1");
+        assert_eq!(session.messages[0].tool_calls().nth(0).unwrap().name, "Bash");
+        assert!(session.messages[0].tool_calls().nth(0).unwrap().result.is_none());
     }
 
     #[test]
@@ -301,7 +293,7 @@ mod tests {
 
         assert_eq!(session.messages.len(), 2);
         assert_eq!(session.messages[1].role, MessageRole::Assistant);
-        assert_eq!(session.messages[1].tool_calls.len(), 1);
+        assert_eq!(session.messages[1].tool_calls().count(), 1);
     }
 
     #[test]
@@ -316,7 +308,7 @@ mod tests {
             &SidecarEvent::ToolResult { tool_call_id: "t-1".to_string(), output: "done".to_string(), is_error: false },
         );
 
-        let tool_call = &session.messages[0].tool_calls[0];
+        let tool_call = &session.messages[0].tool_calls().nth(0).unwrap();
         assert_eq!(tool_call.result.as_ref().unwrap().output, "done");
         assert!(!tool_call.result.as_ref().unwrap().is_error);
     }
@@ -332,7 +324,7 @@ mod tests {
             &mut session,
             &SidecarEvent::ToolResult { tool_call_id: "does-not-exist".to_string(), output: "ignored".to_string(), is_error: false },
         );
-        assert!(session.messages[0].tool_calls[0].result.is_none());
+        assert!(session.messages[0].tool_calls().nth(0).unwrap().result.is_none());
     }
 
     #[test]
@@ -342,7 +334,7 @@ mod tests {
 
         assert_eq!(session.messages.len(), 1);
         assert_eq!(session.messages[0].role, MessageRole::User);
-        assert_eq!(session.messages[0].content, "hello");
+        assert_eq!(session.messages[0].text(), "hello");
     }
 
     #[test]
@@ -361,9 +353,9 @@ mod tests {
         apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "second answer".to_string() });
 
         assert_eq!(session.messages.len(), 3);
-        assert_eq!(session.messages[0].content, "first answer");
+        assert_eq!(session.messages[0].text(), "first answer");
         assert_eq!(session.messages[1].role, MessageRole::User);
-        assert_eq!(session.messages[2].content, "second answer");
+        assert_eq!(session.messages[2].text(), "second answer");
     }
 
     #[test]
@@ -387,8 +379,8 @@ mod tests {
             &SidecarEvent::ToolResult { tool_call_id: "t-1".to_string(), output: "second".to_string(), is_error: false },
         );
 
-        assert_eq!(session.messages[0].tool_calls[0].result.as_ref().unwrap().output, "first");
-        assert_eq!(session.messages[2].tool_calls[0].result.as_ref().unwrap().output, "second");
+        assert_eq!(session.messages[0].tool_calls().nth(0).unwrap().result.as_ref().unwrap().output, "first");
+        assert_eq!(session.messages[2].tool_calls().nth(0).unwrap().result.as_ref().unwrap().output, "second");
     }
 
     #[test]

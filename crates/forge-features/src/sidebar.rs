@@ -183,7 +183,7 @@ impl LiveSummary {
                 .messages
                 .iter()
                 .find(|message| message.role == MessageRole::User)
-                .map(|message| truncate_chars(&message.content, MAX_TITLE_CHARS)),
+                .map(|message| truncate_chars(&message.text(), MAX_TITLE_CHARS)),
             marker: marker_for(view),
             can_send: view.can_send,
         }
@@ -356,7 +356,7 @@ mod tests {
 
     use forge_application::{LiveSessionId, LiveSessionView, Phase};
     use forge_domain::{
-        Message, MessageRole, PermissionMode, PermissionRequest, ProjectSummary, Session, SessionId,
+        Message, PermissionMode, PermissionRequest, ProjectSummary, Session, SessionId,
         SessionSummary,
     };
     use forge_entities::SessionMarker;
@@ -678,13 +678,7 @@ mod tests {
     #[test]
     fn a_summary_carries_only_what_the_sidebar_needs() {
         let mut open_view = view(Phase::Running, 0);
-        open_view.session.messages.push(Message {
-            role: MessageRole::User,
-            content: "한".repeat(100),
-            thinking: String::new(),
-            tool_calls: Vec::new(),
-            attachments: Vec::new(),
-        });
+        open_view.session.messages.push(Message::user("한".repeat(100)));
 
         let summary = LiveSummary::from_view(&open_view);
 

@@ -37,9 +37,9 @@ impl TranscriptView {
         match message.role {
             MessageRole::User => true,
             MessageRole::Assistant => {
-                !message.content.is_empty()
-                    || !message.tool_calls.is_empty()
-                    || (self.shows_thinking() && !message.thinking.is_empty())
+                !message.text().is_empty()
+                    || message.tool_calls().next().is_some()
+                    || (self.shows_thinking() && !message.thinking().is_empty())
             }
         }
     }
@@ -53,10 +53,14 @@ mod tests {
 
     fn assistant(content: &str, thinking: &str, tools: usize) -> Message {
         let mut message = Message::new(MessageRole::Assistant);
-        message.content = content.to_string();
-        message.thinking = thinking.to_string();
+        if !thinking.is_empty() {
+            message.push_thinking_block(thinking.to_string());
+        }
+        if !content.is_empty() {
+            message.push_text_block(content.to_string());
+        }
         for i in 0..tools {
-            message.tool_calls.push(ToolCall { id: format!("t{i}"), name: "Read".to_string(), input: json!({}), result: None });
+            message.push_tool(ToolCall { id: format!("t{i}"), name: "Read".to_string(), input: json!({}), result: None });
         }
         message
     }

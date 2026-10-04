@@ -254,13 +254,7 @@ mod tests {
     fn resumed_init(factory: Arc<dyn SidecarFactoryPort>) -> LiveSessionInit {
         let mut session = empty_session();
         session.id = SessionId("claude-1".to_string());
-        session.messages.push(forge_domain::Message {
-            role: MessageRole::User,
-            content: "earlier".to_string(),
-            thinking: String::new(),
-            tool_calls: Vec::new(),
-            attachments: Vec::new(),
-        });
+        session.messages.push(forge_domain::Message::user("earlier"));
         LiveSessionInit {
             claude_session_id: Some(SessionId("claude-1".to_string())),
             session,
@@ -327,7 +321,7 @@ mod tests {
         );
         assert_eq!(seen.session.messages.len(), 1);
         assert_eq!(seen.session.messages[0].role, MessageRole::User);
-        assert_eq!(seen.session.messages[0].content, "hello");
+        assert_eq!(seen.session.messages[0].text(), "hello");
     }
 
     #[tokio::test]
@@ -629,9 +623,9 @@ mod tests {
 
         let reply = &seen.session.messages[1];
         assert_eq!(reply.role, MessageRole::Assistant);
-        assert_eq!(reply.content, "Hello");
-        assert_eq!(reply.tool_calls.len(), 1);
-        assert_eq!(reply.tool_calls[0].result.as_ref().unwrap().output, "contents");
+        assert_eq!(reply.text(), "Hello");
+        assert_eq!(reply.tool_calls().count(), 1);
+        assert_eq!(reply.tool_calls().nth(0).unwrap().result.as_ref().unwrap().output, "contents");
     }
 
     #[tokio::test]
@@ -805,7 +799,7 @@ mod tests {
         let seen = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
 
         assert_eq!(seen.session.messages.len(), 1, "only the earlier history remains");
-        assert_eq!(seen.session.messages[0].content, "earlier");
+        assert_eq!(seen.session.messages[0].text(), "earlier");
     }
 
     #[tokio::test]
@@ -1083,7 +1077,7 @@ mod tests {
         }
         control.push(turn_complete());
         let seen = wait_for(&mut view, "both turns' events", |v| {
-            v.phase == Phase::Idle && v.session.messages.iter().map(|m| m.content.len()).sum::<usize>() >= 106
+            v.phase == Phase::Idle && v.session.messages.iter().map(|m| m.text().len()).sum::<usize>() >= 106
         })
         .await;
 
@@ -1095,7 +1089,7 @@ mod tests {
                 Call::Send("two".to_string()),
             ]
         );
-        let total: usize = seen.session.messages.iter().map(|m| m.content.len()).sum();
+        let total: usize = seen.session.messages.iter().map(|m| m.text().len()).sum();
         assert_eq!(total, "one".len() + "two".len() + 100);
     }
 
@@ -1127,7 +1121,7 @@ mod tests {
 
         let last = handle.snapshot();
         assert_eq!(last.phase, Phase::Idle);
-        assert_eq!(last.session.messages[1].content.len(), 1000);
+        assert_eq!(last.session.messages[1].text().len(), 1000);
         assert!(updates <= 5, "1001 events were published {updates} times");
     }
 

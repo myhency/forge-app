@@ -3,7 +3,7 @@ use forge_domain::Session;
 /// How many tool calls in the session have a result. It grows each time a tool call finishes, so
 /// a panel that shows the files on disk reloads when it changes.
 pub fn finished_tool_calls(session: &Session) -> usize {
-    session.messages.iter().flat_map(|message| &message.tool_calls).filter(|call| call.result.is_some()).count()
+    session.messages.iter().flat_map(|message| message.tool_calls()).filter(|call| call.result.is_some()).count()
 }
 
 #[cfg(test)]
@@ -39,7 +39,9 @@ mod tests {
         let mut session = empty_session();
         assert_eq!(finished_tool_calls(&session), 0);
         let mut message = Message::new(MessageRole::Assistant);
-        message.tool_calls = vec![call(true), call(false), call(true)];
+        for tool_call in [call(true), call(false), call(true)] {
+            message.push_tool(tool_call);
+        }
         session.messages.push(message);
         assert_eq!(finished_tool_calls(&session), 2);
     }

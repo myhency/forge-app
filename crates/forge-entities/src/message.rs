@@ -26,20 +26,22 @@ pub fn MessageBubble(message: Message, #[props(default)] view: TranscriptView) -
         MessageRole::Assistant => ("assistant", "Claude"),
     };
     // Only Claude's text is markdown; what a person typed is shown exactly as typed.
+    let text = message.text();
+    let thinking = message.thinking();
     let markdown = match message.role {
-        MessageRole::Assistant if !message.content.is_empty() => Some(render_markdown(&message.content)),
+        MessageRole::Assistant if !text.is_empty() => Some(render_markdown(&text)),
         _ => None,
     };
     rsx! {
         div { class: "message {role_class}",
             div { class: "role", "{role_label}" }
-            if view.shows_thinking() && !message.thinking.is_empty() {
-                div { class: "thinking", "{message.thinking}" }
+            if view.shows_thinking() && !thinking.is_empty() {
+                div { class: "thinking", "{thinking}" }
             }
             if let Some(html) = markdown {
                 div { class: "content markdown", dangerous_inner_html: "{html}" }
-            } else if !message.content.is_empty() {
-                div { class: "content", "{message.content}" }
+            } else if !text.is_empty() {
+                div { class: "content", "{text}" }
             }
             if !message.attachments.is_empty() {
                 div { class: "chips",
@@ -48,7 +50,7 @@ pub fn MessageBubble(message: Message, #[props(default)] view: TranscriptView) -
                     }
                 }
             }
-            for tool_call in message.tool_calls.iter() {
+            for tool_call in message.tool_calls() {
                 ToolCallLine { key: "{tool_call.id}", tool_call: tool_call.clone(), detailed: view.expands_tool_calls() }
             }
         }

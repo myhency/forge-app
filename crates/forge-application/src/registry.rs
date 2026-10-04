@@ -258,7 +258,7 @@ mod tests {
 
     use async_trait::async_trait;
     use forge_domain::{
-        Message, MessageRole, PermissionMode, ProjectSummary, Session, SessionId, SessionSummary,
+        Message, PermissionMode, ProjectSummary, Session, SessionId, SessionSummary,
     };
     use forge_ports::{
         MockSessionRepositoryPort, SessionRepositoryError, SessionRepositoryPort, SidecarError,
@@ -284,8 +284,8 @@ mod tests {
             project_path: PathBuf::from("/work/a"),
             title: Some("A title".to_string()),
             messages: vec![
-                Message { role: MessageRole::User, content: "earlier".to_string(), thinking: String::new(), tool_calls: Vec::new(), attachments: Vec::new() },
-                Message { role: MessageRole::Assistant, content: "reply".to_string(), thinking: String::new(), tool_calls: Vec::new(), attachments: Vec::new() },
+                Message::user("earlier"),
+                Message::assistant_text("reply"),
             ],
             permission_mode: PermissionMode::Default,
             usage: forge_domain::SessionUsage::default(),
@@ -496,14 +496,14 @@ mod tests {
         first_control.push(SidecarEvent::Error { message: "boom".to_string() });
         let failed = wait_for(&mut first_view, "first failed", |v| v.phase == Phase::Failed).await;
         let running = wait_for(&mut second_view, "second's text", |v| {
-            v.session.messages.iter().any(|m| m.content == "from-second")
+            v.session.messages.iter().any(|m| m.text() == "from-second")
         })
         .await;
 
         assert_eq!(spawns.load(Ordering::SeqCst), 2);
-        assert!(failed.session.messages.iter().all(|m| m.content != "from-second"));
+        assert!(failed.session.messages.iter().all(|m| m.text() != "from-second"));
         assert_eq!(running.phase, Phase::Running);
-        assert!(running.session.messages.iter().all(|m| m.content != "from-first"));
+        assert!(running.session.messages.iter().all(|m| m.text() != "from-first"));
     }
 
     // A repository whose load yields once, so two `open_existing` calls really interleave.
