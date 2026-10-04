@@ -54,6 +54,16 @@ impl SettingsUseCase {
         Ok(config)
     }
 
+    /// Saves how the Files panel's editor behaves. Like `save_sidebar`, a config that cannot be read
+    /// is never replaced, and it shares the write lock.
+    pub async fn save_editor(&self, prefs: &forge_domain::EditorPrefs) -> Result<AppConfig, ConfigError> {
+        let _saving = self.write_lock.lock().await;
+        let mut config = self.config.load().await?;
+        config.editor = prefs.clone();
+        self.config.save(&config).await?;
+        Ok(config)
+    }
+
     /// Saves which sessions are archived. Like `save_sidebar`, a config that cannot be read is never
     /// replaced, and it shares the write lock so a quick archive and filter change both survive.
     pub async fn save_archived(&self, archived: &[ArchivedRef]) -> Result<AppConfig, ConfigError> {
@@ -228,6 +238,39 @@ mod tests {
         let saved = usecase.save_sidebar(&prefs).await.unwrap();
 
         assert_eq!(saved.sidebar, prefs);
+    }
+
+    #[tokio::test]
+    async fn save_editor_replaces_only_the_editor_preferences() {
+        let mut mock = MockConfigRepositoryPort::new();
+        mock.expect_load().times(1).returning(|| Ok(with_lists()));
+        mock.expect_save()
+            .withf(|c: &AppConfig| {
+                !c.editor.wrap
+                    && c.editor.tab_size == 2
+                    && c.base_url.as_deref() == Some("https://old.test")
+                    && c.enabled_skills == vec!["brainstorming".to_string()]
+            })
+            .times(1)
+            .returning(|_| Ok(()));
+        let usecase = SettingsUseCase::new(Arc::new(mock));
+        let prefs = forge_domain::EditorPrefs { wrap: false, tab_size: 2, ..forge_domain::EditorPrefs::default() };
+
+        let saved = usecase.save_editor(&prefs).await.unwrap();
+
+        assert_eq!(saved.editor, prefs);
+    }
+
+    #[tokio::test]
+    async fn save_editor_does_not_replace_a_config_it_cannot_read() {
+        let mut mock = MockConfigRepositoryPort::new();
+        mock.expect_load().times(1).returning(|| Err(ConfigError::ParseFailed("trailing comma".to_string())));
+        // No `expect_save`: a save would panic.
+        let usecase = SettingsUseCase::new(Arc::new(mock));
+
+        let result = usecase.save_editor(&forge_domain::EditorPrefs::default()).await;
+
+        assert!(matches!(result, Err(ConfigError::ParseFailed(_))));
     }
 
     #[tokio::test]
