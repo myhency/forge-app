@@ -83,6 +83,13 @@ pub fn task_cards(messages: &[Message], running: &[RunningTask]) -> Vec<TaskCard
         .collect()
 }
 
+/// The key of a card in the panel. It changes when the card's output file becomes known: the panel
+/// starts reading the output when a card is created, so a card made before the Bash result named
+/// the file must be replaced by a new one.
+pub fn card_key(card: &TaskCard) -> String {
+    format!("{}:{}", card.id, card.output_path.is_some())
+}
+
 /// The pill under the chat: `1 background task`, `2 background tasks`.
 pub fn pill_label(count: usize) -> String {
     format!("{count} background task{}", if count == 1 { "" } else { "s" })
@@ -198,6 +205,19 @@ mod tests {
         let cards = task_cards(&[], &[running("b", 0), running("a", 0)]);
         let ids: Vec<&str> = cards.iter().map(|card| card.id.as_str()).collect();
         assert_eq!(ids, vec!["b", "a"]);
+    }
+
+    #[test]
+    fn a_card_gets_a_new_key_when_its_output_file_becomes_known() {
+        // The panel starts reading a card's output when the card is created; a card made before the
+        // Bash result arrived (no path yet) must be replaced, not kept, once the path is known.
+        let before = task_cards(&[], &[running("b1", 0)]);
+        let after = task_cards(&[bash("sleep 60", None, &SENTENCE.replace("bplyt9cwq", "b1"))], &[running("b1", 0)]);
+        assert_eq!(before[0].output_path, None);
+        assert!(after[0].output_path.is_some());
+        assert_ne!(card_key(&before[0]), card_key(&after[0]));
+        assert_eq!(card_key(&after[0]), card_key(&after[0].clone()));
+        assert!(card_key(&before[0]).starts_with("b1:"));
     }
 
     #[test]

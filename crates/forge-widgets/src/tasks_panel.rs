@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_entities::{task_cards, Clock, TaskCard, TASK_OUTPUT_TAIL};
+use forge_entities::{card_key, task_cards, Clock, TaskCard, TASK_OUTPUT_TAIL};
 use forge_features::{run_blocking, use_workspace, Panel};
 
 use crate::panel_frame::PanelFrame;
@@ -26,7 +26,7 @@ pub fn TasksPanel(id: LiveSessionId) -> Element {
                     div { class: "dock-note", "No running tasks" }
                 }
                 for card in cards {
-                    TaskCardView { key: "{card.id}", id, card }
+                    TaskCardView { key: "{card_key(&card)}", id, card }
                 }
                 div { class: "dock-note", "Tasks end when Forge closes the session." }
             }

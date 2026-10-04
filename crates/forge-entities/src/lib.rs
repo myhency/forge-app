@@ -20,7 +20,7 @@ mod turn_view;
 mod usage_card;
 mod usage_view;
 
-pub use background::{background_ref, pill_label, task_cards, valid_output_path, BackgroundRef, TaskCard, TASK_OUTPUT_TAIL};
+pub use background::{background_ref, card_key, pill_label, task_cards, valid_output_path, BackgroundRef, TaskCard, TASK_OUTPUT_TAIL};
 pub use command_menu::{command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};
 pub use diff::{diff_for_tool, diff_for_tool_call, parse_unified_diff, DiffLine, DiffLineKind, FileDiff};
 pub use diff_view::DiffView;
