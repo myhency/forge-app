@@ -122,15 +122,18 @@ pub struct AnswerPair {
     pub answer: String,
 }
 
-const ANSWERED_PREFIX: &str = "Your questions have been answered: ";
-const ANSWERED_SUFFIX: &str = "\". You can now continue";
+// A result starts with one of these: the desktop app's transcripts say the first, a client that
+// answers through `updatedInput.answers` (Forge) gets the second from the SDK.
+const ANSWERED_PREFIXES: [&str; 2] = ["Your questions have been answered: ", "The user answered: "];
+// What follows the last answer, after its closing quote.
+const ANSWERED_SUFFIXES: [&str; 2] = ["\". You can now continue", "\". Read the answers carefully"];
 
 /// The question and answer pairs of a finished `AskUserQuestion` call, read from its result text
 /// (`Your questions have been answered: "Q"="A", "Q2"="A2". You can now continue ...`), matched
 /// against the question texts in the call's input. A result that is not an answer gives none.
 /// Several labels (joined by a bare comma in the text) are shown with `, `.
 pub fn answer_pairs(input: &Value, output: &str) -> Vec<AnswerPair> {
-    let Some(body) = output.strip_prefix(ANSWERED_PREFIX) else {
+    let Some(body) = ANSWERED_PREFIXES.iter().find_map(|prefix| output.strip_prefix(prefix)) else {
         return Vec::new();
     };
     let mut pairs = Vec::new();
@@ -141,8 +144,8 @@ pub fn answer_pairs(input: &Value, output: &str) -> Vec<AnswerPair> {
         let start = cursor + found + marker.len();
         let rest = &body[start..];
         // An answer ends at the quote before `, "<next question>"=` or before `. You can now continue`.
-        let end = ["\", \"", ANSWERED_SUFFIX]
-            .iter()
+        let end = std::iter::once("\", \"")
+            .chain(ANSWERED_SUFFIXES)
             .filter_map(|stop| rest.find(stop))
             .min()
             .unwrap_or(rest.len());
@@ -289,6 +292,20 @@ mod tests {
         assert_eq!(pairs[0].answer, "파랑, 초록");
         assert_eq!(pairs[1].question, "Say \"hi\", ok?");
         assert_eq!(pairs[1].answer, "yes,  \"sure\"");
+    }
+
+    #[test]
+    fn answer_pairs_are_read_from_the_forge_sdk_result_text_too() {
+        // What the SDK returns when a client answers through `updatedInput.answers`.
+        let output = "The user answered: \"Colours?\"=\"Red,Blue\", \"Season?\"=\"Autumn\". Read the answers carefully \u{2014} they may request clarification, changes, or that you not proceed \u{2014} and follow what they actually say.";
+        let pairs = answer_pairs(&input(), output);
+        assert_eq!(
+            pairs,
+            vec![
+                AnswerPair { question: "Colours?".to_string(), answer: "Red, Blue".to_string() },
+                AnswerPair { question: "Season?".to_string(), answer: "Autumn".to_string() },
+            ]
+        );
     }
 
     #[test]
