@@ -599,3 +599,19 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .file-link code { color: inherit; }
 .file-name-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: transparent; }
 .file-name-link:hover { text-decoration-color: currentColor; }
+
+.task-pill { appearance: none; align-self: flex-start; margin-top: 10px; padding: 4px 12px; border: none; border-radius: 999px; background: rgba(29, 95, 191, 0.12); color: var(--link); font: inherit; font-size: 13px; cursor: pointer; }
+.task-pill.open { background: var(--link); color: #fff; }
+.tasks-body { display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow-y: auto; }
+.tasks-heading { color: var(--fg-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.task-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+.task-head { display: flex; align-items: flex-start; gap: 8px; }
+.task-title { flex: 1; min-width: 0; }
+.task-description { font-weight: 700; overflow-wrap: anywhere; }
+.task-meta { display: flex; gap: 10px; color: var(--fg-muted); font-size: 12px; }
+.task-stop { appearance: none; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
+.task-stop:hover { background: var(--bg-hover); }
+.task-stop-square { width: 10px; height: 10px; border-radius: 2px; background: var(--fg); }
+.task-command { padding: 8px 10px; background: var(--code-bg); border-radius: 8px; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.task-output { margin: 0; padding: 8px 10px; max-height: 240px; overflow: auto; background: var(--code-bg); border-radius: 8px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-output.empty { font-family: inherit; color: var(--fg-muted); }

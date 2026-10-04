@@ -221,7 +221,7 @@ fn FooterView(footer: Footer) -> Element {
 /// The seconds of a running turn. Only this component re-renders each second; the transcript above
 /// it is not rebuilt.
 #[component]
-fn Clock(started: Option<SystemTime>) -> Element {
+pub fn Clock(started: Option<SystemTime>) -> Element {
     let mut now = use_signal(SystemTime::now);
     use_future(move || async move {
         loop {

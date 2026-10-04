@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
-use forge_entities::{live_state, TranscriptView, Turns};
-use forge_features::{use_workspace, SendMessageBox};
+use forge_entities::{live_state, pill_label, TranscriptView, Turns};
+use forge_features::{use_workspace, Panel, SendMessageBox};
 
 use crate::composer_controls::{EffortPicker, ModePicker, ModelPicker};
 use crate::dock::Dock;
@@ -88,6 +88,20 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     view: mode,
                     live: (view.phase == Phase::Running).then(|| live_state(view.turn_started, view.pending_permissions.front())),
                     on_open_file: move |path: String| workspace.open_file(id, path),
+                }
+                {
+                    let count = view.background_tasks.len();
+                    let open = workspace.dock(id).is_open(Panel::Tasks);
+                    rsx! {
+                        if count > 0 {
+                            button {
+                                class: if open { "task-pill open" } else { "task-pill" },
+                                r#type: "button",
+                                onclick: move |_| workspace.change_dock(id, |dock| if !dock.is_open(Panel::Tasks) { dock.toggle(Panel::Tasks) }),
+                                "{pill_label(count)}"
+                            }
+                        }
+                    }
                 }
             }
             ScrollToEnd {}

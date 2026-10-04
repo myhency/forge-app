@@ -16,6 +16,7 @@ mod session_row;
 mod session_tools;
 mod settings_overlay;
 mod sidebar;
+mod tasks_panel;
 mod terminal_panel;
 mod usage_card;
 mod usage_ring;
