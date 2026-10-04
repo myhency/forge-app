@@ -586,3 +586,9 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .question-other { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--fg); font: inherit; }
 .question-footer { display: flex; align-items: center; gap: 8px; }
 .perm-button.disabled, .perm-button:disabled { opacity: 0.45; cursor: default; }
+
+.stop-button { appearance: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 2px solid var(--fg); border-radius: 50%; background: none; cursor: pointer; flex: none; }
+.stop-button:hover { background: var(--bg-hover); }
+.stop-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg); }
+.scroll-end { display: none; align-self: center; width: 32px; height: 32px; margin: -44px 0 12px; position: relative; z-index: 3; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-card); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; }
+.main-pane[data-away="true"] .scroll-end { display: inline-flex; align-items: center; justify-content: center; }

@@ -38,6 +38,8 @@ mod tests {
             ".question-chip",
             ".question-option",
             ".question-footer",
+            ".stop-button",
+            ".scroll-end",
             ".turn-user",
             ".user-bubble",
             ".activity-head",
