@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Builds crates/forge-shared/assets/editor.js (CodeMirror 6 for the Files panel). Run `npm run build` here after changing src/main.js or a dependency, and commit the output.",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.1",
@@ -24,6 +25,7 @@
     "@lezer/highlight": "1.2.5"
   },
   "devDependencies": {
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "jsdom": "29.1.1"
   }
 }

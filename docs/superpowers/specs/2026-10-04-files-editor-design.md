@@ -112,3 +112,18 @@ The line selection bar, cards and comments (B); the `?` search toggles and the i
 ## Where the code goes
 
 `tools/editor-bundle/`, `crates/forge-shared/assets/editor.js` and `EDITOR-LICENSE`, `crates/forge-shared/src/editor.rs`, `crates/forge-ports/src/files_port.rs`, `crates/forge-adapter-files/src/lib.rs`, `crates/forge-domain/src/config.rs`, `crates/forge-features/src/editor_tabs.rs`, `crates/forge-widgets/src/files_panel.rs` and new `files_editor.rs`, `files_tabs.rs`, `files_kinds.rs`, `files_menu.rs`, `crates/forge-shared/src/theme.css`.
+
+## As built (Plan 25A)
+
+Built from `docs/superpowers/plans/2026-10-04-files-editor.md` in 11 tasks, executed inline. All of the spec's units exist as designed: `EditorPrefs` in `AppConfig`, the checked atomic `FilesPort::write` with `stat`, `read_text_anyway` and image reads, `BrowserPort::reveal`, the pure `EditorTabs` and `TabDoc` models, the CodeMirror 6 bundle (668 KiB, built by `tools/editor-bundle`, inline in the window head), the Rust bridge, and the panel split into `files_editor`, `files_kinds`, `files_tabs`, `files_menu`, `files_state` and `files_panel`. The Rust suite went from 968 to 1026 passing tests; the bundle has 3 jsdom tests (`cd tools/editor-bundle && npm test`).
+
+Differences from the design:
+
+- Two additions the plan made: `⌘S` in the editor saves the tab (so auto save can be turned off), and the close question is an inline row in the panel (`Save changes to x?` with Save, Don't save, Cancel), because the code base has no modal dialogs.
+- A file that is not valid UTF-8 and a binary file shown with "Show as text anyway" open read only, with a notice; the spec only said "never written back".
+- Tabs follow the pointer with mouse events, not the HTML drag and drop, in case the web view takes over drops.
+- A search still reads no file over 1 MiB, although the read limit is now 10 MiB.
+
+**Not checked in the real window.** The harness could not run: the Mac's screen was locked during the check (`CGSessionScreenIsLocked`), so `screencapture` refused the window and no click could be sent. None of the 13 checks of Task 11 of the plan was seen in the real Forge window: editing and auto save to disk, the conflict banner and its two buttons, the eight settings and the tab sizes, the read only notices, the binary, image and too large screens, tabs (italic preview, keep open, the four closes, dragging), the close question, `⌘S`, markdown source and rendered, the save failed banner, and the look of the editor in light and dark. What was checked instead: the Rust logic by unit tests, and the page API of the bundle by jsdom (`dirty` at once, `change` with the new text about 2 s later, `flush` for the current, another and an unknown tab, `missing`, `drop`). Whether the bundle loads in the web view, how the editor looks, the IME (a Hangul word typed in the editor) and the pointer-based tab reorder are therefore unverified, and the first run of the app should be watched for them.
+
+Lessons: Dioxus 0.7.10 refuses a `if let` on a `signal.write().get_mut(..)` temporary at the end of a block (use a helper that binds the write guard first, as `FilesCtx::with_doc` does); `node --test` in Node 22 needs a glob, not a folder; objects made in jsdom have another prototype, so compare JSON copies.
