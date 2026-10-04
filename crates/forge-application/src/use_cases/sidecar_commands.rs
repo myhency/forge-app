@@ -61,6 +61,20 @@ impl AnswerQuestionUseCase {
     }
 }
 
+pub struct StopTaskUseCase {
+    sidecar: Arc<dyn SidecarPort>,
+}
+
+impl StopTaskUseCase {
+    pub fn new(sidecar: Arc<dyn SidecarPort>) -> Self {
+        Self { sidecar }
+    }
+
+    pub async fn execute(&self, task_id: String) -> Result<(), SidecarError> {
+        self.sidecar.stop_task(task_id).await
+    }
+}
+
 pub struct InterruptTurnUseCase {
     sidecar: Arc<dyn SidecarPort>,
 }
@@ -156,5 +170,12 @@ mod tests {
         let use_case = AnswerQuestionUseCase::new(Arc::new(mock));
         let answers = std::collections::BTreeMap::from([("Q?".to_string(), "A".to_string())]);
         assert!(use_case.execute("q-1".to_string(), answers).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn stop_task_use_case_delegates_to_the_sidecar_port() {
+        let mut mock = MockSidecarPort::new();
+        mock.expect_stop_task().withf(|id| id == "b1").times(1).returning(|_| Ok(()));
+        assert!(StopTaskUseCase::new(Arc::new(mock)).execute("b1".to_string()).await.is_ok());
     }
 }

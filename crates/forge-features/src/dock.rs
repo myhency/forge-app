@@ -13,6 +13,7 @@ pub enum Panel {
     Changes,
     Preview,
     Files,
+    Tasks,
 }
 
 impl Panel {
@@ -22,6 +23,7 @@ impl Panel {
             Panel::Changes => "Changes",
             Panel::Preview => "Preview",
             Panel::Files => "Files",
+            Panel::Tasks => "Background tasks",
         }
     }
 
@@ -30,7 +32,7 @@ impl Panel {
         match self {
             Panel::Changes => Some(Panel::Preview),
             Panel::Preview => Some(Panel::Changes),
-            Panel::Terminal | Panel::Files => None,
+            Panel::Terminal | Panel::Files | Panel::Tasks => None,
         }
     }
 }
@@ -260,5 +262,19 @@ mod tests {
         assert_eq!(Panel::Changes.title(), "Changes");
         assert_eq!(Panel::Preview.title(), "Preview");
         assert_eq!(Panel::Files.title(), "Files");
+    }
+
+    #[test]
+    fn tasks_open_in_their_own_column_and_close_again() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Terminal);
+        dock.toggle(Panel::Tasks);
+        assert_eq!(dock.columns.len(), 2);
+        assert_eq!(dock.columns[1].panels, vec![Panel::Tasks]);
+        assert!(dock.is_open(Panel::Tasks));
+        assert_eq!(Panel::Tasks.title(), "Background tasks");
+        dock.toggle(Panel::Tasks);
+        assert!(!dock.is_open(Panel::Tasks));
+        assert_eq!(dock.columns.len(), 1);
     }
 }

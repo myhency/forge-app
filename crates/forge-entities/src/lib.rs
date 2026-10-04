@@ -1,8 +1,11 @@
+mod background;
 mod command_menu;
 mod diff;
 mod diff_view;
 mod extension_rows;
+mod file_open;
 mod highlight;
+mod links;
 mod markdown;
 mod message;
 mod model_catalog;
@@ -17,9 +20,12 @@ mod turn_view;
 mod usage_card;
 mod usage_view;
 
+pub use background::{background_ref, card_key, pill_label, task_cards, valid_output_path, BackgroundRef, TaskCard, TASK_OUTPUT_TAIL};
 pub use command_menu::{command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};
 pub use diff::{diff_for_tool, diff_for_tool_call, parse_unified_diff, DiffLine, DiffLineKind, FileDiff};
 pub use diff_view::DiffView;
+pub use file_open::{is_markdown, relative_to_folder};
+pub use links::{known_paths, render_markdown_linked};
 pub use highlight::{code_html, language_of};
 pub use markdown::render_markdown;
 pub use message::attachment_label;
@@ -29,7 +35,7 @@ pub use question::{answer_pairs, answers_map, questions_of, AnswerPair, Picks, Q
 pub use relative_time::relative_time;
 pub use sidebar_item::{SessionMarker, SidebarItem};
 pub use transcript_view::TranscriptView;
-pub use turn::Turns;
+pub use turn::{Clock, Turns};
 pub use turn_view::{build_turns, live_state, Activity, CardFile, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolKind, ToolRow, Waiting};
 pub use tool_summary::{elapsed_label, tool_call_status, tool_detail_text, tool_input_lines, tool_input_summary, InputLine, ToolCallStatus};
 pub use extension_rows::{mcp_rows, mcp_summary, plugin_rows, project_label, skill_rows, ExtensionRow};

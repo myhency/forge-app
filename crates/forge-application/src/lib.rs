@@ -15,7 +15,7 @@ pub use live_session::{LiveCommand, LiveSessionHandle, LiveSessionId, LiveSessio
 pub use probe_slot::ProbeSlot;
 pub use registry::{fork_title, normalize_title, ManageSessionError, OpenError, OpenOutcome, SessionRegistry};
 pub use use_cases::{
-    AnswerQuestionUseCase, ApprovePermissionUseCase, ExtensionsError, ExtensionsUseCase, InterruptTurnUseCase,
+    AnswerQuestionUseCase, ApprovePermissionUseCase, StopTaskUseCase, ExtensionsError, ExtensionsUseCase, InterruptTurnUseCase,
     ResumeSessionError, ResumeSessionUseCase, SendMessageUseCase, SettingsUseCase,
     StartSessionUseCase, ToggleMcpServerUseCase, TogglePluginUseCase, ToggleSkillUseCase,
 };

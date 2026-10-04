@@ -28,6 +28,7 @@ pub enum SidecarCommand {
     PermissionResponse { id: String, permission_request_id: String, decision: WireDecision },
     AnswerQuestion { id: String, permission_request_id: String, answers: BTreeMap<String, String> },
     Interrupt { id: String },
+    StopTask { id: String, task_id: String },
     SetPermissionMode { id: String, mode: WireMode },
     /// `None` is the SDK's default model.
     SetModel { id: String, model: Option<String> },
@@ -340,5 +341,11 @@ mod tests {
                 "answers": {"Q?": "파랑,초록"}
             })
         );
+    }
+
+    #[test]
+    fn stop_task_command_serializes_with_the_expected_shape() {
+        let command = SidecarCommand::StopTask { id: "8".to_string(), task_id: "b1".to_string() };
+        assert_eq!(serde_json::to_value(&command).unwrap(), serde_json::json!({"type": "stop_task", "id": "8", "task_id": "b1"}));
     }
 }

@@ -545,6 +545,8 @@ mod tests {
             available_models: Vec::new(),
             phase,
             turn_started: None,
+            background_tasks: Vec::new(),
+            suggestion: None,
             pending_permissions: VecDeque::from(vec![request; pending]),
             last_error: None,
             can_send: true,

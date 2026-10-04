@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_entities::{code_html, language_of};
+use forge_entities::{code_html, is_markdown, language_of, render_markdown};
 use forge_features::{parse_files_query, run_blocking, use_workspace, FileTree, FilesQuery, Panel};
 use forge_ports::{ContentHit, FileContent, FilesError, FilesPort};
 
@@ -40,6 +40,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let mut opened = use_signal(|| None::<String>);
     let mut content = use_signal(|| None::<Result<FileContent, FilesError>>);
     let mut hits = use_signal(|| None::<Vec<ContentHit>>);
+    let mut source = use_signal(|| false);
 
     {
         let cwd = cwd.clone();
@@ -77,6 +78,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         let cwd = cwd.clone();
         move |path: String| {
             opened.set(Some(path.clone()));
+            source.set(false);
             content.set(None);
             let (files, root) = (workspace.files(), cwd.clone());
             spawn(async move {
@@ -89,6 +91,17 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         }
     };
 
+    // A click in the chat asked for a file: show it (the request is read when the panel mounts, too).
+    {
+        let mut open_file = open_file.clone();
+        use_effect(move || {
+            if let Some(path) = workspace.file_request(id) {
+                workspace.clear_file_request(id);
+                open_file(path);
+            }
+        });
+    }
+
     let tools = rsx! {
         button {
             class: if tree_open() { "icon-button active" } else { "icon-button" },
@@ -98,6 +111,16 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             "aria-pressed": "{tree_open()}",
             onclick: move |_| tree_open.set(!tree_open()),
             "☰"
+        }
+        if opened().as_deref().is_some_and(is_markdown) {
+            button {
+                class: "icon-button files-source-toggle",
+                r#type: "button",
+                title: if source() { "Show rendered" } else { "Show source" },
+                "aria-label": if source() { "Show rendered" } else { "Show source" },
+                onclick: move |_| source.set(!source()),
+                if source() { "👁" } else { "</>" }
+            }
         }
     };
 
@@ -182,7 +205,8 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             let language = if text.len() > HIGHLIGHT_LIMIT { "" } else { language_of(&path) };
             let numbers = (1..=text.lines().count().max(1)).map(|n| n.to_string()).collect::<Vec<_>>().join("\n");
             let html = code_html(language, &text);
-            Some((path, html, numbers))
+            let rendered = is_markdown(&path).then(|| render_markdown(&text));
+            Some((path, html, numbers, rendered))
         }
         _ => None,
     });
@@ -192,7 +216,10 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         (Some(_), Some(Err(error))) => rsx! { div { class: "dock-note error", "{error}" } },
         (Some(_), Some(Ok(FileContent::Binary | FileContent::TooLarge))) => rsx! { div { class: "dock-note", "Cannot show this file" } },
         (Some(_), Some(Ok(FileContent::Text(_)))) => match shown() {
-            Some((path, html, numbers)) => rsx! {
+            Some((path, _, _, Some(markdown))) if !source() => rsx! {
+                div { class: "file-viewer file-markdown markdown", "aria-label": "{path}", dangerous_inner_html: "{markdown}" }
+            },
+            Some((path, html, numbers, _)) => rsx! {
                 div { class: "file-viewer", "aria-label": "{path}",
                     pre { class: "file-gutter", "{numbers}" }
                     pre { class: "file-code", dangerous_inner_html: "{html}" }

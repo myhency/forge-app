@@ -29,6 +29,7 @@ pub(crate) enum Call {
     Permission(String, PermissionDecision),
     Answer(String, std::collections::BTreeMap<String, String>),
     Interrupt,
+    StopTask(String),
     SetMode(PermissionMode),
     SetModel(Option<String>),
     SetEffort(Option<forge_domain::EffortLevel>),
@@ -143,6 +144,11 @@ impl SidecarPort for FakeSidecar {
         answers: std::collections::BTreeMap<String, String>,
     ) -> Result<(), SidecarError> {
         self.control.record(Call::Answer(permission_request_id, answers));
+        Ok(())
+    }
+
+    async fn stop_task(&self, task_id: String) -> Result<(), SidecarError> {
+        self.control.record(Call::StopTask(task_id));
         Ok(())
     }
 

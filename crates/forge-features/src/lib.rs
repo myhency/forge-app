@@ -12,6 +12,7 @@ mod folder_menu;
 mod new_session;
 mod permission_mode;
 mod preview_tabs;
+mod suggestion;
 mod refocus;
 mod search;
 mod send_message;
@@ -54,4 +55,5 @@ pub use workspace::{use_workspace, use_workspace_provider, Active, Workspace, Wo
 pub use blocking::run_blocking;
 pub use file_tree::{parse_files_query, FileTree, FilesQuery, TreeRow};
 pub use preview_tabs::{normalize_url, PreviewTabId, PreviewTabs};
+pub use suggestion::{composer_placeholder, suggestion_to_accept};
 pub use tool_activity::finished_tool_calls;

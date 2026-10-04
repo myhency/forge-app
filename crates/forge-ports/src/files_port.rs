@@ -48,6 +48,9 @@ pub trait FilesPort: Send + Sync {
     fn read(&self, root: &Path, path: &str) -> Result<FileContent, FilesError>;
     /// Lines that contain `query` (any case), at most `limit`, in path order.
     fn search(&self, root: &Path, query: &str, limit: usize) -> Result<Vec<ContentHit>, FilesError>;
+    /// The last `max_bytes` of the file at an absolute `path`, as text (bytes that are not UTF-8 are
+    /// replaced). Unlike `read` it is not confined to a root: the caller must have checked the path.
+    fn read_tail(&self, path: &Path, max_bytes: usize) -> Result<String, FilesError>;
 }
 
 #[cfg(test)]

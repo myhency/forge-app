@@ -53,6 +53,12 @@ pub enum SidecarEvent {
     ModelsAvailable { models: Vec<AvailableModel> },
     /// The SDK refused a `set_permission_mode`, `set_model` or `set_effort`. The session goes on.
     SettingFailed { message: String },
+    /// The SDK's whole set of background tasks; each event replaces the earlier one.
+    BackgroundTasks { tasks: Vec<forge_domain::BackgroundTaskInfo> },
+    /// A background task ended (informational: the set comes from `BackgroundTasks`).
+    TaskFinished { task_id: String, status: String, summary: String },
+    /// The SDK's guess at what the person will ask next.
+    PromptSuggestion { text: String },
     Error { message: String },
     SessionEnded,
 }
@@ -85,6 +91,8 @@ pub trait SidecarPort: Send + Sync {
         answers: BTreeMap<String, String>,
     ) -> Result<(), SidecarError>;
     async fn interrupt(&self) -> Result<(), SidecarError>;
+    /// Stops one background task. A refusal comes back as a `SettingFailed` event.
+    async fn stop_task(&self, task_id: String) -> Result<(), SidecarError>;
     /// Asks for a mode change in the running session. The answer comes back as an event.
     async fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), SidecarError>;
     /// Asks for a model change in the running session (`None`: the default). The answer comes back
@@ -204,5 +212,26 @@ mod tests {
                 ]
             }
         );
+    }
+
+    #[test]
+    fn background_task_and_suggestion_events_read_from_the_wire() {
+        let tasks: SidecarEvent = serde_json::from_str(
+            r#"{"type":"background_tasks","tasks":[{"task_id":"b1","description":"Sleep","task_type":"local_bash"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            tasks,
+            SidecarEvent::BackgroundTasks {
+                tasks: vec![forge_domain::BackgroundTaskInfo { id: "b1".to_string(), description: "Sleep".to_string(), task_type: "local_bash".to_string() }]
+            }
+        );
+        let none: SidecarEvent = serde_json::from_str(r#"{"type":"background_tasks","tasks":[]}"#).unwrap();
+        assert_eq!(none, SidecarEvent::BackgroundTasks { tasks: vec![] });
+        let finished: SidecarEvent =
+            serde_json::from_str(r#"{"type":"task_finished","task_id":"b1","status":"stopped","summary":"s"}"#).unwrap();
+        assert_eq!(finished, SidecarEvent::TaskFinished { task_id: "b1".to_string(), status: "stopped".to_string(), summary: "s".to_string() });
+        let suggestion: SidecarEvent = serde_json::from_str(r#"{"type":"prompt_suggestion","text":"run it"}"#).unwrap();
+        assert_eq!(suggestion, SidecarEvent::PromptSuggestion { text: "run it".to_string() });
     }
 }

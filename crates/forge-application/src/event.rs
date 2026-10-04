@@ -22,6 +22,9 @@ pub enum SessionUpdate {
     ModelsAvailable(Vec<AvailableModel>),
     /// The SDK refused a mode, model or effort change. The session goes on.
     SettingFailed { message: String },
+    BackgroundTasks(Vec<forge_domain::BackgroundTaskInfo>),
+    TaskFinished { task_id: String },
+    PromptSuggestion(String),
     Errored { message: String },
     SessionEnded,
 }
@@ -120,6 +123,9 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
         SidecarEvent::EffortSet { effort } => SessionUpdate::EffortChanged { effort: *effort },
         SidecarEvent::ModelsAvailable { models } => SessionUpdate::ModelsAvailable(models.clone()),
         SidecarEvent::SettingFailed { message } => SessionUpdate::SettingFailed { message: message.clone() },
+        SidecarEvent::BackgroundTasks { tasks } => SessionUpdate::BackgroundTasks(tasks.clone()),
+        SidecarEvent::TaskFinished { task_id, .. } => SessionUpdate::TaskFinished { task_id: task_id.clone() },
+        SidecarEvent::PromptSuggestion { text } => SessionUpdate::PromptSuggestion(text.clone()),
         SidecarEvent::Error { message } => SessionUpdate::Errored { message: message.clone() },
         SidecarEvent::SessionEnded => SessionUpdate::SessionEnded,
     }
@@ -488,5 +494,23 @@ mod tests {
         let update = apply_sidecar_event(&mut session, &SidecarEvent::CommandsAvailable { commands: commands.clone() });
         assert_eq!(update, SessionUpdate::CommandsAvailable(commands));
         assert!(session.messages.is_empty());
+    }
+
+    #[test]
+    fn background_task_task_finished_and_suggestion_events_become_updates() {
+        let mut session = empty_session();
+        let tasks = vec![forge_domain::BackgroundTaskInfo { id: "b1".to_string(), description: "d".to_string(), task_type: "t".to_string() }];
+        assert_eq!(
+            apply_sidecar_event(&mut session, &SidecarEvent::BackgroundTasks { tasks: tasks.clone() }),
+            SessionUpdate::BackgroundTasks(tasks)
+        );
+        assert_eq!(
+            apply_sidecar_event(&mut session, &SidecarEvent::TaskFinished { task_id: "b1".to_string(), status: "completed".to_string(), summary: "s".to_string() }),
+            SessionUpdate::TaskFinished { task_id: "b1".to_string() }
+        );
+        assert_eq!(
+            apply_sidecar_event(&mut session, &SidecarEvent::PromptSuggestion { text: "next".to_string() }),
+            SessionUpdate::PromptSuggestion("next".to_string())
+        );
     }
 }
