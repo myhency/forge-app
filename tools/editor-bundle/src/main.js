@@ -3,13 +3,15 @@
 // One editor serves every tab: each tab's EditorState (text, undo history) and scroll position are
 // kept per key, so switching tabs keeps what the person did.
 //
-// Rust to page (methods): load(key, doc, language, readonly), show(key), drop(key),
+// Rust to page (methods): load(key, doc, language, readonly, ifClean), show(key), drop(key),
 //   settings({ wrap, indent_guides, whitespace, scroll_past_end, tab_indent, tab_size }),
 //   flush(key), focus(), destroy().
 // Page to Rust (send): { t: "dirty", key }, { t: "change", key, s }, { t: "save", key, s },
-//   { t: "flush", key, s }, { t: "missing", key }.
+//   { t: "flush", key, s }, { t: "missing", key }, { t: "skipped", key }.
 //
-// `change` is sent 2 s after the last edit, once per pause, never during an IME composition.
+// `change` is sent 2 s after the last edit, once per pause, never during an IME composition, and at
+// once when the editor loses focus. `load(..., ifClean)` does nothing and says `skipped` when an
+// edit of the same tab is waiting (a quiet refresh must never replace what the person typed).
 import { Compartment, EditorState } from "@codemirror/state";
 import {
   Decoration,
@@ -201,6 +203,8 @@ window.ForgeEditor = {
           ]),
           config.of(configExtensions(readonly)),
           EditorView.updateListener.of(onUpdate),
+          // A click on a panel button blurs the editor first, so an edit is not left for the timer.
+          EditorView.domEventHandlers({ blur: () => { flushPending(); } }),
         ],
       });
     }
@@ -227,9 +231,19 @@ window.ForgeEditor = {
     }
 
     return {
-      load(newKey, doc, language, readonly) {
+      load(newKey, doc, language, readonly, ifClean) {
         whenIdle(() => {
-          flushPending();
+          if (newKey === key) {
+            if (ifClean && (timer !== null || dirtySent)) {
+              send({ t: "skipped", key: newKey });
+              return;
+            }
+            // The text is being replaced on purpose: an edit waiting for its timer is discarded, not saved.
+            clearTimeout(timer);
+            timer = null;
+          } else {
+            flushPending();
+          }
           saveCurrent();
           key = newKey;
           dirtySent = false;
@@ -273,9 +287,7 @@ window.ForgeEditor = {
       },
       flush(askedKey) {
         if (askedKey === key) {
-          clearTimeout(timer);
-          timer = null;
-          dirtySent = false;
+          // Only reports the text; a save that waits for its timer still happens.
           send({ t: "flush", key: askedKey, s: view.state.doc.toString() });
         } else {
           const entry = states.get(askedKey);

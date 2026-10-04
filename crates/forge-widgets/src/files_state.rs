@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use dioxus::prelude::*;
 use forge_entities::{code_html, is_markdown, language_of, render_markdown};
-use forge_features::{run_blocking, EditorTabs, TabDoc, Workspace};
-use forge_ports::{FileContent, FilesError, FilesPort};
+use forge_features::{normalize_newlines, run_blocking, EditorTabs, TabDoc, Workspace};
+use forge_ports::{FileContent, FilesError, FilesPort, WriteError};
 
 use crate::files_editor::{editor_language, EditorHandle, FromPage};
 use crate::files_kinds::{kind_of, TabKind};
@@ -20,10 +21,31 @@ pub enum Pending {
     Save { overwrite: bool },
     /// The tab is being closed: decide whether to ask first.
     Close,
+    /// Write the text the page holds now and close the tab (Save on the close question).
+    SaveAndClose,
     /// A markdown tab goes back to its rendered view.
     Render,
     /// A tool call finished: re-read the file when the tab is clean and the disk changed.
     Refresh,
+}
+
+impl Pending {
+    fn rank(self) -> u8 {
+        match self {
+            Pending::Refresh => 1,
+            Pending::Render => 2,
+            Pending::Save { overwrite: false } => 3,
+            Pending::Save { overwrite: true } => 4,
+            Pending::Close => 5,
+            Pending::SaveAndClose => 6,
+        }
+    }
+
+    /// Whether this question may take the place of one that still waits for the page's answer. A
+    /// quiet refresh never takes the place of a close or a save, and nothing replaces itself.
+    pub fn replaces(self, waiting: Pending) -> bool {
+        self.rank() > waiting.rank()
+    }
 }
 
 /// Everything the panel does, in one place. It is `Clone` (signals are `Copy`), so event handlers
@@ -46,6 +68,8 @@ pub struct FilesCtx {
     pub confirm: Signal<Option<(String, String)>>,
     /// Tabs still to close one by one (close others, close all).
     pub queue: Signal<Vec<String>>,
+    /// Tabs with a write in flight (one write per tab at a time).
+    pub writing: Signal<HashSet<String>>,
     /// Highlighted html and line numbers, used only when the editor bundle did not load.
     pub fallback: Signal<HashMap<String, (String, String)>>,
     pub ready: Signal<bool>,
@@ -104,23 +128,24 @@ impl FilesCtx {
         } else {
             let mut kinds = self.kinds;
             kinds.write().insert(path.clone(), TabKind::Loading);
-            self.read_and_apply(path);
+            self.read_and_apply(path, false);
         }
     }
 
-    // Reads the file and applies the result when the tab is still open.
-    fn read_and_apply(&self, path: String) {
+    // Reads the file and applies the result when the tab is still open. `quiet`: the editor only takes
+    // the text when the person has no edit waiting (a refresh must never replace what was typed).
+    fn read_and_apply(&self, path: String, quiet: bool) {
         let ctx = self.clone();
         spawn(async move {
             let (files, root, relative) = (ctx.files(), ctx.cwd.clone(), path.clone());
             let Some(result) = run_blocking(move || files.read(&root, &relative)).await else { return };
             if ctx.tabs.peek().contains(&path) {
-                ctx.apply(path, result);
+                ctx.apply(path, result, quiet);
             }
         });
     }
 
-    fn apply(&self, path: String, result: Result<FileContent, FilesError>) {
+    fn apply(&self, path: String, result: Result<FileContent, FilesError>, quiet: bool) {
         let (mut kinds, mut docs) = (self.kinds, self.docs);
         match result {
             Ok(FileContent::Text { text, version, lossy }) => {
@@ -128,7 +153,7 @@ impl FilesCtx {
                 let read_only = kind.read_only();
                 docs.write().insert(path.clone(), TabDoc::new(version, &text));
                 kinds.write().insert(path.clone(), kind);
-                self.take_text(&path, &text, read_only);
+                self.take_text(&path, &normalize_newlines(&text), read_only, quiet);
             }
             Ok(other) => {
                 docs.write().remove(&path);
@@ -140,9 +165,9 @@ impl FilesCtx {
         }
     }
 
-    // The text of a file that was just read: markdown is rendered, and the editor takes it when it is
-    // the selected tab's view.
-    fn take_text(&self, path: &str, text: &str, read_only: bool) {
+    // The text of a file that was just read, line ends as `\n`: markdown is rendered, and the editor
+    // takes it when it is the selected tab's view.
+    fn take_text(&self, path: &str, text: &str, read_only: bool, quiet: bool) {
         if is_markdown(path) {
             let mut markdown = self.markdown;
             markdown.write().insert(path.to_string(), render_markdown(text));
@@ -155,7 +180,7 @@ impl FilesCtx {
             return;
         }
         if self.selected().as_deref() == Some(path) && self.editor_visible(path) {
-            self.handle.load(path, text, editor_language(path), read_only);
+            self.handle.load(path, text, editor_language(path), read_only, quiet);
         }
     }
 
@@ -172,7 +197,7 @@ impl FilesCtx {
                     let read_only = kind.read_only();
                     docs.write().insert(path.clone(), TabDoc::new(version, &text));
                     kinds.write().insert(path.clone(), kind);
-                    ctx.take_text(&path, &text, read_only);
+                    ctx.take_text(&path, &normalize_newlines(&text), read_only, false);
                 }
                 Ok(other) => {
                     kinds.write().insert(path, kind_of(other));
@@ -200,7 +225,7 @@ impl FilesCtx {
                 unavailable.set(true);
                 // Tabs read before this was known get their plain viewer text now.
                 for path in self.tabs.peek().paths() {
-                    self.read_and_apply(path);
+                    self.read_and_apply(path, false);
                 }
             }
             FromPage::Dirty { key } => self.dirty(key),
@@ -208,7 +233,9 @@ impl FilesCtx {
             FromPage::Save { key, s } => self.change(key, s, true),
             FromPage::Flush { key, s } => self.flushed(key, s),
             // The page never loaded this tab (it was not the visible one when its file was read).
-            FromPage::Missing { key } => self.read_and_apply(key),
+            FromPage::Missing { key } => self.read_and_apply(key, false),
+            // A quiet refresh found an edit waiting: the disk changed and so did the editor.
+            FromPage::Skipped { key } => self.with_doc(&key, |doc| doc.write_failed(&WriteError::Changed)),
         }
     }
 
@@ -233,13 +260,32 @@ impl FilesCtx {
         }
     }
 
-    // Writes `text`; with `close` the tab closes when the write worked (and the queue stops when it did not).
+    // Writes `text` (the editor's text, line ends as `\n`); with `close` the tab closes when the write worked
+    // (and the queue stops when it did not). A tab that must not be written (read only) is never written.
+    // One write per tab at a time: a second waits for the first and then uses the version it left.
     fn write(&self, key: String, text: String, overwrite: bool, close: bool) {
-        let expected = if overwrite { None } else { self.docs.peek().get(&key).map(|doc| doc.loaded) };
+        if self.kinds.peek().get(&key).is_some_and(TabKind::read_only) {
+            return;
+        }
         let ctx = self.clone();
         spawn(async move {
-            let (files, root, relative, body) = (ctx.files(), ctx.cwd.clone(), key.clone(), text.clone());
-            let Some(result) = run_blocking(move || files.write(&root, &relative, &body, expected)).await else { return };
+            while ctx.writing.peek().contains(&key) {
+                tokio::time::sleep(Duration::from_millis(30)).await;
+            }
+            let mut writing = ctx.writing;
+            writing.write().insert(key.clone());
+            let prepared = {
+                let docs = ctx.docs.peek();
+                docs.get(&key).map(|doc| (if overwrite { None } else { Some(doc.loaded) }, doc.to_disk(&text)))
+            };
+            let Some((expected, body)) = prepared else {
+                writing.write().remove(&key);
+                return;
+            };
+            let (files, root, relative) = (ctx.files(), ctx.cwd.clone(), key.clone());
+            let result = run_blocking(move || files.write(&root, &relative, &body, expected)).await;
+            writing.write().remove(&key);
+            let Some(result) = result else { return };
             let saved = result.is_ok();
             let mut docs = ctx.docs;
             if let Some(doc) = docs.write().get_mut(&key) {
@@ -273,6 +319,11 @@ impl FilesCtx {
                 }
             }
             Pending::Close => self.decide_close(key, text),
+            Pending::SaveAndClose => {
+                if let Some(text) = text {
+                    self.write(key, text, false, true);
+                }
+            }
             Pending::Render => {
                 if let Some(text) = text {
                     let mut markdown = self.markdown;
@@ -285,6 +336,10 @@ impl FilesCtx {
 
     fn ask(&self, key: &str, what: Pending) {
         let mut pending = self.pending;
+        let replaces = pending.peek().get(key).is_none_or(|waiting| what.replaces(*waiting));
+        if !replaces {
+            return;
+        }
         pending.write().insert(key.to_string(), what);
         self.handle.flush(key);
     }
@@ -299,7 +354,7 @@ impl FilesCtx {
 
     /// The banner's Cancel: drop the edits and show the file on disk.
     pub fn reload(&self, key: String) {
-        self.read_and_apply(key);
+        self.read_and_apply(key, false);
     }
 
     pub fn dismiss_banner(&self, key: &str) {
@@ -345,8 +400,10 @@ impl FilesCtx {
     pub fn confirm_save(&self) {
         let mut confirm = self.confirm;
         let answered = confirm.write().take();
-        if let Some((key, text)) = answered {
-            self.write(key, text, false, true);
+        // The question is not modal, so the person may have typed since it was asked: save what the
+        // page holds now, not the text from then.
+        if let Some((key, _)) = answered {
+            self.ask(&key, Pending::SaveAndClose);
         }
     }
 
@@ -478,7 +535,47 @@ impl FilesCtx {
                 // The page still holds the old text of a tab that is not shown: let it go.
                 ctx.handle.forget(&key);
             }
-            ctx.read_and_apply(key);
+            ctx.read_and_apply(key, true);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL: [Pending; 5] = [
+        Pending::Refresh,
+        Pending::Render,
+        Pending::Save { overwrite: false },
+        Pending::Close,
+        Pending::SaveAndClose,
+    ];
+
+    #[test]
+    fn a_refresh_never_replaces_a_close_or_a_save_that_waits_for_the_page() {
+        for waiting in [Pending::Close, Pending::SaveAndClose, Pending::Save { overwrite: true }, Pending::Render] {
+            assert!(!Pending::Refresh.replaces(waiting), "{waiting:?}");
+        }
+    }
+
+    #[test]
+    fn a_close_replaces_a_refresh_or_a_render_and_a_save_replaces_a_refresh() {
+        assert!(Pending::Close.replaces(Pending::Refresh));
+        assert!(Pending::Close.replaces(Pending::Render));
+        assert!(Pending::Save { overwrite: false }.replaces(Pending::Refresh));
+        assert!(Pending::SaveAndClose.replaces(Pending::Close));
+    }
+
+    #[test]
+    fn the_same_kind_of_question_does_not_replace_itself() {
+        for pending in ALL {
+            assert!(!pending.replaces(pending), "{pending:?}");
+        }
+    }
+
+    #[test]
+    fn an_overwrite_is_not_swallowed_by_a_plain_save_asked_later() {
+        assert!(!Pending::Save { overwrite: false }.replaces(Pending::Save { overwrite: true }));
     }
 }

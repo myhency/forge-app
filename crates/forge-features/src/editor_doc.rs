@@ -10,6 +10,11 @@ pub fn text_hash(text: &str) -> u64 {
     hasher.finish()
 }
 
+/// The text as the editor holds it: every line end (`\r\n`, a lone `\r`) is `\n`.
+pub fn normalize_newlines(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
 /// What the banner over the editor says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Banner {
@@ -32,13 +37,26 @@ impl Banner {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TabDoc {
     pub loaded: FileVersion,
+    /// A hash of the text on disk as the editor holds it (line ends as `\n`).
     pub clean: u64,
+    /// The file used `\r\n` line ends; they are put back when the text is written.
+    pub crlf: bool,
     pub banner: Option<Banner>,
 }
 
 impl TabDoc {
+    /// `text` is the file as read from disk.
     pub fn new(loaded: FileVersion, text: &str) -> Self {
-        Self { loaded, clean: text_hash(text), banner: None }
+        Self { loaded, clean: text_hash(&normalize_newlines(text)), crlf: text.contains("\r\n"), banner: None }
+    }
+
+    /// The text the editor holds, as it must go to disk: with `\r\n` again when the file had them.
+    pub fn to_disk(&self, text: &str) -> String {
+        if self.crlf {
+            text.replace('\n', "\r\n")
+        } else {
+            text.to_string()
+        }
     }
 
     /// The editor reports its first change since a read or a write. `disk` is the file's version
@@ -79,10 +97,11 @@ impl TabDoc {
         });
     }
 
-    /// The file was read again (Cancel on the conflict banner, or a quiet refresh).
+    /// The file was read again (Cancel on the conflict banner, or a quiet refresh); `text` is as read from disk.
     pub fn reloaded(&mut self, version: FileVersion, text: &str) {
         self.loaded = version;
-        self.clean = text_hash(text);
+        self.clean = text_hash(&normalize_newlines(text));
+        self.crlf = text.contains("\r\n");
         self.banner = None;
     }
 
@@ -188,6 +207,37 @@ mod tests {
         doc.write_failed(&WriteError::Failed("x".to_string()));
         doc.clear_banner();
         assert!(doc.may_write(true));
+    }
+
+    #[test]
+    fn a_crlf_file_that_was_only_opened_is_not_different_from_disk() {
+        // The editor holds the text with `\n` line ends, whatever the file used.
+        let doc = TabDoc::new(version(1, 8), "a\r\nb\r\n");
+        assert!(!doc.differs("a\nb\n"), "opening a CRLF file must not make it look edited");
+        assert!(doc.differs("a\nb\nc\n"));
+    }
+
+    #[test]
+    fn text_goes_back_to_disk_with_the_line_ends_the_file_had() {
+        let crlf = TabDoc::new(version(1, 8), "a\r\nb\r\n");
+        assert_eq!(crlf.to_disk("a\nb\nc"), "a\r\nb\r\nc");
+        let lf = TabDoc::new(version(1, 4), "a\nb\n");
+        assert_eq!(lf.to_disk("a\nb\nc"), "a\nb\nc");
+    }
+
+    #[test]
+    fn a_lone_carriage_return_reads_as_a_line_end_like_the_editor_reads_it() {
+        assert_eq!(normalize_newlines("a\rb\r\nc\n"), "a\nb\nc\n");
+        let doc = TabDoc::new(version(1, 6), "a\rb\r\nc");
+        assert!(!doc.differs("a\nb\nc"));
+    }
+
+    #[test]
+    fn reloading_keeps_the_line_end_style_of_the_new_text() {
+        let mut doc = TabDoc::new(version(1, 3), "abc");
+        doc.reloaded(version(2, 6), "a\r\nb");
+        assert!(!doc.differs("a\nb"));
+        assert_eq!(doc.to_disk("a\nb"), "a\r\nb");
     }
 
     #[test]

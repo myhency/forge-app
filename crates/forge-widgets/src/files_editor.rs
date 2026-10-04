@@ -26,10 +26,13 @@ pub enum FromPage {
     Flush { key: String, s: Option<String> },
     /// A tab was asked for that the page never loaded.
     Missing { key: String },
+    /// A load that was only to happen while the tab was clean did not, because an edit was waiting.
+    Skipped { key: String },
 }
 
-pub fn load_command(key: &str, doc: &str, language: &str, readonly: bool) -> Value {
-    json!({ "t": "load", "key": key, "doc": doc, "language": language, "readonly": readonly })
+/// `if_clean`: the page does nothing (and says `skipped`) when an edit of this tab is waiting.
+pub fn load_command(key: &str, doc: &str, language: &str, readonly: bool, if_clean: bool) -> Value {
+    json!({ "t": "load", "key": key, "doc": doc, "language": language, "readonly": readonly, "if_clean": if_clean })
 }
 
 pub fn show_command(key: &str) -> Value {
@@ -92,8 +95,8 @@ impl EditorHandle {
         let _ = self.tx.send(command);
     }
 
-    pub fn load(&self, key: &str, doc: &str, language: &str, readonly: bool) {
-        self.send(load_command(key, doc, language, readonly));
+    pub fn load(&self, key: &str, doc: &str, language: &str, readonly: bool, if_clean: bool) {
+        self.send(load_command(key, doc, language, readonly, if_clean));
     }
 
     pub fn show(&self, key: &str) {
@@ -138,7 +141,7 @@ if (!window.ForgeEditor || !host) {
     dioxus.send({ t: "ready" });
     while (true) {
         const m = await dioxus.recv();
-        if (m.t === "load") editor.load(m.key, m.doc, m.language, m.readonly);
+        if (m.t === "load") editor.load(m.key, m.doc, m.language, m.readonly, m.if_clean);
         else if (m.t === "show") editor.show(m.key);
         else if (m.t === "drop") editor.drop(m.key);
         else if (m.t === "settings") editor.settings(m.settings);
@@ -211,6 +214,7 @@ mod tests {
         assert_eq!(parse(r#"{"t":"flush","key":"a.py","s":"t"}"#), FromPage::Flush { key: "a.py".to_string(), s: Some("t".to_string()) });
         assert_eq!(parse(r#"{"t":"flush","key":"a.py","s":null}"#), FromPage::Flush { key: "a.py".to_string(), s: None });
         assert_eq!(parse(r#"{"t":"missing","key":"a.py"}"#), FromPage::Missing { key: "a.py".to_string() });
+        assert_eq!(parse(r#"{"t":"skipped","key":"a.py"}"#), FromPage::Skipped { key: "a.py".to_string() });
     }
 
     #[test]
@@ -223,9 +227,10 @@ mod tests {
     #[test]
     fn the_commands_to_the_page_carry_what_the_bridge_reads() {
         assert_eq!(
-            load_command("a.py", "x = 1\n", "python", true),
-            serde_json::json!({ "t": "load", "key": "a.py", "doc": "x = 1\n", "language": "python", "readonly": true })
+            load_command("a.py", "x = 1\n", "python", true, false),
+            serde_json::json!({ "t": "load", "key": "a.py", "doc": "x = 1\n", "language": "python", "readonly": true, "if_clean": false })
         );
+        assert_eq!(load_command("a.py", "", "", false, true)["if_clean"], serde_json::json!(true));
         assert_eq!(show_command("a.py"), serde_json::json!({ "t": "show", "key": "a.py" }));
         assert_eq!(forget_command("a.py"), serde_json::json!({ "t": "drop", "key": "a.py" }));
         assert_eq!(flush_command("a.py"), serde_json::json!({ "t": "flush", "key": "a.py" }));

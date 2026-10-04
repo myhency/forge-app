@@ -55,6 +55,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         pending: use_signal(HashMap::new),
         confirm: use_signal(|| None),
         queue: use_signal(Vec::new),
+        writing: use_signal(HashSet::new),
         fallback: use_signal(HashMap::new),
         ready: use_signal(|| false),
         unavailable: use_signal(|| false),

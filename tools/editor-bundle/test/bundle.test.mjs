@@ -66,3 +66,66 @@ test("the first edit says dirty at once and the text follows about two seconds l
   assert.match(sent[1].s, /^x = 12/);
   editor.destroy();
 });
+
+// Types into the current tab the way a person does.
+function type(w, text) {
+  w.document.querySelector(".cm-line").textContent = text;
+  w.document.querySelector(".cm-content").dispatchEvent(new w.Event("input", { bubbles: true }));
+}
+
+test("loading the file again while an edit waits drops that edit instead of sending it (Cancel on the conflict banner)", async () => {
+  const { w, editor, sent } = boot();
+  editor.load("a.py", "x = 1\n", "python", false);
+  type(w, "x = 99");
+  await wait(100);
+  editor.load("a.py", "disk text\n", "python", false);
+  await wait(2400);
+  assert.deepEqual(plain(sent).map((message) => message.t), ["dirty"], "no change may be sent for the discarded edit");
+  editor.flush("a.py");
+  assert.equal(plain(sent).at(-1).s, "disk text\n");
+  editor.destroy();
+});
+
+test("a load that must only happen while the tab is clean is skipped when an edit waits, and says so", async () => {
+  const { w, editor, sent } = boot();
+  editor.load("a.py", "x = 1\n", "python", false);
+  type(w, "x = 99");
+  await wait(100);
+  editor.load("a.py", "disk text\n", "python", false, true);
+  assert.deepEqual(plain(sent).map((message) => message.t), ["dirty", "skipped"]);
+  assert.equal(plain(sent)[1].key, "a.py");
+  editor.flush("a.py");
+  assert.match(plain(sent).at(-1).s, /^x = 99/, "the person's text is still in the editor");
+  editor.destroy();
+});
+
+test("a load that must only happen while the tab is clean goes ahead when nothing waits", () => {
+  const { editor, sent } = boot();
+  editor.load("a.py", "x = 1\n", "python", false);
+  editor.load("a.py", "disk text\n", "python", false, true);
+  editor.flush("a.py");
+  assert.deepEqual(plain(sent), [{ t: "flush", key: "a.py", s: "disk text\n" }]);
+  editor.destroy();
+});
+
+test("asking for the text does not cancel the save that is waiting for its timer", async () => {
+  const { w, editor, sent } = boot();
+  editor.load("a.py", "x = 1\n", "python", false);
+  type(w, "x = 5");
+  await wait(100);
+  editor.flush("a.py");
+  await wait(2300);
+  assert.deepEqual(plain(sent).map((message) => message.t), ["dirty", "flush", "change"]);
+  editor.destroy();
+});
+
+test("leaving the editor sends a waiting edit at once, so a click on a panel button never leaves it behind", async () => {
+  const { w, editor, sent } = boot();
+  editor.load("a.py", "x = 1\n", "python", false);
+  type(w, "x = 7");
+  await wait(100);
+  w.document.querySelector(".cm-content").dispatchEvent(new w.FocusEvent("blur"));
+  assert.deepEqual(plain(sent).map((message) => message.t), ["dirty", "change"]);
+  assert.match(plain(sent)[1].s, /^x = 7/);
+  editor.destroy();
+});
