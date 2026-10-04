@@ -11,7 +11,7 @@ const MAX_HIGHLIGHT_BYTES: usize = 20_000;
 /// `http`, `https` and `mailto`, images become their alt text, and fenced code is highlighted
 /// when its language is known.
 pub fn render_markdown(source: &str) -> String {
-    let parser = Parser::new_ext(source, Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH);
+    let parser = Parser::new_ext(source, Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS);
     let mut events: Vec<Event> = Vec::new();
     let mut code: Option<(Option<String>, String)> = None;
     // One entry per open link or image: whether its start/end tags are kept.
@@ -79,9 +79,11 @@ fn code_block_html(language: Option<&str>, code: &str) -> String {
         .filter(|_| code.len() <= MAX_HIGHLIGHT_BYTES)
         .and_then(|language| highlight_code(language, code))
         .unwrap_or_else(|| escape_html(code));
+    // The button's script is fixed text; nothing from the message is put into it.
+    const COPY: &str = "<button class=\"code-copy\" type=\"button\" title=\"Copy\" onclick=\"navigator.clipboard.writeText(this.nextElementSibling.innerText)\">⧉</button>";
     match language {
-        Some(language) => format!("<pre class=\"code-block\"><code class=\"language-{language}\">{body}</code></pre>\n"),
-        None => format!("<pre class=\"code-block\"><code>{body}</code></pre>\n"),
+        Some(language) => format!("<div class=\"code-wrap\">{COPY}<pre class=\"code-block\"><code class=\"language-{language}\">{body}</code></pre></div>\n"),
+        None => format!("<div class=\"code-wrap\">{COPY}<pre class=\"code-block\"><code>{body}</code></pre></div>\n"),
     }
 }
 
@@ -101,6 +103,34 @@ mod tests {
     fn tables_and_strikethrough_are_supported() {
         assert!(render_markdown("|a|b|\n|-|-|\n|1|2|\n").contains("<table>"));
         assert!(render_markdown("~~gone~~").contains("<del>gone</del>"));
+    }
+
+    #[test]
+    fn task_list_items_get_a_checkbox() {
+        let html = render_markdown("- [x] done\n- [ ] todo");
+        assert!(html.contains("type=\"checkbox\""), "{html}");
+        assert_eq!(html.matches("checked").count(), 1, "{html}");
+    }
+
+    #[test]
+    fn a_plain_list_has_no_checkbox() {
+        assert!(!render_markdown("- a\n- b").contains("checkbox"));
+    }
+
+    #[test]
+    fn a_code_block_carries_a_copy_button_outside_the_pre() {
+        let html = render_markdown("```rust\nfn main() {}\n```");
+        assert!(html.starts_with("<div class=\"code-wrap\"><button"), "{html}");
+        assert!(html.contains("class=\"code-copy\""), "{html}");
+        assert!(html.contains("<pre class=\"code-block\">"), "{html}");
+        assert!(html.contains("</pre></div>"), "{html}");
+    }
+
+    #[test]
+    fn the_copy_button_script_is_fixed_text_not_from_the_message() {
+        let html = render_markdown("```\n\"); alert(1); (\"\n```");
+        let button = html.split("</button>").next().unwrap();
+        assert!(!button.contains("alert"), "{button}");
     }
 
     #[test]
@@ -156,24 +186,24 @@ mod tests {
     #[test]
     fn a_fence_with_a_known_language_is_highlighted() {
         let html = render_markdown("```rust\nfn main() {}\n```");
-        assert!(html.starts_with("<pre class=\"code-block\"><code class=\"language-rust\">"), "{html}");
+        assert!(html.contains("<pre class=\"code-block\"><code class=\"language-rust\">"), "{html}");
         assert!(html.contains("hl-"), "{html}");
-        assert!(html.ends_with("</code></pre>\n"), "{html}");
+        assert!(html.ends_with("</code></pre></div>\n"), "{html}");
     }
 
     #[test]
     fn a_fence_with_an_unknown_language_is_escaped_not_highlighted() {
         let html = render_markdown("```nosuchlang\na < b\n```");
-        assert_eq!(
-            html,
-            "<pre class=\"code-block\"><code class=\"language-nosuchlang\">a &lt; b\n</code></pre>\n"
+        assert!(
+            html.contains("<pre class=\"code-block\"><code class=\"language-nosuchlang\">a &lt; b\n</code></pre>"),
+            "{html}"
         );
     }
 
     #[test]
     fn a_fence_without_a_language_has_no_class() {
         let html = render_markdown("```\nplain\n```");
-        assert_eq!(html, "<pre class=\"code-block\"><code>plain\n</code></pre>\n");
+        assert!(html.contains("<pre class=\"code-block\"><code>plain\n</code></pre>"), "{html}");
     }
 
     #[test]
