@@ -278,6 +278,44 @@ mod tests {
         assert!(session.messages[0].tool_calls().nth(0).unwrap().result.is_none());
     }
 
+    fn tool_use(id: &str) -> SidecarEvent {
+        SidecarEvent::ToolUse { tool_call_id: id.to_string(), name: "Bash".to_string(), input: serde_json::json!({"command": "ls"}) }
+    }
+
+    #[test]
+    fn text_after_a_tool_call_starts_a_new_text_block() {
+        let mut session = empty_session();
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "one ".to_string() });
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "two".to_string() });
+        apply_sidecar_event(&mut session, &tool_use("t-1"));
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "three".to_string() });
+
+        let kinds: Vec<String> = session.messages[0]
+            .blocks
+            .iter()
+            .map(|block| match block {
+                forge_domain::Block::Text(text) => format!("text:{text}"),
+                forge_domain::Block::Thinking(_) => "thinking".to_string(),
+                forge_domain::Block::Tool(call) => format!("tool:{}", call.id),
+            })
+            .collect();
+        assert_eq!(kinds, vec!["text:one two", "tool:t-1", "text:three"]);
+    }
+
+    #[test]
+    fn a_tool_result_lands_on_its_call_even_with_text_after_it() {
+        let mut session = empty_session();
+        apply_sidecar_event(&mut session, &tool_use("t-1"));
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "later".to_string() });
+        apply_sidecar_event(
+            &mut session,
+            &SidecarEvent::ToolResult { tool_call_id: "t-1".to_string(), output: "out".to_string(), is_error: false },
+        );
+        let call = session.messages[0].tool_calls().next().unwrap();
+        assert_eq!(call.result.as_ref().unwrap().output, "out");
+        assert_eq!(session.messages[0].text(), "later");
+    }
+
     #[test]
     fn tool_use_with_no_preceding_assistant_message_starts_a_new_one() {
         let mut session = empty_session();
