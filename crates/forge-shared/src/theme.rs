@@ -102,7 +102,7 @@ mod tests {
         let start = THEME_CSS.rfind("@media (prefers-color-scheme: dark)").unwrap();
         let block = &THEME_CSS[start..];
         let dark = &block[..block.find("\n}").unwrap()];
-        for definition in ["--hl-keyword:", "--hl-string:", "--diff-added-bg:", "--diff-removed-bg:"] {
+        for definition in ["--hl-keyword:", "--hl-string:", "--diff-added-bg:", "--diff-removed-bg:", "--link:"] {
             assert!(dark.contains(definition), "the dark palette does not define {definition}");
         }
     }

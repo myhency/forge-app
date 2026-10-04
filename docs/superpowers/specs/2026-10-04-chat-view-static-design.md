@@ -95,3 +95,20 @@ Rules, from the observed app:
 - The `Message` change touches about 90 test lines across five crates. Done first, alone, and committed with all tests green before any view work.
 - The real app's folding point (first to last tool) is inferred from one long task and one two-step task; if a later session shows text between two tool groups outside the fold, only rule 2 changes.
 - Korean verbs in the real app ("생성됨") versus Forge's English UI: Forge keeps English.
+
+## 7. As built (2026-10-04)
+
+Built as planned in eight tasks (plan `docs/superpowers/plans/2026-10-04-chat-view-static.md`). Forge was started against the real `~/.claude` (config isolated) and the `hello.txt` session of Round 7 was compared with the real app's screenshots.
+
+What matches: right-aligned grey user bubble and no role labels; answer text without a box; the folded line (`Created 1 file, Read 1 file +1 −0`, `Created 2 files, Edited 1 file, Ran 2 commands +12 −1`) with the task list above it and the closing text below; the opened box with file, command and narration rows; the end card; the footer (copy icon and time); nested list markers (disc, circle, square; 1, a), the checklist with struck-through ticks, the quote bar, the table across the full width with a grey header, a code block as wide as its content, rules, links.
+
+Corrections made on the way: the fold runs from the first to the last tool (not up to the last); `at` is an RFC 3339 string; links use a new `--link` variable (blue, with a dark value) because the real app's links are blue, not the accent colour.
+
+Left (not seen as wrong, or out of scope):
+- The row chevron sits at the right edge; the real app puts it right after the counts.
+- A single file step reads `Created 1 file, Read 1 file` when the turn has two kinds of step; the real app writes the file name for a single step only.
+- Footer: copy only (no branch, pin, speaker); a message built live has no time until the session is reloaded (`at: None`); 23B may stamp it.
+- No undo on the end card; file rows do not open the file (23C).
+- Checked by eye only on a light theme; dark mode and a window narrower than about 700 px were not looked at.
+
+Lessons: the harness cannot type letters while a Korean input method is on (`keystroke` and `key code` both compose Hangul); typing the Hangul keys of a word (`생성` = t o d t j d) works for the search palette. Forge can be pointed at the real `~/.claude` read-only by launching `target/debug/forge-app` with only `FORGE_CONFIG_PATH` set and writing its pid to `/private/tmp/forge-harness.pid` so `capture.py` and `click.py` find the window.
