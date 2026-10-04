@@ -191,3 +191,10 @@ The user allowed one more message in the throwaway folder. Mode 수동, asked Cl
 - While the card shows: the sidebar dot is orange, the transcript has the pill "입력이 필요합니다 ›" with the orange ringed dot at its left; the tooltip "자동 모드 사용해 보기" appeared again over the mode label until dismissed.
 - After "거부": the turn ends at once. The transcript shows one line "생성됨 obs.txt 실패 ›" ("생성됨" grey, the name dark, "실패" dark red) and no reply from Claude. A short row appears under the user's message: "1분 전" and three icons (copy, a rewind arrow ↺, branch). The composer shows the next suggested prompt again ("fizz.py 다시 실행해줘").
 - The earlier background task finished by itself: the pill "실행 중인 작업 1개" was gone and a new line "끝" had been added after the "백그라운드에서 실행 중입니다" text; the tool line read "Slept for 60 seconds ›" (past tense of the live "Sleeping for 60 seconds").
+
+### Round 8, part 2: the opened denied row (2026-10-04, the user opened it in the real app)
+
+- The line "생성됨 obs.txt 실패 ›" opened in place (the chevron turned down) into a bordered box across the column width. At the top, in dark red: "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed." This is the text the tool result carried, so the model saw it and stopped (no reply followed).
+- Under it, the tool input as `key: value` lines: the key in grey mono, the value in normal text; a path value is blue and underlined (`file_path: /private/tmp/forge-observe/obs.txt`, `content: x`). No JSON braces.
+- Under the box the row of small icons changed to branch, pin and "2분 전" (no copy and no rewind this time; the icons depend on the turn).
+- Forge today: the sidecar answers a denial with "Denied by user", so the model gets a much weaker instruction than the real app's; and the opened tool row (23A) shows pretty JSON, not `key: value` lines.
