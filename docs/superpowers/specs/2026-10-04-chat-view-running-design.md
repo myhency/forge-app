@@ -92,7 +92,9 @@ Built as planned in ten tasks (plan `docs/superpowers/plans/2026-10-04-chat-view
 
 **Not verified by the harness**
 - The number keys `1 2 3` and `Esc`, `⌘↩`/`⇧⌘↩` on both cards, the question's number keys: the synthetic key events from the harness do not arrive as `Digit` codes (the same events did nothing in the mode menu, whose number keys are known to work), so the keys must be tried by hand. `⌘↩` did work through the harness on the question card. The mouse path of every button works.
-- The stop button's effect (its look was seen; the one attempt to start a long reply did not go out), the `↓` scroll-to-end button, the `Allow and switch to Auto mode` menu item, a queued second permission, dark mode.
+- The stop button's effect (its look was seen; the one attempt to start a long reply did not go out), the `Allow and switch to Auto mode` menu item, a queued second permission, typing in the message box while a card appears (the card no longer takes focus then; unit-tested only), dark mode.
+- The `↓` scroll-to-end button was **not** working in the first build (its watch ran once and never found the list); the final review and a second look in the real app found it, it was fixed, and it now appears away from the end and returns to the end on a click. Growth of a streaming reply below the view was not watched live.
+- After the final review: a card no longer takes focus while the person is typing (a stray digit would have decided the request).
 
 **Left / not built**
 - No token count in the clock (decided with the user).
