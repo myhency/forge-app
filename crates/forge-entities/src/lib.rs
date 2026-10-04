@@ -11,6 +11,7 @@ mod relative_time;
 mod sidebar_item;
 mod tool_summary;
 mod transcript_view;
+mod turn_view;
 mod usage_card;
 mod usage_view;
 
@@ -25,6 +26,7 @@ pub use permission::PermissionCard;
 pub use relative_time::relative_time;
 pub use sidebar_item::{SessionMarker, SidebarItem};
 pub use transcript_view::TranscriptView;
+pub use turn_view::{build_turns, Activity, CardFile, FileCard, Footer, Item, Row, ToolKind, ToolRow};
 pub use tool_summary::{tool_call_status, tool_detail_text, tool_input_summary, ToolCallStatus};
 pub use extension_rows::{mcp_rows, mcp_summary, plugin_rows, project_label, skill_rows, ExtensionRow};
 pub use usage_card::{
