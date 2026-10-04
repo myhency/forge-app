@@ -93,6 +93,16 @@ impl FilesPort for LocalFiles {
         search_dir(&root, "", &needle, limit, &mut visited, &mut hits);
         Ok(hits)
     }
+
+    fn read_tail(&self, path: &Path, max_bytes: usize) -> Result<String, FilesError> {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = fs::File::open(path).map_err(failed)?;
+        let length = file.metadata().map_err(failed)?.len();
+        file.seek(SeekFrom::Start(length.saturating_sub(max_bytes as u64))).map_err(failed)?;
+        let mut bytes = Vec::new();
+        file.take(max_bytes as u64).read_to_end(&mut bytes).map_err(failed)?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
 }
 
 // Depth first in name order; symlinks are not followed, so a link cannot lead out of the root.
@@ -264,5 +274,32 @@ mod tests {
         fs::write(dir.path().join("long.txt"), format!("needle {}\n", "x".repeat(5000))).unwrap();
         let hits = LocalFiles::new().search(dir.path(), "needle", 5).unwrap();
         assert_eq!(hits[0].text.chars().count(), 200);
+    }
+
+    #[test]
+    fn read_tail_gives_the_end_of_a_long_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("out.txt");
+        std::fs::write(&file, "0123456789").unwrap();
+        assert_eq!(LocalFiles::new().read_tail(&file, 4).unwrap(), "6789");
+        assert_eq!(LocalFiles::new().read_tail(&file, 100).unwrap(), "0123456789");
+        assert_eq!(LocalFiles::new().read_tail(&file, 0).unwrap(), "");
+    }
+
+    #[test]
+    fn read_tail_of_an_empty_or_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty = dir.path().join("empty.txt");
+        std::fs::write(&empty, "").unwrap();
+        assert_eq!(LocalFiles::new().read_tail(&empty, 10).unwrap(), "");
+        assert!(matches!(LocalFiles::new().read_tail(&dir.path().join("nope.txt"), 10), Err(FilesError::Failed(_))));
+    }
+
+    #[test]
+    fn read_tail_replaces_bytes_that_are_not_utf8() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("bin.txt");
+        std::fs::write(&file, [b'a', 0xff, b'b']).unwrap();
+        assert_eq!(LocalFiles::new().read_tail(&file, 10).unwrap(), "a\u{fffd}b");
     }
 }
