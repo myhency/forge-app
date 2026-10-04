@@ -91,7 +91,7 @@ pub fn tool_kind(name: &str) -> ToolKind {
     }
 }
 
-fn file_name(path: &str) -> String {
+pub(crate) fn file_name(path: &str) -> String {
     path.rsplit('/').next().filter(|name| !name.is_empty()).unwrap_or(path).to_string()
 }
 

@@ -7,6 +7,7 @@ mod markdown;
 mod message;
 mod model_catalog;
 mod permission;
+mod permission_view;
 mod question;
 mod relative_time;
 mod sidebar_item;
@@ -25,13 +26,14 @@ pub use markdown::render_markdown;
 pub use message::attachment_label;
 pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_options, model_value, ModelRow, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
 pub use permission::PermissionCard;
+pub use permission_view::{permission_key, permission_view, PermissionKey, PermissionView};
 pub use question::{answer_pairs, answers_map, questions_of, AnswerPair, Picks, Question, QuestionOption, QUESTION_TOOL};
 pub use relative_time::relative_time;
 pub use sidebar_item::{SessionMarker, SidebarItem};
 pub use transcript_view::TranscriptView;
 pub use turn::Turns;
 pub use turn_view::{build_turns, Activity, CardFile, FileCard, Footer, Item, Row, ToolKind, ToolRow};
-pub use tool_summary::{tool_call_status, tool_detail_text, tool_input_summary, ToolCallStatus};
+pub use tool_summary::{elapsed_label, tool_call_status, tool_detail_text, tool_input_lines, tool_input_summary, InputLine, ToolCallStatus};
 pub use extension_rows::{mcp_rows, mcp_summary, plugin_rows, project_label, skill_rows, ExtensionRow};
 pub use usage_card::{
     axis_ticks, chart_layout, dashboard_model_label, day_label, heat_level, hour_label, legend_rows, overview_tiles, with_commas, ChartBar,
