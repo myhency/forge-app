@@ -3,6 +3,7 @@ use forge_application::LiveSessionId;
 use forge_shared::{Button, ButtonKind};
 
 use crate::composer_state::{use_composer_state_provider, ComposerChips};
+use crate::suggestion::{composer_placeholder, suggestion_to_accept};
 
 use crate::command_box::CommandTextArea;
 use crate::workspace::use_workspace;
@@ -17,6 +18,8 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
     let mut draft = draft;
     let mut seen_failures = use_signal(|| 0u32);
     let view = workspace.live_view(id);
+    let suggestion = view.and_then(|view| view.read().suggestion.clone());
+    let accept = suggestion.clone();
 
     // A send that never reached the sidecar hands its text back through the view; put it in the box
     // again (unless the person has already started typing something else) instead of losing it.
@@ -58,6 +61,12 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
             class: "composer",
             // ⌘U adds a file or photo. The physical key: the character depends on the input method.
             onkeydown: move |event: KeyboardEvent| {
+                let draft_empty = draft.peek().is_empty();
+                if let Some(text) = suggestion_to_accept(&event.code().to_string(), accept.as_deref(), draft_empty, running) {
+                    event.prevent_default();
+                    draft.set(text);
+                    return;
+                }
                 if event.code() == Code::KeyU && event.modifiers().meta() {
                     event.prevent_default();
                     composer.add_files();
@@ -70,7 +79,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
             CommandTextArea {
                 value: draft(),
                 commands: view.map(|view| view.read().commands.clone()).unwrap_or_default(),
-                placeholder: "Message Claude…",
+                placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, "Message Claude…"),
                 disabled: !can_send,
                 open_token: composer.popup_token(),
                 oninput: move |text| draft.set(text),
