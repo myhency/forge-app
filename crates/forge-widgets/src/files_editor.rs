@@ -1,0 +1,275 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use dioxus::prelude::*;
+use forge_domain::EditorPrefs;
+use forge_entities::language_of;
+use serde::Deserialize;
+use serde_json::{json, Value};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+
+/// What the page tells Rust (see `tools/editor-bundle/src/main.js`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "t", rename_all = "lowercase")]
+pub enum FromPage {
+    /// The editor is built and takes commands.
+    Ready,
+    /// The bundle did not load (no `ForgeEditor`).
+    Unavailable,
+    /// The first edit of a tab since a load or a save.
+    Dirty { key: String },
+    /// The text, 2 s after the last edit.
+    Change { key: String, s: String },
+    /// `⌘S`.
+    Save { key: String, s: String },
+    /// The answer to a flush: the tab's text, or `None` when the page has no state for it.
+    Flush { key: String, s: Option<String> },
+    /// A tab was asked for that the page never loaded.
+    Missing { key: String },
+}
+
+pub fn load_command(key: &str, doc: &str, language: &str, readonly: bool) -> Value {
+    json!({ "t": "load", "key": key, "doc": doc, "language": language, "readonly": readonly })
+}
+
+pub fn show_command(key: &str) -> Value {
+    json!({ "t": "show", "key": key })
+}
+
+pub fn forget_command(key: &str) -> Value {
+    json!({ "t": "drop", "key": key })
+}
+
+pub fn flush_command(key: &str) -> Value {
+    json!({ "t": "flush", "key": key })
+}
+
+pub fn settings_command(prefs: &EditorPrefs) -> Value {
+    json!({
+        "t": "settings",
+        "settings": {
+            "wrap": prefs.wrap,
+            "indent_guides": prefs.indent_guides,
+            "whitespace": prefs.whitespace,
+            "scroll_past_end": prefs.scroll_past_end,
+            "tab_indent": prefs.tab_indent,
+            "tab_size": prefs.clamped_tab_size(),
+        }
+    })
+}
+
+/// The CodeMirror language id of a file, or `""` for plain text.
+pub fn editor_language(path: &str) -> &'static str {
+    match language_of(path).to_ascii_lowercase().as_str() {
+        "js" | "mjs" | "cjs" => "javascript",
+        "jsx" => "jsx",
+        "ts" | "mts" | "cts" => "typescript",
+        "tsx" => "tsx",
+        "py" | "pyi" => "python",
+        "rs" => "rust",
+        "json" | "jsonc" => "json",
+        "md" | "markdown" => "markdown",
+        "html" | "htm" => "html",
+        "css" => "css",
+        "yml" | "yaml" => "yaml",
+        "sh" | "bash" | "zsh" => "shell",
+        _ => "",
+    }
+}
+
+type Inbox = Rc<RefCell<Option<UnboundedReceiver<Value>>>>;
+
+/// Sends commands to the editor in the page. Commands wait in a queue until the page says it is
+/// ready, so a tab can be loaded before the editor exists.
+#[derive(Clone)]
+pub struct EditorHandle {
+    tx: UnboundedSender<Value>,
+    inbox: Inbox,
+}
+
+impl EditorHandle {
+    fn send(&self, command: Value) {
+        let _ = self.tx.send(command);
+    }
+
+    pub fn load(&self, key: &str, doc: &str, language: &str, readonly: bool) {
+        self.send(load_command(key, doc, language, readonly));
+    }
+
+    pub fn show(&self, key: &str) {
+        self.send(show_command(key));
+    }
+
+    /// The tab is gone: the page drops its state.
+    pub fn forget(&self, key: &str) {
+        self.send(forget_command(key));
+    }
+
+    pub fn settings(&self, prefs: &EditorPrefs) {
+        self.send(settings_command(prefs));
+    }
+
+    /// Asks for the tab's text; the answer comes as `FromPage::Flush`.
+    pub fn flush(&self, key: &str) {
+        self.send(flush_command(key));
+    }
+}
+
+/// The channel the panel talks to the page through. Call it first, then `use_editor_driver` once
+/// the event handler exists (the handler needs the handle).
+pub fn use_editor_channel() -> EditorHandle {
+    use_hook(|| {
+        let (tx, rx) = unbounded_channel();
+        EditorHandle { tx, inbox: Rc::new(RefCell::new(Some(rx))) }
+    })
+}
+
+// The page side: builds the editor in the element `__HOST__` and then relays messages both ways.
+// It cleans itself up when its element leaves the page.
+const BRIDGE_JS: &str = r#"
+const host = document.getElementById("__HOST__");
+if (!window.ForgeEditor || !host) {
+    dioxus.send({ t: "unavailable" });
+} else {
+    const editor = window.ForgeEditor.create(host, (m) => dioxus.send(m));
+    const watch = setInterval(() => {
+        if (!host.isConnected) { clearInterval(watch); editor.destroy(); }
+    }, 2000);
+    dioxus.send({ t: "ready" });
+    while (true) {
+        const m = await dioxus.recv();
+        if (m.t === "load") editor.load(m.key, m.doc, m.language, m.readonly);
+        else if (m.t === "show") editor.show(m.key);
+        else if (m.t === "drop") editor.drop(m.key);
+        else if (m.t === "settings") editor.settings(m.settings);
+        else if (m.t === "flush") editor.flush(m.key);
+        else if (m.t === "focus") editor.focus();
+    }
+}
+"#;
+
+async fn drive(host_id: String, inbox: Inbox, on_event: Callback<FromPage>) {
+    let Some(mut commands) = inbox.borrow_mut().take() else { return };
+    let mut page = document::eval(&BRIDGE_JS.replace("__HOST__", &host_id));
+    // Nothing is sent to the page before it says it is ready.
+    loop {
+        match page.recv::<FromPage>().await {
+            Ok(FromPage::Ready) => {
+                on_event.call(FromPage::Ready);
+                break;
+            }
+            Ok(FromPage::Unavailable) => {
+                on_event.call(FromPage::Unavailable);
+                return;
+            }
+            Ok(other) => on_event.call(other),
+            Err(_) => return,
+        }
+    }
+    loop {
+        tokio::select! {
+            event = page.recv::<FromPage>() => match event {
+                Ok(event) => on_event.call(event),
+                Err(_) => return,
+            },
+            command = commands.recv() => match command {
+                Some(command) => {
+                    let _ = page.send(command);
+                }
+                None => return,
+            },
+        }
+    }
+}
+
+/// Starts the bridge to the editor that lives in the element with id `host_id` (render the
+/// element before this runs; it is built after the first render). `on_event` gets every message
+/// from the page.
+pub fn use_editor_driver(host_id: String, handle: &EditorHandle, on_event: Callback<FromPage>) {
+    let inbox = handle.inbox.clone();
+    use_future(move || {
+        let (host_id, inbox) = (host_id.clone(), inbox.clone());
+        async move { drive(host_id, inbox, on_event).await }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(json: &str) -> FromPage {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn the_messages_from_the_page_parse() {
+        assert_eq!(parse(r#"{"t":"ready"}"#), FromPage::Ready);
+        assert_eq!(parse(r#"{"t":"unavailable"}"#), FromPage::Unavailable);
+        assert_eq!(parse(r#"{"t":"dirty","key":"a.py"}"#), FromPage::Dirty { key: "a.py".to_string() });
+        assert_eq!(parse(r#"{"t":"change","key":"a.py","s":"x = 1\n"}"#), FromPage::Change { key: "a.py".to_string(), s: "x = 1\n".to_string() });
+        assert_eq!(parse(r#"{"t":"save","key":"a.py","s":""}"#), FromPage::Save { key: "a.py".to_string(), s: String::new() });
+        assert_eq!(parse(r#"{"t":"flush","key":"a.py","s":"t"}"#), FromPage::Flush { key: "a.py".to_string(), s: Some("t".to_string()) });
+        assert_eq!(parse(r#"{"t":"flush","key":"a.py","s":null}"#), FromPage::Flush { key: "a.py".to_string(), s: None });
+        assert_eq!(parse(r#"{"t":"missing","key":"a.py"}"#), FromPage::Missing { key: "a.py".to_string() });
+    }
+
+    #[test]
+    fn a_path_with_quotes_and_hangul_survives_the_json() {
+        let key = "한글 \"폴더\"/a.py";
+        let message = serde_json::to_string(&serde_json::json!({ "t": "dirty", "key": key })).unwrap();
+        assert_eq!(parse(&message), FromPage::Dirty { key: key.to_string() });
+    }
+
+    #[test]
+    fn the_commands_to_the_page_carry_what_the_bridge_reads() {
+        assert_eq!(
+            load_command("a.py", "x = 1\n", "python", true),
+            serde_json::json!({ "t": "load", "key": "a.py", "doc": "x = 1\n", "language": "python", "readonly": true })
+        );
+        assert_eq!(show_command("a.py"), serde_json::json!({ "t": "show", "key": "a.py" }));
+        assert_eq!(forget_command("a.py"), serde_json::json!({ "t": "drop", "key": "a.py" }));
+        assert_eq!(flush_command("a.py"), serde_json::json!({ "t": "flush", "key": "a.py" }));
+    }
+
+    #[test]
+    fn the_settings_message_uses_the_names_the_page_reads_and_a_usable_tab_size() {
+        let prefs = EditorPrefs { wrap: false, whitespace: true, tab_size: 3, ..EditorPrefs::default() };
+        assert_eq!(
+            settings_command(&prefs),
+            serde_json::json!({
+                "t": "settings",
+                "settings": {
+                    "wrap": false,
+                    "indent_guides": true,
+                    "whitespace": true,
+                    "scroll_past_end": false,
+                    "tab_indent": true,
+                    "tab_size": 4
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn the_language_follows_the_extension() {
+        for (path, expected) in [
+            ("a.py", "python"),
+            ("src/main.RS", "rust"),
+            ("x.tsx", "tsx"),
+            ("x.ts", "typescript"),
+            ("x.jsx", "jsx"),
+            ("x.mjs", "javascript"),
+            ("x.json", "json"),
+            ("README.md", "markdown"),
+            ("index.html", "html"),
+            ("a.css", "css"),
+            ("a.yml", "yaml"),
+            ("run.sh", "shell"),
+            ("Makefile", ""),
+            (".gitignore", ""),
+            ("notes.txt", ""),
+        ] {
+            assert_eq!(editor_language(path), expected, "{path}");
+        }
+    }
+}
