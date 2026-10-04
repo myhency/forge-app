@@ -1,4 +1,4 @@
-use forge_domain::{Block, Message};
+use forge_domain::Message;
 
 use crate::highlight::escape_html;
 use crate::markdown::render_markdown;
