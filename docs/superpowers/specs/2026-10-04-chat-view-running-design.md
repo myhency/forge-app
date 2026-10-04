@@ -75,3 +75,30 @@ Not in 23B: token count in the clock, undo and rewind icons, anything that opens
 - A once-a-second re-render while running must not rebuild the whole transcript. Only the `RunningLine` component subscribes to the clock; `build_turns` is not re-run for it.
 - The real app's folding rule for a running turn is inferred from short runs (a two-step task). If a long run shows earlier finished steps staying visible, only rule 2 changes.
 - Korean input method: the card keys (`1`, `2`, `3`) must work by physical key, as in Plan 15; `Esc` and `⌘↩` are not affected.
+
+## 6. As built (2026-10-04)
+
+Built as planned in ten tasks (plan `docs/superpowers/plans/2026-10-04-chat-view-running.md`). Forge was run against the real `~/.claude` (config isolated) and sent real messages in `/private/tmp/forge-observe` (four: a write plus a command, a write that was denied, a question, and one that never went out).
+
+**Checked in the running app**
+- The live line: dots with the clock while the model works; a tool in flight shows its description and seconds (`Sleep for 5 seconds 45s`); `Input needed ›` with `+1 −0` while a permission waits; the folded line, file card and footer take over when the turn ends.
+- The permission panel above an untouched message box: title `Claude wants to create live1.txt?`, file name, path box, path, diff, `Deny 1 Esc`, `Always allow 2 ⇧⌘↩`, `Allow once 3 ⌘↩` with the `⌄`; the round stop button at the right of the message box while running; the clock keeps counting while the panel is up.
+- Denial: after `Deny` the model said the write was rejected and stopped (the real app's denial text reaches it); `live2.txt` was not created; the folded line reads `Created live2.txt (1 failed)`.
+- Question: the card showed `1/2` with checkboxes for the multi-select and number boxes for the single-select, `Other`, `Skip`, `Next ⌘↩` (grey until a pick) and `Submit` on the last; the answers reached the model through `updatedInput.answers` (it repeated `Red and Blue; Autumn`, exactly what was picked); the answer card appears in the transcript, narrow, grey question and black answer, multi answers as `Red, Blue`.
+
+**Found in the real run and fixed**
+- When a client answers through `updatedInput.answers` the SDK's tool result reads `The user answered: "Q"="A", ... Read the answers carefully ...`, not the desktop app's `Your questions have been answered: ...`; the answer card now reads both (test).
+- An opened write row showed its diff but not the denial text; the red error now sits above the diff (test).
+
+**Not verified by the harness**
+- The number keys `1 2 3` and `Esc`, `⌘↩`/`⇧⌘↩` on both cards, the question's number keys: the synthetic key events from the harness do not arrive as `Digit` codes (the same events did nothing in the mode menu, whose number keys are known to work), so the keys must be tried by hand. `⌘↩` did work through the harness on the question card. The mouse path of every button works.
+- The stop button's effect (its look was seen; the one attempt to start a long reply did not go out), the `↓` scroll-to-end button, the `Allow and switch to Auto mode` menu item, a queued second permission, dark mode.
+
+**Left / not built**
+- No token count in the clock (decided with the user).
+- The live line's chevron is not clickable.
+- Messages built live have no time, so the footer shows only the copy icon until the session is reopened.
+
+**Lessons**
+- Typing into Forge's webview from the harness: with a Korean input method on, `osascript keystroke` and `key code` compose Hangul or drop letters; `Ctrl+Space` switches to English, and `CGEventKeyboardSetUnicodeString` events (a small script, one event per character) type any text reliably. ⌘V does not reach the page.
+- The SDK's result text for an answered question differs by client; always match both.
