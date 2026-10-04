@@ -26,7 +26,7 @@ pub struct Message {
     pub role: MessageRole,
     pub blocks: Vec<Block>,
     pub attachments: Vec<Attachment>,
-    pub at_ms: Option<i64>,   // Unix milliseconds of the last transcript line of this message; live: when the last event arrived
+    pub at: Option<String>,   // RFC 3339 time of the last transcript line of this message; None for a message built live
 }
 ```
 
@@ -34,11 +34,11 @@ Accessors keep the other crates simple: `Message::text()` (all Text blocks joine
 
 Callers that read `content`, `thinking` or `tool_calls` as fields (sidebar title, tool activity count, usage, tests) switch to the accessors. Struct-literal `Message { ... }` in tests become `Message::user("...")` and similar. This is a mechanical change; the test counts must not drop.
 
-`at_ms` is the only addition not seen as a requirement of the app's shape: the reply footer shows a relative time ("2m ago") and a message has no time today.
+`at` is the only addition not seen as a requirement of the app's shape: the reply footer shows a relative time ("2m ago", from the existing `relative_time`, which takes an RFC 3339 string) and a message has no time today. A message built from live events has `at: None` for now, so its footer shows the copy icon only until the session is reloaded; 23B may stamp live messages.
 
 ### Producers
 
-- Transcript parser (`forge-adapter-claude-fs/src/sessions.rs`, `apply_assistant_line`): walks the content blocks of each line in order and appends Text, Thinking (non-empty) and Tool blocks, with the existing merge of one reply split over lines (consecutive assistant lines extend the same message). Tool results still attach by id. `at_ms` from the line's `timestamp`.
+- Transcript parser (`forge-adapter-claude-fs/src/sessions.rs`, `apply_assistant_line`): walks the content blocks of each line in order and appends Text, Thinking (non-empty) and Tool blocks, with the existing merge of one reply split over lines (consecutive assistant lines extend the same message). Tool results still attach by id. `at` from the line's `timestamp`.
 - Live events (`forge-application/src/event.rs`, `apply_sidecar_event`): AssistantDelta calls `push_text`, ThinkingDelta `push_thinking`, ToolUse `push_tool`, ToolResult searches blocks for the id. Behaviour for the existing session updates is unchanged.
 
 Hazard to check while building: a text delta that arrives after a tool block must start a new Text block (not append to the one before the tool).
@@ -54,7 +54,7 @@ enum Item {
   Thinking(text),                  // only in Thinking and Detailed
   Activity { rows: Vec<Row>, summary: String, added: u32, removed: u32 },
   FileCard { files: Vec<FileRow>, added, removed },   // end of turn
-  Footer { text: String, at_ms },  // copy button and time, last item of a finished turn
+  Footer { text: String, at: Option<String> },  // copy button and time, last item of a finished turn
 }
 enum Row { File{verb,name,added,removed,call}, Command{label,call}, Other{label,call}, Narration(String) }
 ```
@@ -62,13 +62,13 @@ enum Row { File{verb,name,added,removed,call}, Command{label,call}, Other{label,
 Rules, from the observed app:
 
 1. A **turn** runs from a user message to the next user message (or the end). Assistant messages inside it are flattened into one block list, in order.
-2. In a turn, everything up to and including the **last Tool block** is the activity span. Text and Thinking blocks inside that span become Narration rows (Thinking only in Thinking and Detailed). Text after the last tool is an ordinary Text item. A turn with no tool has no Activity.
+2. In a turn, the blocks from the **first Tool block to the last Tool block** are the activity span. Text and Thinking blocks inside that span become Narration rows (Thinking only in Thinking and Detailed). Text before the first tool and after the last tool is ordinary Text items, shown above and below the activity line (round 7: the task list stood above the summary line, the closing text below it). A turn with no tool has no Activity.
 3. A turn with several tool spans separated by user-visible text does not exist in the real app's format as far as observed; one span per turn is built. (If a later round shows otherwise, rows stay in order, so only the folding point changes.)
 4. **Summary line.** One step: `<Verb> <name> +a −r` for a file tool (Write: Created, Edit and MultiEdit: Edited, Read: Read, NotebookEdit: Edited), or the command's `description` (else the command, 80 characters) for Bash. Several steps: counts by kind in this order: `Created N files`, `Edited N files`, `Ran N commands`, `Read N files`, `Used N other tools`, comma-separated, then `+a −r`; `(N failed)` when some failed. Counts and wording are Forge's English version of the Korean line the real app shows. A file edited twice counts once as "Edited" but both edits stay as rows.
 5. `+a −r` come from the existing diff code (`diff_for_tool_call`); tools without a diff add nothing.
 6. **Detailed** view opens the activity and every row; Normal and Thinking start it collapsed.
 7. **FileCard** at the end of a turn lists each file written or edited in it once (icon by extension kind, name, summed `+a −r`), header `N files edited` (`1 file edited` is shown as a single row without the header). A turn with no file change has no card.
-8. **Footer** after the last item of the last assistant block of each turn, only when the turn has ended (the session is not running, or a user message follows). It shows a copy icon (copies the turn's final text) and a relative time from `at_ms`; no time when `at_ms` is None.
+8. **Footer** after the last item of the last assistant block of each turn, only when the turn has ended (the session is not running, or a user message follows). It shows a copy icon (copies the turn's final text) and a relative time from `at`; no time when `at` is None.
 9. Failed tool: the row carries a red "failed" mark and opens to show the error; the summary gets the failed count. Same data the Detailed view shows today.
 
 ## 4. Widgets and CSS
@@ -84,7 +84,7 @@ Rules, from the observed app:
 ## 5. Testing
 
 - Domain: `Message` accessors and `push_*` (text after a tool starts a new block; text after text extends).
-- Parser: a fixture line list with text, tool, text, tool, text keeps order; split replies merge; `at_ms` read; tool results attach.
+- Parser: a fixture line list with text, tool, text, tool, text keeps order; split replies merge; `at` read; tool results attach.
 - Live events: the same order from a delta/tool sequence.
 - View model: each rule above as a table of cases (no tool, one tool, many tools with narration, Edit twice on one file, a failure, Thinking and Detailed visibility, running turn has no footer or card).
 - Summary text: exact strings for one step and for mixed kinds, with and without failures.
@@ -93,5 +93,5 @@ Rules, from the observed app:
 ## 6. Risks
 
 - The `Message` change touches about 90 test lines across five crates. Done first, alone, and committed with all tests green before any view work.
-- The real app's folding point (up to the last tool) is inferred from one long task and one two-step task; if a later session shows text between two tool groups outside the fold, only rule 2 changes.
+- The real app's folding point (first to last tool) is inferred from one long task and one two-step task; if a later session shows text between two tool groups outside the fold, only rule 2 changes.
 - Korean verbs in the real app ("생성됨") versus Forge's English UI: Forge keeps English.
