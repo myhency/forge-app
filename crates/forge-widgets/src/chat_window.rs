@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
-use forge_entities::{PermissionCard, TranscriptView, Turns};
+use forge_entities::{live_state, PermissionCard, TranscriptView, Turns};
 use forge_features::{use_workspace, PermissionActions, SendMessageBox};
 
 use crate::composer_controls::{EffortPicker, ModePicker, ModelPicker};
@@ -49,7 +49,11 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 SessionTools { id, terminal: !archived }
             }
             div { class: "messages",
-                Turns { messages: view.session.messages.clone(), view: mode, running: view.phase == Phase::Running }
+                Turns {
+                    messages: view.session.messages.clone(),
+                    view: mode,
+                    live: (view.phase == Phase::Running).then(|| live_state(view.turn_started, view.pending_permissions.front())),
+                }
             }
             if let Some(error) = view.last_error.as_ref() {
                 div { class: "banner error", "{error}" }

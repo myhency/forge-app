@@ -1,7 +1,10 @@
-use forge_domain::{Block, Message, MessageRole, ToolCall};
+use std::time::SystemTime;
+
+use forge_domain::{Block, Message, MessageRole, PermissionRequest, ToolCall};
 use serde_json::Value;
 
-use crate::diff::diff_for_tool_call;
+use crate::diff::{diff_for_tool, diff_for_tool_call};
+use crate::question::{answer_pairs, AnswerPair, QUESTION_TOOL};
 use crate::tool_summary::{tool_call_status, tool_input_summary, ToolCallStatus};
 use crate::transcript_view::TranscriptView;
 
@@ -79,6 +82,57 @@ pub enum Item {
     Activity(Activity),
     FileCard(FileCard),
     Footer(Footer),
+    Answers(Vec<AnswerPair>),
+    Live(LiveLine),
+}
+
+/// What a running turn is waiting for, if anything.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Waiting {
+    Permission { tool_name: String, input: Value },
+    Question,
+}
+
+/// A turn that is running now.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LiveState {
+    /// When it was sent; the clock counts from here.
+    pub started: Option<SystemTime>,
+    pub waiting: Option<Waiting>,
+}
+
+/// The live state of a session from what its view holds: the start time and the request on top of
+/// the queue.
+pub fn live_state(turn_started: Option<SystemTime>, pending: Option<&PermissionRequest>) -> LiveState {
+    let waiting = pending.map(|request| {
+        if request.tool_name == QUESTION_TOOL {
+            Waiting::Question
+        } else {
+            Waiting::Permission { tool_name: request.tool_name.clone(), input: request.input.clone() }
+        }
+    });
+    LiveState { started: turn_started, waiting }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveKind {
+    /// A tool call is running: `label` is the verb or the command's description, `subject` the file.
+    Tool,
+    /// The model is writing or thinking.
+    Thinking,
+    /// A permission or a question waits for the person.
+    NeedsInput,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LiveLine {
+    pub kind: LiveKind,
+    pub label: String,
+    pub subject: String,
+    /// The pending write or edit's `+a −r` (NeedsInput only).
+    pub added: usize,
+    pub removed: usize,
+    pub started: Option<SystemTime>,
 }
 
 pub fn tool_kind(name: &str) -> ToolKind {
@@ -204,19 +258,78 @@ fn build_card(tool_rows: &[Option<ToolRow>]) -> Option<FileCard> {
     Some(FileCard { files, added, removed })
 }
 
-fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, view: TranscriptView, ended: bool) {
-    if blocks.is_empty() {
-        return;
+fn live_label(row: &ToolRow) -> (String, String) {
+    match row.kind {
+        ToolKind::Created => ("Creating".to_string(), row.subject.clone()),
+        ToolKind::Edited => ("Editing".to_string(), row.subject.clone()),
+        ToolKind::Read => ("Reading".to_string(), row.subject.clone()),
+        ToolKind::Command => (row.subject.clone(), String::new()),
+        ToolKind::Other if matches!(row.call.name.as_str(), "Grep" | "Glob") => ("Searching".to_string(), row.subject.clone()),
+        ToolKind::Other => (format!("Using {}", row.call.name), row.subject.clone()),
     }
-    let start = items.len();
-    // Each tool call's row, and so its diff, is worked out once per build.
-    let tool_rows: Vec<Option<ToolRow>> = blocks
-        .iter()
-        .map(|block| if let Block::Tool(call) = block { Some(tool_row(call)) } else { None })
-        .collect();
+}
+
+fn live_line(blocks: &[Block], tool_rows: &[Option<ToolRow>], live: &LiveState) -> LiveLine {
+    let started = live.started;
+    if let Some(waiting) = &live.waiting {
+        let (added, removed) = match waiting {
+            Waiting::Permission { tool_name, input } => diff_for_tool(tool_name, input).map_or((0, 0), |diff| (diff.added, diff.removed)),
+            Waiting::Question => (0, 0),
+        };
+        return LiveLine { kind: LiveKind::NeedsInput, label: "Input needed".to_string(), subject: String::new(), added, removed, started };
+    }
+    if let (Some(Block::Tool(call)), Some(Some(row))) = (blocks.last(), tool_rows.last()) {
+        if call.result.is_none() {
+            let (label, subject) = live_label(row);
+            return LiveLine { kind: LiveKind::Tool, label, subject, added: 0, removed: 0, started };
+        }
+    }
+    LiveLine { kind: LiveKind::Thinking, label: String::new(), subject: String::new(), added: 0, removed: 0, started }
+}
+
+fn is_question(block: &Block) -> bool {
+    matches!(block, Block::Tool(call) if call.name == QUESTION_TOOL)
+}
+
+// The text after the last tool call (a question counts as one); when there is none, the last text
+// the turn has, so a turn that ends in a tool call still has something to copy.
+fn closing_text(blocks: &[Block]) -> String {
+    let last_tool = blocks.iter().rposition(|block| matches!(block, Block::Tool(_)));
+    let texts = |from: usize| -> Vec<&str> {
+        blocks
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index >= from)
+            .filter_map(|(_, block)| match block {
+                Block::Text(text) if !text.trim().is_empty() => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    };
+    let after = texts(last_tool.map_or(0, |last| last + 1));
+    if !after.is_empty() {
+        return after.join("\n\n");
+    }
+    texts(0).last().map(|text| text.to_string()).unwrap_or_default()
+}
+
+// One stretch of a turn without a question in it. A finished stretch folds its tool calls into one
+// activity; the running one shows its text before the first tool call and one live line.
+fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<ToolRow>], view: TranscriptView, live: Option<&LiveState>) {
     let first = blocks.iter().position(|block| matches!(block, Block::Tool(_)));
     let last = blocks.iter().rposition(|block| matches!(block, Block::Tool(_)));
-    let mut closing: Vec<&str> = Vec::new();
+    let plain = |items: &mut Vec<Item>, block: &Block| match block {
+        Block::Text(text) if !text.trim().is_empty() => items.push(Item::Text(text.clone())),
+        Block::Thinking(text) if view.shows_thinking() && !text.trim().is_empty() => items.push(Item::Thinking(text.clone())),
+        _ => {}
+    };
+    if let Some(live) = live {
+        for block in &blocks[..first.unwrap_or(blocks.len())] {
+            plain(items, block);
+        }
+        items.push(Item::Live(live_line(blocks, tool_rows, live)));
+        return;
+    }
     for (index, block) in blocks.iter().enumerate() {
         if let (Some(first), Some(last)) = (first, last) {
             if index >= first && index <= last {
@@ -226,48 +339,58 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
                 continue;
             }
         }
-        match block {
-            Block::Text(text) if !text.trim().is_empty() => {
-                items.push(Item::Text(text.clone()));
-                if last.map_or(true, |last| index > last) {
-                    closing.push(text);
-                }
-            }
-            Block::Thinking(text) if view.shows_thinking() && !text.trim().is_empty() => items.push(Item::Thinking(text.clone())),
-            _ => {}
-        }
+        plain(items, block);
     }
-    if items.len() == start {
+}
+
+fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, view: TranscriptView, live: Option<&LiveState>) {
+    if blocks.is_empty() && live.is_none() {
         return;
     }
-    if ended {
+    let start = items.len();
+    // Each tool call's row, and so its diff, is worked out once per build.
+    let tool_rows: Vec<Option<ToolRow>> = blocks
+        .iter()
+        .map(|block| if let Block::Tool(call) = block { Some(tool_row(call)) } else { None })
+        .collect();
+    // A question splits the turn: what came before it folds, the question becomes its answer card.
+    let mut segment_start = 0;
+    for (index, block) in blocks.iter().enumerate() {
+        if !is_question(block) {
+            continue;
+        }
+        push_segment(items, &blocks[segment_start..index], &tool_rows[segment_start..index], view, None);
+        if let Block::Tool(call) = block {
+            if let Some(result) = &call.result {
+                let pairs = answer_pairs(&call.input, &result.output);
+                if !pairs.is_empty() {
+                    items.push(Item::Answers(pairs));
+                }
+            }
+        }
+        segment_start = index + 1;
+    }
+    push_segment(items, &blocks[segment_start..], &tool_rows[segment_start..], view, live);
+    if live.is_none() && items.len() > start {
         if let Some(card) = build_card(&tool_rows) {
             items.push(Item::FileCard(card));
         }
-        // A turn that ends in a tool call has no text after it: copy the last text it has.
-        let text = if closing.is_empty() {
-            blocks.iter().rev().find_map(|block| match block {
-                Block::Text(text) if !text.trim().is_empty() => Some(text.clone()),
-                _ => None,
-            }).unwrap_or_default()
-        } else {
-            closing.join("\n\n")
-        };
-        items.push(Item::Footer(Footer { text, at }));
+        items.push(Item::Footer(Footer { text: closing_text(&blocks), at }));
     }
 }
 
 /// The conversation as things to draw. A turn runs from a user message to the next one; the
-/// assistant messages in between are read as one run of blocks. `running` is whether a turn is in
-/// progress now: the last turn then has no file card and no footer.
-pub fn build_turns(messages: &[Message], view: TranscriptView, running: bool) -> Vec<Item> {
+/// assistant messages in between are read as one run of blocks. `live` is the state of the turn
+/// that is running now, if any: the last turn then shows one live line in place of its folded
+/// activity, and has no file card and no footer.
+pub fn build_turns(messages: &[Message], view: TranscriptView, live: Option<&LiveState>) -> Vec<Item> {
     let mut items = Vec::new();
     let mut blocks: Vec<Block> = Vec::new();
     let mut at: Option<String> = None;
     for message in messages {
         match message.role {
             MessageRole::User => {
-                finish_turn(&mut items, std::mem::take(&mut blocks), at.take(), view, true);
+                finish_turn(&mut items, std::mem::take(&mut blocks), at.take(), view, None);
                 items.push(Item::User(message.clone()));
             }
             MessageRole::Assistant => {
@@ -278,7 +401,7 @@ pub fn build_turns(messages: &[Message], view: TranscriptView, running: bool) ->
             }
         }
     }
-    finish_turn(&mut items, blocks, at, view, !running);
+    finish_turn(&mut items, blocks, at, view, live);
     items
 }
 
@@ -332,6 +455,8 @@ mod tests {
                 Item::Activity(_) => "activity",
                 Item::FileCard(_) => "card",
                 Item::Footer(_) => "footer",
+                Item::Answers(_) => "answers",
+                Item::Live(_) => "live",
             })
             .collect()
     }
@@ -339,7 +464,7 @@ mod tests {
     #[test]
     fn a_turn_without_tools_is_user_text_footer() {
         let messages = vec![Message::user("hi"), assistant(vec![text("hello")])];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         assert_eq!(kinds(&items), vec!["user", "text", "footer"]);
         assert_eq!(items[1], Item::Text("hello".to_string()));
         assert_eq!(items[2], Item::Footer(Footer { text: "hello".to_string(), at: None }));
@@ -352,7 +477,7 @@ mod tests {
             Message::user("make it"),
             assistant(vec![write("t-1", "/p/hello.txt"), text("Done.")]),
         ];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         assert_eq!(kinds(&items), vec!["user", "activity", "text", "card", "footer"]);
         let a = activity(&items);
         assert_eq!(a.summary, "Created hello.txt");
@@ -377,7 +502,7 @@ mod tests {
                 text("all done"),
             ]),
         ];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         assert_eq!(kinds(&items), vec!["user", "text", "activity", "text", "footer"]);
         assert_eq!(items[1], Item::Text("plan".to_string()));
         assert_eq!(items[3], Item::Text("all done".to_string()));
@@ -390,7 +515,7 @@ mod tests {
     #[test]
     fn a_reply_that_starts_with_a_tool_has_the_activity_first_and_no_empty_text() {
         let messages = vec![Message::user("go"), assistant(vec![bash("t-1", None), text("")])];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         assert_eq!(kinds(&items), vec!["user", "activity", "footer"]);
         assert_eq!(activity(&items).summary, "ls -la");
     }
@@ -409,7 +534,7 @@ mod tests {
                 tool("t-7", "Grep", json!({"pattern": "x"}), Some(false)),
             ]),
         ];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         let a = activity(&items);
         assert_eq!(a.summary, "Created 2 files, Edited 1 file, Ran 2 commands, Read 1 file, Used 1 other tool");
         assert_eq!(a.failed, 0);
@@ -424,7 +549,7 @@ mod tests {
             Message::user("go"),
             assistant(vec![edit("t-1", "/p/a.py"), edit("t-2", "/p/a.py")]),
         ];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         let a = activity(&items);
         assert_eq!(a.summary, "Edited 1 file");
         assert_eq!(a.rows.len(), 2);
@@ -441,7 +566,7 @@ mod tests {
             Message::user("go"),
             assistant(vec![bash("t-1", Some("Run it")), tool("t-2", "Bash", json!({"command": "false"}), Some(true))]),
         ];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         let a = activity(&items);
         assert_eq!(a.failed, 1);
         assert_eq!(a.summary, "Ran 2 commands (1 failed)");
@@ -463,10 +588,10 @@ mod tests {
                 text("end"),
             ]),
         ];
-        let normal = build_turns(&messages, TranscriptView::Normal, false);
+        let normal = build_turns(&messages, TranscriptView::Normal, None);
         assert_eq!(kinds(&normal), vec!["user", "text", "activity", "text", "footer"]);
         assert_eq!(activity(&normal).rows.len(), 2);
-        let thinking = build_turns(&messages, TranscriptView::Thinking, false);
+        let thinking = build_turns(&messages, TranscriptView::Thinking, None);
         assert_eq!(kinds(&thinking), vec!["user", "thinking", "text", "activity", "thinking", "text", "footer"]);
         assert_eq!(activity(&thinking).rows.len(), 3);
         assert!(matches!(&activity(&thinking).rows[1], Row::Thinking(t) if t == "inside"));
@@ -475,24 +600,10 @@ mod tests {
     #[test]
     fn a_message_of_only_thinking_draws_nothing_in_normal_view() {
         let messages = vec![Message::user("go"), assistant(vec![Block::Thinking("hmm".to_string())])];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         assert_eq!(kinds(&items), vec!["user"]);
-        let shown = build_turns(&messages, TranscriptView::Thinking, false);
+        let shown = build_turns(&messages, TranscriptView::Thinking, None);
         assert_eq!(kinds(&shown), vec!["user", "thinking", "footer"]);
-    }
-
-    #[test]
-    fn a_running_turn_has_no_card_and_no_footer_and_a_pending_row_is_not_failed() {
-        let messages = vec![
-            Message::user("go"),
-            assistant(vec![write("t-1", "/p/a.py"), tool("t-2", "Bash", json!({"command": "ls"}), None)]),
-        ];
-        let items = build_turns(&messages, TranscriptView::Normal, true);
-        assert_eq!(kinds(&items), vec!["user", "activity"]);
-        let Row::Tool(pending) = &activity(&items).rows[1] else { panic!() };
-        assert!(!pending.failed);
-        let done = build_turns(&messages, TranscriptView::Normal, false);
-        assert_eq!(kinds(&done), vec!["user", "activity", "card", "footer"]);
     }
 
     #[test]
@@ -503,14 +614,14 @@ mod tests {
             Message::user("two"),
             assistant(vec![text("b")]),
         ];
-        let items = build_turns(&messages, TranscriptView::Normal, true);
-        assert_eq!(kinds(&items), vec!["user", "text", "footer", "user", "text"]);
+        let items = build_turns(&messages, TranscriptView::Normal, Some(&LiveState::default()));
+        assert_eq!(kinds(&items), vec!["user", "text", "footer", "user", "text", "live"]);
     }
 
     #[test]
     fn a_session_that_starts_with_an_assistant_message_builds() {
         let messages = vec![assistant(vec![text("welcome back")]), Message::user("hi")];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         assert_eq!(kinds(&items), vec!["text", "footer", "user"]);
     }
 
@@ -524,7 +635,7 @@ mod tests {
                 bash("t-3", None),
             ]),
         ];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         let rows = &activity(&items).rows;
         let Row::Tool(write_row) = &rows[0] else { panic!() };
         assert_eq!(write_row.verb, "Created");
@@ -541,7 +652,7 @@ mod tests {
         first.at = Some("2026-10-04T01:00:00Z".to_string());
         let mut second = assistant(vec![text("b")]);
         second.at = Some("2026-10-04T01:00:09Z".to_string());
-        let items = build_turns(&[Message::user("go"), first, second], TranscriptView::Normal, false);
+        let items = build_turns(&[Message::user("go"), first, second], TranscriptView::Normal, None);
         let Item::Footer(footer) = items.last().unwrap() else { panic!() };
         assert_eq!(footer.at.as_deref(), Some("2026-10-04T01:00:09Z"));
         assert_eq!(footer.text, "a\n\nb");
@@ -550,7 +661,7 @@ mod tests {
     #[test]
     fn the_footer_copies_the_last_text_even_when_a_tool_call_comes_after_it() {
         let messages = vec![Message::user("go"), assistant(vec![text("what I did"), bash("t-1", Some("Run it"))])];
-        let items = build_turns(&messages, TranscriptView::Normal, false);
+        let items = build_turns(&messages, TranscriptView::Normal, None);
         let Item::Footer(footer) = items.last().unwrap() else { panic!("footer") };
         assert_eq!(footer.text, "what I did");
     }
@@ -558,7 +669,7 @@ mod tests {
     #[test]
     fn a_tool_row_knows_whether_it_has_a_diff_so_nobody_computes_it_again() {
         let rows_of = |block: Block| {
-            let items = build_turns(&[Message::user("go"), assistant(vec![block])], TranscriptView::Normal, false);
+            let items = build_turns(&[Message::user("go"), assistant(vec![block])], TranscriptView::Normal, None);
             let Row::Tool(row) = activity(&items).rows[0].clone() else { panic!() };
             row
         };
@@ -571,8 +682,173 @@ mod tests {
     #[test]
     fn three_hundred_commands_still_summarize() {
         let blocks: Vec<Block> = (0..300).map(|i| bash(&format!("t-{i}"), Some("Run"))).collect();
-        let items = build_turns(&[Message::user("go"), assistant(blocks)], TranscriptView::Normal, false);
+        let items = build_turns(&[Message::user("go"), assistant(blocks)], TranscriptView::Normal, None);
         assert_eq!(activity(&items).summary, "Ran 300 commands");
         assert_eq!(activity(&items).rows.len(), 300);
+    }
+
+    #[test]
+    fn a_running_turn_shows_text_before_the_first_tool_then_one_live_line() {
+        let messages = vec![
+            Message::user("go"),
+            assistant(vec![text("plan"), write("t-1", "/p/a.py"), text("then"), tool("t-2", "Bash", json!({"command": "ls", "description": "List"}), None)]),
+        ];
+        let items = build_turns(&messages, TranscriptView::Normal, Some(&LiveState::default()));
+        assert_eq!(kinds(&items), vec!["user", "text", "live"]);
+        let Item::Live(line) = &items[2] else { panic!() };
+        assert_eq!(line.kind, LiveKind::Tool);
+        assert_eq!(line.label, "List");
+        assert_eq!(line.subject, "");
+    }
+
+    #[test]
+    fn a_turn_that_ended_with_an_unanswered_tool_folds_and_the_row_is_not_failed() {
+        let messages = vec![
+            Message::user("go"),
+            assistant(vec![write("t-1", "/p/a.py"), tool("t-2", "Bash", json!({"command": "ls"}), None)]),
+        ];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        assert_eq!(kinds(&items), vec!["user", "activity", "card", "footer"]);
+        let Row::Tool(pending) = &activity(&items).rows[1] else { panic!() };
+        assert!(!pending.failed);
+    }
+
+    fn live_items(blocks: Vec<Block>, live: LiveState) -> Vec<Item> {
+        build_turns(&[Message::user("go"), assistant(blocks)], TranscriptView::Normal, Some(&live))
+    }
+    fn live_line(items: &[Item]) -> LiveLine {
+        let Item::Live(line) = items.last().unwrap() else { panic!("a live line last") };
+        line.clone()
+    }
+    fn unfinished(name: &str, input: serde_json::Value) -> Block {
+        tool("t-x", name, input, None)
+    }
+
+    #[test]
+    fn a_running_turn_with_no_reply_yet_shows_the_user_and_a_thinking_line() {
+        let items = build_turns(&[Message::user("go")], TranscriptView::Normal, Some(&LiveState::default()));
+        assert_eq!(kinds(&items), vec!["user", "live"]);
+        assert_eq!(live_line(&items).kind, LiveKind::Thinking);
+    }
+
+    #[test]
+    fn streamed_text_stays_visible_above_a_thinking_line() {
+        let items = live_items(vec![text("partial answ")], LiveState::default());
+        assert_eq!(kinds(&items), vec!["user", "text", "live"]);
+        assert_eq!(live_line(&items).kind, LiveKind::Thinking);
+    }
+
+    #[test]
+    fn the_live_label_names_the_step_in_the_present_tense() {
+        let line = |name: &str, input: serde_json::Value| live_line(&live_items(vec![unfinished(name, input)], LiveState::default()));
+        let write = line("Write", json!({"file_path": "/p/hello.txt", "content": "x"}));
+        assert_eq!((write.kind, write.label.as_str(), write.subject.as_str()), (LiveKind::Tool, "Creating", "hello.txt"));
+        let edit = line("Edit", json!({"file_path": "/p/a.py", "old_string": "a", "new_string": "b"}));
+        assert_eq!((edit.label.as_str(), edit.subject.as_str()), ("Editing", "a.py"));
+        let read = line("Read", json!({"file_path": "/p/a.py"}));
+        assert_eq!((read.label.as_str(), read.subject.as_str()), ("Reading", "a.py"));
+        let bash = line("Bash", json!({"command": "ls -la", "description": "List files"}));
+        assert_eq!((bash.label.as_str(), bash.subject.as_str()), ("List files", ""));
+        let bare = line("Bash", json!({"command": "ls -la"}));
+        assert_eq!(bare.label, "ls -la");
+        let grep = line("Grep", json!({"pattern": "fn main"}));
+        assert_eq!((grep.label.as_str(), grep.subject.as_str()), ("Searching", "fn main"));
+        let other = line("WebFetch", json!({"url": "https://a.test"}));
+        assert_eq!((other.label.as_str(), other.subject.as_str()), ("Using WebFetch", "https://a.test"));
+        let empty = line("mcp__x__go", json!({}));
+        assert_eq!((empty.label.as_str(), empty.subject.as_str()), ("Using mcp__x__go", ""));
+    }
+
+    #[test]
+    fn between_tools_the_line_is_thinking() {
+        let items = live_items(vec![write("t-1", "/p/a.py"), text("now the next")], LiveState::default());
+        assert_eq!(live_line(&items).kind, LiveKind::Thinking);
+        let after_tool = live_items(vec![write("t-1", "/p/a.py")], LiveState::default());
+        assert_eq!(live_line(&after_tool).kind, LiveKind::Thinking);
+    }
+
+    #[test]
+    fn waiting_for_a_permission_shows_needs_input_with_the_pending_changes() {
+        let input = json!({"file_path": "/p/a.py", "content": "a\nb\nc\n"});
+        let waiting = Waiting::Permission { tool_name: "Write".to_string(), input: input.clone() };
+        let items = live_items(vec![unfinished("Write", input)], LiveState { started: None, waiting: Some(waiting) });
+        let line = live_line(&items);
+        assert_eq!(line.kind, LiveKind::NeedsInput);
+        assert_eq!(line.label, "Input needed");
+        assert_eq!((line.added, line.removed), (3, 0));
+    }
+
+    #[test]
+    fn waiting_for_a_command_or_a_question_has_no_changes() {
+        let command = Waiting::Permission { tool_name: "Bash".to_string(), input: json!({"command": "ls"}) };
+        let items = live_items(vec![], LiveState { started: None, waiting: Some(command) });
+        assert_eq!((live_line(&items).added, live_line(&items).removed), (0, 0));
+        let question = live_items(vec![], LiveState { started: None, waiting: Some(Waiting::Question) });
+        assert_eq!(live_line(&question).kind, LiveKind::NeedsInput);
+    }
+
+    #[test]
+    fn the_start_time_travels_to_the_live_line() {
+        let started = std::time::UNIX_EPOCH + std::time::Duration::from_secs(5);
+        let items = live_items(vec![], LiveState { started: Some(started), waiting: None });
+        assert_eq!(live_line(&items).started, Some(started));
+    }
+
+    #[test]
+    fn live_state_follows_the_first_pending_request() {
+        let started = std::time::UNIX_EPOCH;
+        assert_eq!(live_state(Some(started), None), LiveState { started: Some(started), waiting: None });
+        let question = forge_domain::PermissionRequest { id: "q".to_string(), tool_name: "AskUserQuestion".to_string(), input: json!({}) };
+        assert_eq!(live_state(None, Some(&question)).waiting, Some(Waiting::Question));
+        let write = forge_domain::PermissionRequest { id: "p".to_string(), tool_name: "Write".to_string(), input: json!({"file_path": "/p/a"}) };
+        assert_eq!(
+            live_state(None, Some(&write)).waiting,
+            Some(Waiting::Permission { tool_name: "Write".to_string(), input: json!({"file_path": "/p/a"}) })
+        );
+    }
+
+    fn ask(id: &str, result: Option<&str>) -> Block {
+        Block::Tool(ToolCall {
+            id: id.to_string(),
+            name: "AskUserQuestion".to_string(),
+            input: json!({"questions": [{"question": "Season?", "header": "S", "multiSelect": false, "options": [{"label": "Spring", "description": ""}, {"label": "Summer", "description": ""}]}]}),
+            result: result.map(|output| ToolResult { output: output.to_string(), is_error: false }),
+        })
+    }
+    const ANSWERED: &str = "Your questions have been answered: \"Season?\"=\"Summer\". You can now continue with these answers in mind.";
+
+    #[test]
+    fn an_answered_question_becomes_an_answer_card_outside_the_fold() {
+        let blocks = vec![write("t-1", "/p/a.py"), ask("q-1", Some(ANSWERED)), text("Nice."), bash("t-2", Some("Run"))];
+        let items = build_turns(&[Message::user("go"), assistant(blocks)], TranscriptView::Normal, None);
+        assert_eq!(kinds(&items), vec!["user", "activity", "answers", "text", "activity", "card", "footer"]);
+        let Item::Answers(pairs) = &items[2] else { panic!() };
+        assert_eq!(pairs, &vec![AnswerPair { question: "Season?".to_string(), answer: "Summer".to_string() }]);
+    }
+
+    #[test]
+    fn a_pending_question_draws_nothing_but_the_needs_input_line() {
+        let items = live_items(vec![text("Let me ask."), ask("q-1", None)], LiveState { started: None, waiting: Some(Waiting::Question) });
+        assert_eq!(kinds(&items), vec!["user", "text", "live"]);
+        assert_eq!(live_line(&items).kind, LiveKind::NeedsInput);
+    }
+
+    #[test]
+    fn a_question_that_was_skipped_leaves_no_card() {
+        let skipped = Block::Tool(ToolCall {
+            id: "q-2".to_string(),
+            name: "AskUserQuestion".to_string(),
+            input: json!({"questions": [{"question": "Season?", "options": []}]}),
+            result: Some(ToolResult { output: "The user skipped the question.".to_string(), is_error: true }),
+        });
+        let items = build_turns(&[Message::user("go"), assistant(vec![skipped, text("ok")])], TranscriptView::Normal, None);
+        assert_eq!(kinds(&items), vec!["user", "text", "footer"]);
+    }
+
+    #[test]
+    fn the_footer_copies_the_text_after_the_last_question_or_tool() {
+        let items = build_turns(&[Message::user("go"), assistant(vec![text("before"), ask("q-1", Some(ANSWERED)), text("after")])], TranscriptView::Normal, None);
+        let Item::Footer(footer) = items.last().unwrap() else { panic!() };
+        assert_eq!(footer.text, "after");
     }
 }

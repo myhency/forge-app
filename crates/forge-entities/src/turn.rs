@@ -8,7 +8,7 @@ use crate::markdown::render_markdown;
 use crate::message::{attachment_label, ToolDetail};
 use crate::relative_time::relative_time;
 use crate::transcript_view::TranscriptView;
-use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, Row, ToolRow};
+use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveState, Row, ToolRow};
 
 fn counts(added: usize, removed: usize) -> Option<(String, String)> {
     (added > 0 || removed > 0).then(|| (format!("+{added}"), format!("−{removed}")))
@@ -28,8 +28,8 @@ fn CountChips(added: usize, removed: usize) -> Element {
 /// The conversation: user bubbles, answer text, one folded activity line per turn, a card of the
 /// files the turn changed, and a footer under a finished turn.
 #[component]
-pub fn Turns(messages: Vec<Message>, view: TranscriptView, running: bool) -> Element {
-    let items = build_turns(&messages, view, running);
+pub fn Turns(messages: Vec<Message>, view: TranscriptView, live: Option<LiveState>) -> Element {
+    let items = build_turns(&messages, view, live.as_ref());
     let detailed = view.expands_tool_calls();
     rsx! {
         div { class: "turns",
@@ -68,6 +68,8 @@ fn TurnItem(item: Item, detailed: bool) -> Element {
         Item::Activity(activity) => rsx! { ActivityBlock { activity, detailed } },
         Item::FileCard(card) => rsx! { FileCardView { card } },
         Item::Footer(footer) => rsx! { FooterView { footer } },
+        // Drawn in the next task.
+        Item::Answers(_) | Item::Live(_) => rsx! {},
     }
 }
 
