@@ -180,3 +180,14 @@ The user allowed real messages in a throwaway folder (`/private/tmp/forge-observ
 - Running state of a turn without tools: orange three dots, then "6초 · 202 토큰" in grey, updating about every second.
 - Background task: a Bash call with `run_in_background` shows "<description> 실시간 출력 보기 ›" (the link is a button); the reply "백그라운드에서 실행 중입니다..." appears at once and a blue pill "실행 중인 작업 1개" stays at the bottom of the transcript. Clicking the link or the pill opens a right-hand panel "백그라운드 작업": section "실행 중", a card with the description, "Bash  29초" (live time), a mono box `$ sleep 60`, "아직 출력 없음", and a square stop button at the card's right. The panel has expand and close at the top. The pill turns light blue with a darker fill while the panel is open.
 - The composer's placeholder is a suggested next prompt only when the last turn ended (for example "그 답변을 color_season.md 파일로 저장해줘"); it is a real next step, generated per reply.
+
+## Round 8: the permission card and a denial (2026-10-04, Plan 23B)
+
+The user allowed one more message in the throwaway folder. Mode 수동, asked Claude to create `/private/tmp/forge-observe/obs.txt` with "x"; looked at the card, opened its menu, chose "거부" (deny). `obs.txt` was never written. The session's mode was set back to 자동.
+
+- The permission card does **not replace the composer** (Round 7 guessed it did, because a tooltip hid the left button). The card sits above the composer; the composer stays under it, empty, with the placeholder "/ 입력 시 명령어" and the round stop button at the right.
+- Card, top to bottom: title "Claude가 쓰기 obs.txt하도록 허용하시겠습니까?" (bold; verb + file name inside one sentence), the file name, a grey mono box with the full path, the path again as plain text, the diff block (`+ 1  x` on a green line), then the buttons row.
+- Buttons, left to right: "거부" with the key chips `1` and `Esc` (white, small); at the right "항상 허용" with `2` and `⇧⌘↩` (white), and "한 번만 허용" with `3` and `⌘↩` (black) joined to a `⌄` button. The `⌄` opens a one-item menu above it: "허용하고 Auto 모드로 전환" with the grey line "이 세션의 나머지 작업을 자동으로 검토합니다." Pressing `⌄` again closes it; `Esc` is deny, so it was not used to close.
+- While the card shows: the sidebar dot is orange, the transcript has the pill "입력이 필요합니다 ›" with the orange ringed dot at its left; the tooltip "자동 모드 사용해 보기" appeared again over the mode label until dismissed.
+- After "거부": the turn ends at once. The transcript shows one line "생성됨 obs.txt 실패 ›" ("생성됨" grey, the name dark, "실패" dark red) and no reply from Claude. A short row appears under the user's message: "1분 전" and three icons (copy, a rewind arrow ↺, branch). The composer shows the next suggested prompt again ("fizz.py 다시 실행해줘").
+- The earlier background task finished by itself: the pill "실행 중인 작업 1개" was gone and a new line "끝" had been added after the "백그라운드에서 실행 중입니다" text; the tool line read "Slept for 60 seconds ›" (past tense of the live "Sleeping for 60 seconds").
