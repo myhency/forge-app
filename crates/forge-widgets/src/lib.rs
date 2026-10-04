@@ -10,6 +10,7 @@ mod panel_frame;
 mod permission_panel;
 mod plus_menu;
 mod preview_panel;
+mod question_panel;
 mod search_palette;
 mod session_row;
 mod session_tools;

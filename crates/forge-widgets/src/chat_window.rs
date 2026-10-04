@@ -7,6 +7,7 @@ use crate::composer_controls::{EffortPicker, ModePicker, ModelPicker};
 use crate::dock::Dock;
 use crate::permission_panel::PermissionPanel;
 use crate::plus_menu::PlusMenu;
+use crate::question_panel::QuestionPanel;
 use crate::session_tools::SessionTools;
 use crate::sidebar::project_label;
 use crate::usage_ring::UsageRing;
@@ -60,7 +61,11 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 div { class: "banner error", "{error}" }
             }
             if let Some(request) = view.pending_permissions.front() {
-                PermissionPanel { key: "{request.id}", id, request: request.clone() }
+                if request.tool_name == forge_entities::QUESTION_TOOL {
+                    QuestionPanel { key: "{request.id}", id, request: request.clone() }
+                } else {
+                    PermissionPanel { key: "{request.id}", id, request: request.clone() }
+                }
             }
             if archived {
                 div { class: "banner info archived-bar",

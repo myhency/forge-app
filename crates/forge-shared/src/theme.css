@@ -568,3 +568,21 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .perm-menu-item { appearance: none; display: block; width: 100%; padding: 8px 10px; border: none; border-radius: 6px; background: none; text-align: left; font: inherit; color: var(--fg); cursor: pointer; }
 .perm-menu-item:hover { background: var(--bg-hover); }
 .perm-menu-note { color: var(--fg-muted); font-size: 12px; }
+
+.question-panel { display: flex; flex-direction: column; gap: 10px; width: calc(100% - 56px); max-width: var(--chat-column); box-sizing: border-box; margin: 0 auto 8px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); outline: none; }
+.question-head { display: flex; align-items: center; gap: 10px; }
+.question-chip { padding: 1px 10px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; }
+.question-head .spacer, .question-footer .spacer { flex: 1; }
+.question-options { display: flex; flex-direction: column; }
+.question-option { appearance: none; display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 10px 12px; border: none; border-radius: 8px; background: none; text-align: left; font: inherit; color: var(--fg); cursor: pointer; }
+.question-option:hover, .question-option.chosen { background: var(--bg-hover); }
+.question-option .option-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.option-label { font-weight: 700; }
+.option-description { color: var(--fg-muted); font-size: 13px; }
+.option-box { width: 16px; height: 16px; box-sizing: border-box; border: 1.5px solid var(--border); border-radius: 4px; flex: none; }
+.option-box.checked { background: var(--fg); border-color: var(--fg); }
+.question-option.other { cursor: default; }
+.question-option.other:hover { background: none; }
+.question-other { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--fg); font: inherit; }
+.question-footer { display: flex; align-items: center; gap: 8px; }
+.perm-button.disabled, .perm-button:disabled { opacity: 0.45; cursor: default; }
