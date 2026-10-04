@@ -44,6 +44,10 @@ pub struct LiveSessionView {
     pub phase: Phase,
     /// When the running turn was sent; `None` while no turn runs.
     pub turn_started: Option<std::time::SystemTime>,
+    /// The background tasks the SDK reports as running, with when each was first seen.
+    pub background_tasks: Vec<forge_domain::RunningTask>,
+    /// The SDK's guess at the next prompt; cleared by a send.
+    pub suggestion: Option<String>,
     /// Oldest first; the front is the one the UI shows.
     pub pending_permissions: VecDeque<PermissionRequest>,
     pub last_error: Option<String>,
@@ -71,6 +75,7 @@ pub enum LiveCommand {
     WarmUp,
     Approve { id: String, decision: PermissionDecision },
     AnswerQuestion { id: String, answers: std::collections::BTreeMap<String, String> },
+    StopTask { task_id: String },
     Interrupt,
     SetTitle(String),
     SetMode(PermissionMode),
@@ -124,6 +129,11 @@ impl LiveSessionHandle {
     /// Answers an `AskUserQuestion` request (see `SidecarPort::answer_question`).
     pub fn answer_question(&self, permission_request_id: String, answers: std::collections::BTreeMap<String, String>) {
         let _ = self.commands.send(LiveCommand::AnswerQuestion { id: permission_request_id, answers });
+    }
+
+    /// Stops one background task (see `SidecarPort::stop_task`).
+    pub fn stop_task(&self, task_id: String) {
+        let _ = self.commands.send(LiveCommand::StopTask { task_id });
     }
 
     /// Shows `title` as the session's title. Called after the new title is stored, so the view
@@ -201,6 +211,8 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         available_models: Vec::new(),
         phase: Phase::Idle,
         turn_started: None,
+        background_tasks: Vec::new(),
+        suggestion: None,
         pending_permissions: VecDeque::new(),
         last_error: None,
         can_send: init.can_send,
@@ -744,6 +756,84 @@ mod tests {
         control.push(turn_complete());
         let idle = wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle).await;
         assert!(idle.turn_started.is_none());
+    }
+
+    fn task(id: &str) -> forge_domain::BackgroundTaskInfo {
+        forge_domain::BackgroundTaskInfo { id: id.to_string(), description: format!("task {id}"), task_type: "local_bash".to_string() }
+    }
+
+    #[tokio::test]
+    async fn stop_task_reaches_the_sidecar() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("go".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        handle.stop_task("b1".to_string());
+        handle.interrupt(); // commands run in order
+        for _ in 0..200 {
+            if control.calls().contains(&Call::Interrupt) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(control.calls().contains(&Call::StopTask("b1".to_string())));
+    }
+
+    #[tokio::test]
+    async fn the_task_set_is_replaced_and_a_staying_task_keeps_its_first_seen_time() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("go".to_string());
+
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![task("b1")] });
+        let first = wait_for(&mut view, "one task", |v| v.background_tasks.len() == 1).await;
+        let seen = first.background_tasks[0].seen_at;
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![task("b1"), task("b2")] });
+        let second = wait_for(&mut view, "two tasks", |v| v.background_tasks.len() == 2).await;
+        assert_eq!(second.background_tasks[0].seen_at, seen, "b1 keeps its time");
+        assert!(second.background_tasks[1].seen_at > seen, "b2 is new");
+
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![] });
+        wait_for(&mut view, "no tasks", |v| v.background_tasks.is_empty()).await;
+    }
+
+    #[tokio::test]
+    async fn the_task_set_empties_when_the_sidecar_fails() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("go".to_string());
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![task("b1")] });
+        wait_for(&mut view, "one task", |v| v.background_tasks.len() == 1).await;
+
+        control.push(SidecarEvent::Error { message: "boom".to_string() });
+        let failed = wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+        assert!(failed.background_tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_suggestion_is_kept_until_the_next_send() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("one".to_string());
+        control.push(turn_complete());
+        control.push(SidecarEvent::PromptSuggestion { text: "run the tests".to_string() });
+        let with = wait_for(&mut view, "the suggestion", |v| v.suggestion.is_some()).await;
+        assert_eq!(with.suggestion.as_deref(), Some("run the tests"));
+
+        handle.send("two".to_string());
+        let cleared = wait_for(&mut view, "the suggestion cleared", |v| v.suggestion.is_none() && v.phase == Phase::Running).await;
+        assert!(cleared.suggestion.is_none());
     }
 
     #[tokio::test]

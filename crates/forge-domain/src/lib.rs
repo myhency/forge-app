@@ -1,4 +1,5 @@
 mod attachment;
+mod background;
 mod command;
 mod config;
 mod effort;
@@ -19,6 +20,7 @@ pub use config::{
 pub use effort::{AvailableModel, EffortLevel};
 pub use extension::{ActiveExtensions, McpServerDefinition, PluginDefinition, SkillDefinition};
 pub use permission::{PermissionDecision, PermissionMode};
+pub use background::{BackgroundTaskInfo, RunningTask};
 pub use project::ProjectSummary;
 pub use search::{find_snippet, split_at_match, title_matches, SearchHit, Snippet};
 pub use session::{

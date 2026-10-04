@@ -611,6 +611,12 @@ impl Workspace {
         }
     }
 
+    pub fn stop_task(&self, id: LiveSessionId, task_id: String) {
+        if let Some(handle) = self.handle(id) {
+            handle.stop_task(task_id);
+        }
+    }
+
     pub fn answer_question(&self, id: LiveSessionId, request_id: String, answers: std::collections::BTreeMap<String, String>) {
         if let Some(handle) = self.handle(id) {
             handle.answer_question(request_id, answers);

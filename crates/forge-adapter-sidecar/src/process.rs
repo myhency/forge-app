@@ -147,6 +147,11 @@ impl SidecarPort for SidecarProcess {
         self.send_command(SidecarCommand::AnswerQuestion { id, permission_request_id, answers })
     }
 
+    async fn stop_task(&self, task_id: String) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::StopTask { id, task_id })
+    }
+
     async fn interrupt(&self) -> Result<(), SidecarError> {
         let id = self.next_id();
         self.send_command(SidecarCommand::Interrupt { id })

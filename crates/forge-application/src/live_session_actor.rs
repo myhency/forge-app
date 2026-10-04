@@ -7,7 +7,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::event::{apply_sidecar_event, SessionUpdate};
 use crate::live_session::{LiveCommand, LiveSessionView, Phase};
-use crate::use_cases::{AnswerQuestionUseCase, ApprovePermissionUseCase, ExtensionsUseCase, InterruptTurnUseCase, SendMessageUseCase};
+use crate::use_cases::{AnswerQuestionUseCase, ApprovePermissionUseCase, StopTaskUseCase, ExtensionsUseCase, InterruptTurnUseCase, SendMessageUseCase};
 
 const CANNOT_SEND: &str = "the project folder no longer exists, so this session can only be viewed";
 
@@ -98,6 +98,7 @@ impl Actor {
             LiveCommand::WarmUp => self.warm_up().await,
             LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
             LiveCommand::AnswerQuestion { id, answers } => self.answer_question(id, answers).await,
+            LiveCommand::StopTask { task_id } => self.stop_task(task_id).await,
             LiveCommand::Interrupt => self.interrupt().await,
             LiveCommand::SetMode(mode) => self.set_mode(mode).await,
             LiveCommand::SetModel(model) => self.set_model(model).await,
@@ -173,6 +174,7 @@ impl Actor {
             Ok(()) => {
                 self.view.phase = Phase::Running;
                 self.view.turn_started = Some(std::time::SystemTime::now());
+                self.view.suggestion = None;
                 self.view.last_error = None;
                 self.refusal_shown = false;
                 self.view.unsent = None;
@@ -225,6 +227,15 @@ impl Actor {
         self.active = Some(extensions);
         self.sidecar = Some(sidecar);
         Ok(())
+    }
+
+    async fn stop_task(&mut self, task_id: String) {
+        let Some(sidecar) = self.sidecar.clone() else {
+            return;
+        };
+        if let Err(error) = StopTaskUseCase::new(sidecar).execute(task_id).await {
+            self.fail(error.to_string(), false).await;
+        }
     }
 
     async fn answer_question(&mut self, id: String, answers: std::collections::BTreeMap<String, String>) {
@@ -317,6 +328,19 @@ impl Actor {
                 self.view.turn_started = None;
                 self.view.pending_permissions.clear();
             }
+            SessionUpdate::BackgroundTasks(tasks) => {
+                let now = std::time::SystemTime::now();
+                let previous = std::mem::take(&mut self.view.background_tasks);
+                self.view.background_tasks = tasks
+                    .into_iter()
+                    .map(|info| {
+                        let seen_at = previous.iter().find(|task| task.info.id == info.id).map_or(now, |task| task.seen_at);
+                        forge_domain::RunningTask { info, seen_at }
+                    })
+                    .collect();
+            }
+            SessionUpdate::PromptSuggestion(text) => self.view.suggestion = Some(text),
+            SessionUpdate::PromptSuggestion(text) => self.view.suggestion = Some(text),
             SessionUpdate::ContextUsage(context) => self.view.context = Some(context),
             SessionUpdate::CommandsAvailable(commands) => self.view.commands = commands,
             // The session already holds the new mode (`apply_sidecar_event`); the model lives here
@@ -348,6 +372,7 @@ impl Actor {
             SessionUpdate::MessageDelta { .. }
             | SessionUpdate::ThinkingDelta { .. }
             | SessionUpdate::ToolCallStarted { .. }
+            | SessionUpdate::TaskFinished { .. }
             | SessionUpdate::ToolCallCompleted { .. } => {}
         }
         self.dirty = true;
@@ -374,6 +399,7 @@ impl Actor {
     }
 
     async fn discard_sidecar(&mut self, shutdown: bool) {
+        self.view.background_tasks.clear();
         if let Some(sidecar) = self.sidecar.take() {
             if shutdown {
                 let _ = sidecar.shutdown().await;

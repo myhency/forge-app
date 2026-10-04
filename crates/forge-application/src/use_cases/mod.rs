@@ -7,5 +7,5 @@ mod toggles;
 pub use extensions::{ExtensionsError, ExtensionsUseCase};
 pub use session_lifecycle::{ResumeSessionError, ResumeSessionUseCase, StartSessionUseCase};
 pub use settings::SettingsUseCase;
-pub use sidecar_commands::{AnswerQuestionUseCase, ApprovePermissionUseCase, InterruptTurnUseCase, SendMessageUseCase};
+pub use sidecar_commands::{AnswerQuestionUseCase, ApprovePermissionUseCase, StopTaskUseCase, InterruptTurnUseCase, SendMessageUseCase};
 pub use toggles::{ToggleMcpServerUseCase, TogglePluginUseCase, ToggleSkillUseCase};
