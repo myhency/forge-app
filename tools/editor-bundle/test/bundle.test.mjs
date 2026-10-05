@@ -386,3 +386,78 @@ test("an empty match in front of an astral character moves on instead of looping
   assert.equal(count(w), "1 of 1");
   editor.destroy();
 });
+
+const gotoInput = (w) => w.document.querySelector(".cm-goto-bar input");
+const enter = (w, input) => input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+const head = (w) => viewOf(w).state.doc.lineAt(viewOf(w).state.selection.main.head).number;
+
+test("Go to line opens a one field panel and Enter jumps to the line and closes it", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\nb\nc\nd\n", "python", false);
+  editor.openGoto();
+  const input = gotoInput(w);
+  assert.ok(input);
+  input.value = "3";
+  enter(w, input);
+  assert.equal(head(w), 3);
+  assert.equal(gotoInput(w), null);
+  editor.destroy();
+});
+
+test("a line past the end goes to the last line", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\nb\nc\n", "python", false);
+  editor.openGoto();
+  const input = gotoInput(w);
+  input.value = "99";
+  enter(w, input);
+  assert.equal(head(w), viewOf(w).state.doc.lines);
+  editor.destroy();
+});
+
+test("0, a negative and text are ignored and keep the panel open", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\nb\nc\n", "python", false);
+  editor.openGoto();
+  for (const bad of ["0", "-2", "abc", ""]) {
+    const input = gotoInput(w);
+    input.value = bad;
+    enter(w, input);
+    assert.ok(gotoInput(w), `panel stays for ${JSON.stringify(bad)}`);
+    assert.equal(head(w), 1);
+  }
+  editor.destroy();
+});
+
+test("Escape closes the Go to line panel", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\n", "python", false);
+  editor.openGoto();
+  gotoInput(w).dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(gotoInput(w), null);
+  editor.destroy();
+});
+
+test("the editor right click menu lists Go to line with its shortcut", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\nb\n", "python", false);
+  const content = w.document.querySelector(".cm-content");
+  content.dispatchEvent(new w.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
+  const texts = [...w.document.querySelectorAll(".cm-ctx-menu button")].map((b) => b.textContent);
+  assert.ok(texts.some((t) => t.startsWith("Go to line") && t.includes("⌃G")), texts.join("|"));
+  editor.destroy();
+});
+
+test("Go to line ignores text that only starts with a number", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\nb\nc\n", "python", false);
+  editor.openGoto();
+  for (const bad of ["3abc", "1e9", "2 3"]) {
+    const input = gotoInput(w);
+    input.value = bad;
+    enter(w, input);
+    assert.ok(gotoInput(w), `panel stays for ${JSON.stringify(bad)}`);
+    assert.equal(head(w), 1);
+  }
+  editor.destroy();
+});

@@ -622,6 +622,13 @@ impl Workspace {
         }
     }
 
+    /// Opens a file with the default app or a named one; a failure becomes a notice.
+    pub fn open_with_app(&self, path: &Path, app: Option<&'static str>) {
+        if let Err(message) = self.browser().open_with(path, app) {
+            self.report(message);
+        }
+    }
+
     /// How many tool calls of an open session have finished. A panel that shows files on disk
     /// reads this inside its loader, so it reloads when a tool call finishes. 0 for a session
     /// that is not open.
@@ -903,7 +910,7 @@ impl Workspace {
         true
     }
 
-    fn report(&self, message: String) {
+    pub fn report(&self, message: String) {
         let mut notice = self.notice;
         notice.set(Some(message));
     }

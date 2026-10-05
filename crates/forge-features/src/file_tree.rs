@@ -62,6 +62,18 @@ impl FileTree {
         !self.is_loaded(dir)
     }
 
+    /// The folders above `path`, outermost first (`src/deep/a.txt` gives `src`, `src/deep`).
+    pub fn reveal_dirs(path: &str) -> Vec<String> {
+        let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+        (1..parts.len()).map(|n| parts[..n].join("/")).collect()
+    }
+
+    /// Opens a folder (never closes one). True when its entries have not been read yet.
+    pub fn open_dir(&mut self, dir: &str) -> bool {
+        self.open.insert(dir.to_string());
+        !self.is_loaded(dir)
+    }
+
     /// The visible rows, depth first. With a filter, only the entries whose name contains it (any
     /// case) and the folders that hold such an entry among what has been read; those folders show
     /// open.
@@ -183,5 +195,26 @@ mod tests {
         assert_eq!(parse_files_query("?"), FilesQuery::Content(""));
         assert_eq!(parse_files_query(" main "), FilesQuery::Filter("main"));
         assert_eq!(parse_files_query(""), FilesQuery::Filter(""));
+    }
+
+    #[test]
+    fn the_ancestors_of_a_path_come_outermost_first() {
+        assert_eq!(FileTree::reveal_dirs("src/deep/a.txt"), vec!["src".to_string(), "src/deep".to_string()]);
+        assert_eq!(FileTree::reveal_dirs("a.txt"), Vec::<String>::new());
+        assert_eq!(FileTree::reveal_dirs(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn opening_a_folder_twice_keeps_it_open_and_asks_for_a_read_only_until_it_is_read() {
+        let mut tree = FileTree::default();
+        tree.set_children("", vec![dir("src")]);
+        assert!(tree.open_dir("src"));
+        assert!(tree.open_dir("src"));
+        tree.set_children("src", vec![file("a.txt")]);
+        assert!(!tree.open_dir("src"));
+        // `toggle` would have closed it; `open_dir` never does.
+        let rows = tree.rows("");
+        assert!(rows[0].expanded);
+        assert_eq!(rows[1].path, "src/a.txt");
     }
 }

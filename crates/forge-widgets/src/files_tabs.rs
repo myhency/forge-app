@@ -23,15 +23,10 @@ pub fn FilesTabs(
     on_select: EventHandler<String>,
     on_close: EventHandler<String>,
     on_reorder: EventHandler<(String, String)>,
-    on_keep: EventHandler<String>,
-    on_close_others: EventHandler<String>,
-    on_close_all: EventHandler<()>,
-    on_attach: EventHandler<String>,
+    on_menu: EventHandler<(String, bool, f64, f64)>,
 ) -> Element {
     // The tab a press started on.
     let mut pressed = use_signal(|| None::<String>);
-    // The tab menu: the tab, whether it is a preview tab, and where it was asked for.
-    let mut menu = use_signal(|| None::<(String, bool, f64, f64)>);
     rsx! {
         div { class: "files-tabs", role: "tablist", onmouseleave: move |_| pressed.set(None),
             for tab in tabs.iter().cloned() {
@@ -75,7 +70,7 @@ pub fn FilesTabs(
                                 move |event: MouseEvent| {
                                     event.prevent_default();
                                     let point = event.client_coordinates();
-                                    menu.set(Some((path.clone(), preview, point.x, point.y)));
+                                    on_menu.call((path.clone(), preview, point.x, point.y));
                                 }
                             },
                             span { class: "files-tab-name", "{file_name(&path)}" }
@@ -97,83 +92,6 @@ pub fn FilesTabs(
                             }
                         }
                     }
-                }
-            }
-        }
-        if let Some((path, preview, x, y)) = menu() {
-            div {
-                class: "picker-backdrop",
-                onclick: move |_| menu.set(None),
-                oncontextmenu: move |event: MouseEvent| {
-                    event.prevent_default();
-                    menu.set(None);
-                },
-            }
-            div { class: "picker-menu files-tab-menu", role: "menu", style: "left: min({x}px, calc(100vw - 210px)); top: {y}px;",
-                button {
-                    class: "picker-item",
-                    r#type: "button",
-                    role: "menuitem",
-                    onclick: {
-                        let path = path.clone();
-                        move |_| {
-                            on_attach.call(path.clone());
-                            menu.set(None);
-                        }
-                    },
-                    "Attach as context"
-                }
-                div { class: "picker-divider" }
-                button {
-                    class: if preview { "picker-item" } else { "picker-item disabled" },
-                    r#type: "button",
-                    role: "menuitem",
-                    onclick: {
-                        let path = path.clone();
-                        move |_| {
-                            if preview {
-                                on_keep.call(path.clone());
-                            }
-                            menu.set(None);
-                        }
-                    },
-                    "Keep open"
-                }
-                button {
-                    class: "picker-item",
-                    r#type: "button",
-                    role: "menuitem",
-                    onclick: {
-                        let path = path.clone();
-                        move |_| {
-                            on_close.call(path.clone());
-                            menu.set(None);
-                        }
-                    },
-                    "Close"
-                }
-                button {
-                    class: "picker-item",
-                    r#type: "button",
-                    role: "menuitem",
-                    onclick: {
-                        let path = path.clone();
-                        move |_| {
-                            on_close_others.call(path.clone());
-                            menu.set(None);
-                        }
-                    },
-                    "Close others"
-                }
-                button {
-                    class: "picker-item",
-                    r#type: "button",
-                    role: "menuitem",
-                    onclick: move |_| {
-                        on_close_all.call(());
-                        menu.set(None);
-                    },
-                    "Close all"
                 }
             }
         }

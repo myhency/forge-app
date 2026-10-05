@@ -698,3 +698,16 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .files-hit-file { padding: 2px 6px; font-size: 12px; font-weight: 600; color: var(--fg); }
 .files-hit-line { flex: none; min-width: 3ch; text-align: right; color: var(--fg-muted); }
 .files-hit-text mark { background: var(--accent-soft); color: inherit; border-radius: 2px; }
+
+/* The file context menu with submenus */
+.context-menu { position: fixed; bottom: auto; right: auto; min-width: 230px; }
+.context-sub { position: relative; }
+.context-submenu { position: absolute; top: -4px; bottom: auto; left: 100%; right: auto; min-width: 180px; }
+.context-submenu.left { left: auto; right: 100%; }
+.picker-hint { margin-left: auto; padding-left: 16px; color: var(--fg-muted); }
+
+/* Go to line */
+.cm-goto-bar { padding: 4px 8px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.cm-goto-bar input { width: 100%; box-sizing: border-box; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); font-size: 12px; outline: none; }
+.cm-ctx-menu button { display: flex; justify-content: space-between; gap: 16px; }
+.cm-ctx-key { color: var(--fg-muted); }

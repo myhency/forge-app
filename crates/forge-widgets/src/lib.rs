@@ -1,6 +1,7 @@
 mod changes_panel;
 mod chat_window;
 mod composer_controls;
+mod context_menu;
 mod dock;
 mod files_editor;
 mod files_kinds;
