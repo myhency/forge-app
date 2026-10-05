@@ -50,6 +50,11 @@ impl Pending {
     }
 }
 
+/// The absolute path a tree or tab path stands for.
+pub fn absolute(cwd: &std::path::Path, path: &str) -> PathBuf {
+    cwd.join(path)
+}
+
 /// Everything the panel does, in one place. It is `Clone` (signals are `Copy`), so event handlers
 /// take a clone. The text of an open file lives in the editor in the page; Rust keeps a `TabDoc`
 /// (the version and a hash of what is on disk) per tab.
@@ -92,6 +97,11 @@ impl FilesCtx {
         if let Some(doc) = write.get_mut(key) {
             change(doc);
         }
+    }
+
+    /// `Attach as context` on a tree row or a tab: the file becomes a chip in the message box.
+    pub fn attach_file(&self, path: &str) {
+        self.workspace.queue_file(self.id, absolute(&self.cwd, path));
     }
 
     // The absolute path of a tab, as a card holds it.
@@ -596,5 +606,10 @@ mod tests {
     #[test]
     fn an_overwrite_is_not_swallowed_by_a_plain_save_asked_later() {
         assert!(!Pending::Save { overwrite: false }.replaces(Pending::Save { overwrite: true }));
+    }
+
+    #[test]
+    fn a_tree_or_tab_path_is_taken_from_the_session_folder() {
+        assert_eq!(absolute(std::path::Path::new("/p"), "src/a.py"), PathBuf::from("/p/src/a.py"));
     }
 }

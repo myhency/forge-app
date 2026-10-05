@@ -42,6 +42,8 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let problem = use_signal(|| None::<String>);
     let mut filter = use_signal(String::new);
     let mut hits = use_signal(|| None::<Vec<ContentHit>>);
+    // The tree row menu: the file and where it was asked for.
+    let mut row_menu = use_signal(|| None::<(String, f64, f64)>);
 
     let handle = use_editor_channel();
     let ctx = FilesCtx {
@@ -254,6 +256,16 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                                         class: if is_selected { "files-row selected" } else { "files-row" },
                                         r#type: "button",
                                         style: "{indent}",
+                                        oncontextmenu: {
+                                            let path = path.clone();
+                                            move |event: MouseEvent| {
+                                                event.prevent_default();
+                                                if !is_dir {
+                                                    let point = event.client_coordinates();
+                                                    row_menu.set(Some((path.clone(), point.x, point.y)));
+                                                }
+                                            }
+                                        },
                                         onclick: move |_| {
                                             if is_dir {
                                                 if tree.write().toggle(&path) {
@@ -353,8 +365,38 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         }
     };
 
+    let row_menu_view = match row_menu() {
+        Some((path, x, y)) => {
+            let ctx = ctx.clone();
+            rsx! {
+                div {
+                    class: "picker-backdrop",
+                    onclick: move |_| row_menu.set(None),
+                    oncontextmenu: move |event: MouseEvent| {
+                        event.prevent_default();
+                        row_menu.set(None);
+                    },
+                }
+                div { class: "picker-menu files-tab-menu", role: "menu", style: "left: min({x}px, calc(100vw - 210px)); top: {y}px;",
+                    button {
+                        class: "picker-item",
+                        r#type: "button",
+                        role: "menuitem",
+                        onclick: move |_| {
+                            ctx.attach_file(&path);
+                            row_menu.set(None);
+                        },
+                        "Attach as context"
+                    }
+                }
+            }
+        }
+        None => rsx! {},
+    };
+
     rsx! {
         PanelFrame { id, panel: Panel::Files, tools,
+            {row_menu_view}
             div { class: "files-filter",
                 input {
                     class: "files-filter-input",
@@ -398,6 +440,10 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                         on_close_all: {
                             let ctx = ctx.clone();
                             move |_| ctx.close_all()
+                        },
+                        on_attach: {
+                            let ctx = ctx.clone();
+                            move |path: String| ctx.attach_file(&path)
                         },
                     }
                     {banner_view}
