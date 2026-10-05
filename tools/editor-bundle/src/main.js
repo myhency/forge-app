@@ -3,7 +3,7 @@
 // One editor serves every tab: each tab's EditorState (text, undo history) and scroll position are
 // kept per key, so switching tabs keeps what the person did.
 //
-// Rust to page (methods): load(key, doc, language, readonly, ifClean), show(key), drop(key),
+// Rust to page (methods): load(key, doc, language, readonly, ifClean, dirty), show(key), drop(key),
 //   settings({ wrap, indent_guides, whitespace, scroll_past_end, tab_indent, tab_size }),
 //   flush(key), comments(key, [{ id, from, to, text }]), focusComment(key, id),
 //   find(key, { query, match_case, whole_word, regex, line }), focus(), destroy().
@@ -265,7 +265,7 @@ window.ForgeEditor = {
     }
 
     return {
-      load(newKey, doc, language, readonly, ifClean) {
+      load(newKey, doc, language, readonly, ifClean, dirty) {
         whenIdle(() => {
           if (newKey === key) {
             if (ifClean && (timer !== null || dirtySent)) {
@@ -290,6 +290,13 @@ window.ForgeEditor = {
           applyPendingFocus(newKey);
           afterSwitch(newKey);
           view.scrollDOM.scrollTop = 0;
+          if (dirty && !readonly) {
+            // The text is not what is on disk (a draft that came back): the first edit logic runs now.
+            dirtySent = true;
+            send({ t: "dirty", key: newKey });
+            clearTimeout(timer);
+            timer = setTimeout(fire, SAVE_DELAY_MS);
+          }
         });
       },
       show(newKey) {

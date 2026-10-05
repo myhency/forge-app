@@ -278,7 +278,7 @@ impl FilesCtx {
             return;
         }
         if self.selected().as_deref() == Some(path) && self.editor_visible(path) {
-            self.handle.load(path, text, editor_language(path), read_only, quiet);
+            self.handle.load(path, text, editor_language(path), read_only, quiet, false);
         }
     }
 
