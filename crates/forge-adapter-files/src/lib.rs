@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use forge_ports::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, WriteError, READ_LIMIT};
+use forge_ports::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, SearchOptions, WriteError, READ_LIMIT};
+use regex::{Regex, RegexBuilder};
 
 const SKIPPED: [&str; 2] = [".git", "node_modules"];
 // A NUL byte in this many first bytes makes a file binary.
@@ -133,7 +134,7 @@ impl FilesPort for LocalFiles {
     fn write(&self, root: &Path, path: &str, text: &str, expected: Option<FileVersion>) -> Result<FileVersion, WriteError> {
         let file = resolve(root, path).map_err(|error| match error {
             FilesError::Outside => WriteError::Outside,
-            FilesError::Failed(message) => WriteError::Failed(message),
+            FilesError::Failed(message) | FilesError::InvalidPattern(message) => WriteError::Failed(message),
         })?;
         let failed_write = |error: std::io::Error| WriteError::Failed(error.to_string());
         let meta = fs::metadata(&file).map_err(failed_write)?;
@@ -150,15 +151,15 @@ impl FilesPort for LocalFiles {
         Ok(version_of(&fs::metadata(&file).map_err(failed_write)?))
     }
 
-    fn search(&self, root: &Path, query: &str, limit: usize) -> Result<Vec<ContentHit>, FilesError> {
+    fn search(&self, root: &Path, query: &str, options: SearchOptions, limit: usize) -> Result<Vec<ContentHit>, FilesError> {
         let root = root.canonicalize().map_err(failed)?;
-        let needle = query.to_lowercase();
         let mut hits = Vec::new();
-        if needle.is_empty() || limit == 0 {
+        if query.is_empty() || limit == 0 {
             return Ok(hits);
         }
+        let matcher = build_matcher(query, options)?;
         let mut visited = 0;
-        search_dir(&root, "", &needle, limit, &mut visited, &mut hits);
+        search_dir(&root, "", &matcher, limit, &mut visited, &mut hits);
         Ok(hits)
     }
 
@@ -173,8 +174,45 @@ impl FilesPort for LocalFiles {
     }
 }
 
+fn build_matcher(query: &str, options: SearchOptions) -> Result<Regex, FilesError> {
+    let body = if options.regex { query.to_string() } else { regex::escape(query) };
+    let body = if options.whole_word { format!(r"\b(?:{body})\b") } else { body };
+    RegexBuilder::new(&body).case_insensitive(!options.match_case).build().map_err(|error| {
+        let text = error.to_string();
+        let last = text.lines().last().unwrap_or("").trim().trim_start_matches("error:").trim();
+        FilesError::InvalidPattern(if last.is_empty() { "Invalid pattern".to_string() } else { last.to_string() })
+    })
+}
+
+// The first non-empty match of `matcher` in the trimmed line, as a window of at most
+// HIT_TEXT_CHARS chars with `…` at a cut end, and the match's char offsets inside that window.
+fn hit_of(line: &str, matcher: &Regex) -> Option<(String, usize, usize)> {
+    let line = line.trim();
+    let found = matcher.find_iter(line).find(|m| !m.is_empty())?;
+    let start = line[..found.start()].chars().count();
+    let end = start + line[found.start()..found.end()].chars().count();
+    let chars: Vec<char> = line.chars().collect();
+    if chars.len() <= HIT_TEXT_CHARS {
+        return Some((line.to_string(), start, end));
+    }
+    let room = HIT_TEXT_CHARS - 2;
+    let length = (end - start).min(room);
+    let from = start.saturating_sub((room - length) / 2).min(chars.len() - room);
+    let to = from + room;
+    let lead = usize::from(from > 0);
+    let mut text = String::new();
+    if from > 0 {
+        text.push('…');
+    }
+    text.extend(&chars[from..to]);
+    if to < chars.len() {
+        text.push('…');
+    }
+    Some((text, start - from + lead, end.min(to) - from + lead))
+}
+
 // Depth first in name order; symlinks are not followed, so a link cannot lead out of the root.
-fn search_dir(dir: &Path, prefix: &str, needle: &str, limit: usize, visited: &mut usize, hits: &mut Vec<ContentHit>) {
+fn search_dir(dir: &Path, prefix: &str, matcher: &Regex, limit: usize, visited: &mut usize, hits: &mut Vec<ContentHit>) {
     let Ok(read) = fs::read_dir(dir) else { return };
     let mut entries: Vec<_> = read.filter_map(Result::ok).collect();
     entries.sort_by_key(|entry| entry.file_name());
@@ -189,7 +227,7 @@ fn search_dir(dir: &Path, prefix: &str, needle: &str, limit: usize, visited: &mu
         }
         let path = if prefix.is_empty() { name } else { format!("{prefix}/{name}") };
         if kind.is_dir() {
-            search_dir(&entry.path(), &path, needle, limit, visited, hits);
+            search_dir(&entry.path(), &path, matcher, limit, visited, hits);
             continue;
         }
         *visited += 1;
@@ -201,9 +239,8 @@ fn search_dir(dir: &Path, prefix: &str, needle: &str, limit: usize, visited: &mu
             continue;
         }
         for (index, line) in String::from_utf8_lossy(&bytes).lines().enumerate() {
-            if line.to_lowercase().contains(needle) {
-                let text: String = line.trim().chars().take(HIT_TEXT_CHARS).collect();
-                hits.push(ContentHit { path: path.clone(), line: index + 1, text });
+            if let Some((text, start, end)) = hit_of(line, matcher) {
+                hits.push(ContentHit { path: path.clone(), line: index + 1, text, start, end });
                 if hits.len() >= limit {
                     return;
                 }
@@ -217,7 +254,7 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::symlink;
 
-    use forge_ports::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, WriteError, READ_LIMIT};
+    use forge_ports::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, SearchOptions, WriteError, READ_LIMIT};
     use tempfile::TempDir;
 
     use super::*;
@@ -418,7 +455,7 @@ mod tests {
         fs::write(dir.path().join("big.txt"), text).unwrap();
         fs::write(dir.path().join("small.txt"), "needle\n").unwrap();
 
-        let hits = LocalFiles::new().search(dir.path(), "needle", 10).unwrap();
+        let hits = LocalFiles::new().search(dir.path(), "needle", SearchOptions::default(), 10).unwrap();
 
         assert_eq!(hits.iter().map(|hit| hit.path.as_str()).collect::<Vec<_>>(), vec!["small.txt"]);
     }
@@ -449,11 +486,11 @@ mod tests {
     #[test]
     fn search_finds_lines_in_any_case_in_path_order_and_skips_git_and_node_modules() {
         let dir = tree();
-        let hits = LocalFiles::new().search(dir.path(), "hello", 50).unwrap();
+        let hits = LocalFiles::new().search(dir.path(), "hello", SearchOptions::default(), 50).unwrap();
         let expected = vec![
-            ContentHit { path: "README.md".to_string(), line: 2, text: "hello World".to_string() },
-            ContentHit { path: "src/deep/notes.txt".to_string(), line: 2, text: "HELLO again".to_string() },
-            ContentHit { path: "src/main.rs".to_string(), line: 2, text: "println!(\"hello\");".to_string() },
+            ContentHit { path: "README.md".to_string(), line: 2, text: "hello World".to_string(), start: 0, end: 5 },
+            ContentHit { path: "src/deep/notes.txt".to_string(), line: 2, text: "HELLO again".to_string(), start: 0, end: 5 },
+            ContentHit { path: "src/main.rs".to_string(), line: 2, text: "println!(\"hello\");".to_string(), start: 10, end: 15 },
         ];
         assert_eq!(hits, expected);
     }
@@ -466,19 +503,12 @@ mod tests {
         fs::write(outside.path().join("o.txt"), "hello").unwrap();
         symlink(outside.path(), dir.path().join("linkdir")).unwrap();
         let files = LocalFiles::new();
-        assert_eq!(files.search(dir.path(), "hello", 2).unwrap().len(), 2);
-        assert_eq!(files.search(dir.path(), "", 10).unwrap(), vec![]);
-        let all = files.search(dir.path(), "hello", 50).unwrap();
+        assert_eq!(files.search(dir.path(), "hello", SearchOptions::default(), 2).unwrap().len(), 2);
+        assert_eq!(files.search(dir.path(), "", SearchOptions::default(), 10).unwrap(), vec![]);
+        let all = files.search(dir.path(), "hello", SearchOptions::default(), 50).unwrap();
         assert!(all.iter().all(|hit| hit.path != "b.bin" && !hit.path.starts_with("linkdir")), "{all:?}");
     }
 
-    #[test]
-    fn a_very_long_line_is_shortened_in_a_hit() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("long.txt"), format!("needle {}\n", "x".repeat(5000))).unwrap();
-        let hits = LocalFiles::new().search(dir.path(), "needle", 5).unwrap();
-        assert_eq!(hits[0].text.chars().count(), 200);
-    }
 
     #[test]
     fn read_tail_gives_the_end_of_a_long_file() {
@@ -505,5 +535,87 @@ mod tests {
         let file = dir.path().join("bin.txt");
         std::fs::write(&file, [b'a', 0xff, b'b']).unwrap();
         assert_eq!(LocalFiles::new().read_tail(&file, 10).unwrap(), "a\u{fffd}b");
+    }
+
+    fn one_file(text: &str) -> TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("f.txt"), text).unwrap();
+        dir
+    }
+
+    fn hits(dir: &TempDir, query: &str, options: SearchOptions) -> Vec<ContentHit> {
+        LocalFiles::new().search(dir.path(), query, options, 50).unwrap()
+    }
+
+    #[test]
+    fn a_long_line_is_a_window_around_the_match_with_offsets_into_the_window() {
+        let dir = one_file(&format!("{} needle {}\n", "x".repeat(5000), "y".repeat(5000)));
+        let found = hits(&dir, "needle", SearchOptions::default());
+        let hit = &found[0];
+        assert!(hit.text.chars().count() <= 200, "{}", hit.text.chars().count());
+        assert!(hit.text.starts_with('…') && hit.text.ends_with('…'));
+        let matched: String = hit.text.chars().skip(hit.start).take(hit.end - hit.start).collect();
+        assert_eq!(matched, "needle");
+    }
+
+    #[test]
+    fn a_match_at_the_start_of_a_long_line_cuts_only_the_end() {
+        let dir = one_file(&format!("needle {}\n", "x".repeat(5000)));
+        let hit = &hits(&dir, "needle", SearchOptions::default())[0];
+        assert!(hit.text.starts_with("needle") && hit.text.ends_with('…'));
+        assert_eq!((hit.start, hit.end), (0, 6));
+    }
+
+    #[test]
+    fn offsets_count_chars_not_bytes() {
+        let dir = one_file("한글 한글 hello\n");
+        let hit = &hits(&dir, "hello", SearchOptions::default())[0];
+        let matched: String = hit.text.chars().skip(hit.start).take(hit.end - hit.start).collect();
+        assert_eq!(matched, "hello");
+    }
+
+    #[test]
+    fn match_case_and_the_default_differ() {
+        let dir = one_file("Buzz\nbuzz\n");
+        assert_eq!(hits(&dir, "buzz", SearchOptions::default()).len(), 2);
+        assert_eq!(hits(&dir, "buzz", SearchOptions { match_case: true, ..SearchOptions::default() }).len(), 1);
+    }
+
+    #[test]
+    fn whole_word_uses_unicode_word_boundaries() {
+        let dir = one_file("가나 다\n가나다\nfoo foobar\n");
+        let whole = SearchOptions { whole_word: true, ..SearchOptions::default() };
+        let lines: Vec<usize> = hits(&dir, "가나", whole).iter().map(|h| h.line).collect();
+        assert_eq!(lines, vec![1]);
+        let lines: Vec<usize> = hits(&dir, "foo", whole).iter().map(|h| h.line).collect();
+        assert_eq!(lines, vec![3]);
+    }
+
+    #[test]
+    fn a_literal_query_is_not_a_pattern_unless_regex_is_on() {
+        let dir = one_file("a.b\naxb\n");
+        assert_eq!(hits(&dir, "a.b", SearchOptions::default()).len(), 1);
+        let regex = SearchOptions { regex: true, ..SearchOptions::default() };
+        assert_eq!(hits(&dir, "a.b", regex).len(), 2);
+    }
+
+    #[test]
+    fn an_invalid_regex_is_an_error_with_a_short_message() {
+        let dir = one_file("x\n");
+        let regex = SearchOptions { regex: true, ..SearchOptions::default() };
+        let error = LocalFiles::new().search(dir.path(), "(", regex, 10).unwrap_err();
+        match error {
+            FilesError::InvalidPattern(message) => assert!(!message.contains('\n') && !message.is_empty(), "{message}"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_pattern_that_matches_nothing_in_a_line_gives_no_hit_and_an_empty_match_is_skipped() {
+        let dir = one_file("abc\n\n");
+        let regex = SearchOptions { regex: true, ..SearchOptions::default() };
+        // `x*` matches the empty string everywhere: no line is a hit.
+        assert_eq!(hits(&dir, "x*", regex), vec![]);
+        assert_eq!(hits(&dir, "b", regex).len(), 1);
     }
 }

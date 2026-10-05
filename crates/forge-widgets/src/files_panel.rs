@@ -90,7 +90,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                         if filter.peek().as_str() != typed {
                             return;
                         }
-                        if let Some(Ok(found)) = run_blocking(move || files.search(&root, &query, SEARCH_LIMIT)).await {
+                        if let Some(Ok(found)) = run_blocking(move || files.search(&root, &query, forge_ports::SearchOptions::default(), SEARCH_LIMIT)).await {
                             if filter.peek().as_str() == typed {
                                 hits.set(Some(found));
                             }

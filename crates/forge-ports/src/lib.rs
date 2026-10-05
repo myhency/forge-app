@@ -15,7 +15,7 @@ mod usage_stats_port;
 
 pub use browser_port::BrowserPort;
 pub use config_port::{ConfigError, ConfigRepositoryPort};
-pub use files_port::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, WriteError, READ_LIMIT};
+pub use files_port::{ContentHit, SearchOptions, DirEntry, FileContent, FileVersion, FilesError, FilesPort, WriteError, READ_LIMIT};
 pub use git_port::{ChangeStatus, ChangedFile, GitError, GitPort};
 pub use extension_ports::{
     McpRegistryError, McpRegistryPort, PluginRepositoryError, PluginRepositoryPort,
