@@ -5,9 +5,10 @@
 //
 // Rust to page (methods): load(key, doc, language, readonly, ifClean), show(key), drop(key),
 //   settings({ wrap, indent_guides, whitespace, scroll_past_end, tab_indent, tab_size }),
-//   flush(key), focus(), destroy().
+//   flush(key), comments(key, [{ id, from, to, text }]), focusComment(key, id), focus(), destroy().
 // Page to Rust (send): { t: "dirty", key }, { t: "change", key, s }, { t: "save", key, s },
-//   { t: "flush", key, s }, { t: "missing", key }, { t: "skipped", key }.
+//   { t: "flush", key, s }, { t: "missing", key }, { t: "skipped", key },
+//   { t: "attach", key, from, to, text }, { t: "comment", key, from, to, text, id }, { t: "comment_delete", key, id }.
 //
 // `change` is sent 2 s after the last edit, once per pause, never during an IME composition, and at
 // once when the editor loses focus. `load(..., ifClean)` does nothing and says `skipped` when an
@@ -22,7 +23,6 @@ import {
   highlightActiveLineGutter,
   highlightWhitespace,
   keymap,
-  lineNumbers,
   scrollPastEnd,
 } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -46,6 +46,7 @@ import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { yaml } from "@codemirror/lang-yaml";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
+import { lineTools } from "./lines.js";
 
 const SAVE_DELAY_MS = 2000;
 const COMPOSING_RETRY_MS = 300;
@@ -133,6 +134,9 @@ window.ForgeEditor = {
     let dirtySent = false;
     // key -> { state, scroll, readonly }
     const states = new Map();
+    // key -> the comments Rust last sent for that file
+    const commentsByKey = new Map();
+    const tools = lineTools({ send, getKey: () => key });
 
     // The extensions the settings control, kept in one compartment so a change reconfigures them all.
     function configExtensions(readonly) {
@@ -184,7 +188,7 @@ window.ForgeEditor = {
       return EditorState.create({
         doc,
         extensions: [
-          lineNumbers(),
+          ...tools.extensions,
           foldGutter(),
           history(),
           drawSelection(),
@@ -211,6 +215,7 @@ window.ForgeEditor = {
 
     const view = new EditorView({ parent: host, state: EditorState.create({ doc: "", extensions: [theme] }) });
     view.dom.style.setProperty("--forge-tab", String(settings.tab_size));
+    tools.bind(view);
 
     function saveCurrent() {
       const entry = key === null ? null : states.get(key);
@@ -251,6 +256,8 @@ window.ForgeEditor = {
           states.set(newKey, { state, scroll: 0, readonly });
           view.setState(state);
           reapply(readonly);
+          tools.bind(view);
+          tools.setComments(view, commentsByKey.get(newKey) || []);
           view.scrollDOM.scrollTop = 0;
         });
       },
@@ -267,11 +274,14 @@ window.ForgeEditor = {
           dirtySent = false;
           view.setState(entry.state);
           reapply(entry.readonly);
+          tools.bind(view);
+          tools.setComments(view, commentsByKey.get(newKey) || []);
           view.scrollDOM.scrollTop = entry.scroll;
         });
       },
       drop(oldKey) {
         states.delete(oldKey);
+        commentsByKey.delete(oldKey);
         if (key === oldKey) {
           clearTimeout(timer);
           timer = null;
@@ -293,6 +303,16 @@ window.ForgeEditor = {
           const entry = states.get(askedKey);
           send({ t: "flush", key: askedKey, s: entry ? entry.state.doc.toString() : null });
         }
+      },
+      comments(forKey, list) {
+        commentsByKey.set(forKey, list);
+        if (forKey === key) tools.setComments(view, list);
+      },
+      focusComment(forKey, id) {
+        if (forKey === key) tools.focusComment(view, id);
+      },
+      startComment(from, to) {
+        tools.startComment(view, from, to);
       },
       focus() {
         view.focus();
