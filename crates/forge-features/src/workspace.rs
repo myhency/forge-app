@@ -6,10 +6,11 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{ArchivedRef, Attachment, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{ArchivedRef, Attachment, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
 use time::OffsetDateTime;
 
+use crate::cards::{clamp_cards, Cards};
 use crate::dock::{DockState, DockStates, Panel};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::new_session::ModelChoice;
@@ -75,6 +76,9 @@ pub struct Workspace {
     archived: Signal<Vec<ArchivedRef>>,
     docks: Signal<DockStates>,
     file_requests: Signal<HashMap<LiveSessionId, String>>,
+    cards: Signal<Cards>,
+    queued_files: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
+    comment_focus: Signal<HashMap<LiveSessionId, u64>>,
     sleeping: Signal<HashSet<LiveSessionId>>,
     search_open: Signal<bool>,
     search_query: Signal<String>,
@@ -112,6 +116,9 @@ pub fn use_workspace_provider() -> Workspace {
             archived: Signal::new(Vec::new()),
             docks: Signal::new(DockStates::default()),
             file_requests: Signal::new(HashMap::new()),
+            cards: Signal::new(Cards::default()),
+            queued_files: Signal::new(HashMap::new()),
+            comment_focus: Signal::new(HashMap::new()),
             sleeping: Signal::new(HashSet::new()),
             search_open: Signal::new(false),
             search_query: Signal::new(String::new()),
@@ -516,6 +523,76 @@ impl Workspace {
     pub fn clear_file_request(&self, id: LiveSessionId) {
         let mut requests = self.file_requests;
         requests.write().remove(&id);
+    }
+
+    /// The cards (excerpts and comments) of this session that are not sent yet.
+    pub fn cards(&self, id: LiveSessionId) -> Vec<Card> {
+        self.cards.read().list(id)
+    }
+
+    pub fn add_excerpt(&self, id: LiveSessionId, path: String, range: LineRange, text: String) {
+        let mut cards = self.cards;
+        cards.write().add_excerpt(id, path, range, text);
+    }
+
+    pub fn add_comment(&self, id: LiveSessionId, path: String, range: LineRange, text: String) -> u64 {
+        let mut cards = self.cards;
+        let card_id = cards.write().add_comment(id, path, range, text);
+        card_id
+    }
+
+    pub fn update_comment(&self, id: LiveSessionId, card_id: u64, text: String) {
+        let mut cards = self.cards;
+        cards.write().update_comment(id, card_id, text);
+    }
+
+    pub fn remove_card(&self, id: LiveSessionId, card_id: u64) {
+        let mut cards = self.cards;
+        cards.write().remove(id, card_id);
+    }
+
+    /// Takes the cards for a send, each range kept inside its file (`lines_of` is a file's line count).
+    pub fn take_cards(&self, id: LiveSessionId, lines_of: impl Fn(&str) -> Option<u32>) -> Vec<Card> {
+        let mut cards = self.cards;
+        let mut taken = cards.write().take(id);
+        clamp_cards(&mut taken, lines_of);
+        taken
+    }
+
+    /// Gives cards back (a send that did not happen).
+    pub fn restore_cards(&self, id: LiveSessionId, list: Vec<Card>) {
+        let mut cards = self.cards;
+        cards.write().restore(id, list);
+    }
+
+    /// A comment card in the message box was clicked: the Files panel shows its box.
+    pub fn request_comment_focus(&self, id: LiveSessionId, card_id: u64) {
+        let mut focus = self.comment_focus;
+        focus.write().insert(id, card_id);
+    }
+
+    pub fn comment_focus(&self, id: LiveSessionId) -> Option<u64> {
+        self.comment_focus.read().get(&id).copied()
+    }
+
+    pub fn clear_comment_focus(&self, id: LiveSessionId) {
+        let mut focus = self.comment_focus;
+        focus.write().remove(&id);
+    }
+
+    /// A file the Files panel wants attached to the next message of this session.
+    pub fn queue_file(&self, id: LiveSessionId, path: PathBuf) {
+        let mut queued = self.queued_files;
+        queued.write().entry(id).or_default().push(path);
+    }
+
+    pub fn queued_files(&self, id: LiveSessionId) -> Vec<PathBuf> {
+        self.queued_files.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    pub fn clear_queued_files(&self, id: LiveSessionId) {
+        let mut queued = self.queued_files;
+        queued.write().remove(&id);
     }
 
     pub fn terminal(&self) -> Arc<dyn TerminalPort> {

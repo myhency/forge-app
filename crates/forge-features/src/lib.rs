@@ -1,4 +1,5 @@
 mod blocking;
+mod cards;
 mod arrange;
 mod attachments;
 mod command_box;
@@ -29,6 +30,7 @@ mod transcript_views;
 mod workspace;
 
 pub use arrange::{arrange, arranged_open_order, folder_group_id, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
+pub use cards::{clamp_cards, line_count, Cards};
 pub use attachments::{add_attachments, check_attachments, folder_label, kind_for_path, with_folder_hints, MAX_IMAGE_BYTES};
 pub use command_box::CommandTextArea;
 pub use editor_doc::{normalize_newlines, text_hash, Banner, TabDoc};
