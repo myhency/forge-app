@@ -102,6 +102,11 @@ impl FilesCtx {
     /// A search hit was clicked: show the file, then open the find bar on the line. The command waits
     /// behind the load in the page's queue; a tab that is not loaded yet keeps it until it shows.
     pub fn find_in_file(&self, path: &str, query: &str, options: forge_ports::SearchOptions, line: usize) {
+        // A markdown file opens rendered, which has no lines to find in: show its source.
+        if is_markdown(path) {
+            let mut source = self.source;
+            source.write().insert(path.to_string());
+        }
         self.open(path.to_string());
         self.handle.find(path, query, options, line);
     }

@@ -41,7 +41,8 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let mut tree = use_signal(FileTree::default);
     let problem = use_signal(|| None::<String>);
     let mut filter = use_signal(String::new);
-    let mut hits = use_signal(|| None::<Result<Vec<ContentHit>, String>>);
+    // The query and options a list was found with travel with it: a click uses those, not what is typed now.
+    let mut hits = use_signal(|| None::<(String, SearchOptions, Result<Vec<ContentHit>, String>)>);
     let mut options = use_signal(SearchOptions::default);
     // The tree row menu: the file and where it was asked for.
     let mut row_menu = use_signal(|| None::<(String, f64, f64)>);
@@ -86,6 +87,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             match parse_files_query(&typed) {
                 FilesQuery::Content(query) if !query.is_empty() => {
                     let query = query.to_string();
+                    let query_text = query.clone();
                     let (files, root) = (workspace.files(), cwd.clone());
                     spawn(async move {
                         tokio::time::sleep(SEARCH_DEBOUNCE).await;
@@ -94,7 +96,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                         }
                         if let Some(result) = run_blocking(move || files.search(&root, &query, search_options, SEARCH_LIMIT)).await {
                             if filter.peek().as_str() == typed && *options.peek() == search_options {
-                                hits.set(Some(result.map_err(|error| error.to_string())));
+                                hits.set(Some((query_text, search_options, result.map_err(|error| error.to_string()))));
                             }
                         }
                     });
@@ -212,9 +214,9 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         match hits() {
             _ if text.is_empty() => rsx! { div { class: "dock-note", "Type the text to search for after ?" } },
             None => rsx! { div { class: "dock-note", "Searching…" } },
-            Some(Err(message)) => rsx! { div { class: "dock-note error", "{message}" } },
-            Some(Ok(found)) if found.is_empty() => rsx! { div { class: "dock-note", "No matches" } },
-            Some(Ok(found)) => rsx! {
+            Some((_, _, Err(message))) => rsx! { div { class: "dock-note error", "{message}" } },
+            Some((_, _, Ok(found))) if found.is_empty() => rsx! { div { class: "dock-note", "No matches" } },
+            Some((found_query, found_options, Ok(found))) => rsx! {
                 div { class: "files-list",
                     for group in group_hits(&found) {
                         div { key: "{group.path}", class: "files-hit-group",
@@ -222,7 +224,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                             for hit in group.hits.iter() {
                                 {
                                     let (before, matched, after) = split_hit(hit);
-                                    let (ctx, path, line, needle, opts) = (ctx.clone(), hit.path.clone(), hit.line, text.to_string(), options());
+                                    let (ctx, path, line, needle, opts) = (ctx.clone(), hit.path.clone(), hit.line, found_query.clone(), found_options);
                                     rsx! {
                                         button {
                                             key: "{hit.line}",
