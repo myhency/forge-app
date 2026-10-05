@@ -7,10 +7,12 @@ use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{BrowserPort, FilePickerPort, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
+use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
 use time::OffsetDateTime;
 
 use crate::cards::{clamp_cards, Cards};
+use crate::editor_tabs::EditorTabs;
+use crate::files_store::{FilesStore, Restore};
 use crate::dock::{DockState, DockStates, Panel};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::new_session::ModelChoice;
@@ -77,6 +79,7 @@ pub struct Workspace {
     docks: Signal<DockStates>,
     file_requests: Signal<HashMap<LiveSessionId, String>>,
     cards: Signal<Cards>,
+    files_stores: Signal<HashMap<LiveSessionId, FilesStore>>,
     queued_files: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
     comment_focus: Signal<HashMap<LiveSessionId, u64>>,
     sleeping: Signal<HashSet<LiveSessionId>>,
@@ -117,6 +120,7 @@ pub fn use_workspace_provider() -> Workspace {
             docks: Signal::new(DockStates::default()),
             file_requests: Signal::new(HashMap::new()),
             cards: Signal::new(Cards::default()),
+            files_stores: Signal::new(HashMap::new()),
             queued_files: Signal::new(HashMap::new()),
             comment_focus: Signal::new(HashMap::new()),
             sleeping: Signal::new(HashSet::new()),
@@ -565,6 +569,38 @@ impl Workspace {
         cards.write().restore(id, list);
     }
 
+    /// The Files panel's tabs and markdown source set of this session, as kept when the panel left.
+    pub fn files_view(&self, id: LiveSessionId) -> (EditorTabs, HashSet<String>) {
+        let stores = self.files_stores.peek();
+        stores.get(&id).map(|store| (store.tabs.clone(), store.source.clone())).unwrap_or_default()
+    }
+
+    pub fn save_files_view(&self, id: LiveSessionId, tabs: EditorTabs, source: HashSet<String>) {
+        let mut stores = self.files_stores;
+        let mut write = stores.write();
+        let store = write.entry(id).or_default();
+        store.tabs = tabs;
+        store.source = source;
+    }
+
+    /// The editor reported `text` for a tab: kept as a draft when it is not what is on disk.
+    pub fn note_draft(&self, id: LiveSessionId, path: &str, text: &str, disk_hash: u64, base: FileVersion) {
+        let mut stores = self.files_stores;
+        stores.write().entry(id).or_default().note_text(path, text, disk_hash, base);
+    }
+
+    pub fn clear_draft(&self, id: LiveSessionId, path: &str) {
+        let mut stores = self.files_stores;
+        let mut write = stores.write();
+        if let Some(store) = write.get_mut(&id) {
+            store.clear_draft(path);
+        }
+    }
+
+    pub fn restore_draft(&self, id: LiveSessionId, path: &str, fresh: FileVersion) -> Restore {
+        self.files_stores.peek().get(&id).map_or(Restore::FromDisk, |store| store.restore(path, fresh))
+    }
+
     /// A comment card in the message box was clicked: the Files panel shows its box.
     pub fn request_comment_focus(&self, id: LiveSessionId, card_id: u64) {
         let mut focus = self.comment_focus;
@@ -858,6 +894,11 @@ impl Workspace {
         views.write().forget(id);
         let mut docks = self.docks;
         docks.write().forget(id);
+        // What the session left behind: the Files panel's tabs and drafts, and unsent cards.
+        let mut stores = self.files_stores;
+        stores.write().remove(&id);
+        let mut cards = self.cards;
+        cards.write().take(id);
         self.set_prevent_sleep(id, false);
         if self.active() == Active::Live(id) {
             let next = self.live.peek().last().map(|entry| entry.handle.id());
