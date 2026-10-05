@@ -447,3 +447,17 @@ test("the editor right click menu lists Go to line with its shortcut", () => {
   assert.ok(texts.some((t) => t.startsWith("Go to line") && t.includes("⌃G")), texts.join("|"));
   editor.destroy();
 });
+
+test("Go to line ignores text that only starts with a number", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\nb\nc\n", "python", false);
+  editor.openGoto();
+  for (const bad of ["3abc", "1e9", "2 3"]) {
+    const input = gotoInput(w);
+    input.value = bad;
+    enter(w, input);
+    assert.ok(gotoInput(w), `panel stays for ${JSON.stringify(bad)}`);
+    assert.equal(head(w), 1);
+  }
+  editor.destroy();
+});

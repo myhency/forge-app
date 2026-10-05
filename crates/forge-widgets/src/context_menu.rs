@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_features::{submenu_opens_left, FileAction, MenuEntry};
+use forge_features::{menu_height, submenu_opens_left, FileAction, MenuEntry};
 
 const MENU_WIDTH: f64 = 230.0;
 
@@ -39,6 +39,7 @@ pub fn ContextMenu(entries: Vec<MenuEntry>, x: f64, y: f64, on_select: EventHand
         }
     });
     let flip = submenu_opens_left(x, window_width(), MENU_WIDTH);
+    let height = menu_height(&entries);
     rsx! {
         div {
             class: "picker-backdrop",
@@ -52,7 +53,7 @@ pub fn ContextMenu(entries: Vec<MenuEntry>, x: f64, y: f64, on_select: EventHand
             class: "picker-menu context-menu",
             role: "menu",
             tabindex: "0",
-            style: "left: min({x}px, calc(100vw - {MENU_WIDTH}px)); top: min({y}px, calc(100vh - 360px));",
+            style: "left: min({x}px, calc(100vw - {MENU_WIDTH}px)); top: max(0px, min({y}px, calc(100vh - {height}px)));",
             onmounted: move |mounted| async move {
                 let _ = mounted.set_focus(true).await;
             },

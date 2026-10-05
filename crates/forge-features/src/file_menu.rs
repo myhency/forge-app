@@ -81,6 +81,23 @@ pub fn file_menu(target: MenuTarget) -> Vec<MenuEntry> {
     }
 }
 
+pub const MENU_ITEM_HEIGHT: f64 = 34.0;
+pub const MENU_DIVIDER_HEIGHT: f64 = 9.0;
+pub const MENU_PADDING: f64 = 10.0;
+
+/// About how tall a menu is, in CSS px, so it can be kept inside the window (a submenu is not counted:
+/// it opens to the side).
+pub fn menu_height(entries: &[MenuEntry]) -> f64 {
+    MENU_PADDING
+        + entries
+            .iter()
+            .map(|entry| match entry {
+                MenuEntry::Divider => MENU_DIVIDER_HEIGHT,
+                _ => MENU_ITEM_HEIGHT,
+            })
+            .sum::<f64>()
+}
+
 /// Whether a submenu opens to the left of its menu: when the window has no room for the menu and a
 /// submenu of the same width to the right of the menu's left edge.
 pub fn submenu_opens_left(menu_x: f64, window_width: f64, menu_width: f64) -> bool {
@@ -158,5 +175,15 @@ mod tests {
         // Just enough room for the menu and the submenu: stays on the right.
         assert!(!submenu_opens_left(740.0, 1200.0, 230.0));
         assert!(submenu_opens_left(741.0, 1200.0, 230.0));
+    }
+
+    #[test]
+    fn the_height_follows_the_entries_so_a_menu_can_be_kept_inside_the_window() {
+        let tree = menu_height(&file_menu(MenuTarget::Tree));
+        let tab = menu_height(&file_menu(MenuTarget::Tab { preview: true }));
+        assert!(tab < tree, "{tab} {tree}");
+        // 9 entries and 4 dividers in the tree menu.
+        assert_eq!(tree, 9.0 * MENU_ITEM_HEIGHT + 4.0 * MENU_DIVIDER_HEIGHT + MENU_PADDING);
+        assert_eq!(menu_height(&[]), MENU_PADDING);
     }
 }

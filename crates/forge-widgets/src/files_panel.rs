@@ -388,17 +388,25 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             filter.set(String::new());
             let (cwd, ctx) = (cwd.clone(), ctx.clone());
             spawn(async move {
-                for dir in FileTree::reveal_dirs(&path) {
-                    if tree.write().open_dir(&dir) {
-                        load_dir(workspace.files(), cwd.clone(), dir, tree, problem).await;
+                // The root and every folder above the file are listed again: a file Claude made after
+                // a folder was read is not in the tree yet.
+                let mut dirs = vec![String::new()];
+                dirs.extend(FileTree::reveal_dirs(&path));
+                for dir in dirs {
+                    if !dir.is_empty() {
+                        tree.write().open_dir(&dir);
                     }
+                    load_dir(workspace.files(), cwd.clone(), dir, tree, problem).await;
                 }
                 // The row with the grey band is the selected tab's: select the file's tab.
                 if ctx.tabs.peek().paths().contains(&path) {
                     ctx.select(&path);
                 }
+                // The rows are drawn after this task yields: look for the row a few frames.
                 let literal = serde_json::to_string(&path).unwrap_or_default();
-                document::eval(&format!("document.querySelector('[data-path=' + JSON.stringify({literal}) + ']')?.scrollIntoView({{ block: 'center' }});"));
+                document::eval(&format!(
+                    "(function(p){{let n=0;const go=()=>{{const el=[...document.querySelectorAll('[data-path]')].find(e=>e.dataset.path===p);if(el){{el.scrollIntoView({{block:'center'}});}}else if(n++<30){{requestAnimationFrame(go);}}}};go();}})({literal});"
+                ));
             });
         }
     };

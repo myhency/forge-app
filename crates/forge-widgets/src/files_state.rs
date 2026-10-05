@@ -29,13 +29,15 @@ pub enum Pending {
     Render,
     /// A tool call finished: re-read the file when the tab is clean and the disk changed.
     Refresh,
+    /// `Reload file` from a menu: show the disk text, or raise the conflict banner when the tab has edits.
+    Reload,
 }
 
 impl Pending {
     fn rank(self) -> u8 {
         match self {
             Pending::Refresh => 1,
-            Pending::Render => 2,
+            Pending::Render | Pending::Reload => 2,
             Pending::Save { overwrite: false } => 3,
             Pending::Save { overwrite: true } => 4,
             Pending::Close => 5,
@@ -157,11 +159,13 @@ impl FilesCtx {
                     }
                 });
             }
-            // A tab with no edits reads the disk again; one with edits gets the conflict banner (the
-            // `Refresh` question), so nothing typed is lost. A file that is not open is simply opened.
+            // See `reload_from_menu`. A tab with no editor state (an image, a binary, a failed read, or
+            // no editor bundle) has nothing typed to lose: it is read again at once.
             FileAction::Reload => {
-                if self.docs.peek().contains_key(path) {
-                    self.ask(path, Pending::Refresh);
+                if self.docs.peek().contains_key(path) && !*self.unavailable.peek() {
+                    self.ask(path, Pending::Reload);
+                } else if self.kinds.peek().contains_key(path) {
+                    self.read_and_apply(path.to_string(), false);
                 } else {
                     self.open(path.to_string());
                 }
@@ -435,6 +439,7 @@ impl FilesCtx {
                 }
             }
             Pending::Refresh => self.refresh(key, text),
+            Pending::Reload => self.reload_from_menu(key, text),
         }
     }
 
@@ -618,6 +623,20 @@ impl FilesCtx {
         }
     }
 
+    // `Reload file`: a tab with no edits shows the disk text; one with edits gets the conflict banner
+    // (Cancel shows the disk text, Overwrite saves what is typed), so nothing typed is lost.
+    fn reload_from_menu(&self, key: String, text: Option<String>) {
+        let dirty = match (&text, self.docs.peek().get(&key)) {
+            (Some(text), Some(doc)) => doc.differs(text),
+            _ => false,
+        };
+        if dirty {
+            self.with_doc(&key, |doc| doc.write_failed(&WriteError::Changed));
+        } else {
+            self.read_and_apply(key, false);
+        }
+    }
+
     fn refresh(&self, key: String, text: Option<String>) {
         let clean = match (&text, self.docs.peek().get(&key)) {
             (Some(text), Some(doc)) => doc.banner.is_none() && !doc.differs(text),
@@ -648,8 +667,9 @@ impl FilesCtx {
 mod tests {
     use super::*;
 
-    const ALL: [Pending; 5] = [
+    const ALL: [Pending; 6] = [
         Pending::Refresh,
+        Pending::Reload,
         Pending::Render,
         Pending::Save { overwrite: false },
         Pending::Close,
@@ -669,6 +689,14 @@ mod tests {
         assert!(Pending::Close.replaces(Pending::Render));
         assert!(Pending::Save { overwrite: false }.replaces(Pending::Refresh));
         assert!(Pending::SaveAndClose.replaces(Pending::Close));
+    }
+
+    #[test]
+    fn a_reload_asked_from_the_menu_replaces_a_quiet_refresh_but_not_a_close_or_a_save() {
+        assert!(Pending::Reload.replaces(Pending::Refresh));
+        assert!(!Pending::Reload.replaces(Pending::Close));
+        assert!(!Pending::Reload.replaces(Pending::Save { overwrite: false }));
+        assert!(Pending::Close.replaces(Pending::Reload));
     }
 
     #[test]

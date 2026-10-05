@@ -34,8 +34,10 @@ export function gotoTools() {
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229) {
         event.preventDefault();
-        const n = Number.parseInt(input.value.trim(), 10);
-        if (!Number.isFinite(n) || n < 1) return;
+        // Only a whole number counts: "3abc" and "1e9" are not line numbers.
+        if (!/^\s*\d+\s*$/.test(input.value)) return;
+        const n = Number.parseInt(input.value, 10);
+        if (n < 1) return;
         const line = view.state.doc.line(Math.min(n, view.state.doc.lines));
         view.dispatch({ selection: { anchor: line.from }, effects: [setGoto.of(false), EditorView.scrollIntoView(line.from, { y: "center" })] });
         view.focus();
