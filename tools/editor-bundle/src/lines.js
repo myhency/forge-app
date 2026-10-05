@@ -158,7 +158,7 @@ class CommentBox extends WidgetType {
   }
 }
 
-export function lineTools({ send, getKey }) {
+export function lineTools({ send, getKey, onGoto }) {
   let anchor = null;
 
   function lineOf(view, pos) {
@@ -253,6 +253,8 @@ export function lineTools({ send, getKey }) {
       ["Paste", async () => { try { view.dispatch(view.state.replaceSelection(await navigator.clipboard.readText())); } catch { /* no clipboard access */ } }],
       null,
       ["Select all", () => selectAll(view)],
+      null,
+      ["Go to line", () => onGoto(view), "⌃G"],
     ];
     for (const item of items) {
       if (item === null) {
@@ -264,7 +266,14 @@ export function lineTools({ send, getKey }) {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = item[0];
-      button.addEventListener("mousedown", (event) => { event.preventDefault(); menu.remove(); item[1](); view.focus(); });
+      if (item[2]) {
+        const hint = document.createElement("span");
+        hint.className = "cm-ctx-key";
+        hint.textContent = item[2];
+        button.appendChild(hint);
+      }
+      // The editor takes focus first: an item that opens a panel (Go to line) then moves the focus into it.
+      button.addEventListener("mousedown", (event) => { event.preventDefault(); menu.remove(); view.focus(); item[1](); });
       menu.appendChild(button);
     }
     menu.style.left = `${Math.min(x, window.innerWidth - 190)}px`;

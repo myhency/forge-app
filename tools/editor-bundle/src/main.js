@@ -48,6 +48,7 @@ import { rust } from "@codemirror/lang-rust";
 import { yaml } from "@codemirror/lang-yaml";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { findTools } from "./find.js";
+import { gotoTools } from "./goto.js";
 import { lineTools } from "./lines.js";
 
 const SAVE_DELAY_MS = 2000;
@@ -140,7 +141,8 @@ window.ForgeEditor = {
     const commentsByKey = new Map();
     // key -> a comment to open for editing as soon as that tab shows
     const pendingFocus = new Map();
-    const tools = lineTools({ send, getKey: () => key });
+    const go = gotoTools();
+    const tools = lineTools({ send, getKey: () => key, onGoto: (view) => go.open(view) });
     // The find bar belongs to the editor, not to a tab: its state is kept here and put back on a switch.
     let findState = null;
     const find = findTools({ remember: (state) => { findState = state; } });
@@ -199,6 +201,7 @@ window.ForgeEditor = {
         extensions: [
           ...tools.extensions,
           ...find.extensions,
+          ...go.extensions,
           foldGutter(),
           history(),
           drawSelection(),
@@ -351,6 +354,9 @@ window.ForgeEditor = {
         // A tab that is not shown (or not loaded) yet takes the request when it shows.
         if (forKey === key) find.open(view, opts);
         else pendingFind.set(forKey, opts);
+      },
+      openGoto() {
+        go.open(view);
       },
       startComment(from, to) {
         tools.startComment(view, from, to);
