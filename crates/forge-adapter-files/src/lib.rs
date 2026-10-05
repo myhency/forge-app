@@ -159,7 +159,7 @@ impl FilesPort for LocalFiles {
         if query.is_empty() || limit == 0 {
             return Ok(hits);
         }
-        let matcher = build_matcher(query, options)?;
+        let matcher = Matcher { regex: build_matcher(query, options)?, whole_word: options.whole_word };
         let mut visited = 0;
         search_dir(&root, "", &matcher, limit, &mut visited, &mut hits);
         Ok(hits)
@@ -178,7 +178,6 @@ impl FilesPort for LocalFiles {
 
 fn build_matcher(query: &str, options: SearchOptions) -> Result<Regex, FilesError> {
     let body = if options.regex { query.to_string() } else { regex::escape(query) };
-    let body = if options.whole_word { format!(r"\b(?:{body})\b") } else { body };
     RegexBuilder::new(&body).case_insensitive(!options.match_case).build().map_err(|error| {
         let text = error.to_string();
         let last = text.lines().last().unwrap_or("").trim().trim_start_matches("error:").trim();
@@ -186,34 +185,73 @@ fn build_matcher(query: &str, options: SearchOptions) -> Result<Regex, FilesErro
     })
 }
 
-// The first non-empty match of `matcher` in the trimmed line, as a window of at most
-// HIT_TEXT_CHARS chars with `…` at a cut end, and the match's char offsets inside that window.
-fn hit_of(line: &str, matcher: &Regex) -> Option<(String, usize, usize)> {
-    let line = line.trim();
-    let found = matcher.find_iter(line).find(|m| !m.is_empty())?;
-    let start = line[..found.start()].chars().count();
-    let end = start + line[found.start()..found.end()].chars().count();
-    let chars: Vec<char> = line.chars().collect();
+/// The pattern, and whether a match must stand alone as a word (judged by `first_match`, with the
+/// same rule as the find bar in the editor: no letter, digit or `_` right before or after it).
+struct Matcher {
+    regex: Regex,
+    whole_word: bool,
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+// The first non-empty match in the line (byte range). An empty match, or one that is not a whole
+// word when that is asked, is skipped and the search goes on one char later.
+fn first_match(line: &str, matcher: &Matcher) -> Option<(usize, usize)> {
+    let mut at = 0;
+    while at <= line.len() {
+        let found = matcher.regex.find_at(line, at)?;
+        let next = |from: usize| from + line[from..].chars().next().map_or(1, char::len_utf8);
+        if found.is_empty() {
+            at = next(found.end());
+            continue;
+        }
+        if matcher.whole_word {
+            let before = line[..found.start()].chars().next_back().is_some_and(is_word_char);
+            let after = line[found.end()..].chars().next().is_some_and(is_word_char);
+            if before || after {
+                at = next(found.start());
+                continue;
+            }
+        }
+        return Some((found.start(), found.end()));
+    }
+    None
+}
+
+// The first match in a line as a window of the trimmed line of at most HIT_TEXT_CHARS chars with `…`
+// at a cut end, and the match's char offsets inside that window. The pattern sees the line as
+// written (so `^` and `$` mean the line's start and end); only the text shown is trimmed.
+fn hit_of(line: &str, matcher: &Matcher) -> Option<(String, usize, usize)> {
+    let (from_byte, to_byte) = first_match(line, matcher)?;
+    let lead = line.len() - line.trim_start().len();
+    let text = line.trim();
+    let clip = |byte: usize| byte.saturating_sub(lead).min(text.len());
+    let (from_byte, to_byte) = (clip(from_byte), clip(to_byte));
+    let start = text[..from_byte].chars().count();
+    let end = start + text[from_byte..to_byte].chars().count();
+    let chars: Vec<char> = text.chars().collect();
     if chars.len() <= HIT_TEXT_CHARS {
-        return Some((line.to_string(), start, end));
+        return Some((text.to_string(), start, end));
     }
     let room = HIT_TEXT_CHARS - 2;
     let from = start.saturating_sub(HIT_LEAD_CHARS).min(chars.len() - room);
     let to = from + room;
-    let lead = usize::from(from > 0);
-    let mut text = String::new();
+    let lead_mark = usize::from(from > 0);
+    let mut shown = String::new();
     if from > 0 {
-        text.push('…');
+        shown.push('…');
     }
-    text.extend(&chars[from..to]);
+    shown.extend(&chars[from..to]);
     if to < chars.len() {
-        text.push('…');
+        shown.push('…');
     }
-    Some((text, start - from + lead, end.min(to) - from + lead))
+    Some((shown, start - from + lead_mark, end.min(to) - from + lead_mark))
 }
 
 // Depth first in name order; symlinks are not followed, so a link cannot lead out of the root.
-fn search_dir(dir: &Path, prefix: &str, matcher: &Regex, limit: usize, visited: &mut usize, hits: &mut Vec<ContentHit>) {
+fn search_dir(dir: &Path, prefix: &str, matcher: &Matcher, limit: usize, visited: &mut usize, hits: &mut Vec<ContentHit>) {
     let Ok(read) = fs::read_dir(dir) else { return };
     let mut entries: Vec<_> = read.filter_map(Result::ok).collect();
     entries.sort_by_key(|entry| entry.file_name());
@@ -580,6 +618,36 @@ mod tests {
         let hit = &hits(&dir, "hello", SearchOptions::default())[0];
         let matched: String = hit.text.chars().skip(hit.start).take(hit.end - hit.start).collect();
         assert_eq!(matched, "hello");
+    }
+
+    #[test]
+    fn line_anchors_see_the_line_as_written_not_trimmed() {
+        let dir = one_file("fn a;\n    fn b;\n  x\n");
+        let regex = SearchOptions { regex: true, ..SearchOptions::default() };
+        let found = hits(&dir, "^fn", regex);
+        assert_eq!(found.iter().map(|h| h.line).collect::<Vec<_>>(), vec![1]);
+        let found = hits(&dir, "^\\s+fn", regex);
+        assert_eq!(found.iter().map(|h| h.line).collect::<Vec<_>>(), vec![2]);
+        // The text shown is trimmed and the offsets follow it.
+        assert_eq!(found[0].text, "fn b;");
+        assert_eq!((found[0].start, found[0].end), (0, 2));
+        let found = hits(&dir, ";$", regex);
+        assert_eq!(found.iter().map(|h| h.line).collect::<Vec<_>>(), vec![1, 2]);
+    }
+
+    #[test]
+    fn whole_word_works_when_the_query_starts_or_ends_with_a_symbol() {
+        let whole = SearchOptions { whole_word: true, ..SearchOptions::default() };
+        let dir = one_file("x foo() y\n");
+        assert_eq!(hits(&dir, "foo()", whole).len(), 1);
+        let dir = one_file(" -x / a-x\n");
+        let found = hits(&dir, "-x", whole);
+        assert_eq!(found.len(), 1);
+        // The first one (after a space) is the match, not the one after the letter `a`.
+        assert_eq!((found[0].start, found[0].end), (0, 2));
+        let dir = one_file("foobar foo\n");
+        let found = hits(&dir, "foo", whole);
+        assert_eq!((found[0].start, found[0].end), (7, 10));
     }
 
     #[test]
