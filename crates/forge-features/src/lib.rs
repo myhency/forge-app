@@ -11,6 +11,7 @@ mod composer_state;
 mod dock;
 mod file_menu;
 mod file_tree;
+mod files_store;
 mod filter_menu;
 mod folder_choice;
 mod hit_list;
@@ -34,6 +35,7 @@ mod workspace;
 
 pub use arrange::{arrange, arranged_open_order, folder_group_id, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use file_menu::{file_menu, menu_height, submenu_opens_left, FileAction, MenuEntry, MenuTarget};
+pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
 pub use attachments::{add_attachments, check_attachments, folder_label, kind_for_path, with_folder_hints, MAX_IMAGE_BYTES};

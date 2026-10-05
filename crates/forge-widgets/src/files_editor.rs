@@ -38,8 +38,9 @@ pub enum FromPage {
 }
 
 /// `if_clean`: the page does nothing (and says `skipped`) when an edit of this tab is waiting.
-pub fn load_command(key: &str, doc: &str, language: &str, readonly: bool, if_clean: bool) -> Value {
-    json!({ "t": "load", "key": key, "doc": doc, "language": language, "readonly": readonly, "if_clean": if_clean })
+/// `dirty`: the text is not what is on disk (a draft that came back), so the page treats it as edited.
+pub fn load_command(key: &str, doc: &str, language: &str, readonly: bool, if_clean: bool, dirty: bool) -> Value {
+    json!({ "t": "load", "key": key, "doc": doc, "language": language, "readonly": readonly, "if_clean": if_clean, "dirty": dirty })
 }
 
 pub fn show_command(key: &str) -> Value {
@@ -121,8 +122,8 @@ impl EditorHandle {
         let _ = self.tx.send(command);
     }
 
-    pub fn load(&self, key: &str, doc: &str, language: &str, readonly: bool, if_clean: bool) {
-        self.send(load_command(key, doc, language, readonly, if_clean));
+    pub fn load(&self, key: &str, doc: &str, language: &str, readonly: bool, if_clean: bool, dirty: bool) {
+        self.send(load_command(key, doc, language, readonly, if_clean, dirty));
     }
 
     pub fn show(&self, key: &str) {
@@ -182,7 +183,7 @@ if (!window.ForgeEditor || !host) {
     dioxus.send({ t: "ready" });
     while (true) {
         const m = await dioxus.recv();
-        if (m.t === "load") editor.load(m.key, m.doc, m.language, m.readonly, m.if_clean);
+        if (m.t === "load") editor.load(m.key, m.doc, m.language, m.readonly, m.if_clean, m.dirty);
         else if (m.t === "show") editor.show(m.key);
         else if (m.t === "drop") editor.drop(m.key);
         else if (m.t === "settings") editor.settings(m.settings);
@@ -304,6 +305,12 @@ mod tests {
     }
 
     #[test]
+    fn a_load_can_say_the_text_is_not_what_is_on_disk() {
+        assert_eq!(load_command("a.py", "x", "python", false, false, true)["dirty"], serde_json::json!(true));
+        assert_eq!(load_command("a.py", "x", "python", false, false, false)["dirty"], serde_json::json!(false));
+    }
+
+    #[test]
     fn a_path_with_quotes_and_hangul_survives_the_json() {
         let key = "한글 \"폴더\"/a.py";
         let message = serde_json::to_string(&serde_json::json!({ "t": "dirty", "key": key })).unwrap();
@@ -313,10 +320,10 @@ mod tests {
     #[test]
     fn the_commands_to_the_page_carry_what_the_bridge_reads() {
         assert_eq!(
-            load_command("a.py", "x = 1\n", "python", true, false),
-            serde_json::json!({ "t": "load", "key": "a.py", "doc": "x = 1\n", "language": "python", "readonly": true, "if_clean": false })
+            load_command("a.py", "x = 1\n", "python", true, false, false),
+            serde_json::json!({ "t": "load", "key": "a.py", "doc": "x = 1\n", "language": "python", "readonly": true, "if_clean": false, "dirty": false })
         );
-        assert_eq!(load_command("a.py", "", "", false, true)["if_clean"], serde_json::json!(true));
+        assert_eq!(load_command("a.py", "", "", false, true, false)["if_clean"], serde_json::json!(true));
         assert_eq!(show_command("a.py"), serde_json::json!({ "t": "show", "key": "a.py" }));
         assert_eq!(forget_command("a.py"), serde_json::json!({ "t": "drop", "key": "a.py" }));
         assert_eq!(flush_command("a.py"), serde_json::json!({ "t": "flush", "key": "a.py" }));

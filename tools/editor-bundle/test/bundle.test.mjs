@@ -461,3 +461,22 @@ test("Go to line ignores text that only starts with a number", () => {
   }
   editor.destroy();
 });
+
+test("a tab loaded as edited says dirty once, keeps its text and its change follows", async () => {
+  const { w, editor, sent } = boot();
+  editor.load("a.py", "typed text\n", "python", false, false, true);
+  assert.deepEqual(plain(sent.filter((m) => m.t === "dirty")), [{ t: "dirty", key: "a.py" }]);
+  assert.match(w.document.querySelector(".cm-content").textContent, /typed text/);
+  await wait(2300);
+  const change = plain(sent).find((m) => m.t === "change");
+  assert.ok(change, "the 2 s change follows so auto save can write it");
+  assert.equal(change.s, "typed text\n");
+  editor.destroy();
+});
+
+test("a read only tab loaded as edited does not say dirty", () => {
+  const { editor, sent } = boot();
+  editor.load("a.py", "x\n", "python", true, false, true);
+  assert.deepEqual(plain(sent).filter((m) => m.t === "dirty"), []);
+  editor.destroy();
+});
