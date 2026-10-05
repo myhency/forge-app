@@ -30,8 +30,10 @@ pub enum SessionUpdate {
 }
 
 pub fn push_user_message(session: &mut Session, text: String, attachments: Vec<Attachment>) {
-    let mut message = Message::user(text);
+    let (cards, rest) = forge_domain::split_cards(&text);
+    let mut message = Message::user(rest);
     message.attachments = attachments;
+    message.cards = cards;
     session.messages.push(message);
 }
 
@@ -379,6 +381,21 @@ mod tests {
         assert_eq!(session.messages.len(), 1);
         assert_eq!(session.messages[0].role, MessageRole::User);
         assert_eq!(session.messages[0].text(), "hello");
+    }
+
+    #[test]
+    fn push_user_message_turns_card_blocks_into_cards() {
+        let mut session = empty_session();
+        let card = forge_domain::Card {
+            id: 0,
+            kind: forge_domain::CardKind::Comment,
+            path: "/p/a.py".into(),
+            range: forge_domain::LineRange::new(3, 3),
+            text: "why".into(),
+        };
+        push_user_message(&mut session, forge_domain::with_cards(&[card.clone()], "hi"), Vec::new());
+        assert_eq!(session.messages[0].text(), "hi");
+        assert_eq!(session.messages[0].cards, vec![card]);
     }
 
     #[test]
