@@ -688,3 +688,13 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .cm-find-count { color: var(--fg-muted); white-space: nowrap; min-width: 4.5em; text-align: right; }
 .cm-find-match { background-color: rgba(250, 204, 21, .35); }
 .cm-find-current { outline: 2px solid #22a45d; border-radius: 2px; }
+
+/* Content search: toggles, grouped hits */
+.files-search-toggles { display: flex; gap: 2px; align-items: center; margin-top: 4px; }
+.files-toggle { border: none; background: transparent; color: var(--fg-muted); padding: 1px 6px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.files-toggle:hover { background: var(--bg-hover); }
+.files-toggle.on { background: var(--accent-soft); color: var(--fg); }
+.files-hit-group { margin-bottom: 6px; }
+.files-hit-file { padding: 2px 6px; font-size: 12px; font-weight: 600; color: var(--fg); }
+.files-hit-line { flex: none; min-width: 3ch; text-align: right; color: var(--fg-muted); }
+.files-hit-text mark { background: var(--accent-soft); color: inherit; border-radius: 2px; }

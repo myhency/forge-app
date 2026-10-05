@@ -99,6 +99,13 @@ impl FilesCtx {
         }
     }
 
+    /// A search hit was clicked: show the file, then open the find bar on the line. The command waits
+    /// behind the load in the page's queue; a tab that is not loaded yet keeps it until it shows.
+    pub fn find_in_file(&self, path: &str, query: &str, options: forge_ports::SearchOptions, line: usize) {
+        self.open(path.to_string());
+        self.handle.find(path, query, options, line);
+    }
+
     /// `Attach as context` on a tree row or a tab: the file becomes a chip in the message box.
     pub fn attach_file(&self, path: &str) {
         self.workspace.queue_file(self.id, absolute(&self.cwd, path));
