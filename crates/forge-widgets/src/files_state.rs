@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::LineRange;
 use forge_entities::{code_html, is_markdown, language_of, render_markdown};
-use forge_features::{normalize_newlines, run_blocking, EditorTabs, FileAction, TabDoc, Workspace};
+use forge_features::{normalize_newlines, run_blocking, EditorTabs, FileAction, Restore, TabDoc, Workspace};
 use forge_ports::{FileContent, FilesError, FilesPort, WriteError};
 
 use crate::files_editor::{editor_language, EditorHandle, FromPage};
@@ -249,9 +249,19 @@ impl FilesCtx {
             Ok(FileContent::Text { text, version, lossy }) => {
                 let kind = TabKind::Text { lossy, anyway: false };
                 let read_only = kind.read_only();
+                // A draft kept while the panel was away comes back (never into a read only tab).
+                let restore = if read_only { Restore::FromDisk } else { self.workspace.restore_draft(self.id, &path, version) };
                 docs.write().insert(path.clone(), TabDoc::new(version, &text));
                 kinds.write().insert(path.clone(), kind);
-                self.take_text(&path, &normalize_newlines(&text), read_only, quiet);
+                let (shown, dirty) = match restore {
+                    Restore::FromDisk => (normalize_newlines(&text), false),
+                    Restore::Draft(draft) => (draft, true),
+                    Restore::DraftWithConflict(draft) => {
+                        self.with_doc(&path, |doc| doc.write_failed(&WriteError::Changed));
+                        (draft, true)
+                    }
+                };
+                self.take_text(&path, &shown, read_only, quiet, dirty);
             }
             Ok(other) => {
                 docs.write().remove(&path);
@@ -265,7 +275,7 @@ impl FilesCtx {
 
     // The text of a file that was just read, line ends as `\n`: markdown is rendered, and the editor
     // takes it when it is the selected tab's view.
-    fn take_text(&self, path: &str, text: &str, read_only: bool, quiet: bool) {
+    fn take_text(&self, path: &str, text: &str, read_only: bool, quiet: bool, dirty: bool) {
         if is_markdown(path) {
             let mut markdown = self.markdown;
             markdown.write().insert(path.to_string(), render_markdown(text));
@@ -278,7 +288,7 @@ impl FilesCtx {
             return;
         }
         if self.selected().as_deref() == Some(path) && self.editor_visible(path) {
-            self.handle.load(path, text, editor_language(path), read_only, quiet, false);
+            self.handle.load(path, text, editor_language(path), read_only, quiet, dirty);
         }
     }
 
@@ -295,7 +305,7 @@ impl FilesCtx {
                     let read_only = kind.read_only();
                     docs.write().insert(path.clone(), TabDoc::new(version, &text));
                     kinds.write().insert(path.clone(), kind);
-                    ctx.take_text(&path, &normalize_newlines(&text), read_only, false);
+                    ctx.take_text(&path, &normalize_newlines(&text), read_only, false, false);
                 }
                 Ok(other) => {
                     kinds.write().insert(path, kind_of(other));
@@ -309,6 +319,16 @@ impl FilesCtx {
 
     pub fn reveal(&self, path: &str) {
         self.workspace.reveal(&self.cwd.join(path));
+    }
+
+    // What the editor holds for a tab is kept as a draft when it differs from the disk text, so it
+    // survives the panel (and the page that holds it) going away.
+    fn note_draft(&self, key: &str, text: &str) {
+        if self.kinds.peek().get(key).is_some_and(TabKind::read_only) {
+            return;
+        }
+        let Some((hash, base)) = self.docs.peek().get(key).map(|doc| (doc.clean, doc.loaded)) else { return };
+        self.workspace.note_draft(self.id, key, text, hash, base);
     }
 
     /// A message from the page.
@@ -327,9 +347,20 @@ impl FilesCtx {
                 }
             }
             FromPage::Dirty { key } => self.dirty(key),
-            FromPage::Change { key, s } => self.change(key, s, false),
-            FromPage::Save { key, s } => self.change(key, s, true),
-            FromPage::Flush { key, s } => self.flushed(key, s),
+            FromPage::Change { key, s } => {
+                self.note_draft(&key, &s);
+                self.change(key, s, false);
+            }
+            FromPage::Save { key, s } => {
+                self.note_draft(&key, &s);
+                self.change(key, s, true);
+            }
+            FromPage::Flush { key, s } => {
+                if let Some(text) = &s {
+                    self.note_draft(&key, text);
+                }
+                self.flushed(key, s);
+            }
             // The page never loaded this tab (it was not the visible one when its file was read).
             FromPage::Missing { key } => self.read_and_apply(key, false),
             // A quiet refresh found an edit waiting: the disk changed and so did the editor.
@@ -402,6 +433,10 @@ impl FilesCtx {
                     Err(error) => doc.write_failed(&error),
                 }
             }
+            if saved {
+                // What was typed is on disk now: no draft is needed for it.
+                ctx.workspace.clear_draft(ctx.id, &key);
+            }
             if !close {
                 return;
             }
@@ -463,6 +498,8 @@ impl FilesCtx {
 
     /// The banner's Cancel: drop the edits and show the file on disk.
     pub fn reload(&self, key: String) {
+        // The edits are dropped on purpose: so is their draft.
+        self.workspace.clear_draft(self.id, &key);
         self.read_and_apply(key, false);
     }
 
@@ -543,6 +580,7 @@ impl FilesCtx {
     // Everything remembered about a tab, here and in the page.
     fn forget(&self, path: &str) {
         self.handle.forget(path);
+        self.workspace.clear_draft(self.id, path);
         let (mut kinds, mut docs, mut markdown, mut source, mut pending, mut fallback) =
             (self.kinds, self.docs, self.markdown, self.source, self.pending, self.fallback);
         kinds.write().remove(path);

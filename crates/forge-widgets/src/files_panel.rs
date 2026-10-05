@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::CardKind;
 use forge_entities::is_markdown;
-use forge_features::{file_menu, group_hits, parse_files_query, split_hit, run_blocking, use_workspace, Banner, EditorTabs, FileAction, FileTree, MenuTarget, FilesQuery, Panel};
+use forge_features::{file_menu, group_hits, parse_files_query, split_hit, run_blocking, use_workspace, Banner, FileAction, FileTree, MenuTarget, FilesQuery, Panel};
 use forge_ports::{ContentHit, FilesPort, SearchOptions};
 
 use crate::context_menu::ContextMenu;
@@ -48,17 +48,19 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     // The right click menu: what it is for, the file and where it was asked for.
     let mut menu = use_signal(|| None::<(MenuTarget, String, f64, f64)>);
 
+    // What the panel kept in the workspace while it was away.
+    let (stored_tabs, stored_source) = use_hook(|| workspace.files_view(id));
     let handle = use_editor_channel();
     let ctx = FilesCtx {
         workspace,
         id,
         cwd: cwd.clone(),
         handle: handle.clone(),
-        tabs: use_signal(EditorTabs::default),
+        tabs: use_signal(|| stored_tabs.clone()),
         kinds: use_signal(HashMap::new),
         docs: use_signal(HashMap::new),
         markdown: use_signal(HashMap::new),
-        source: use_signal(HashSet::new),
+        source: use_signal(|| stored_source.clone()),
         pending: use_signal(HashMap::new),
         confirm: use_signal(|| None),
         queue: use_signal(Vec::new),
@@ -67,6 +69,21 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         ready: use_signal(|| false),
         unavailable: use_signal(|| false),
     };
+    // The tabs and the markdown source set go to the store whenever they change, so they outlive the panel.
+    {
+        let (tabs, source) = (ctx.tabs, ctx.source);
+        use_effect(move || {
+            workspace.save_files_view(id, tabs.read().clone(), source.read().clone());
+        });
+    }
+    // A panel that comes back shows the selected tab again (the others are read when shown).
+    {
+        let ctx = ctx.clone();
+        use_future(move || {
+            let ctx = ctx.clone();
+            async move { ctx.show_selected() }
+        });
+    }
     let host_id = format!("forge-editor-{}", id.0);
     let on_event = {
         let ctx = ctx.clone();
