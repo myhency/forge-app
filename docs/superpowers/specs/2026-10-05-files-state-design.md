@@ -33,3 +33,11 @@ Store rules (set, clear, same text, base version equal / different, close drops 
 ## Out of scope
 
 Keeping tabs across an app restart; undo history; scroll position.
+
+## As built (2026-10-05)
+
+Built on branch `plan-25D` (from `master`), executed inline. 1097 Rust tests and 37 jsdom bundle tests pass. As designed; the session's closing also drops its unsent cards (a leak 25B left).
+
+**Checked in the real window (2026-10-05, harness, auto save turned off from the Files `⋮` menu).** A typed character (Korean input method: `ㅏ` after `alpha`) in `b.txt` with the disk text unchanged: closing the Files panel with `×` and opening it again from the session `⋮` menu brings the tab back (upright, a kept tab) with the typed text; the same after switching to another session and back; with the file changed from a shell meanwhile, the reopened tab keeps the typed text and shows the conflict banner (`Cancel`, `Overwrite`); `Cancel` drops the text and its draft (the disk text shows, and shows again after closing and reopening the panel); with the file deleted from a shell the reopened tab shows "No such file or directory (os error 2)" and, after the file is created again and the panel reopened, the draft comes back with the conflict banner.
+
+Not checked in the real window: expanding another panel and returning (the same unmount and mount as closing the panel), a markdown file shown as source across a reopen, auto save on with a stale draft (covered by the store test of note then clear), several tabs with drafts at once, a CRLF file, closing a tab with `×` and `Don't save`.
