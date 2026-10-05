@@ -213,10 +213,7 @@ fn FooterView(footer: Footer) -> Element {
                 class: "icon-button",
                 r#type: "button",
                 title: "Copy",
-                onclick: move |_| {
-                    let literal = serde_json::to_string(&text).unwrap_or_default();
-                    document::eval(&format!("navigator.clipboard.writeText({literal});"));
-                },
+                onclick: move |_| crate::clipboard::copy_text(&text),
                 "⧉"
             }
             if !time.is_empty() {

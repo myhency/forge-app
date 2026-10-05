@@ -7,9 +7,10 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::CardKind;
 use forge_entities::is_markdown;
-use forge_features::{group_hits, parse_files_query, split_hit, run_blocking, use_workspace, Banner, EditorTabs, FileTree, FilesQuery, Panel};
+use forge_features::{file_menu, group_hits, parse_files_query, split_hit, run_blocking, use_workspace, Banner, EditorTabs, FileAction, FileTree, MenuTarget, FilesQuery, Panel};
 use forge_ports::{ContentHit, FilesPort, SearchOptions};
 
+use crate::context_menu::ContextMenu;
 use crate::files_editor::{use_editor_channel, use_editor_driver, FromPage};
 use crate::files_kinds::{FileKindView, TabKind};
 use crate::files_menu::FilesMenu;
@@ -44,8 +45,8 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     // The query and options a list was found with travel with it: a click uses those, not what is typed now.
     let mut hits = use_signal(|| None::<(String, SearchOptions, Result<Vec<ContentHit>, String>)>);
     let mut options = use_signal(SearchOptions::default);
-    // The tree row menu: the file and where it was asked for.
-    let mut row_menu = use_signal(|| None::<(String, f64, f64)>);
+    // The right click menu: what it is for, the file and where it was asked for.
+    let mut menu = use_signal(|| None::<(MenuTarget, String, f64, f64)>);
 
     let handle = use_editor_channel();
     let ctx = FilesCtx {
@@ -268,13 +269,14 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                                         class: if is_selected { "files-row selected" } else { "files-row" },
                                         r#type: "button",
                                         style: "{indent}",
+                                        "data-path": "{row.path}",
                                         oncontextmenu: {
                                             let path = path.clone();
                                             move |event: MouseEvent| {
                                                 event.prevent_default();
                                                 if !is_dir {
                                                     let point = event.client_coordinates();
-                                                    row_menu.set(Some((path.clone(), point.x, point.y)));
+                                                    menu.set(Some((MenuTarget::Tree, path.clone(), point.x, point.y)));
                                                 }
                                             }
                                         },
@@ -377,29 +379,47 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         }
     };
 
-    let row_menu_view = match row_menu() {
-        Some((path, x, y)) => {
-            let ctx = ctx.clone();
-            rsx! {
-                div {
-                    class: "picker-backdrop",
-                    onclick: move |_| row_menu.set(None),
-                    oncontextmenu: move |event: MouseEvent| {
-                        event.prevent_default();
-                        row_menu.set(None);
-                    },
-                }
-                div { class: "picker-menu files-tab-menu", role: "menu", style: "left: min({x}px, calc(100vw - 210px)); top: {y}px;",
-                    button {
-                        class: "picker-item",
-                        r#type: "button",
-                        role: "menuitem",
-                        onclick: move |_| {
-                            ctx.attach_file(&path);
-                            row_menu.set(None);
-                        },
-                        "Attach as context"
+    // `Show in file tree`: the folders above the file are read and opened one after the other, the
+    // filter is cleared, the tree is turned on, and the row is scrolled into view.
+    let show_in_tree = {
+        let (cwd, ctx) = (cwd.clone(), ctx.clone());
+        move |path: String| {
+            workspace.update_editor_prefs(|prefs| prefs.tree = true);
+            filter.set(String::new());
+            let (cwd, ctx) = (cwd.clone(), ctx.clone());
+            spawn(async move {
+                for dir in FileTree::reveal_dirs(&path) {
+                    if tree.write().open_dir(&dir) {
+                        load_dir(workspace.files(), cwd.clone(), dir, tree, problem).await;
                     }
+                }
+                // The row with the grey band is the selected tab's: select the file's tab.
+                if ctx.tabs.peek().paths().contains(&path) {
+                    ctx.select(&path);
+                }
+                let literal = serde_json::to_string(&path).unwrap_or_default();
+                document::eval(&format!("document.querySelector('[data-path=' + JSON.stringify({literal}) + ']')?.scrollIntoView({{ block: 'center' }});"));
+            });
+        }
+    };
+
+    let menu_view = match menu() {
+        Some((target, path, x, y)) => {
+            let (ctx, run_path, mut show_in_tree) = (ctx.clone(), path.clone(), show_in_tree.clone());
+            rsx! {
+                ContextMenu {
+                    entries: file_menu(target),
+                    x,
+                    y,
+                    on_close: move |_| menu.set(None),
+                    on_select: move |action: FileAction| {
+                        menu.set(None);
+                        if action == FileAction::ShowInTree {
+                            show_in_tree(run_path.clone());
+                        } else {
+                            ctx.run_action(action, &run_path);
+                        }
+                    },
                 }
             }
         }
@@ -408,7 +428,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
 
     rsx! {
         PanelFrame { id, panel: Panel::Files, tools,
-            {row_menu_view}
+            {menu_view}
             div { class: "files-filter",
                 input {
                     class: "files-filter-input",
@@ -472,21 +492,8 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                             let ctx = ctx.clone();
                             move |(from, to): (String, String)| ctx.reorder(&from, &to)
                         },
-                        on_keep: {
-                            let ctx = ctx.clone();
-                            move |path: String| ctx.keep(&path)
-                        },
-                        on_close_others: {
-                            let ctx = ctx.clone();
-                            move |path: String| ctx.close_others(path)
-                        },
-                        on_close_all: {
-                            let ctx = ctx.clone();
-                            move |_| ctx.close_all()
-                        },
-                        on_attach: {
-                            let ctx = ctx.clone();
-                            move |path: String| ctx.attach_file(&path)
+                        on_menu: move |(path, preview, x, y): (String, bool, f64, f64)| {
+                            menu.set(Some((MenuTarget::Tab { preview }, path, x, y)));
                         },
                     }
                     {banner_view}

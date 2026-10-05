@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::LineRange;
 use forge_entities::{code_html, is_markdown, language_of, render_markdown};
-use forge_features::{normalize_newlines, run_blocking, EditorTabs, TabDoc, Workspace};
+use forge_features::{normalize_newlines, run_blocking, EditorTabs, FileAction, TabDoc, Workspace};
 use forge_ports::{FileContent, FilesError, FilesPort, WriteError};
 
 use crate::files_editor::{editor_language, EditorHandle, FromPage};
@@ -53,6 +53,25 @@ impl Pending {
 /// The absolute path a tree or tab path stands for.
 pub fn absolute(cwd: &std::path::Path, path: &str) -> PathBuf {
     cwd.join(path)
+}
+
+/// The text a copy action puts on the clipboard, `None` for any other action.
+pub fn copy_text_for(action: FileAction, cwd: &std::path::Path, path: &str) -> Option<String> {
+    match action {
+        FileAction::CopyAbsolute => Some(absolute(cwd, path).to_string_lossy().to_string()),
+        FileAction::CopyRelative => Some(path.to_string()),
+        FileAction::CopyName => Some(path.rsplit('/').next().unwrap_or(path).to_string()),
+        _ => None,
+    }
+}
+
+/// The text of a file for `Copy file contents`, or a message for the person.
+pub fn contents_to_copy(content: &FileContent) -> Result<String, String> {
+    match content {
+        FileContent::Text { text, .. } => Ok(text.clone()),
+        FileContent::TooLarge => Err("The file is too large to copy".to_string()),
+        FileContent::Binary | FileContent::Image { .. } => Err("Only a text file can be copied".to_string()),
+    }
 }
 
 /// Everything the panel does, in one place. It is `Clone` (signals are `Copy`), so event handlers
@@ -109,6 +128,50 @@ impl FilesCtx {
         }
         self.open(path.to_string());
         self.handle.find(path, query, options, line);
+    }
+
+    /// A menu item of the tree row or tab menu, for `path` (relative to the session folder).
+    /// `ShowInTree` is the panel's: it owns the tree.
+    pub fn run_action(&self, action: FileAction, path: &str) {
+        if let Some(text) = copy_text_for(action, &self.cwd, path) {
+            forge_entities::copy_text(&text);
+            return;
+        }
+        match action {
+            FileAction::Attach => self.attach_file(path),
+            FileAction::OpenVsCode => self.workspace.open_with_app(&absolute(&self.cwd, path), Some("Visual Studio Code")),
+            FileAction::OpenDefault => self.workspace.open_with_app(&absolute(&self.cwd, path), None),
+            FileAction::Reveal => self.reveal(path),
+            FileAction::FindInFile => self.find_in_file(path, "", forge_ports::SearchOptions::default(), 1),
+            FileAction::CopyContents => {
+                let (ctx, root, relative) = (self.clone(), self.cwd.clone(), path.to_string());
+                let files = self.files();
+                spawn(async move {
+                    match run_blocking(move || files.read(&root, &relative)).await {
+                        Some(Ok(content)) => match contents_to_copy(&content) {
+                            Ok(text) => forge_entities::copy_text(&text),
+                            Err(message) => ctx.workspace.report(message),
+                        },
+                        Some(Err(error)) => ctx.workspace.report(error.to_string()),
+                        None => {}
+                    }
+                });
+            }
+            // A tab with no edits reads the disk again; one with edits gets the conflict banner (the
+            // `Refresh` question), so nothing typed is lost. A file that is not open is simply opened.
+            FileAction::Reload => {
+                if self.docs.peek().contains_key(path) {
+                    self.ask(path, Pending::Refresh);
+                } else {
+                    self.open(path.to_string());
+                }
+            }
+            FileAction::Close => self.close(path.to_string()),
+            FileAction::KeepOpen => self.keep(path),
+            FileAction::CloseOthers => self.close_others(path.to_string()),
+            FileAction::CloseAll => self.close_all(),
+            FileAction::CopyAbsolute | FileAction::CopyRelative | FileAction::CopyName | FileAction::ShowInTree => {}
+        }
     }
 
     /// `Attach as context` on a tree row or a tab: the file becomes a chip in the message box.
@@ -623,5 +686,24 @@ mod tests {
     #[test]
     fn a_tree_or_tab_path_is_taken_from_the_session_folder() {
         assert_eq!(absolute(std::path::Path::new("/p"), "src/a.py"), PathBuf::from("/p/src/a.py"));
+    }
+
+    #[test]
+    fn the_names_the_copy_actions_put_on_the_clipboard() {
+        let cwd = std::path::Path::new("/p");
+        assert_eq!(copy_text_for(FileAction::CopyAbsolute, cwd, "src/a b.py"), Some("/p/src/a b.py".to_string()));
+        assert_eq!(copy_text_for(FileAction::CopyRelative, cwd, "src/a b.py"), Some("src/a b.py".to_string()));
+        assert_eq!(copy_text_for(FileAction::CopyName, cwd, "src/a b.py"), Some("a b.py".to_string()));
+        assert_eq!(copy_text_for(FileAction::Close, cwd, "src/a b.py"), None);
+    }
+
+    #[test]
+    fn only_a_text_file_can_be_copied_as_contents() {
+        use forge_ports::{FileContent, FileVersion};
+        let version = FileVersion { modified_ns: 1, len: 3 };
+        assert_eq!(contents_to_copy(&FileContent::Text { text: "abc".into(), version, lossy: false }), Ok("abc".to_string()));
+        assert!(contents_to_copy(&FileContent::Binary).is_err());
+        assert!(contents_to_copy(&FileContent::TooLarge).is_err());
+        assert!(contents_to_copy(&FileContent::Image { bytes: vec![1], mime: "image/png".into() }).is_err());
     }
 }
