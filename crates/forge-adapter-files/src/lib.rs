@@ -13,6 +13,8 @@ const SEARCH_FILE_LIMIT: usize = 20_000;
 // A search reads no file larger than this, so the larger read limit does not slow it.
 const SEARCH_FILE_BYTES: u64 = 1024 * 1024;
 const HIT_TEXT_CHARS: usize = 200;
+// A long line keeps this much text before the match, so the match shows in a narrow list.
+const HIT_LEAD_CHARS: usize = 24;
 const IMAGE_TYPES: [(&str, &str); 8] = [
     ("png", "image/png"),
     ("jpg", "image/jpeg"),
@@ -196,8 +198,7 @@ fn hit_of(line: &str, matcher: &Regex) -> Option<(String, usize, usize)> {
         return Some((line.to_string(), start, end));
     }
     let room = HIT_TEXT_CHARS - 2;
-    let length = (end - start).min(room);
-    let from = start.saturating_sub((room - length) / 2).min(chars.len() - room);
+    let from = start.saturating_sub(HIT_LEAD_CHARS).min(chars.len() - room);
     let to = from + room;
     let lead = usize::from(from > 0);
     let mut text = String::new();
@@ -556,6 +557,13 @@ mod tests {
         assert!(hit.text.starts_with('…') && hit.text.ends_with('…'));
         let matched: String = hit.text.chars().skip(hit.start).take(hit.end - hit.start).collect();
         assert_eq!(matched, "needle");
+    }
+
+    #[test]
+    fn a_hit_keeps_only_a_little_text_before_the_match_so_it_shows_in_a_narrow_list() {
+        let dir = one_file(&format!("{} needle {}\n", "x".repeat(5000), "y".repeat(5000)));
+        let hit = &hits(&dir, "needle", SearchOptions::default())[0];
+        assert!(hit.start <= 26, "{}", hit.start);
     }
 
     #[test]

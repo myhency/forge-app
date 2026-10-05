@@ -497,9 +497,9 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .files-row:hover, .files-hit:hover, .files-row.selected { background: var(--bg-hover); }
 .files-row { -webkit-user-select: none; user-select: none; }
 .files-mark { flex: none; width: 1em; color: var(--fg-muted); }
-.files-hit { flex-direction: column; align-items: flex-start; gap: 0; }
+.files-hit { flex-direction: row; align-items: baseline; gap: 6px; }
 .files-hit-path { color: var(--fg-muted); font-size: 11px; }
-.files-hit-text { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.files-hit-text { font-family: var(--mono); min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
 .file-viewer { display: flex; font-family: var(--mono); font-size: 12px; line-height: 1.5; min-width: max-content; }
 .file-gutter { flex: none; margin: 0; padding: 0 8px 0 0; text-align: right; color: var(--fg-muted); user-select: none; }
 .file-code { margin: 0; white-space: pre; }
