@@ -14,18 +14,19 @@ const setFind = StateEffect.define();
 
 export function findMatches(text, { query, match_case, whole_word, regex }) {
   if (query === "") return { matches: [], invalid: false };
-  let body = regex ? query : query.replace(/[.*+?^${}()|[\]\\\/-]/g, "\\$&");
+  let body = regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   if (whole_word) body = `${WORD_BEFORE}(?:${body})${WORD_AFTER}`;
   let re;
   try {
-    re = new RegExp(body, match_case ? "gu" : "giu");
+    re = new RegExp(body, match_case ? "gmu" : "gimu");
   } catch {
     return { matches: [], invalid: true };
   }
   const matches = [];
   for (let m = re.exec(text); m !== null && matches.length < MAX_MATCHES; m = re.exec(text)) {
     if (m[0] === "") {
-      re.lastIndex += 1;
+      // Step over one code point, never into the middle of a surrogate pair.
+      re.lastIndex += text.codePointAt(re.lastIndex) > 0xffff ? 2 : 1;
       continue;
     }
     matches.push({ from: m.index, to: m.index + m[0].length });
@@ -43,9 +44,19 @@ const findField = StateField.define({
   },
 });
 
+const none = { matches: [], invalid: false };
+let cached = null; // { doc, f, value }: the matches of the last (document, query, options)
+
+// Every part of the bar (marks, count, next, the jump) asks for the matches: they are computed once
+// per document and query, not once per ask.
 function result(state) {
   const f = state.field(findField);
-  return f.open ? findMatches(state.doc.toString(), f) : { matches: [], invalid: false };
+  if (!f.open) return none;
+  const same = (a, b) => a.query === b.query && a.match_case === b.match_case && a.whole_word === b.whole_word && a.regex === b.regex;
+  if (cached && cached.doc === state.doc && same(cached.f, f)) return cached.value;
+  const value = findMatches(state.doc.toString(), f);
+  cached = { doc: state.doc, f, value };
+  return value;
 }
 
 const markAll = Decoration.mark({ class: "cm-find-match" });
@@ -128,7 +139,7 @@ export function findTools({ remember }) {
       jumpToCurrent(view);
     });
     input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.isComposing) {
+      if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229) {
         event.preventDefault();
         step(view, event.shiftKey ? -1 : 1);
       } else if (event.key === "Escape") {
@@ -190,15 +201,23 @@ export function findTools({ remember }) {
     // `line` is 1 based. The first match on that line, else the next one after it, is current.
     open(view, { line, ...options }) {
       apply(view, { open: true, ...options, current: 0 });
-      const { matches } = result(view.state);
-      if (matches.length === 0) return;
       const at = view.state.doc.line(Math.min(Math.max(line || 1, 1), view.state.doc.lines)).from;
+      const { matches } = result(view.state);
+      if (matches.length === 0) {
+        // Nothing found, but the person still lands on the hit's line.
+        view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: "center" }) });
+        return;
+      }
       apply(view, { current: indexAt(matches, at) }, { scroll: true });
     },
     // Puts the editor's remembered state into a state that was just built (a tab switch).
     restore(view, state) {
-      if (state && state.open) apply(view, state);
-      else if (view.state.field(findField).open) apply(view, { open: false });
+      if (state && state.open) {
+        apply(view, state);
+        // `current` came from another tab: it is the first match at or after this tab's caret.
+        const { matches } = result(view.state);
+        if (matches.length > 0) apply(view, { current: indexAt(matches, view.state.selection.main.head) });
+      } else if (view.state.field(findField).open) apply(view, { open: false });
     },
   };
 }

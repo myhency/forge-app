@@ -325,3 +325,64 @@ test("a find for a tab that is not shown yet is applied when it shows, and the b
   assert.equal(w.document.querySelector(".cm-find-bar input").value, "needle");
   editor.destroy();
 });
+
+test("a plain query with a dash is a literal, not an invalid pattern", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "foo-bar\nx --flag\n", "python", false);
+  editor.find("a.py", { query: "foo-bar", ...ALL, line: 1 });
+  assert.equal(count(w), "1 of 1");
+  assert.equal(w.document.querySelector(".cm-find-bar input.invalid"), null);
+  editor.find("a.py", { query: "--flag", ...ALL, line: 2 });
+  assert.equal(count(w), "1 of 1");
+  editor.destroy();
+});
+
+test("a hit on a line is reached even when the pattern finds nothing in the document", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "one\ntwo\nthree\n", "python", false);
+  editor.find("a.py", { query: "zzz", ...ALL, line: 3 });
+  assert.equal(count(w), "No results");
+  assert.equal(viewOf(w).state.doc.lineAt(viewOf(w).state.selection.main.head).number, 3);
+  editor.destroy();
+});
+
+test("^ and $ match at every line, like the panel's search", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "fn a;\nfn b;\n", "python", false);
+  editor.find("a.py", { query: "^fn", ...ALL, regex: true, line: 1 });
+  assert.equal(count(w), "1 of 2");
+  editor.find("a.py", { query: ";$", ...ALL, regex: true, line: 1 });
+  assert.equal(count(w), "1 of 2");
+  editor.destroy();
+});
+
+test("Enter that commits an IME composition (keyCode 229) does not move to the next match", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\na\n", "python", false);
+  editor.find("a.py", { query: "a", ...ALL, line: 1 });
+  const input = w.document.querySelector(".cm-find-bar input");
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true }));
+  assert.equal(count(w), "1 of 2");
+  editor.destroy();
+});
+
+test("after a tab switch the current match is one of the new tab's matches", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\na\na\na\n", "python", false);
+  editor.load("b.py", "a\n", "python", false);
+  editor.show("a.py");
+  editor.find("a.py", { query: "a", ...ALL, line: 4 });
+  assert.equal(count(w), "4 of 4");
+  editor.show("b.py");
+  assert.equal(count(w), "1 of 1");
+  assert.equal(w.document.querySelectorAll(".cm-find-current").length, 1);
+  editor.destroy();
+});
+
+test("an empty match in front of an astral character moves on instead of looping", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "😀b\n", "python", false);
+  editor.find("a.py", { query: "b*", ...ALL, regex: true, line: 1 });
+  assert.equal(count(w), "1 of 1");
+  editor.destroy();
+});
