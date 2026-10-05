@@ -583,10 +583,27 @@ impl Workspace {
         store.source = source;
     }
 
-    /// The editor reported `text` for a tab: kept as a draft when it is not what is on disk.
-    pub fn note_draft(&self, id: LiveSessionId, path: &str, text: &str, disk_hash: u64, base: FileVersion) {
+    /// The editor reported `text` for a tab: kept as a draft when it is not what is on disk. A session
+    /// that was closed has no store any more and gets none back.
+    pub fn note_draft(&self, id: LiveSessionId, path: &str, text: &str, disk_hash: u64, base: FileVersion, conflict: bool) {
         let mut stores = self.files_stores;
-        stores.write().entry(id).or_default().note_text(path, text, disk_hash, base);
+        let mut write = stores.write();
+        if let Some(store) = write.get_mut(&id) {
+            store.note_text(path, text, disk_hash, base, conflict);
+        }
+    }
+
+    /// A write of `text` succeeded and left the file at `version`.
+    pub fn draft_written(&self, id: LiveSessionId, path: &str, text: &str, version: FileVersion) {
+        let mut stores = self.files_stores;
+        let mut write = stores.write();
+        if let Some(store) = write.get_mut(&id) {
+            store.written(path, text, version);
+        }
+    }
+
+    pub fn draft_text(&self, id: LiveSessionId, path: &str) -> Option<String> {
+        self.files_stores.peek().get(&id).and_then(|store| store.draft_text(path))
     }
 
     pub fn clear_draft(&self, id: LiveSessionId, path: &str) {
@@ -597,8 +614,8 @@ impl Workspace {
         }
     }
 
-    pub fn restore_draft(&self, id: LiveSessionId, path: &str, fresh: FileVersion) -> Restore {
-        self.files_stores.peek().get(&id).map_or(Restore::FromDisk, |store| store.restore(path, fresh))
+    pub fn restore_draft(&self, id: LiveSessionId, path: &str, fresh: FileVersion, fresh_hash: u64) -> Restore {
+        self.files_stores.peek().get(&id).map_or(Restore::FromDisk, |store| store.restore(path, fresh, fresh_hash))
     }
 
     /// A comment card in the message box was clicked: the Files panel shows its box.

@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::LineRange;
 use forge_entities::{code_html, is_markdown, language_of, render_markdown};
-use forge_features::{normalize_newlines, run_blocking, EditorTabs, FileAction, Restore, TabDoc, Workspace};
+use forge_features::{normalize_newlines, run_blocking, Banner, EditorTabs, FileAction, Restore, TabDoc, Workspace};
 use forge_ports::{FileContent, FilesError, FilesPort, WriteError};
 
 use crate::files_editor::{editor_language, EditorHandle, FromPage};
@@ -250,11 +250,16 @@ impl FilesCtx {
                 let kind = TabKind::Text { lossy, anyway: false };
                 let read_only = kind.read_only();
                 // A draft kept while the panel was away comes back (never into a read only tab).
-                let restore = if read_only { Restore::FromDisk } else { self.workspace.restore_draft(self.id, &path, version) };
-                docs.write().insert(path.clone(), TabDoc::new(version, &text));
+                let doc = TabDoc::new(version, &text);
+                let restore = if read_only { Restore::FromDisk } else { self.workspace.restore_draft(self.id, &path, version, doc.clean) };
+                docs.write().insert(path.clone(), doc);
                 kinds.write().insert(path.clone(), kind);
                 let (shown, dirty) = match restore {
-                    Restore::FromDisk => (normalize_newlines(&text), false),
+                    Restore::FromDisk => {
+                        // No draft, or one that is what is on disk now: nothing to keep.
+                        self.workspace.clear_draft(self.id, &path);
+                        (normalize_newlines(&text), false)
+                    }
                     Restore::Draft(draft) => (draft, true),
                     Restore::DraftWithConflict(draft) => {
                         self.with_doc(&path, |doc| doc.write_failed(&WriteError::Changed));
@@ -327,8 +332,12 @@ impl FilesCtx {
         if self.kinds.peek().get(key).is_some_and(TabKind::read_only) {
             return;
         }
-        let Some((hash, base)) = self.docs.peek().get(key).map(|doc| (doc.clean, doc.loaded)) else { return };
-        self.workspace.note_draft(self.id, key, text, hash, base);
+        let Some((hash, base, conflict)) =
+            self.docs.peek().get(key).map(|doc| (doc.clean, doc.loaded, doc.banner == Some(Banner::Conflict)))
+        else {
+            return;
+        };
+        self.workspace.note_draft(self.id, key, text, hash, base, conflict);
     }
 
     /// A message from the page.
@@ -426,6 +435,7 @@ impl FilesCtx {
             writing.write().remove(&key);
             let Some(result) = result else { return };
             let saved = result.is_ok();
+            let written_version = result.as_ref().ok().copied();
             let mut docs = ctx.docs;
             if let Some(doc) = docs.write().get_mut(&key) {
                 match result {
@@ -433,9 +443,9 @@ impl FilesCtx {
                     Err(error) => doc.write_failed(&error),
                 }
             }
-            if saved {
-                // What was typed is on disk now: no draft is needed for it.
-                ctx.workspace.clear_draft(ctx.id, &key);
+            if let Some(version) = written_version {
+                // What was written is on disk now: its draft is done, text typed meanwhile stays.
+                ctx.workspace.draft_written(ctx.id, &key, &text, version);
             }
             if !close {
                 return;
@@ -455,6 +465,9 @@ impl FilesCtx {
     fn flushed(&self, key: String, text: Option<String>) {
         let mut pending = self.pending;
         let Some(what) = pending.write().remove(&key) else { return };
+        // The page has no state for a tab that was restored but not shown yet: what was typed in it is
+        // its draft, so a close, a save or a reload still sees it.
+        let text = text.or_else(|| self.workspace.draft_text(self.id, &key));
         match what {
             Pending::Save { overwrite } => {
                 if let Some(text) = text {
@@ -510,7 +523,9 @@ impl FilesCtx {
     /// The tab's `×`, the tab menu, and the queue of a close others or close all.
     pub fn close(&self, path: String) {
         let has_editor_state = self.docs.peek().contains_key(&path) && !*self.unavailable.peek();
-        if has_editor_state {
+        // A restored tab the page does not hold yet still has typed text: it is asked about too.
+        let has_draft = self.workspace.draft_text(self.id, &path).is_some();
+        if has_editor_state || has_draft {
             self.ask(&path, Pending::Close);
         } else {
             self.close_now(&path);
@@ -523,6 +538,8 @@ impl FilesCtx {
     fn decide_close(&self, key: String, text: Option<String>) {
         let differs = match (&text, self.docs.peek().get(&key)) {
             (Some(text), Some(doc)) => doc.differs(text),
+            // A restored tab that was never read since: its text is a draft, which is never closed over silently.
+            (Some(_), None) => self.workspace.draft_text(self.id, &key).is_some(),
             _ => false,
         };
         if !differs {
