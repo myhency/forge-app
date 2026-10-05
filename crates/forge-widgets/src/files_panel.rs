@@ -7,8 +7,8 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::CardKind;
 use forge_entities::is_markdown;
-use forge_features::{parse_files_query, run_blocking, use_workspace, Banner, EditorTabs, FileTree, FilesQuery, Panel};
-use forge_ports::{ContentHit, FilesPort};
+use forge_features::{group_hits, parse_files_query, split_hit, run_blocking, use_workspace, Banner, EditorTabs, FileTree, FilesQuery, Panel};
+use forge_ports::{ContentHit, FilesPort, SearchOptions};
 
 use crate::files_editor::{use_editor_channel, use_editor_driver, FromPage};
 use crate::files_kinds::{FileKindView, TabKind};
@@ -41,7 +41,9 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let mut tree = use_signal(FileTree::default);
     let problem = use_signal(|| None::<String>);
     let mut filter = use_signal(String::new);
-    let mut hits = use_signal(|| None::<Vec<ContentHit>>);
+    // The query and options a list was found with travel with it: a click uses those, not what is typed now.
+    let mut hits = use_signal(|| None::<(String, SearchOptions, Result<Vec<ContentHit>, String>)>);
+    let mut options = use_signal(SearchOptions::default);
     // The tree row menu: the file and where it was asked for.
     let mut row_menu = use_signal(|| None::<(String, f64, f64)>);
 
@@ -81,18 +83,20 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         let cwd = cwd.clone();
         use_effect(move || {
             let typed = filter();
+            let search_options = options();
             match parse_files_query(&typed) {
                 FilesQuery::Content(query) if !query.is_empty() => {
                     let query = query.to_string();
+                    let query_text = query.clone();
                     let (files, root) = (workspace.files(), cwd.clone());
                     spawn(async move {
                         tokio::time::sleep(SEARCH_DEBOUNCE).await;
                         if filter.peek().as_str() != typed {
                             return;
                         }
-                        if let Some(Ok(found)) = run_blocking(move || files.search(&root, &query, SEARCH_LIMIT)).await {
-                            if filter.peek().as_str() == typed {
-                                hits.set(Some(found));
+                        if let Some(result) = run_blocking(move || files.search(&root, &query, search_options, SEARCH_LIMIT)).await {
+                            if filter.peek().as_str() == typed && *options.peek() == search_options {
+                                hits.set(Some((query_text, search_options, result.map_err(|error| error.to_string()))));
                             }
                         }
                     });
@@ -210,20 +214,28 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         match hits() {
             _ if text.is_empty() => rsx! { div { class: "dock-note", "Type the text to search for after ?" } },
             None => rsx! { div { class: "dock-note", "Searching…" } },
-            Some(found) if found.is_empty() => rsx! { div { class: "dock-note", "No matches" } },
-            Some(found) => rsx! {
-                ul { class: "files-list",
-                    for (index, hit) in found.iter().enumerate() {
-                        li { key: "{index}",
-                            button {
-                                class: "files-hit",
-                                r#type: "button",
-                                onclick: {
-                                    let (path, ctx) = (hit.path.clone(), ctx.clone());
-                                    move |_| ctx.open(path.clone())
-                                },
-                                span { class: "files-hit-path", "{hit.path}:{hit.line}" }
-                                span { class: "files-hit-text", "{hit.text}" }
+            Some((_, _, Err(message))) => rsx! { div { class: "dock-note error", "{message}" } },
+            Some((_, _, Ok(found))) if found.is_empty() => rsx! { div { class: "dock-note", "No matches" } },
+            Some((found_query, found_options, Ok(found))) => rsx! {
+                div { class: "files-list",
+                    for group in group_hits(&found) {
+                        div { key: "{group.path}", class: "files-hit-group",
+                            div { class: "files-hit-file", "{group.path}" }
+                            for hit in group.hits.iter() {
+                                {
+                                    let (before, matched, after) = split_hit(hit);
+                                    let (ctx, path, line, needle, opts) = (ctx.clone(), hit.path.clone(), hit.line, found_query.clone(), found_options);
+                                    rsx! {
+                                        button {
+                                            key: "{hit.line}",
+                                            class: "files-hit",
+                                            r#type: "button",
+                                            onclick: move |_| ctx.find_in_file(&path, &needle, opts, line),
+                                            span { class: "files-hit-line", "{hit.line}" }
+                                            span { class: "files-hit-text", "{before}", mark { "{matched}" }, "{after}" }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -407,6 +419,37 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                     onmounted: move |mounted| async move {
                         let _ = mounted.set_focus(true).await;
                     },
+                }
+                if matches!(query, FilesQuery::Content(_)) {
+                    div { class: "files-search-toggles",
+                        for (title, label, on, flip) in [
+                            ("Match case", "Aa", options().match_case, 0u8),
+                            ("Whole word", "ab", options().whole_word, 1),
+                            ("Regex", ".*", options().regex, 2),
+                        ] {
+                            button {
+                                key: "{title}",
+                                class: if on { "files-toggle on" } else { "files-toggle" },
+                                r#type: "button",
+                                title: "{title}",
+                                "aria-pressed": "{on}",
+                                onclick: move |_| options.with_mut(|o| match flip {
+                                    0 => o.match_case = !o.match_case,
+                                    1 => o.whole_word = !o.whole_word,
+                                    _ => o.regex = !o.regex,
+                                }),
+                                "{label}"
+                            }
+                        }
+                        button {
+                            class: "files-toggle",
+                            r#type: "button",
+                            title: "Clear",
+                            "aria-label": "Clear",
+                            onclick: move |_| filter.set(String::new()),
+                            "×"
+                        }
+                    }
                 }
             }
             div { class: "changes-body",

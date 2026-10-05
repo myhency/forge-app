@@ -64,6 +64,15 @@ pub fn focus_comment_command(key: &str, id: u64) -> Value {
     json!({ "t": "focus_comment", "key": key, "id": id })
 }
 
+/// Opens the find bar of a tab on a line (1 based) with a query and its options.
+pub fn find_command(key: &str, query: &str, options: forge_ports::SearchOptions, line: usize) -> Value {
+    json!({
+        "t": "find", "key": key, "query": query,
+        "match_case": options.match_case, "whole_word": options.whole_word, "regex": options.regex,
+        "line": line,
+    })
+}
+
 pub fn settings_command(prefs: &EditorPrefs) -> Value {
     json!({
         "t": "settings",
@@ -135,6 +144,11 @@ impl EditorHandle {
         self.send(focus_comment_command(key, id));
     }
 
+    /// Opens the find bar of a tab on a line, with the query and options of a search hit.
+    pub fn find(&self, key: &str, query: &str, options: forge_ports::SearchOptions, line: usize) {
+        self.send(find_command(key, query, options, line));
+    }
+
     pub fn settings(&self, prefs: &EditorPrefs) {
         self.send(settings_command(prefs));
     }
@@ -174,6 +188,7 @@ if (!window.ForgeEditor || !host) {
         else if (m.t === "settings") editor.settings(m.settings);
         else if (m.t === "flush") editor.flush(m.key);
         else if (m.t === "comments") editor.comments(m.key, m.comments);
+        else if (m.t === "find") editor.find(m.key, { query: m.query, match_case: m.match_case, whole_word: m.whole_word, regex: m.regex, line: m.line });
         else if (m.t === "focus_comment") editor.focusComment(m.key, m.id);
         else if (m.t === "focus") editor.focus();
     }
@@ -277,6 +292,15 @@ mod tests {
             serde_json::json!({ "t": "comments", "key": "a.py", "comments": [{ "id": 7, "from": 3, "to": 4, "text": "why" }] })
         );
         assert_eq!(focus_comment_command("a.py", 7), serde_json::json!({ "t": "focus_comment", "key": "a.py", "id": 7 }));
+    }
+
+    #[test]
+    fn the_find_command_carries_the_query_options_and_line() {
+        let options = forge_ports::SearchOptions { match_case: true, whole_word: false, regex: true };
+        assert_eq!(
+            find_command("a.py", "Bu.z", options, 7),
+            serde_json::json!({ "t": "find", "key": "a.py", "query": "Bu.z", "match_case": true, "whole_word": false, "regex": true, "line": 7 })
+        );
     }
 
     #[test]

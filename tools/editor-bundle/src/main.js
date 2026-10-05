@@ -5,7 +5,8 @@
 //
 // Rust to page (methods): load(key, doc, language, readonly, ifClean), show(key), drop(key),
 //   settings({ wrap, indent_guides, whitespace, scroll_past_end, tab_indent, tab_size }),
-//   flush(key), comments(key, [{ id, from, to, text }]), focusComment(key, id), focus(), destroy().
+//   flush(key), comments(key, [{ id, from, to, text }]), focusComment(key, id),
+//   find(key, { query, match_case, whole_word, regex, line }), focus(), destroy().
 // Page to Rust (send): { t: "dirty", key }, { t: "change", key, s }, { t: "save", key, s },
 //   { t: "flush", key, s }, { t: "missing", key }, { t: "skipped", key },
 //   { t: "attach", key, from, to, text }, { t: "comment", key, from, to, text, id }, { t: "comment_delete", key, id }.
@@ -46,6 +47,7 @@ import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { yaml } from "@codemirror/lang-yaml";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
+import { findTools } from "./find.js";
 import { lineTools } from "./lines.js";
 
 const SAVE_DELAY_MS = 2000;
@@ -139,6 +141,11 @@ window.ForgeEditor = {
     // key -> a comment to open for editing as soon as that tab shows
     const pendingFocus = new Map();
     const tools = lineTools({ send, getKey: () => key });
+    // The find bar belongs to the editor, not to a tab: its state is kept here and put back on a switch.
+    let findState = null;
+    const find = findTools({ remember: (state) => { findState = state; } });
+    // key -> a find to open as soon as that tab shows
+    const pendingFind = new Map();
 
     // The extensions the settings control, kept in one compartment so a change reconfigures them all.
     function configExtensions(readonly) {
@@ -191,6 +198,7 @@ window.ForgeEditor = {
         doc,
         extensions: [
           ...tools.extensions,
+          ...find.extensions,
           foldGutter(),
           history(),
           drawSelection(),
@@ -233,6 +241,15 @@ window.ForgeEditor = {
       else work();
     }
 
+    function afterSwitch(forKey) {
+      find.restore(view, findState);
+      const pending = pendingFind.get(forKey);
+      if (pending) {
+        pendingFind.delete(forKey);
+        find.open(view, pending);
+      }
+    }
+
     function applyPendingFocus(forKey) {
       const id = pendingFocus.get(forKey);
       if (id === undefined) return;
@@ -268,6 +285,7 @@ window.ForgeEditor = {
           tools.bind(view);
           tools.setComments(view, commentsByKey.get(newKey) || []);
           applyPendingFocus(newKey);
+          afterSwitch(newKey);
           view.scrollDOM.scrollTop = 0;
         });
       },
@@ -287,12 +305,14 @@ window.ForgeEditor = {
           tools.bind(view);
           tools.setComments(view, commentsByKey.get(newKey) || []);
           applyPendingFocus(newKey);
+          afterSwitch(newKey);
           view.scrollDOM.scrollTop = entry.scroll;
         });
       },
       drop(oldKey) {
         states.delete(oldKey);
         commentsByKey.delete(oldKey);
+        pendingFind.delete(oldKey);
         if (key === oldKey) {
           clearTimeout(timer);
           timer = null;
@@ -326,6 +346,11 @@ window.ForgeEditor = {
         // A tab that is not shown (or not loaded) yet takes the request when it shows.
         if (forKey === key) tools.focusComment(view, id);
         else pendingFocus.set(forKey, id);
+      },
+      find(forKey, opts) {
+        // A tab that is not shown (or not loaded) yet takes the request when it shows.
+        if (forKey === key) find.open(view, opts);
+        else pendingFind.set(forKey, opts);
       },
       startComment(from, to) {
         tools.startComment(view, from, to);

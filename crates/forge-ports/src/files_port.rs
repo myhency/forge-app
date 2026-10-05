@@ -42,6 +42,18 @@ pub struct ContentHit {
     pub path: String,
     pub line: usize,
     pub text: String,
+    /// Char offsets of the first match inside `text`.
+    pub start: usize,
+    pub end: usize,
+}
+
+/// How a content search reads its query.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SearchOptions {
+    pub match_case: bool,
+    pub whole_word: bool,
+    /// The query is a regular expression instead of plain text.
+    pub regex: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -50,6 +62,8 @@ pub enum FilesError {
     Outside,
     #[error("{0}")]
     Failed(String),
+    #[error("{0}")]
+    InvalidPattern(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -79,8 +93,8 @@ pub trait FilesPort: Send + Sync {
     /// goes to a temporary file in the same folder that is renamed over the target, so a crash
     /// leaves the old or the new file whole. Returns the version after the write.
     fn write(&self, root: &Path, path: &str, text: &str, expected: Option<FileVersion>) -> Result<FileVersion, WriteError>;
-    /// Lines that contain `query` (any case), at most `limit`, in path order.
-    fn search(&self, root: &Path, query: &str, limit: usize) -> Result<Vec<ContentHit>, FilesError>;
+    /// One hit per line that holds a match of `query`, at most `limit`, in path order.
+    fn search(&self, root: &Path, query: &str, options: SearchOptions, limit: usize) -> Result<Vec<ContentHit>, FilesError>;
     /// The last `max_bytes` of the file at an absolute `path`, as text (bytes that are not UTF-8 are
     /// replaced). Unlike `read` it is not confined to a root: the caller must have checked the path.
     fn read_tail(&self, path: &Path, max_bytes: usize) -> Result<String, FilesError>;

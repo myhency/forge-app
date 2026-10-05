@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 forge-ports = { path = "../forge-ports" }
+regex = "1"
 
 [dev-dependencies]
 tempfile = "3"
