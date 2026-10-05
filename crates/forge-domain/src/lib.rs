@@ -1,4 +1,5 @@
 mod attachment;
+mod card;
 mod background;
 mod command;
 mod config;
@@ -12,6 +13,7 @@ mod usage;
 mod usage_stats;
 
 pub use attachment::{Attachment, AttachmentKind};
+pub use card::{split_cards, with_cards, Card, CardKind, LineRange};
 pub use command::SlashCommand;
 pub use config::{
     normalize_setting, AppConfig, ArchivedRef, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,

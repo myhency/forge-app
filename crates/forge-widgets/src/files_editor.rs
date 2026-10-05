@@ -28,6 +28,13 @@ pub enum FromPage {
     Missing { key: String },
     /// A load that was only to happen while the tab was clean did not, because an edit was waiting.
     Skipped { key: String },
+    /// `Attach as context` on the picked lines: the lines' text as the editor holds it.
+    Attach { key: String, from: u32, to: u32, text: String },
+    /// A comment was written (`id` is `None`) or edited on lines of a tab.
+    Comment { key: String, from: u32, to: u32, text: String, id: Option<u64> },
+    /// The trash icon of a saved comment.
+    #[serde(rename = "comment_delete")]
+    CommentDelete { key: String, id: u64 },
 }
 
 /// `if_clean`: the page does nothing (and says `skipped`) when an edit of this tab is waiting.
@@ -45,6 +52,16 @@ pub fn forget_command(key: &str) -> Value {
 
 pub fn flush_command(key: &str) -> Value {
     json!({ "t": "flush", "key": key })
+}
+
+/// The comments of one file, as the page draws them.
+pub fn comments_command(key: &str, cards: &[forge_domain::Card]) -> Value {
+    let list: Vec<Value> = cards.iter().map(|c| json!({ "id": c.id, "from": c.range.start, "to": c.range.end, "text": c.text })).collect();
+    json!({ "t": "comments", "key": key, "comments": list })
+}
+
+pub fn focus_comment_command(key: &str, id: u64) -> Value {
+    json!({ "t": "focus_comment", "key": key, "id": id })
 }
 
 pub fn settings_command(prefs: &EditorPrefs) -> Value {
@@ -108,6 +125,16 @@ impl EditorHandle {
         self.send(forget_command(key));
     }
 
+    /// Shows these comments in the file's editor.
+    pub fn comments(&self, key: &str, cards: &[forge_domain::Card]) {
+        self.send(comments_command(key, cards));
+    }
+
+    /// Opens the comment's box for editing.
+    pub fn focus_comment(&self, key: &str, id: u64) {
+        self.send(focus_comment_command(key, id));
+    }
+
     pub fn settings(&self, prefs: &EditorPrefs) {
         self.send(settings_command(prefs));
     }
@@ -146,6 +173,8 @@ if (!window.ForgeEditor || !host) {
         else if (m.t === "drop") editor.drop(m.key);
         else if (m.t === "settings") editor.settings(m.settings);
         else if (m.t === "flush") editor.flush(m.key);
+        else if (m.t === "comments") editor.comments(m.key, m.comments);
+        else if (m.t === "focus_comment") editor.focusComment(m.key, m.id);
         else if (m.t === "focus") editor.focus();
     }
 }
@@ -215,6 +244,39 @@ mod tests {
         assert_eq!(parse(r#"{"t":"flush","key":"a.py","s":null}"#), FromPage::Flush { key: "a.py".to_string(), s: None });
         assert_eq!(parse(r#"{"t":"missing","key":"a.py"}"#), FromPage::Missing { key: "a.py".to_string() });
         assert_eq!(parse(r#"{"t":"skipped","key":"a.py"}"#), FromPage::Skipped { key: "a.py".to_string() });
+    }
+
+    #[test]
+    fn the_line_messages_from_the_page_parse() {
+        assert_eq!(
+            parse(r#"{"t":"attach","key":"a.py","from":2,"to":4,"text":"x\ny\nz"}"#),
+            FromPage::Attach { key: "a.py".to_string(), from: 2, to: 4, text: "x\ny\nz".to_string() }
+        );
+        assert_eq!(
+            parse(r#"{"t":"comment","key":"a.py","from":3,"to":3,"text":"why","id":null}"#),
+            FromPage::Comment { key: "a.py".to_string(), from: 3, to: 3, text: "why".to_string(), id: None }
+        );
+        assert_eq!(
+            parse(r#"{"t":"comment","key":"a.py","from":3,"to":3,"text":"why","id":7}"#),
+            FromPage::Comment { key: "a.py".to_string(), from: 3, to: 3, text: "why".to_string(), id: Some(7) }
+        );
+        assert_eq!(parse(r#"{"t":"comment_delete","key":"a.py","id":7}"#), FromPage::CommentDelete { key: "a.py".to_string(), id: 7 });
+    }
+
+    #[test]
+    fn the_comment_commands_carry_what_the_bridge_reads() {
+        let card = forge_domain::Card {
+            id: 7,
+            kind: forge_domain::CardKind::Comment,
+            path: "/p/a.py".into(),
+            range: forge_domain::LineRange::new(3, 4),
+            text: "why".into(),
+        };
+        assert_eq!(
+            comments_command("a.py", &[card]),
+            serde_json::json!({ "t": "comments", "key": "a.py", "comments": [{ "id": 7, "from": 3, "to": 4, "text": "why" }] })
+        );
+        assert_eq!(focus_comment_command("a.py", 7), serde_json::json!({ "t": "focus_comment", "key": "a.py", "id": 7 }));
     }
 
     #[test]

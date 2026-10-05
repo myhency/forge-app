@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
+use forge_domain::CardKind;
 use forge_entities::is_markdown;
 use forge_features::{parse_files_query, run_blocking, use_workspace, Banner, EditorTabs, FileTree, FilesQuery, Panel};
 use forge_ports::{ContentHit, FilesPort};
@@ -41,10 +42,13 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let problem = use_signal(|| None::<String>);
     let mut filter = use_signal(String::new);
     let mut hits = use_signal(|| None::<Vec<ContentHit>>);
+    // The tree row menu: the file and where it was asked for.
+    let mut row_menu = use_signal(|| None::<(String, f64, f64)>);
 
     let handle = use_editor_channel();
     let ctx = FilesCtx {
         workspace,
+        id,
         cwd: cwd.clone(),
         handle: handle.clone(),
         tabs: use_signal(EditorTabs::default),
@@ -115,6 +119,36 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 workspace.clear_file_request(id);
                 ctx.open(path);
             }
+        });
+    }
+    // The comments of every open file go to the page whenever they or the tabs change.
+    {
+        let ctx = ctx.clone();
+        use_effect(move || {
+            let cards = workspace.cards(id);
+            let ready = *ctx.ready.read();
+            let keys: Vec<String> = ctx.tabs.read().tabs().iter().map(|tab| tab.path.clone()).collect();
+            if !ready {
+                return;
+            }
+            for key in keys {
+                let path = ctx.cwd.join(&key).to_string_lossy().to_string();
+                let list: Vec<_> = cards.iter().filter(|c| c.kind == CardKind::Comment && c.path == path).cloned().collect();
+                ctx.handle.comments(&key, &list);
+            }
+        });
+    }
+    // A comment card in the message box was clicked: open its file and show its box.
+    {
+        let ctx = ctx.clone();
+        use_effect(move || {
+            let Some(card_id) = workspace.comment_focus(id) else { return };
+            workspace.clear_comment_focus(id);
+            let Some(card) = workspace.cards(id).into_iter().find(|c| c.id == card_id) else { return };
+            let Ok(relative) = std::path::Path::new(&card.path).strip_prefix(&ctx.cwd) else { return };
+            let key = relative.to_string_lossy().to_string();
+            ctx.open(key.clone());
+            ctx.handle.focus_comment(&key, card_id);
         });
     }
     // A tool call of the session finished: tabs with no edits show the file as it is now. A memo, so
@@ -222,6 +256,16 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                                         class: if is_selected { "files-row selected" } else { "files-row" },
                                         r#type: "button",
                                         style: "{indent}",
+                                        oncontextmenu: {
+                                            let path = path.clone();
+                                            move |event: MouseEvent| {
+                                                event.prevent_default();
+                                                if !is_dir {
+                                                    let point = event.client_coordinates();
+                                                    row_menu.set(Some((path.clone(), point.x, point.y)));
+                                                }
+                                            }
+                                        },
                                         onclick: move |_| {
                                             if is_dir {
                                                 if tree.write().toggle(&path) {
@@ -321,8 +365,38 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         }
     };
 
+    let row_menu_view = match row_menu() {
+        Some((path, x, y)) => {
+            let ctx = ctx.clone();
+            rsx! {
+                div {
+                    class: "picker-backdrop",
+                    onclick: move |_| row_menu.set(None),
+                    oncontextmenu: move |event: MouseEvent| {
+                        event.prevent_default();
+                        row_menu.set(None);
+                    },
+                }
+                div { class: "picker-menu files-tab-menu", role: "menu", style: "left: min({x}px, calc(100vw - 210px)); top: {y}px;",
+                    button {
+                        class: "picker-item",
+                        r#type: "button",
+                        role: "menuitem",
+                        onclick: move |_| {
+                            ctx.attach_file(&path);
+                            row_menu.set(None);
+                        },
+                        "Attach as context"
+                    }
+                }
+            }
+        }
+        None => rsx! {},
+    };
+
     rsx! {
         PanelFrame { id, panel: Panel::Files, tools,
+            {row_menu_view}
             div { class: "files-filter",
                 input {
                     class: "files-filter-input",
@@ -366,6 +440,10 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                         on_close_all: {
                             let ctx = ctx.clone();
                             move |_| ctx.close_all()
+                        },
+                        on_attach: {
+                            let ctx = ctx.clone();
+                            move |path: String| ctx.attach_file(&path)
                         },
                     }
                     {banner_view}

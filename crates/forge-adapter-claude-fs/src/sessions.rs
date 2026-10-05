@@ -275,7 +275,10 @@ fn flatten_tool_result_content(content: Option<&Value>) -> String {
 }
 
 fn push_user_message(session: &mut Session, text: String) {
-    session.messages.push(Message::user(text));
+    let (cards, rest) = forge_domain::split_cards(&text);
+    let mut message = Message::user(rest);
+    message.cards = cards;
+    session.messages.push(message);
 }
 
 fn attach_tool_result(session: &mut Session, block: &Value) {
@@ -1444,6 +1447,33 @@ mod tests {
                 "id {bad_id:?} should be rejected, got {result:?}"
             );
         }
+    }
+
+    fn card(kind: forge_domain::CardKind, line: u32, text: &str) -> forge_domain::Card {
+        forge_domain::Card { id: 0, kind, path: "/p/a.py".into(), range: forge_domain::LineRange::new(line, line), text: text.into() }
+    }
+
+    #[tokio::test]
+    async fn a_user_line_with_card_blocks_becomes_cards_and_the_typed_text() {
+        let home = tempfile::tempdir().unwrap();
+        let sent = forge_domain::with_cards(&[card(forge_domain::CardKind::Comment, 3, "이 줄 설명해줘")], "ok라고만 답해줘");
+        write_session(home.path(), &project(), "s1", &[user_text(&sent)]);
+        let session = load(home.path(), "s1").await.unwrap();
+        let message = &session.messages[0];
+        assert_eq!(message.text(), "ok라고만 답해줘");
+        assert_eq!(message.cards.len(), 1);
+        assert_eq!(message.cards[0].text, "이 줄 설명해줘");
+    }
+
+    #[tokio::test]
+    async fn a_user_line_of_cards_only_keeps_the_cards_and_an_empty_text() {
+        let home = tempfile::tempdir().unwrap();
+        let sent = forge_domain::with_cards(&[card(forge_domain::CardKind::Excerpt, 5, "x")], "");
+        write_session(home.path(), &project(), "s1", &[user_text(&sent)]);
+        let session = load(home.path(), "s1").await.unwrap();
+        assert_eq!(session.messages.len(), 1);
+        assert_eq!(session.messages[0].text(), "");
+        assert_eq!(session.messages[0].cards.len(), 1);
     }
 
     #[tokio::test]

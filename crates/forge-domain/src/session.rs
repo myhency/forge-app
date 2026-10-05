@@ -48,13 +48,15 @@ pub struct Message {
     pub blocks: Vec<Block>,
     /// Files and images the person attached to this message (user messages only).
     pub attachments: Vec<crate::Attachment>,
+    /// Excerpts and comments the person attached (user messages only).
+    pub cards: Vec<crate::Card>,
     /// RFC 3339 time of the last transcript line of this message; `None` for a message built live.
     pub at: Option<String>,
 }
 
 impl Message {
     pub fn new(role: MessageRole) -> Self {
-        Self { role, blocks: Vec::new(), attachments: Vec::new(), at: None }
+        Self { role, blocks: Vec::new(), attachments: Vec::new(), cards: Vec::new(), at: None }
     }
 
     pub fn user(text: impl Into<String>) -> Self {

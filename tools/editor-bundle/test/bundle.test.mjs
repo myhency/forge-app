@@ -129,3 +129,105 @@ test("leaving the editor sends a waiting edit at once, so a click on a panel but
   assert.match(plain(sent)[1].s, /^x = 7/);
   editor.destroy();
 });
+
+const mouse = (w, type) => new w.MouseEvent(type, { bubbles: true, button: 0 });
+
+// jsdom has no layout, so every gutter element maps to the first line; which line a number maps to is
+// checked in the real window (plan 25B task 8).
+test("clicking a gutter number picks a line and the bar attaches it", () => {
+  const { w, editor, sent } = boot();
+  editor.load("a.py", "one\ntwo\nthree\n", "python", false);
+  const numbers = w.document.querySelectorAll(".cm-lineNumbers .cm-gutterElement");
+  // The first gutter element is a hidden spacer: the lines start at index 1.
+  numbers[1].dispatchEvent(mouse(w, "mousedown"));
+  w.document.dispatchEvent(mouse(w, "mouseup"));
+  assert.ok(w.document.querySelector(".cm-picked-line"), "the picked line has a band");
+  const attach = w.document.querySelector(".cm-pick-bar [data-act=attach]");
+  assert.ok(attach, "the bar shows over a picked line");
+  attach.dispatchEvent(mouse(w, "mousedown"));
+  assert.deepEqual(plain(sent.filter((m) => m.t === "attach")), [{ t: "attach", key: "a.py", from: 1, to: 1, text: "one" }]);
+  editor.destroy();
+});
+
+test("a comment is sent with its lines and shows as a saved box once Rust sends it back", () => {
+  const { w, editor, sent } = boot();
+  editor.load("a.py", "one\ntwo\nthree\n", "python", false);
+  editor.startComment(1, 2);
+  const input = w.document.querySelector(".cm-comment-box.editing input");
+  assert.ok(input, "an editing box opens under the last picked line");
+  input.value = "why?";
+  w.document.querySelector(".cm-comment-box.editing .cm-comment-ok").dispatchEvent(mouse(w, "mousedown"));
+  assert.deepEqual(plain(sent.filter((m) => m.t === "comment")), [{ t: "comment", key: "a.py", from: 1, to: 2, text: "why?", id: null }]);
+  editor.comments("a.py", [{ id: 7, from: 1, to: 2, text: "why?" }]);
+  const saved = w.document.querySelector(".cm-comment-box.saved");
+  assert.ok(saved);
+  assert.equal(saved.querySelector(".cm-comment-text").textContent, "why?");
+  saved.querySelector(".cm-comment-delete").dispatchEvent(mouse(w, "mousedown"));
+  assert.deepEqual(plain(sent.filter((m) => m.t === "comment_delete")), [{ t: "comment_delete", key: "a.py", id: 7 }]);
+  editor.destroy();
+});
+
+test("comments of another tab do not show, and come back with their tab", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "one\n", "python", false);
+  editor.load("b.py", "two\n", "python", false);
+  editor.comments("a.py", [{ id: 1, from: 1, to: 1, text: "mine" }]);
+  assert.equal(w.document.querySelectorAll(".cm-comment-box").length, 0);
+  editor.show("a.py");
+  assert.equal(w.document.querySelectorAll(".cm-comment-box.saved").length, 1);
+  editor.destroy();
+});
+
+test("focusing a comment turns its box into the editing one", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "one\ntwo\n", "python", false);
+  editor.comments("a.py", [{ id: 3, from: 2, to: 2, text: "hello" }]);
+  editor.focusComment("a.py", 3);
+  assert.ok(w.document.querySelector(".cm-comment-box.editing input"));
+  editor.destroy();
+});
+
+// The editor's view, found the way a probe can: CodeMirror keeps it on the content element.
+function viewOf(w) {
+  const content = w.document.querySelector(".cm-content");
+  const holder = content[Object.keys(content).find((k) => k.startsWith("cm"))];
+  return holder.view || holder.root?.view || holder.owner?.view;
+}
+
+test("a comment box and a picked line stay on their lines when lines are inserted above", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "l1\nl2\nl3\nl4\nl5", "python", false);
+  editor.comments("a.py", [{ id: 1, from: 3, to: 3, text: "c" }]);
+  editor.startComment(3, 3);
+  const view = viewOf(w);
+  view.dispatch({ changes: { from: 0, insert: "new1\nnew2\n" } });
+  const content = w.document.querySelector(".cm-content");
+  const rows = [...content.children].map((e) => (e.classList.contains("cm-comment-box") ? "[BOX]" : e.textContent));
+  // The saved box follows its line number (3): it sits under the third line of the new text.
+  assert.deepEqual(rows.filter((r) => r !== "[BOX]").slice(0, 3), ["new1", "new2", "l1"]);
+  assert.ok(rows.indexOf("[BOX]") >= 0 && rows.indexOf("[BOX]") === rows.indexOf("l1") + 1, rows.join("|"));
+  assert.ok(w.document.querySelector(".cm-picked-line"), "the pick band is still drawn");
+  editor.destroy();
+});
+
+test("a focus request for a comment of a tab that is not shown yet is applied when it shows", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "one\ntwo\n", "python", false);
+  editor.load("b.py", "x\n", "python", false);
+  editor.comments("a.py", [{ id: 3, from: 2, to: 2, text: "hello" }]);
+  editor.focusComment("a.py", 3);
+  editor.show("a.py");
+  assert.ok(w.document.querySelector(".cm-comment-box.editing input"));
+  editor.destroy();
+});
+
+test("attaching a pick that lies past the end of the file sends nothing", () => {
+  const { w, editor, sent } = boot();
+  editor.load("a.py", "one\ntwo\nthree\nfour\n", "python", false);
+  editor.startComment(4, 4);
+  const view = viewOf(w);
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "x" } });
+  w.document.querySelector(".cm-pick-bar [data-act=attach]").dispatchEvent(mouse(w, "mousedown"));
+  assert.deepEqual(plain(sent.filter((m) => m.t === "attach")), []);
+  editor.destroy();
+});

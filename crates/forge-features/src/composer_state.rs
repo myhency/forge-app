@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
-use forge_domain::{Attachment, AttachmentKind};
+use forge_domain::{with_cards, Attachment, AttachmentKind, Card};
 
 use crate::attachments::{add_attachments, check_attachments, folder_label, with_folder_hints};
 use crate::workspace::WorkspaceServices;
@@ -13,14 +13,14 @@ pub struct Outgoing {
     pub attachments: Vec<Attachment>,
 }
 
-/// `None` when there is nothing to send (no text and no chips). Folder hints go after the text and
+/// `None` when there is nothing to send (no text, no chips and no cards). Folder hints go after the text and
 /// only for folders not yet announced.
-pub fn plan_send(text: &str, attachments: &[Attachment], unannounced: &[PathBuf]) -> Option<Outgoing> {
+pub fn plan_send(text: &str, attachments: &[Attachment], unannounced: &[PathBuf], cards: &[Card]) -> Option<Outgoing> {
     let text = text.trim();
-    if text.is_empty() && attachments.is_empty() {
+    if text.is_empty() && attachments.is_empty() && cards.is_empty() {
         return None;
     }
-    Some(Outgoing { text: with_folder_hints(text, unannounced), attachments: attachments.to_vec() })
+    Some(Outgoing { text: with_cards(cards, &with_folder_hints(text, unannounced)), attachments: attachments.to_vec() })
 }
 
 /// What is in the composer besides what the text area owns: chips for attached files and added
@@ -93,6 +93,12 @@ impl ComposerState {
     pub fn restore_attachments(&self, attachments: Vec<Attachment>) {
         let mut list = self.attachments;
         add_attachments(&mut list.write(), attachments.into_iter().map(|a| a.path).collect());
+    }
+
+    /// Adds files as chips (none twice).
+    pub fn add_paths(&self, paths: Vec<PathBuf>) {
+        let mut list = self.attachments;
+        add_attachments(&mut list.write(), paths);
     }
 
     pub fn dismiss_error(&self) {
@@ -174,7 +180,7 @@ impl ComposerState {
     /// `@` lines: they go to the SDK as start options (`take_folders`).
     pub fn take_for_new_session(&self, text: &str) -> Option<Outgoing> {
         let attachments = self.attachments();
-        let outgoing = plan_send(text, &attachments, &[])?;
+        let outgoing = plan_send(text, &attachments, &[], &[])?;
         if !self.check_and_clear(&attachments) {
             return None;
         }
@@ -192,11 +198,11 @@ impl ComposerState {
     /// Takes what a send needs. Checks the chips first: a refusal leaves everything where it is
     /// and sets the error. On success the chips are cleared and the folders marked as told.
     /// Call it only at the moment of sending, so a failed send has lost nothing.
-    pub fn take_for_send(&self, text: &str) -> Option<Outgoing> {
+    pub fn take_for_send(&self, text: &str, cards: &[Card]) -> Option<Outgoing> {
         let attachments = self.attachments();
         let unannounced: Vec<PathBuf> =
             self.folders.peek().iter().filter(|(_, told)| !told).map(|(path, _)| path.clone()).collect();
-        let outgoing = plan_send(text, &attachments, &unannounced)?;
+        let outgoing = plan_send(text, &attachments, &unannounced, cards)?;
         if !self.check_and_clear(&attachments) {
             return None;
         }
@@ -259,24 +265,39 @@ mod tests {
 
     #[test]
     fn nothing_typed_and_nothing_attached_sends_nothing() {
-        assert_eq!(plan_send("   ", &[], &[]), None);
+        assert_eq!(plan_send("   ", &[], &[], &[]), None);
     }
 
     #[test]
     fn chips_alone_can_be_sent() {
-        let out = plan_send("", &[image()], &[]).unwrap();
+        let out = plan_send("", &[image()], &[], &[]).unwrap();
         assert_eq!(out.text, "");
         assert_eq!(out.attachments, vec![image()]);
     }
 
     #[test]
     fn text_is_trimmed_and_unannounced_folders_follow_it() {
-        let out = plan_send("  fix  ", &[], &[PathBuf::from("/extra dir")]).unwrap();
+        let out = plan_send("  fix  ", &[], &[PathBuf::from("/extra dir")], &[]).unwrap();
         assert_eq!(out.text, "fix\n@/extra dir");
     }
 
     #[test]
     fn a_folder_alone_does_not_make_a_message() {
-        assert_eq!(plan_send("", &[], &[PathBuf::from("/extra")]), None);
+        assert_eq!(plan_send("", &[], &[PathBuf::from("/extra")], &[]), None);
+    }
+
+    #[test]
+    fn cards_alone_can_be_sent_and_come_before_the_text() {
+        let card = forge_domain::Card {
+            id: 1,
+            kind: forge_domain::CardKind::Comment,
+            path: "/p/a.py".into(),
+            range: forge_domain::LineRange::new(3, 3),
+            text: "why".into(),
+        };
+        let out = plan_send("", &[], &[], &[card.clone()]).unwrap();
+        assert_eq!(forge_domain::split_cards(&out.text), (vec![forge_domain::Card { id: 0, ..card.clone() }], String::new()));
+        let out = plan_send("  hi ", &[], &[], &[card]).unwrap();
+        assert!(out.text.ends_with("\n\nhi"));
     }
 }

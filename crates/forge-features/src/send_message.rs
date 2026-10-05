@@ -1,7 +1,10 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
+use forge_domain::split_cards;
 use forge_shared::{Button, ButtonKind};
 
+use crate::cards::line_count;
+use crate::composer_cards::ComposerCards;
 use crate::composer_state::{use_composer_state_provider, ComposerChips};
 use crate::suggestion::{composer_placeholder, suggestion_to_accept};
 
@@ -31,6 +34,12 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
         };
         if failures != *seen_failures.peek() {
             seen_failures.set(failures);
+            // The cards were written into the text that came back: take them out again.
+            let unsent = unsent.map(|text| {
+                let (cards, rest) = split_cards(&text);
+                workspace.restore_cards(id, cards);
+                rest
+            });
             // The chips come back whatever is in the box: they are not text the person could be typing over.
             composer.restore_attachments(unsent_attachments);
             if let Some(text) = unsent {
@@ -41,8 +50,20 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
         }
     });
 
+    // Files the Files panel wants attached (a tree row or a tab menu) become chips.
+    use_effect(move || {
+        let queued = workspace.queued_files(id);
+        if !queued.is_empty() {
+            workspace.clear_queued_files(id);
+            composer.add_paths(queued);
+        }
+    });
+
     let mut submit = move || {
-        let Some(outgoing) = composer.take_for_send(&draft.read()) else {
+        let cards = workspace.take_cards(id, line_count);
+        let Some(outgoing) = composer.take_for_send(&draft.read(), &cards) else {
+            // Refused (a chip could not be read): the cards stay where they were.
+            workspace.restore_cards(id, cards);
             return;
         };
         if let Some(handle) = workspace.handle(id) {
@@ -75,6 +96,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
             if let Some(message) = composer.error() {
                 div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
             }
+            ComposerCards { id }
             ComposerChips {}
             CommandTextArea {
                 value: draft(),

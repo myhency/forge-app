@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
+use forge_application::LiveSessionId;
+use forge_domain::LineRange;
 use forge_entities::{code_html, is_markdown, language_of, render_markdown};
 use forge_features::{normalize_newlines, run_blocking, EditorTabs, TabDoc, Workspace};
 use forge_ports::{FileContent, FilesError, FilesPort, WriteError};
@@ -48,12 +50,19 @@ impl Pending {
     }
 }
 
+/// The absolute path a tree or tab path stands for.
+pub fn absolute(cwd: &std::path::Path, path: &str) -> PathBuf {
+    cwd.join(path)
+}
+
 /// Everything the panel does, in one place. It is `Clone` (signals are `Copy`), so event handlers
 /// take a clone. The text of an open file lives in the editor in the page; Rust keeps a `TabDoc`
 /// (the version and a hash of what is on disk) per tab.
 #[derive(Clone)]
 pub struct FilesCtx {
     pub workspace: Workspace,
+    /// The session this panel belongs to: its cards live in the workspace under this id.
+    pub id: LiveSessionId,
     pub cwd: PathBuf,
     pub handle: EditorHandle,
     pub tabs: Signal<EditorTabs>,
@@ -88,6 +97,16 @@ impl FilesCtx {
         if let Some(doc) = write.get_mut(key) {
             change(doc);
         }
+    }
+
+    /// `Attach as context` on a tree row or a tab: the file becomes a chip in the message box.
+    pub fn attach_file(&self, path: &str) {
+        self.workspace.queue_file(self.id, absolute(&self.cwd, path));
+    }
+
+    // The absolute path of a tab, as a card holds it.
+    fn absolute_string(&self, key: &str) -> String {
+        self.cwd.join(key).to_string_lossy().to_string()
     }
 
     fn selected(&self) -> Option<String> {
@@ -236,6 +255,16 @@ impl FilesCtx {
             FromPage::Missing { key } => self.read_and_apply(key, false),
             // A quiet refresh found an edit waiting: the disk changed and so did the editor.
             FromPage::Skipped { key } => self.with_doc(&key, |doc| doc.write_failed(&WriteError::Changed)),
+            FromPage::Attach { key, from, to, text } => {
+                self.workspace.add_excerpt(self.id, self.absolute_string(&key), LineRange::new(from, to), text);
+            }
+            FromPage::Comment { key, from, to, text, id } => match id {
+                Some(card_id) => self.workspace.update_comment(self.id, card_id, text),
+                None => {
+                    self.workspace.add_comment(self.id, self.absolute_string(&key), LineRange::new(from, to), text);
+                }
+            },
+            FromPage::CommentDelete { id, .. } => self.workspace.remove_card(self.id, id),
         }
     }
 
@@ -577,5 +606,10 @@ mod tests {
     #[test]
     fn an_overwrite_is_not_swallowed_by_a_plain_save_asked_later() {
         assert!(!Pending::Save { overwrite: false }.replaces(Pending::Save { overwrite: true }));
+    }
+
+    #[test]
+    fn a_tree_or_tab_path_is_taken_from_the_session_folder() {
+        assert_eq!(absolute(std::path::Path::new("/p"), "src/a.py"), PathBuf::from("/p/src/a.py"));
     }
 }

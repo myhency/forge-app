@@ -26,6 +26,7 @@ pub fn FilesTabs(
     on_keep: EventHandler<String>,
     on_close_others: EventHandler<String>,
     on_close_all: EventHandler<()>,
+    on_attach: EventHandler<String>,
 ) -> Element {
     // The tab a press started on.
     let mut pressed = use_signal(|| None::<String>);
@@ -109,6 +110,20 @@ pub fn FilesTabs(
                 },
             }
             div { class: "picker-menu files-tab-menu", role: "menu", style: "left: min({x}px, calc(100vw - 210px)); top: {y}px;",
+                button {
+                    class: "picker-item",
+                    r#type: "button",
+                    role: "menuitem",
+                    onclick: {
+                        let path = path.clone();
+                        move |_| {
+                            on_attach.call(path.clone());
+                            menu.set(None);
+                        }
+                    },
+                    "Attach as context"
+                }
+                div { class: "picker-divider" }
                 button {
                     class: if preview { "picker-item" } else { "picker-item disabled" },
                     r#type: "button",
