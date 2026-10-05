@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
+use forge_domain::CardKind;
 use forge_entities::is_markdown;
 use forge_features::{parse_files_query, run_blocking, use_workspace, Banner, EditorTabs, FileTree, FilesQuery, Panel};
 use forge_ports::{ContentHit, FilesPort};
@@ -45,6 +46,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let handle = use_editor_channel();
     let ctx = FilesCtx {
         workspace,
+        id,
         cwd: cwd.clone(),
         handle: handle.clone(),
         tabs: use_signal(EditorTabs::default),
@@ -115,6 +117,36 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 workspace.clear_file_request(id);
                 ctx.open(path);
             }
+        });
+    }
+    // The comments of every open file go to the page whenever they or the tabs change.
+    {
+        let ctx = ctx.clone();
+        use_effect(move || {
+            let cards = workspace.cards(id);
+            let ready = *ctx.ready.read();
+            let keys: Vec<String> = ctx.tabs.read().tabs().iter().map(|tab| tab.path.clone()).collect();
+            if !ready {
+                return;
+            }
+            for key in keys {
+                let path = ctx.cwd.join(&key).to_string_lossy().to_string();
+                let list: Vec<_> = cards.iter().filter(|c| c.kind == CardKind::Comment && c.path == path).cloned().collect();
+                ctx.handle.comments(&key, &list);
+            }
+        });
+    }
+    // A comment card in the message box was clicked: open its file and show its box.
+    {
+        let ctx = ctx.clone();
+        use_effect(move || {
+            let Some(card_id) = workspace.comment_focus(id) else { return };
+            workspace.clear_comment_focus(id);
+            let Some(card) = workspace.cards(id).into_iter().find(|c| c.id == card_id) else { return };
+            let Ok(relative) = std::path::Path::new(&card.path).strip_prefix(&ctx.cwd) else { return };
+            let key = relative.to_string_lossy().to_string();
+            ctx.open(key.clone());
+            ctx.handle.focus_comment(&key, card_id);
         });
     }
     // A tool call of the session finished: tabs with no edits show the file as it is now. A memo, so

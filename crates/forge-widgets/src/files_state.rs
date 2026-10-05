@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
+use forge_application::LiveSessionId;
+use forge_domain::LineRange;
 use forge_entities::{code_html, is_markdown, language_of, render_markdown};
 use forge_features::{normalize_newlines, run_blocking, EditorTabs, TabDoc, Workspace};
 use forge_ports::{FileContent, FilesError, FilesPort, WriteError};
@@ -54,6 +56,8 @@ impl Pending {
 #[derive(Clone)]
 pub struct FilesCtx {
     pub workspace: Workspace,
+    /// The session this panel belongs to: its cards live in the workspace under this id.
+    pub id: LiveSessionId,
     pub cwd: PathBuf,
     pub handle: EditorHandle,
     pub tabs: Signal<EditorTabs>,
@@ -88,6 +92,11 @@ impl FilesCtx {
         if let Some(doc) = write.get_mut(key) {
             change(doc);
         }
+    }
+
+    // The absolute path of a tab, as a card holds it.
+    fn absolute_string(&self, key: &str) -> String {
+        self.cwd.join(key).to_string_lossy().to_string()
     }
 
     fn selected(&self) -> Option<String> {
@@ -236,6 +245,16 @@ impl FilesCtx {
             FromPage::Missing { key } => self.read_and_apply(key, false),
             // A quiet refresh found an edit waiting: the disk changed and so did the editor.
             FromPage::Skipped { key } => self.with_doc(&key, |doc| doc.write_failed(&WriteError::Changed)),
+            FromPage::Attach { key, from, to, text } => {
+                self.workspace.add_excerpt(self.id, self.absolute_string(&key), LineRange::new(from, to), text);
+            }
+            FromPage::Comment { key, from, to, text, id } => match id {
+                Some(card_id) => self.workspace.update_comment(self.id, card_id, text),
+                None => {
+                    self.workspace.add_comment(self.id, self.absolute_string(&key), LineRange::new(from, to), text);
+                }
+            },
+            FromPage::CommentDelete { id, .. } => self.workspace.remove_card(self.id, id),
         }
     }
 
