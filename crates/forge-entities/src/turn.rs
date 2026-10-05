@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use forge_domain::Message;
 use time::OffsetDateTime;
 
+use crate::card_view::CardView;
 use crate::diff::diff_for_tool_call;
 use crate::diff_view::DiffView;
 use crate::links::{known_paths, render_markdown_linked};
@@ -52,6 +53,13 @@ fn TurnItem(item: Item, detailed: bool, known: Vec<String>, on_open_file: EventH
             let text = message.text();
             rsx! {
                 div { class: "turn-user",
+                    if !message.cards.is_empty() {
+                        div { class: "cards-row",
+                            for (index, card) in message.cards.iter().enumerate() {
+                                CardView { key: "{index}", card: card.clone(), on_click: None, on_remove: None }
+                            }
+                        }
+                    }
                     if !text.is_empty() {
                         div { class: "user-bubble", "{text}" }
                     }

@@ -642,3 +642,18 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .task-command { padding: 8px 10px; background: var(--code-bg); border-radius: 8px; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .task-output { margin: 0; padding: 8px 10px; max-height: 240px; overflow: auto; background: var(--code-bg); border-radius: 8px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .task-output.empty { font-family: inherit; color: var(--fg-muted); }
+
+/* Cards: excerpts and comments attached to a message */
+.cards-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.turn-user .cards-row { justify-content: flex-end; }
+.card { position: relative; width: 200px; height: 200px; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+.card.clickable { cursor: pointer; }
+.card-text { font-size: 12px; white-space: pre-wrap; overflow: hidden; font-family: var(--mono); }
+.card-badge { align-self: flex-start; font-size: 11px; color: var(--fg-muted); background: var(--bg-hover); border-radius: 6px; padding: 1px 6px; }
+.card-remove { position: absolute; top: 6px; right: 6px; display: none; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; background: var(--bg-hover); color: var(--fg); }
+.card:hover .card-remove, .card-remove.always { display: block; }
+.card-modal { position: fixed; z-index: 60; top: 12vh; left: 50%; transform: translateX(-50%); width: min(640px, 90vw); max-height: 70vh; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.card-modal-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+.card-modal-head .card-remove { position: static; }
+.card-modal-note { color: var(--fg-muted); font-size: 12px; margin: 6px 0 10px; }
+.card-modal-code { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 0; overflow: auto; font-family: var(--mono); font-size: 12px; }

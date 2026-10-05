@@ -4,6 +4,7 @@ use forge_domain::split_cards;
 use forge_shared::{Button, ButtonKind};
 
 use crate::cards::line_count;
+use crate::composer_cards::ComposerCards;
 use crate::composer_state::{use_composer_state_provider, ComposerChips};
 use crate::suggestion::{composer_placeholder, suggestion_to_accept};
 
@@ -95,6 +96,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
             if let Some(message) = composer.error() {
                 div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
             }
+            ComposerCards { id }
             ComposerChips {}
             CommandTextArea {
                 value: draft(),
