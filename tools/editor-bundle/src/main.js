@@ -136,6 +136,8 @@ window.ForgeEditor = {
     const states = new Map();
     // key -> the comments Rust last sent for that file
     const commentsByKey = new Map();
+    // key -> a comment to open for editing as soon as that tab shows
+    const pendingFocus = new Map();
     const tools = lineTools({ send, getKey: () => key });
 
     // The extensions the settings control, kept in one compartment so a change reconfigures them all.
@@ -231,6 +233,13 @@ window.ForgeEditor = {
       else work();
     }
 
+    function applyPendingFocus(forKey) {
+      const id = pendingFocus.get(forKey);
+      if (id === undefined) return;
+      pendingFocus.delete(forKey);
+      tools.focusComment(view, id);
+    }
+
     function reapply(readonly) {
       view.dispatch({ effects: config.reconfigure(configExtensions(readonly)) });
     }
@@ -258,6 +267,7 @@ window.ForgeEditor = {
           reapply(readonly);
           tools.bind(view);
           tools.setComments(view, commentsByKey.get(newKey) || []);
+          applyPendingFocus(newKey);
           view.scrollDOM.scrollTop = 0;
         });
       },
@@ -276,6 +286,7 @@ window.ForgeEditor = {
           reapply(entry.readonly);
           tools.bind(view);
           tools.setComments(view, commentsByKey.get(newKey) || []);
+          applyPendingFocus(newKey);
           view.scrollDOM.scrollTop = entry.scroll;
         });
       },
@@ -306,10 +317,15 @@ window.ForgeEditor = {
       },
       comments(forKey, list) {
         commentsByKey.set(forKey, list);
-        if (forKey === key) tools.setComments(view, list);
+        if (forKey === key) {
+          tools.setComments(view, list);
+          applyPendingFocus(forKey);
+        }
       },
       focusComment(forKey, id) {
+        // A tab that is not shown (or not loaded) yet takes the request when it shows.
         if (forKey === key) tools.focusComment(view, id);
+        else pendingFocus.set(forKey, id);
       },
       startComment(from, to) {
         tools.startComment(view, from, to);

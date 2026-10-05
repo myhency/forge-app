@@ -60,8 +60,14 @@ impl Cards {
         for card in cards {
             match card.kind {
                 CardKind::Excerpt => self.add_excerpt(id, card.path, card.range, card.text),
+                // A message box that mounts again hands the same failed send back: never twice.
                 CardKind::Comment => {
-                    self.add_comment(id, card.path, card.range, card.text);
+                    let there = self.by_session.get(&id).is_some_and(|list| {
+                        list.iter().any(|c| c.kind == CardKind::Comment && c.path == card.path && c.range == card.range && c.text == card.text)
+                    });
+                    if !there {
+                        self.add_comment(id, card.path, card.range, card.text);
+                    }
                 }
             }
         }
@@ -127,6 +133,18 @@ mod tests {
         let mut cards = Cards::default();
         cards.add_excerpt(id(1), "/p/a.py".into(), LineRange::new(1, 1), "x".into());
         assert!(cards.list(id(2)).is_empty());
+    }
+
+    #[test]
+    fn restoring_a_comment_that_is_already_there_does_not_duplicate_it() {
+        let mut cards = Cards::default();
+        cards.add_comment(id(1), "/p/a.py".into(), LineRange::new(3, 3), "why".into());
+        let again = cards.list(id(1));
+        cards.restore(id(1), again);
+        assert_eq!(cards.list(id(1)).len(), 1);
+        // A different comment on the same line is still added.
+        cards.restore(id(1), vec![Card { id: 0, kind: CardKind::Comment, path: "/p/a.py".into(), range: LineRange::new(3, 3), text: "other".into() }]);
+        assert_eq!(cards.list(id(1)).len(), 2);
     }
 
     #[test]

@@ -186,3 +186,48 @@ test("focusing a comment turns its box into the editing one", () => {
   assert.ok(w.document.querySelector(".cm-comment-box.editing input"));
   editor.destroy();
 });
+
+// The editor's view, found the way a probe can: CodeMirror keeps it on the content element.
+function viewOf(w) {
+  const content = w.document.querySelector(".cm-content");
+  const holder = content[Object.keys(content).find((k) => k.startsWith("cm"))];
+  return holder.view || holder.root?.view || holder.owner?.view;
+}
+
+test("a comment box and a picked line stay on their lines when lines are inserted above", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "l1\nl2\nl3\nl4\nl5", "python", false);
+  editor.comments("a.py", [{ id: 1, from: 3, to: 3, text: "c" }]);
+  editor.startComment(3, 3);
+  const view = viewOf(w);
+  view.dispatch({ changes: { from: 0, insert: "new1\nnew2\n" } });
+  const content = w.document.querySelector(".cm-content");
+  const rows = [...content.children].map((e) => (e.classList.contains("cm-comment-box") ? "[BOX]" : e.textContent));
+  // The saved box follows its line number (3): it sits under the third line of the new text.
+  assert.deepEqual(rows.filter((r) => r !== "[BOX]").slice(0, 3), ["new1", "new2", "l1"]);
+  assert.ok(rows.indexOf("[BOX]") >= 0 && rows.indexOf("[BOX]") === rows.indexOf("l1") + 1, rows.join("|"));
+  assert.ok(w.document.querySelector(".cm-picked-line"), "the pick band is still drawn");
+  editor.destroy();
+});
+
+test("a focus request for a comment of a tab that is not shown yet is applied when it shows", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "one\ntwo\n", "python", false);
+  editor.load("b.py", "x\n", "python", false);
+  editor.comments("a.py", [{ id: 3, from: 2, to: 2, text: "hello" }]);
+  editor.focusComment("a.py", 3);
+  editor.show("a.py");
+  assert.ok(w.document.querySelector(".cm-comment-box.editing input"));
+  editor.destroy();
+});
+
+test("attaching a pick that lies past the end of the file sends nothing", () => {
+  const { w, editor, sent } = boot();
+  editor.load("a.py", "one\ntwo\nthree\nfour\n", "python", false);
+  editor.startComment(4, 4);
+  const view = viewOf(w);
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "x" } });
+  w.document.querySelector(".cm-pick-bar [data-act=attach]").dispatchEvent(mouse(w, "mousedown"));
+  assert.deepEqual(plain(sent.filter((m) => m.t === "attach")), []);
+  editor.destroy();
+});

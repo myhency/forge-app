@@ -19,8 +19,8 @@ const pickField = StateField.define({
     return value;
   },
   provide: (f) => [
-    EditorView.decorations.compute([f], (state) => pickDecorations(state, state.field(f))),
-    showTooltip.compute([f], (state) => {
+    EditorView.decorations.compute(["doc", f], (state) => pickDecorations(state, state.field(f))),
+    showTooltip.compute(["doc", f], (state) => {
       const pick = state.field(f);
       if (!pick) return null;
       const pos = state.doc.line(Math.min(pick.from, state.doc.lines)).from;
@@ -79,7 +79,7 @@ const commentsField = StateField.define({
     }
     return next;
   },
-  provide: (f) => EditorView.decorations.compute([f], (state) => commentDecorations(state, state.field(f))),
+  provide: (f) => EditorView.decorations.compute(["doc", f], (state) => commentDecorations(state, state.field(f))),
 });
 
 function commentDecorations(state, { list, editing, draft }) {
@@ -185,7 +185,8 @@ export function lineTools({ send, getKey }) {
 
   function attach(view) {
     const p = view.state.field(pickField);
-    if (!p) return;
+    // Lines were deleted under the pick: there is nothing to attach.
+    if (!p || p.from > view.state.doc.lines) return;
     const lines = [];
     for (let n = p.from; n <= Math.min(p.to, view.state.doc.lines); n++) lines.push(view.state.doc.line(n).text);
     send({ t: "attach", key: getKey(), from: p.from, to: p.to, text: lines.join("\n") });
