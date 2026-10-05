@@ -231,3 +231,97 @@ test("attaching a pick that lies past the end of the file sends nothing", () => 
   assert.deepEqual(plain(sent.filter((m) => m.t === "attach")), []);
   editor.destroy();
 });
+
+const ALL = { match_case: false, whole_word: false, regex: false };
+const count = (w) => w.document.querySelector(".cm-find-count")?.textContent;
+
+test("find opens the bar on the line, marks every match and counts them", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "fizz\nbuzz\nBuzz\n", "python", false);
+  editor.find("a.py", { query: "buzz", ...ALL, line: 3 });
+  assert.ok(w.document.querySelector(".cm-find-bar"));
+  assert.equal(w.document.querySelectorAll(".cm-find-match").length, 2);
+  assert.equal(count(w), "2 of 2");
+  editor.destroy();
+});
+
+test("next and previous wrap around", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\na\na\n", "python", false);
+  editor.find("a.py", { query: "a", ...ALL, line: 1 });
+  assert.equal(count(w), "1 of 3");
+  w.document.querySelector(".cm-find-prev").dispatchEvent(mouse(w, "mousedown"));
+  assert.equal(count(w), "3 of 3");
+  w.document.querySelector(".cm-find-next").dispatchEvent(mouse(w, "mousedown"));
+  assert.equal(count(w), "1 of 3");
+  editor.destroy();
+});
+
+test("typing in the field and the toggles change the matches", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "Buzz\nbuzz\nbuzzer\n", "python", false);
+  editor.find("a.py", { query: "buzz", ...ALL, line: 1 });
+  assert.equal(count(w), "1 of 3");
+  w.document.querySelector("[data-opt=match_case]").dispatchEvent(mouse(w, "mousedown"));
+  assert.equal(count(w), "1 of 2");
+  w.document.querySelector("[data-opt=whole_word]").dispatchEvent(mouse(w, "mousedown"));
+  assert.equal(count(w), "1 of 1");
+  const input = w.document.querySelector(".cm-find-bar input");
+  input.value = "zzz";
+  input.dispatchEvent(new w.Event("input", { bubbles: true }));
+  assert.equal(count(w), "No results");
+  editor.destroy();
+});
+
+test("an invalid regex marks the field and finds nothing", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a(b\n", "python", false);
+  editor.find("a.py", { query: "(", ...ALL, regex: true, line: 1 });
+  assert.ok(w.document.querySelector(".cm-find-bar input.invalid"));
+  assert.equal(count(w), "No results");
+  editor.destroy();
+});
+
+test("a pattern that can match nothing does not flood or hang", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "abc\n", "python", false);
+  editor.find("a.py", { query: "x*", ...ALL, regex: true, line: 1 });
+  assert.equal(count(w), "No results");
+  editor.destroy();
+});
+
+test("whole word works for Hangul", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "가나 다\n가나다\n", "python", false);
+  editor.find("a.py", { query: "가나", ...ALL, whole_word: true, line: 1 });
+  assert.equal(count(w), "1 of 1");
+  editor.destroy();
+});
+
+test("Escape closes the bar and Enter during an IME composition does not move", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\na\n", "python", false);
+  editor.find("a.py", { query: "a", ...ALL, line: 1 });
+  const input = w.document.querySelector(".cm-find-bar input");
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }));
+  assert.equal(count(w), "1 of 2");
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(w.document.querySelector(".cm-find-bar"), null);
+  assert.equal(w.document.querySelectorAll(".cm-find-match").length, 0);
+  editor.destroy();
+});
+
+test("a find for a tab that is not shown yet is applied when it shows, and the bar follows tab switches", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "one\n", "python", false);
+  editor.load("b.py", "two\nneedle\n", "python", false);
+  editor.show("a.py");
+  editor.find("b.py", { query: "needle", ...ALL, line: 2 });
+  assert.equal(w.document.querySelector(".cm-find-bar"), null);
+  editor.show("b.py");
+  assert.equal(count(w), "1 of 1");
+  editor.show("a.py");
+  // The bar is the editor's, not the tab's: it stays open with the same query.
+  assert.equal(w.document.querySelector(".cm-find-bar input").value, "needle");
+  editor.destroy();
+});

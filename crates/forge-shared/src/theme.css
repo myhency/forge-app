@@ -677,3 +677,14 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .cm-ctx-menu button { text-align: left; border: none; background: transparent; color: var(--fg); padding: 5px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
 .cm-ctx-menu button:hover { background: var(--bg-hover); }
 .cm-ctx-rule { height: 1px; margin: 4px 0; background: var(--border); }
+
+/* The in-file find bar */
+.cm-find-bar { display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 12px; }
+.cm-find-bar input { flex: 1; min-width: 0; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); font-size: 12px; outline: none; }
+.cm-find-bar input.invalid { border-color: #d44; }
+.cm-find-bar button { border: none; background: transparent; color: var(--fg-muted); padding: 2px 6px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.cm-find-bar button:hover { background: var(--bg-hover); }
+.cm-find-bar button.on { background: var(--accent-soft); color: var(--fg); }
+.cm-find-count { color: var(--fg-muted); white-space: nowrap; min-width: 4.5em; text-align: right; }
+.cm-find-match { background-color: rgba(250, 204, 21, .35); }
+.cm-find-current { outline: 2px solid #22a45d; border-radius: 2px; }
