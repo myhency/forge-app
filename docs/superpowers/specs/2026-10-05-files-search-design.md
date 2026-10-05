@@ -40,3 +40,18 @@ Adapter tests (each option alone and together, a Hangul word, an invalid regex, 
 ## Out of scope
 
 25C-2 items; replacing text; searching in a folder other than the session folder; keeping the toggles between sessions.
+
+## As built (2026-10-05)
+
+Built on branch `plan-25C` (from `plan-25B`, which was merged to `master` as bf8f3e1 first), executed inline. 1073 Rust tests and 23 jsdom bundle tests pass.
+
+Differs from the spec above:
+
+- `FilesError` gained `InvalidPattern`; the files adapter's `write` maps it to `WriteError::Failed` (it cannot happen there).
+- A long line's window keeps only 24 chars before the match (`HIT_LEAD_CHARS`), not a centred match: the real window check showed a centred match falling outside the narrow list. The list wraps a hit's text over at most 4 lines (the match stays visible) instead of one clipped row.
+- The hit row shows the line number to the left of the text (a row), not above it.
+- The find bar's state belongs to the editor: `find.js` remembers it and puts it back when a tab is shown; a `find` for a tab that is not loaded yet waits in `pendingFind`.
+
+**Checked in the real window (2026-10-05, harness).** With a Korean input method on, so the query was Hangul (`?가나`): the three toggles and `×` under the filter field; hits grouped by file with the line number and the match marked; a long line shows the match with `…` around it; a click on a hit opens the file in an italic tab, puts the caret on the line and opens the find bar with the query, `1 of 2`, every match shaded and the current one outlined green; the bar's `ab` toggle made it `1 of 1` and `가나다` was left unmarked; the panel's `ab` toggle dropped the `가나다` lines from the list; `×` closed the bar and the marks; `⌘F` reopened it with the selected word and the remembered options.
+
+Not checked in the real window: `Aa` and `.*` (unit and jsdom tests cover them; Latin letters cannot be typed while the Korean input method is on), an invalid regex (note in the list, red field in the bar: tests only), Enter and the arrows in the bar, dark mode.
