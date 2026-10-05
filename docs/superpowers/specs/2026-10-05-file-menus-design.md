@@ -32,3 +32,18 @@ Last piece of the Files panel work (25A editor, 25B excerpts and comments, 25C-1
 ## Tests
 
 `file_menu` (order, dividers, submenus, `Keep open` enabled only for a preview tab); `place`; `reveal_dirs`; `open_with` in the adapter (program `true` and `false`, a relative path refused before any program runs, the path passed as one argument); jsdom for `Go to line` (jump, past the end, non number, Escape, `Ctrl-g`); then a real window check with the harness.
+
+## As built (2026-10-05)
+
+Built on branch `plan-25C2` (from `master` with 25B and 25C-1), executed inline. 1087 Rust tests and 34 jsdom bundle tests pass.
+
+Differs from the spec above:
+
+- No pure `place(...)`: the menu's position uses CSS `min(...)` against the window, and the pure rule that is tested is `submenu_opens_left(menu_x, window_width, menu_width)`; the window width is read once with `document::eval`.
+- `BrowserPort::open_with` takes `Option<&'static str>` (mockall cannot name the lifetime of `Option<&str>`; the app is a fixed Forge name anyway); the workspace method is `open_with_app` (`open_file` already existed).
+- The `.context-menu` needs `position: fixed` like the old `.files-tab-menu` (the first real window run showed the menu laid out inside the panel without it).
+- `Go to line` runs after the editor takes focus again (the right click menu's `view.focus()` used to steal the focus from the new panel).
+
+**Checked in the real window (2026-10-05, harness).** The tree row menu has the 9 items, dividers and the `⌘F` hint in the observed order; `Copy` opens a submenu (to the left here, because the window is narrow), `Absolute path` put `/private/tmp/forge-harness/my-app/fizz.py` on the clipboard (`pbpaste`); `Copy file contents` on a binary file showed the notice "Only a text file can be copied" and left the clipboard as it was; the tab menu has its 7 items, `Keep open` enabled on an italic (preview) tab; `Show in file tree` on a tab of `src/deep/a.txt` with the folders closed opened `src` and `deep` and selected the row; `Ctrl-G` opened "Go to line (1-5)" and `1` + Enter moved the caret to line 1 and closed the panel; `Reload file` after a change from a shell showed the new text.
+
+Not checked in the real window: `Open in` (VS Code and Default app would open other programs; the command arguments are covered by adapter tests), `Show in Finder` (the existing feature), `Reload file` on a tab with an unsaved edit (the conflict banner path of 25A), `Keep open` / `Close others` / `Close all` from the new menu, `Find in file` from the menu, the editor's right click `Go to line` item (jsdom only), right click on a directory row, dark mode.
