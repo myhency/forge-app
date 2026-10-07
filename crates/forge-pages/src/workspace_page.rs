@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
-use forge_features::{refocus_workspace, use_settings_provider, use_workspace_provider, Active};
+use forge_domain::{layout_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO, SIDEBAR_RAIL_WIDTH};
+use forge_features::{refocus_workspace, use_settings_provider, use_window_width, use_workspace_provider, Active};
 use forge_widgets::{ChatWindow, NewSessionPanel, SearchPalette, SettingsOverlay, Sidebar};
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
@@ -21,17 +22,53 @@ pub fn WorkspacePage() -> Element {
     // The tabs list the definitions of the project the person is looking at.
     use_effect(move || settings.set_project(workspace.context_project()));
 
-    let hidden = workspace.prefs().hidden;
+    let window_width = use_window_width();
+    // Whether the overlay sidebar is out. Not saved: `prefs.hidden` and `prefs.width` belong to the
+    // docked sidebar and the overlay never writes them.
+    let mut peek = use_signal(|| false);
+    // Choosing a session, or opening the new-session screen, puts the overlay away.
+    use_effect(move || {
+        let _ = workspace.active();
+        peek.set(false);
+    });
+    // Growing past the overlay width forgets an open overlay, so it does not come back by itself.
+    use_effect(move || {
+        if window_width() > SIDEBAR_OVERLAY_UP_TO {
+            peek.set(false);
+        }
+    });
+
+    let prefs = workspace.prefs();
+    let hidden = prefs.hidden;
+    // The room the open dock columns ask for; an expanded column fills the pane and asks for none.
+    let dock_width: u32 = match workspace.active() {
+        Active::Live(id) => {
+            let dock = workspace.dock(id);
+            if dock.expanded.is_some() {
+                0
+            } else {
+                dock.columns.iter().map(|column| column.width as u32).sum()
+            }
+        }
+        Active::NewSession => 0,
+    };
+    let docked_sidebar = if hidden { SIDEBAR_RAIL_WIDTH } else { prefs.clamped_width() };
+    let layout = layout_for(window_width(), docked_sidebar, dock_width);
 
     rsx! {
         div {
-            class: if dragging() { "workspace resizing" } else { "workspace" },
+            class: workspace_class(layout, dragging()),
             tabindex: "0",
             // Key events only reach the root while something inside it has focus.
             onmounted: move |mounted| async move {
                 let _ = mounted.set_focus(true).await;
             },
             onkeydown: move |event| {
+                // Escape puts the overlay sidebar away, unless an overlay of the app is on top of it.
+                if peek() && event.key() == Key::Escape && !settings.is_open() && !workspace.search_open() {
+                    peek.set(false);
+                    return;
+                }
                 // The palette is an overlay too: the session shortcuts wait while it is open.
                 if !workspace.on_key(&event, settings.is_open() || workspace.search_open()) {
                     settings.on_key(&event);
@@ -50,24 +87,43 @@ pub fn WorkspacePage() -> Element {
                     workspace.save_prefs();
                 }
             },
-            if hidden {
-                div { class: "sidebar-rail",
-                    button {
-                        class: "icon-button",
-                        title: "Show the sidebar",
-                        onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = false),
-                        "›"
+            match layout.sidebar {
+                SidebarMode::Docked => rsx! {
+                    if hidden {
+                        div { class: "sidebar-rail",
+                            button {
+                                class: "icon-button",
+                                title: "Show the sidebar",
+                                onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = false),
+                                "›"
+                            }
+                        }
+                    } else {
+                        Sidebar {}
+                        div {
+                            class: if dragging() { "sidebar-resize dragging" } else { "sidebar-resize" },
+                            onmousedown: move |event| {
+                                event.prevent_default();
+                                dragging.set(true);
+                            },
+                        }
                     }
-                }
-            } else {
-                Sidebar {}
-                div {
-                    class: if dragging() { "sidebar-resize dragging" } else { "sidebar-resize" },
-                    onmousedown: move |event| {
-                        event.prevent_default();
-                        dragging.set(true);
-                    },
-                }
+                },
+                SidebarMode::Overlay => rsx! {
+                    button {
+                        class: "icon-button sidebar-toggle",
+                        r#type: "button",
+                        title: "Toggle the sidebar",
+                        "aria-label": "Toggle the sidebar",
+                        "aria-expanded": "{peek()}",
+                        onclick: move |_| peek.set(!peek()),
+                        "☰"
+                    }
+                    if peek() {
+                        div { class: "sidebar-backdrop", onclick: move |_| peek.set(false) }
+                        Sidebar {}
+                    }
+                },
             }
             match workspace.active() {
                 Active::NewSession => rsx! { NewSessionPanel {} },

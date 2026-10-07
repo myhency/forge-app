@@ -92,7 +92,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 }
 
 /* Conversation */
-.main-pane { flex: 1; min-width: 400px; display: flex; flex-direction: column; }
+.main-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .pane-header { display: flex; align-items: center; gap: 12px; padding: 12px 28px; font-weight: 600; }
 .pane-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .view-switch { display: flex; flex: none; padding: 2px; gap: 2px; border: 1px solid var(--border); border-radius: 8px; font-weight: 400; }
@@ -415,6 +415,12 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .sidebar-resize:hover, .sidebar-resize.dragging { background: var(--accent-soft); }
 .sidebar-rail { flex: none; width: 36px; padding: 12px 4px 0; box-sizing: border-box; background: var(--bg-sidebar); border-right: 1px solid var(--border); }
 .workspace.resizing { cursor: col-resize; user-select: none; }
+/* Narrow window: the sidebar is an overlay the toggle shows (observation round 10). */
+.sidebar-toggle { position: absolute; left: 8px; top: 10px; z-index: 31; }
+.sidebar-backdrop { position: absolute; inset: 0; z-index: 29; }
+.sidebar-overlay .sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 30; width: 280px !important; padding-top: 48px; box-shadow: var(--shadow); }
+.sidebar-overlay .pane-header, .sidebar-overlay.chat-narrow .pane-header { padding-left: 48px; }
+.sidebar-overlay .home-top { padding-top: 52px; }
 .palette-backdrop { position: fixed; inset: 0; z-index: 20; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; background: var(--bg-overlay); }
 .palette { width: min(640px, calc(100vw - 48px)); max-height: 70vh; display: flex; flex-direction: column; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; }
 .palette-input-row { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
