@@ -17,18 +17,13 @@ Forge has no rule for the window width: there is no `@media` query, no minimum w
 
 ## Units
 
-- **`layout_for(window_width, sidebar_width, dock_width) -> Layout`**, a pure function in `forge-domain` (`layout.rs`). `Layout { sidebar: SidebarMode, dock: DockMode }`, `SidebarMode::{Docked, Overlay}`, `DockMode::{Push, Float}`. Constants `MIN_WINDOW_WIDTH = 600`, `SIDEBAR_OVERLAY_BELOW = 710` (Overlay for widths up to 700), `MIN_CHAT_WIDTH = 300`, `OVERLAY_SIDEBAR_WIDTH = 280`. Docked below the threshold never happens; Push when `window - sidebar - dock >= MIN_CHAT_WIDTH`, else Float. With the sidebar in Overlay mode, the sidebar counts as 0 for the dock.
-- **`use_window_width()`**, in `forge-features`: a signal that follows `window.innerWidth` through a `resize` listener (the same bridge style as the dock's pointer drag), set once at mount and on every resize, rounded to whole points. The workspace provider exposes `layout()` computed from it, the sidebar prefs width and the dock's total width.
-- **Sidebar overlay state**: `sidebar_peek: Signal<bool>` in the workspace, not saved. Docked: `prefs.hidden` decides as today. Overlay: `sidebar_peek` decides; the toggle flips it; choosing a session or pressing Escape closes it; going Docked again clears it. The resize handle is not drawn in Overlay. `prefs.hidden` and `prefs.width` are never written by the overlay.
-- **`WorkspacePage`** puts a class on `.workspace` (`sidebar-overlay`, `dock-float`) from `layout()`. All visual rules hang on those classes and on container queries.
-- **Window minimum**: `with_min_inner_size(LogicalSize::new(600.0, 400.0))` in `forge-app/src/main.rs`. The height 400 is a guess (the real app's minimum height was not seen); it only stops the window from becoming unusable, and the plan checks that the composer and header still fit at 400.
-- **CSS (`theme.css`)**:
-  - `.sidebar-overlay .sidebar { position: absolute; z-index: 30; width: 280px; height: 100%; box-shadow: var(--shadow) }`, shown only while `sidebar_peek`; no handle, no rail beside the pane (the rail's `›` button moves into the header as the toggle).
-  - `.main-pane { min-width: 0 }` (was 400px).
-  - `.dock-float .dock-column { position: absolute; right: 8px; top: 8px; bottom: 8px; width: clamp(260px, 40vw, 400px); z-index: 25; max-width: none }`. With several columns the last one floats and the others stay in the row (assumption; several columns were not seen).
-  - `.pane-header { container-type: inline-size }` and `@container` rules in this order as the header narrows: terminal and Changes buttons into the `⋮` menu (Rust renders both forms and CSS shows one), folder tag to its icon, title shortens (already an ellipsis).
-  - `.new-session` and `.home-top`: `max-width: 770px; padding: 0 40px`, and `@media (max-width: 850px) { padding: 0 25px }`; `.usage-card { width: 100%; max-width: 480px }`; the heatmap uses a CSS grid with `1fr` columns and square cells (`aspect-ratio: 1`).
-  - The composer rows are checked at 600 pt and given `flex-wrap: wrap` only if one does not fit.
+- **`layout_for(window_width, sidebar_width, dock_width) -> Layout`**, a pure function in `forge-domain` (`layout.rs`). `Layout { sidebar: SidebarMode, dock: DockMode, chat_width: u32 }`, `SidebarMode::{Docked, Overlay}`, `DockMode::{Push, Float}`. Constants `MIN_WINDOW_WIDTH = 600`, `SIDEBAR_OVERLAY_UP_TO = 700` (overlay at 700 and below, docked from 701), `SIDEBAR_RAIL_WIDTH = 36`, `MIN_CHAT_WIDTH = 300`, `NARROW_CHAT_BELOW = 560`. An overlay sidebar takes no room from the dock. `workspace_class(layout, resizing)` builds the class list of `.workspace` (`sidebar-overlay`, `dock-float`, `chat-narrow`).
+- **`use_window_width()`**, in `forge-features`: a signal that follows `window.innerWidth` through a `resize` listener (`document::eval`, like the file-link watcher), written only when the whole-point width changes.
+- **Sidebar overlay**: `peek: Signal<bool>` in `WorkspacePage`, not saved. The toggle is a floating `☰` button at the top left of the window (no rail). Choosing a session, Escape, a click on the backdrop, or growing the window past 700 pt closes it. The overlay never writes `prefs.hidden` or `prefs.width`. In overlay mode the pane header and the home column get extra left padding for the button.
+- **Dock float**: the dock's columns sit in one `.dock` wrapper (`display: contents` when pushing). When floating, the whole wrapper is a card over the chat (top, right, bottom 8 pt, shadow), each column at most 400 pt. An expanded column counts as 0 wide, so it never floats.
+- **Compact header**, by the `chat-narrow` class (chat under 560 pt) from the width signal, not by CSS container queries: layout containment would make the header the containing block of the fixed-position menu backdrops. Forge's header has no folder tag, so the title's ellipsis does that job; the Terminal, Changes and Preview icons move into the `⋮` menu and the Normal/Thinking/Detailed switch wraps onto a second row; side margins of the messages and the composer shrink to 16 pt.
+- **Window minimum**: `with_min_inner_size(600, 400)`; the window then bottoms out at 600 x 432 pt (400 for the page, 32 for the title bar).
+- **CSS for the rest**: `.main-pane { min-width: 0 }`; `.home-top` and `.new-session` at most 850 pt wide with 40 pt side padding (25 pt at 850 pt and below); `.usage-card` at most 480 pt and full width below; the heatmap uses `grid-auto-columns: 1fr`; `.composer-row` wraps and `.picker-button` does not break its label.
 
 ## Behaviour
 
@@ -44,12 +39,15 @@ Forge has no rule for the window width: there is no `@media` query, no minimum w
 - `sidebar_peek` rules as plain functions: toggle, close on choose, cleared when Docked again.
 - Real window, with the harness (`docs/superpowers/roadmap` process, `scripts/harness/`): capture the new-session screen and a session with the Changes panel at 1500, 1100, 900, 700 and 600 pt; compare the numbers in round 10 (sidebar 280 pt, column margins, card 480 pt, panel floating once the window is under about 1060 pt with a 480 pt panel). Add `scripts/harness/resize.py W H` (osascript `set size of window 1` on the Forge process) for this. The search palette, Settings and a context menu are opened at 600 pt to check they stay inside the window.
 
-## Risks and checks first
+## As built (checked in the real window with `scripts/harness/resize.py`)
 
-- The webview's support for container queries (WKWebView on this macOS): check in the first task; if missing, the header rules use the width signal and classes instead.
-- `window.innerWidth` is in CSS pixels, which equal the points of the observation; checked at 1200 in the harness first.
-- A resize event storm while dragging: the signal is only written when the rounded width changes.
+- 1200 pt: unchanged. 1100 pt with Changes open: pushes, chat 356 pt, compact header (only `⋮`), the view switch on a second row, the control row of the message box wraps.
+- 900 pt with Changes open: floats as a card with a margin; the expand button makes it fill the pane beside the sidebar (no float).
+- 800 pt: chat 536 pt, compact header; the `⋮` menu lists Terminal, Changes, Preview, Files, Prevent sleep; a click outside closes it (the backdrop covers the whole window).
+- 700, 650 and 600 pt: no sidebar, `☰` at the top left; it opens a 280 pt overlay; choosing a session, Escape, and the backdrop close it; 650 to 900 to 650 leaves it closed.
+- 600 x 400 asked: the window stops at 600 x 432 and still shows the header and the message box.
+- The usage card was not on screen in the harness (the fixture has no usage data), so its 480 pt maximum and the smaller heatmap were not looked at: left for the next time the home screen is checked with real data.
 
 ## Not in this plan (later)
 
-- Settings and the Files panel at narrow widths; the window height; several dock columns at once (check the real app first); remembering the window size between runs.
+- Settings and the Files panel at narrow widths; the usage card and heatmap at narrow widths with real data; the window height; several dock columns at once (check the real app first); remembering the window size between runs.

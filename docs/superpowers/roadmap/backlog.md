@@ -59,6 +59,12 @@ Forge status was read from `crates/` on 2026-10-03.
 | PG-08 | Account menu at the bottom of the sidebar (name, plan, chevron) and an icon beside it | partly | none | S | - | Not opened. |
 | PG-09 | Chat mode (the left icon of the title-bar toggle; a different product surface with Projects and pinned chats) | seen | none | L | won't | Forge is the Code side only (spec §2). |
 
+## UI: window behaviour
+
+| Id | Feature | Seen | Forge | Size | Plan | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| UI-01 | Responsive layout: sidebar folds into an overlay at 700 pt and below, the dock pushes the chat and then floats over it, a compact chat header, a minimum window of 600 pt | seen | has | M | Plan 26 (built) | Round 10 of observations; spec `2026-10-07-responsive-layout-design.md`. Not done: Settings and the Files panel at narrow widths, window height, the usage card with real data. |
+
 ## OBS: observation tasks (do before planning the entries they unlock)
 
 | Id | What to look at | Unlocks |
