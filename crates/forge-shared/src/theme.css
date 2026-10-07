@@ -585,6 +585,11 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .permission-panel .diff, .permission-panel .perm-command { flex: 0 1 auto; min-height: 5em; overflow-y: auto; }
 .permission-panel .diff { max-width: none; margin: 0; }
 .permission-panel .diff-header { flex-wrap: wrap; }
+/* A short window: the file name and the path text repeat the path box, so they go; the buttons must stay inside the card. */
+@media (max-height: 520px) {
+  .permission-panel .perm-subject, .permission-panel .perm-path { display: none; }
+  .permission-panel .diff, .permission-panel .perm-command { min-height: 3em; }
+}
 .diff-note, .diff-counts { white-space: nowrap; }
 .perm-buttons { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .perm-buttons .spacer { flex: 1; }
@@ -606,7 +611,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .question-chip { padding: 1px 10px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; }
 .question-head .spacer, .question-footer .spacer { flex: 1; }
 .question-panel > * { flex: none; }
-.question-options { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+.question-options { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 4em; overflow-y: auto; }
 .question-head .perm-title { min-width: 0; }
 .question-head .icon-button { align-self: center; }
 .question-option { appearance: none; display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 10px 12px; border: none; border-radius: 8px; background: none; text-align: left; font: inherit; color: var(--fg); cursor: pointer; }
