@@ -76,6 +76,41 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                         },
                         if terminal {
                             button {
+                                class: "picker-item menu-narrow",
+                                r#type: "button",
+                                role: "menuitemcheckbox",
+                                "aria-checked": "{terminal_open}",
+                                onclick: move |_| {
+                                    workspace.change_dock(id, |dock| dock.toggle(Panel::Terminal));
+                                    open.set(false);
+                                },
+                                span { "Terminal" }
+                            }
+                            button {
+                                class: "picker-item menu-narrow",
+                                r#type: "button",
+                                role: "menuitemcheckbox",
+                                "aria-checked": "{changes_open}",
+                                onclick: move |_| {
+                                    workspace.change_dock(id, |dock| dock.toggle(Panel::Changes));
+                                    open.set(false);
+                                },
+                                span { "Changes" }
+                            }
+                            button {
+                                class: "picker-item menu-narrow",
+                                r#type: "button",
+                                role: "menuitemcheckbox",
+                                "aria-checked": "{preview_open}",
+                                onclick: move |_| {
+                                    workspace.change_dock(id, |dock| dock.toggle(Panel::Preview));
+                                    open.set(false);
+                                },
+                                span { "Preview" }
+                            }
+                        }
+                        if terminal {
+                            button {
                                 class: "picker-item",
                                 r#type: "button",
                                 role: "menuitemcheckbox",
