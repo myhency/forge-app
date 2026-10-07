@@ -451,6 +451,12 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 /* The dock: columns right of the chat. */
 .dock-column { position: relative; flex: 0 1 auto; display: flex; flex-direction: column; min-width: 260px; max-width: 70vw; padding: 8px; box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
 .dock-column.expanded { flex: 1; max-width: none; }
+/* The columns of one session. Beside the chat they are plain flex items; when the chat would get
+   too narrow they float over it as one rounded card (observation round 10). */
+.dock { display: contents; }
+.dock-float .dock { display: flex; position: absolute; top: 8px; right: 8px; bottom: 8px; z-index: 25; max-width: calc(100% - 16px); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); }
+.dock-float .dock-column { flex: none; max-width: 400px; }
+.dock-float .dock-column.expanded { max-width: none; }
 .dock-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 5px; cursor: col-resize; z-index: 7; }
 .dock-resize:hover { background: var(--accent-soft); }
 .dock-drag-shield { position: fixed; inset: 0; z-index: 20; cursor: col-resize; }

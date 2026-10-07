@@ -31,44 +31,46 @@ pub fn Dock(id: LiveSessionId, cwd: PathBuf) -> Element {
     }
     let expanded = state.expanded;
     rsx! {
-        if grab().is_some() {
-            div {
-                class: "dock-drag-shield",
-                onmousemove: move |event| {
-                    if let Some(start) = grab() {
-                        let width = start.width + (start.x - event.client_coordinates().x) as f32;
-                        workspace.change_dock(id, |dock| dock.resize(start.column, width));
-                    }
-                },
-                onmouseup: move |_| grab.set(None),
+        div { class: "dock",
+            if grab().is_some() {
+                div {
+                    class: "dock-drag-shield",
+                    onmousemove: move |event| {
+                        if let Some(start) = grab() {
+                            let width = start.width + (start.x - event.client_coordinates().x) as f32;
+                            workspace.change_dock(id, |dock| dock.resize(start.column, width));
+                        }
+                    },
+                    onmouseup: move |_| grab.set(None),
+                }
             }
-        }
-        for (index, column) in state.columns.iter().enumerate() {
-            if expanded.is_none_or(|panel| column.panels.contains(&panel)) {
-                {
-                    let width = column.width;
-                    let style = if expanded.is_some() { String::new() } else { format!("width: {width}px") };
-                    rsx! {
-                        div {
-                            key: "{index}",
-                            class: if expanded.is_some() { "dock-column expanded" } else { "dock-column" },
-                            style: "{style}",
-                            if expanded.is_none() {
-                                div {
-                                    class: "dock-resize",
-                                    onmousedown: move |event| {
-                                        event.prevent_default();
-                                        grab.set(Some(Grab { column: index, x: event.client_coordinates().x, width }));
-                                    },
+            for (index, column) in state.columns.iter().enumerate() {
+                if expanded.is_none_or(|panel| column.panels.contains(&panel)) {
+                    {
+                        let width = column.width;
+                        let style = if expanded.is_some() { String::new() } else { format!("width: {width}px") };
+                        rsx! {
+                            div {
+                                key: "{index}",
+                                class: if expanded.is_some() { "dock-column expanded" } else { "dock-column" },
+                                style: "{style}",
+                                if expanded.is_none() {
+                                    div {
+                                        class: "dock-resize",
+                                        onmousedown: move |event| {
+                                            event.prevent_default();
+                                            grab.set(Some(Grab { column: index, x: event.client_coordinates().x, width }));
+                                        },
+                                    }
                                 }
-                            }
-                            for panel in column.panels.iter().copied() {
-                                match panel {
-                                    Panel::Terminal => rsx! { TerminalPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
-                                    Panel::Changes => rsx! { ChangesPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
-                                    Panel::Files => rsx! { FilesPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
-                                    Panel::Preview => rsx! { PreviewPanel { key: "{panel:?}", id } },
-                                    Panel::Tasks => rsx! { TasksPanel { key: "{panel:?}", id } },
+                                for panel in column.panels.iter().copied() {
+                                    match panel {
+                                        Panel::Terminal => rsx! { TerminalPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
+                                        Panel::Changes => rsx! { ChangesPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
+                                        Panel::Files => rsx! { FilesPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
+                                        Panel::Preview => rsx! { PreviewPanel { key: "{panel:?}", id } },
+                                        Panel::Tasks => rsx! { TasksPanel { key: "{panel:?}", id } },
+                                    }
                                 }
                             }
                         }
