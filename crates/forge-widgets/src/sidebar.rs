@@ -104,7 +104,7 @@ pub fn Sidebar() -> Element {
                     span { class: "keys", "⌘K" }
                 }
                 button {
-                    class: "icon-button",
+                    class: "icon-button sidebar-hide",
                     title: "Hide the sidebar",
                     onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = true),
                     "‹"

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from geometry import png_size, select_window, to_screen_point
+from geometry import png_size, resize_script, select_window, to_screen_point
 
 
 def write_png_header(path, width, height):
@@ -69,6 +69,14 @@ class SelectWindowTest(unittest.TestCase):
     def test_ignores_windows_of_other_owners_or_titles(self):
         windows = [listed(222, owner="Safari"), listed(222, name="Settings")]
         self.assertIsNone(select_window(windows, 222))
+
+
+class ResizeScriptTest(unittest.TestCase):
+    def test_it_sets_the_size_of_the_window_of_that_process_only(self):
+        script = resize_script(4242, 900, 800)
+        self.assertIn("unix id is 4242", script)
+        self.assertIn("set size of window 1", script)
+        self.assertIn("{900, 800}", script)
 
 
 if __name__ == "__main__":

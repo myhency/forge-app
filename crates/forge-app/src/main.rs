@@ -89,7 +89,9 @@ fn window_config() -> Config {
         .with_window(
             WindowBuilder::new()
                 .with_title("Forge")
-                .with_inner_size(LogicalSize::new(1200.0, 800.0)),
+                .with_inner_size(LogicalSize::new(1200.0, 800.0))
+                // The real Claude window refuses to go below 600 pt wide.
+                .with_min_inner_size(LogicalSize::new(600.0, 400.0)),
         )
         .with_menu(app_menu())
         .with_custom_head(format!("{}{}", forge_shared::xterm_head(), forge_shared::editor_head()))

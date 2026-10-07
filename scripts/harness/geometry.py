@@ -42,3 +42,11 @@ def select_window(listed_windows, pid, owner="forge-app", title="Forge"):
             b = window["kCGWindowBounds"]
             return {"id": window["kCGWindowNumber"], "bounds": (b["X"], b["Y"], b["Width"], b["Height"])}
     return None
+
+
+def resize_script(pid, width, height):
+    """AppleScript that sets the size of the first window of the process with this pid, in points."""
+    return (
+        'tell application "System Events" to set size of window 1 of '
+        f"(first process whose unix id is {int(pid)}) to {{{int(width)}, {int(height)}}}"
+    )
