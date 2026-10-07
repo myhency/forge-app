@@ -5,6 +5,7 @@ mod command;
 mod config;
 mod effort;
 mod extension;
+mod layout;
 mod permission;
 mod project;
 mod search;
@@ -20,6 +21,10 @@ pub use config::{
     MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
 };
 pub use effort::{AvailableModel, EffortLevel};
+pub use layout::{
+    layout_for, workspace_class, DockMode, Layout, SidebarMode, MIN_CHAT_WIDTH, MIN_WINDOW_WIDTH, NARROW_CHAT_BELOW, SIDEBAR_OVERLAY_UP_TO,
+    SIDEBAR_RAIL_WIDTH,
+};
 pub use extension::{ActiveExtensions, McpServerDefinition, PluginDefinition, SkillDefinition};
 pub use permission::{PermissionDecision, PermissionMode};
 pub use background::{BackgroundTaskInfo, RunningTask};
