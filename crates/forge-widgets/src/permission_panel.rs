@@ -69,7 +69,7 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                 div { class: "perm-path", "{path}" }
             }
             if let Some(command) = view.command.clone() {
-                div { class: "perm-box", "{command}" }
+                div { class: "perm-box perm-command", "{command}" }
             }
             if let Some(diff) = diff {
                 DiffView { diff }

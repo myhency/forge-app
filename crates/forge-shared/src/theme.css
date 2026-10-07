@@ -489,6 +489,11 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .chat-narrow .pane-header { flex-wrap: wrap; row-gap: 6px; padding: 12px 16px; }
 .chat-narrow .pane-title { flex: 1 1 120px; }
 .chat-narrow .messages { padding: 8px 16px 16px; }
+.chat-narrow .perm-buttons { flex-direction: column; align-items: stretch; }
+.chat-narrow .perm-buttons .spacer { display: none; }
+.chat-narrow .perm-buttons .perm-button { justify-content: center; }
+.chat-narrow .perm-primary { display: flex; }
+.chat-narrow .perm-primary .perm-button:first-child { flex: 1; }
 .chat-narrow .composer, .chat-narrow .permission-panel, .chat-narrow .question-panel, .chat-narrow .banner { width: calc(100% - 32px); }
 .icon-button.active { background: var(--bg-hover); color: var(--accent); }
 /* The `⋮` menu in the header opens downwards, below its button. */
@@ -570,15 +575,20 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .input-path { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
 .tool-error { padding: 8px 12px; color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.permission-panel { display: flex; flex-direction: column; gap: 10px; width: calc(100% - 56px); max-width: var(--chat-column); box-sizing: border-box; margin: 0 auto 8px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); outline: none; }
+.permission-panel { display: flex; flex-direction: column; gap: 10px; width: calc(100% - 56px); max-width: var(--chat-column); max-height: 60vh; box-sizing: border-box; margin: 0 auto 8px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); outline: none; }
 .perm-title { font-weight: 700; }
 .perm-subject { color: var(--fg); }
 .perm-box { padding: 10px 12px; background: var(--code-bg); border-radius: 8px; font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .perm-path { color: var(--fg-muted); font-size: 13px; overflow-wrap: anywhere; }
-.permission-panel .diff { max-width: none; margin: 0; max-height: 40vh; overflow-y: auto; }
+.permission-panel > * { flex: none; }
+/* Only the diff or the command scrolls; the title and the buttons stay in view (Claude caps the card at 60% of the window). */
+.permission-panel .diff, .permission-panel .perm-command { flex: 0 1 auto; min-height: 5em; overflow-y: auto; }
+.permission-panel .diff { max-width: none; margin: 0; }
+.permission-panel .diff-header { flex-wrap: wrap; }
+.diff-note, .diff-counts { white-space: nowrap; }
 .perm-buttons { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .perm-buttons .spacer { flex: 1; }
-.perm-button { appearance: none; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--fg); font: inherit; cursor: pointer; }
+.perm-button { white-space: nowrap; appearance: none; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--fg); font: inherit; cursor: pointer; }
 .perm-button:hover { background: var(--bg-hover); }
 .perm-button.primary { background: var(--fg); color: var(--bg-card); border-color: var(--fg); }
 .perm-key { padding: 0 6px; border: 1px solid var(--border); border-radius: 5px; font-size: 11px; color: var(--fg-muted); background: var(--bg-card); }
@@ -591,11 +601,14 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .perm-menu-item:hover { background: var(--bg-hover); }
 .perm-menu-note { color: var(--fg-muted); font-size: 12px; }
 
-.question-panel { display: flex; flex-direction: column; gap: 10px; width: calc(100% - 56px); max-width: var(--chat-column); box-sizing: border-box; margin: 0 auto 8px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); outline: none; }
+.question-panel { display: flex; flex-direction: column; gap: 10px; width: calc(100% - 56px); max-width: var(--chat-column); max-height: 60vh; box-sizing: border-box; margin: 0 auto 8px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); outline: none; }
 .question-head { display: flex; align-items: center; gap: 10px; }
 .question-chip { padding: 1px 10px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; }
 .question-head .spacer, .question-footer .spacer { flex: 1; }
-.question-options { display: flex; flex-direction: column; }
+.question-panel > * { flex: none; }
+.question-options { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+.question-head .perm-title { min-width: 0; }
+.question-head .icon-button { align-self: center; }
 .question-option { appearance: none; display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 10px 12px; border: none; border-radius: 8px; background: none; text-align: left; font: inherit; color: var(--fg); cursor: pointer; }
 .question-option:hover, .question-option.chosen { background: var(--bg-hover); }
 .question-option .option-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
