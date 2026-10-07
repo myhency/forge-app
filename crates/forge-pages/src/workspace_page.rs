@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_domain::{layout_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO, SIDEBAR_RAIL_WIDTH};
+use forge_domain::{keep_peek, layout_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
 use forge_features::{refocus_workspace, use_settings_provider, use_window_width, use_workspace_provider, Active};
 use forge_widgets::{ChatWindow, NewSessionPanel, SearchPalette, SettingsOverlay, Sidebar};
 
@@ -31,9 +31,10 @@ pub fn WorkspacePage() -> Element {
         let _ = workspace.active();
         peek.set(false);
     });
-    // Growing past the overlay width forgets an open overlay, so it does not come back by itself.
+    // Growing past the overlay width, or opening Settings or the search palette, puts it away too.
     use_effect(move || {
-        if window_width() > SIDEBAR_OVERLAY_UP_TO {
+        let overlay_open = settings.is_open() || workspace.search_open();
+        if *peek.peek() && !keep_peek(true, window_width(), overlay_open) {
             peek.set(false);
         }
     });

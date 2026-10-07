@@ -50,6 +50,13 @@ pub fn layout_for(window_width: u32, sidebar_width: u32, dock_width: u32) -> Lay
     }
 }
 
+/// Whether an open overlay sidebar stays open. It goes away when the window grows past the overlay
+/// width (so it does not come back by itself on the way down) and when Settings or the search
+/// palette opens over it (they would be half hidden under the sidebar).
+pub fn keep_peek(peek: bool, window_width: u32, overlay_open: bool) -> bool {
+    peek && window_width <= SIDEBAR_OVERLAY_UP_TO && !overlay_open
+}
+
 /// The class list of `.workspace`: every visual rule of the responsive layout hangs on one of these.
 pub fn workspace_class(layout: Layout, resizing: bool) -> String {
     let mut class = String::from("workspace");
@@ -144,5 +151,13 @@ mod tests {
     fn the_header_is_narrow_under_560() {
         assert_eq!(workspace_class(layout_for(823, 264, 0), false), "workspace chat-narrow"); // chat 559
         assert_eq!(workspace_class(layout_for(824, 264, 0), false), "workspace"); // chat 560
+    }
+
+    #[test]
+    fn the_overlay_sidebar_stays_out_only_in_an_overlay_window_with_nothing_on_top_of_it() {
+        assert!(keep_peek(true, 650, false));
+        assert!(!keep_peek(true, 650, true), "Settings or the search palette opened from the sidebar puts it away");
+        assert!(!keep_peek(true, 701, false), "a window grown past the overlay width forgets it");
+        assert!(!keep_peek(false, 650, false));
     }
 }

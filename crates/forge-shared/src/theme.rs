@@ -5,6 +5,35 @@ pub const THEME_CSS: &str = include_str!("theme.css");
 mod tests {
     use super::*;
 
+    // The one line of the stylesheet that starts with this selector.
+    fn rule(selector: &str) -> &'static str {
+        let css: &'static str = THEME_CSS;
+        css.lines().find(|line| line.starts_with(&format!("{selector} {{"))).unwrap_or_else(|| panic!("no rule for {selector}"))
+    }
+
+    fn z_index(selector: &str) -> u32 {
+        let line = rule(selector);
+        let rest = line.split("z-index: ").nth(1).unwrap_or_else(|| panic!("no z-index in {line}"));
+        rest.split(';').next().unwrap().trim().parse().unwrap()
+    }
+
+    #[test]
+    fn the_floating_dock_sits_under_settings_and_the_search_palette() {
+        let dock = z_index(".dock-float .dock");
+        assert!(dock < z_index(".settings-backdrop"), "the dock card must not cover Settings");
+        assert!(dock < z_index(".palette-backdrop"), "the dock card must not cover the search palette");
+    }
+
+    #[test]
+    fn the_floating_dock_starts_below_the_chat_header_so_its_tools_stay_reachable() {
+        assert!(rule(".dock-float .dock").contains("top: 64px"));
+    }
+
+    #[test]
+    fn the_overlay_sidebar_hides_the_hide_button_that_would_save_a_hidden_sidebar() {
+        assert!(THEME_CSS.contains(".sidebar-overlay .sidebar-hide { display: none; }"));
+    }
+
     #[test]
     fn the_stylesheet_defines_the_layout_classes_the_components_use() {
         for class in [

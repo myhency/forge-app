@@ -22,7 +22,7 @@ pub use config::{
 };
 pub use effort::{AvailableModel, EffortLevel};
 pub use layout::{
-    layout_for, workspace_class, DockMode, Layout, SidebarMode, MIN_CHAT_WIDTH, MIN_WINDOW_WIDTH, NARROW_CHAT_BELOW, SIDEBAR_OVERLAY_UP_TO,
+    keep_peek, layout_for, workspace_class, DockMode, Layout, SidebarMode, MIN_CHAT_WIDTH, MIN_WINDOW_WIDTH, NARROW_CHAT_BELOW, SIDEBAR_OVERLAY_UP_TO,
     SIDEBAR_RAIL_WIDTH,
 };
 pub use extension::{ActiveExtensions, McpServerDefinition, PluginDefinition, SkillDefinition};
