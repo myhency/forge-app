@@ -156,7 +156,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 /* Composer: one rounded box */
 .composer { position: relative; display: flex; flex-direction: column; gap: 8px; width: calc(100% - 56px); max-width: var(--chat-column); margin: 0 auto 20px; padding: 10px 12px; box-sizing: border-box; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
 .composer .textarea { border: none; background: transparent; padding: 2px; min-height: 48px; outline: none; }
-.composer-row { display: flex; align-items: center; gap: 8px; }
+.composer-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .composer-row .spacer { flex: 1; }
 .usage { position: relative; flex: none; }
 .usage-ring { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 50%; background: transparent; cursor: pointer; }
@@ -374,7 +374,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 
 /* Composer pickers: mode and model */
 .picker { position: relative; }
-.picker-button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: none; border-radius: 8px; background: transparent; color: var(--fg-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.picker-button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; padding: 3px 8px; border: none; border-radius: 8px; background: transparent; color: var(--fg-muted); font: inherit; font-size: 12px; cursor: pointer; }
 .picker-button:hover, .picker-button.open { background: var(--bg-hover); color: var(--fg); }
 .picker-chevron { font-size: 10px; }
 .picker-backdrop { position: fixed; inset: 0; z-index: 9; }
