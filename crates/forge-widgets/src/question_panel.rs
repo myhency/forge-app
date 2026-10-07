@@ -12,6 +12,8 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
     let questions = questions_of(&request.input);
     let total = questions.len();
     let mut index = use_signal(|| 0usize);
+    // Folded, the card shrinks to its header row so the chat gets its height back (Claude's chevron).
+    let mut collapsed = use_signal(|| false);
     let mut picks = use_signal(|| vec![Picks::default(); total]);
     let request_id = request.id.clone();
 
@@ -72,7 +74,7 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
 
     rsx! {
         div {
-            class: "question-panel",
+            class: if collapsed() { "question-panel collapsed" } else { "question-panel" },
             tabindex: "0",
             onmounted: move |mounted| crate::permission_panel::take_focus_unless_typing(mounted.data()),
             onkeydown: move |event: KeyboardEvent| {
@@ -81,6 +83,8 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
                 if code == "Escape" {
                     event.stop_propagation();
                     skip_key();
+                } else if collapsed() {
+                    // The options are hidden: their keys must not pick anything.
                 } else if matches!(code.as_str(), "Enter" | "NumpadEnter") && modifiers.meta() {
                     event.stop_propagation();
                     event.prevent_default();
@@ -99,65 +103,75 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
                 span { class: "question-chip", "{position + 1}/{total}" }
                 span { class: "perm-title", "{question.text}" }
                 span { class: "spacer" }
+                button {
+                    class: "icon-button",
+                    r#type: "button",
+                    title: if collapsed() { "Expand" } else { "Collapse" },
+                    "aria-expanded": "{!collapsed()}",
+                    onclick: move |_| collapsed.set(!collapsed()),
+                    if collapsed() { "›" } else { "⌄" }
+                }
                 button { class: "icon-button", r#type: "button", title: "Skip", onclick: move |_| skip_button(), "×" }
             }
-            div { class: "question-options",
-                for (option_index, option) in question.options.iter().enumerate() {
+            if !collapsed() {
+                div { class: "question-options",
+                    for (option_index, option) in question.options.iter().enumerate() {
+                        button {
+                            key: "{option_index}",
+                            class: if current.chosen.contains(&option_index) { "question-option chosen" } else { "question-option" },
+                            r#type: "button",
+                            onclick: {
+                                let mut pick_option = pick_option.clone();
+                                move |_| pick_option(option_index, false)
+                            },
+                            span { class: "option-text",
+                                span { class: "option-label", "{option.label}" }
+                                if !option.description.is_empty() {
+                                    span { class: "option-description", "{option.description}" }
+                                }
+                            }
+                            if multi {
+                                span { class: if current.chosen.contains(&option_index) { "option-box checked" } else { "option-box" } }
+                            } else if option_index < 4 {
+                                span { class: "perm-key", "{option_index + 1}" }
+                            }
+                        }
+                    }
+                    div { class: "question-option other",
+                        span { class: "option-label", "Other" }
+                        input {
+                            class: "question-other",
+                            r#type: "text",
+                            placeholder: "Type your answer here",
+                            value: "{current.other}",
+                            // The panel's number keys must not fire while the person types.
+                            onkeydown: move |event: KeyboardEvent| {
+                                if event.code().to_string() != "Escape" && !event.modifiers().meta() {
+                                    event.stop_propagation();
+                                }
+                            },
+                            oninput: move |event| {
+                                if let Some(slot) = picks.write().get_mut(position) {
+                                    slot.set_other(multi, event.value());
+                                }
+                            },
+                        }
+                    }
+                }
+                div { class: "question-footer",
+                    if position > 0 {
+                        button { class: "perm-button", r#type: "button", onclick: move |_| index.set(position - 1), "Back" }
+                    }
+                    span { class: "spacer" }
+                    button { class: "perm-button", r#type: "button", onclick: move |_| skip(), "Skip" }
                     button {
-                        key: "{option_index}",
-                        class: if current.chosen.contains(&option_index) { "question-option chosen" } else { "question-option" },
+                        class: if ready { "perm-button primary" } else { "perm-button primary disabled" },
                         r#type: "button",
-                        onclick: {
-                            let mut pick_option = pick_option.clone();
-                            move |_| pick_option(option_index, false)
-                        },
-                        span { class: "option-text",
-                            span { class: "option-label", "{option.label}" }
-                            if !option.description.is_empty() {
-                                span { class: "option-description", "{option.description}" }
-                            }
-                        }
-                        if multi {
-                            span { class: if current.chosen.contains(&option_index) { "option-box checked" } else { "option-box" } }
-                        } else if option_index < 4 {
-                            span { class: "perm-key", "{option_index + 1}" }
-                        }
+                        disabled: !ready,
+                        onclick: move |_| advance_button(),
+                        if last { "Submit" } else { "Next" }
+                        span { class: "perm-key", "⌘↩" }
                     }
-                }
-                div { class: "question-option other",
-                    span { class: "option-label", "Other" }
-                    input {
-                        class: "question-other",
-                        r#type: "text",
-                        placeholder: "Type your answer here",
-                        value: "{current.other}",
-                        // The panel's number keys must not fire while the person types.
-                        onkeydown: move |event: KeyboardEvent| {
-                            if event.code().to_string() != "Escape" && !event.modifiers().meta() {
-                                event.stop_propagation();
-                            }
-                        },
-                        oninput: move |event| {
-                            if let Some(slot) = picks.write().get_mut(position) {
-                                slot.set_other(multi, event.value());
-                            }
-                        },
-                    }
-                }
-            }
-            div { class: "question-footer",
-                if position > 0 {
-                    button { class: "perm-button", r#type: "button", onclick: move |_| index.set(position - 1), "Back" }
-                }
-                span { class: "spacer" }
-                button { class: "perm-button", r#type: "button", onclick: move |_| skip(), "Skip" }
-                button {
-                    class: if ready { "perm-button primary" } else { "perm-button primary disabled" },
-                    r#type: "button",
-                    disabled: !ready,
-                    onclick: move |_| advance_button(),
-                    if last { "Submit" } else { "Next" }
-                    span { class: "perm-key", "⌘↩" }
                 }
             }
         }
