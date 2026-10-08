@@ -49,17 +49,18 @@ pub struct Customize {
 /// Creates the page state and provides it to every descendant. Call it in the page at the top of the tree.
 pub fn use_customize_provider() -> Customize {
     let services = use_context::<WorkspaceServices>();
+    // Owned by the root scope: `spawn_forever` tasks write to these after the page that made them has re-rendered.
     let customize = use_hook(move || Customize {
-        usecase: Signal::new(services.plugin_catalog.clone()),
-        tab: Signal::new(CustomizeTab::Plugins),
-        mode: Signal::new(CustomizeMode::Mine),
-        query: Signal::new(String::new()),
-        detail: Signal::new(None),
-        dialog: Signal::new(None),
-        queue: Signal::new(JobQueue::default()),
-        view: Signal::new(Loaded::Loading),
-        error: Signal::new(None),
-        dialog_error: Signal::new(None),
+        usecase: Signal::new_in_scope(services.plugin_catalog.clone(), ScopeId::ROOT),
+        tab: Signal::new_in_scope(CustomizeTab::Plugins, ScopeId::ROOT),
+        mode: Signal::new_in_scope(CustomizeMode::Mine, ScopeId::ROOT),
+        query: Signal::new_in_scope(String::new(), ScopeId::ROOT),
+        detail: Signal::new_in_scope(None, ScopeId::ROOT),
+        dialog: Signal::new_in_scope(None, ScopeId::ROOT),
+        queue: Signal::new_in_scope(JobQueue::default(), ScopeId::ROOT),
+        view: Signal::new_in_scope(Loaded::Loading, ScopeId::ROOT),
+        error: Signal::new_in_scope(None, ScopeId::ROOT),
+        dialog_error: Signal::new_in_scope(None, ScopeId::ROOT),
     });
     use_context_provider(move || customize);
     customize
