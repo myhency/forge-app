@@ -1,12 +1,50 @@
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use forge_ports::PluginManagerError;
 
 use crate::parse::clean_message;
+
+/// How long to wait for the pipes to close after the program has exited. A process the program left
+/// behind can keep a pipe open for as long as it likes; what was read by then is what counts.
+const PIPE_GRACE: Duration = Duration::from_secs(1);
+
+/// A pipe read on its own thread into a shared buffer, so the text read so far can be taken even if the
+/// pipe never closes.
+struct Drain {
+    text: Arc<Mutex<Vec<u8>>>,
+    closed: Receiver<()>,
+}
+
+impl Drain {
+    fn start(mut pipe: impl Read + Send + 'static) -> Drain {
+        let text = Arc::new(Mutex::new(Vec::new()));
+        let (done, closed) = mpsc::channel();
+        let sink = text.clone();
+        thread::spawn(move || {
+            let mut chunk = [0u8; 4096];
+            while let Ok(read) = pipe.read(&mut chunk) {
+                if read == 0 {
+                    break;
+                }
+                sink.lock().unwrap().extend_from_slice(&chunk[..read]);
+            }
+            let _ = done.send(());
+        });
+        Drain { text, closed }
+    }
+
+    /// What was read, once the pipe has closed or `wait` has passed.
+    fn finish(self, wait: Duration) -> String {
+        let _ = self.closed.recv_timeout(wait);
+        String::from_utf8_lossy(&self.text.lock().unwrap()).into_owned()
+    }
+}
 
 pub(crate) struct Invocation<'a> {
     pub program: &'a Path,
@@ -37,18 +75,8 @@ pub(crate) fn run(invocation: &Invocation) -> Result<String, PluginManagerError>
     };
     let mut child = command.spawn().map_err(|error| PluginManagerError::Cli(error.to_string()))?;
     // Both pipes are drained on their own threads so a large output cannot fill a pipe and stop the program.
-    let mut stdout = child.stdout.take().expect("piped");
-    let mut stderr = child.stderr.take().expect("piped");
-    let out_thread = thread::spawn(move || {
-        let mut text = String::new();
-        let _ = stdout.read_to_string(&mut text);
-        text
-    });
-    let err_thread = thread::spawn(move || {
-        let mut text = String::new();
-        let _ = stderr.read_to_string(&mut text);
-        text
-    });
+    let stdout = Drain::start(child.stdout.take().expect("piped"));
+    let stderr = Drain::start(child.stderr.take().expect("piped"));
     let deadline = Instant::now() + invocation.timeout;
     let status = loop {
         match child.try_wait() {
@@ -63,8 +91,8 @@ pub(crate) fn run(invocation: &Invocation) -> Result<String, PluginManagerError>
             Err(error) => return Err(PluginManagerError::Cli(error.to_string())),
         }
     };
-    let stdout = out_thread.join().unwrap_or_default();
-    let stderr = err_thread.join().unwrap_or_default();
+    let stdout = stdout.finish(PIPE_GRACE);
+    let stderr = stderr.finish(PIPE_GRACE);
     if status.success() {
         Ok(stdout)
     } else {
@@ -137,5 +165,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let program = script(dir.path(), "echo \"$GIT_TERMINAL_PROMPT\"");
         assert_eq!(run(&invocation(&program, None, &[], 5)).unwrap().trim(), "0");
+    }
+
+    #[test]
+    fn a_process_left_behind_holding_the_pipe_does_not_hang_the_command() {
+        let dir = tempfile::tempdir().unwrap();
+        // The script exits at once but leaves `sleep` running with stdout and stderr still open.
+        let program = script(dir.path(), "sleep 5 &\necho done");
+        let started = Instant::now();
+        let out = run(&invocation(&program, None, &[], 10)).unwrap();
+        assert!(started.elapsed() < Duration::from_secs(4), "took {:?}", started.elapsed());
+        assert_eq!(out.trim(), "done");
     }
 }
