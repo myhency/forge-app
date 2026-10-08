@@ -226,4 +226,9 @@ mod tests {
             assert!(!rule.contains("rgb"), "a hard-coded color in: {rule}");
         }
     }
+
+    #[test]
+    fn the_customize_menu_sits_above_the_menu_backdrop_that_closes_it() {
+        assert!(z_index(".customize-menu") > z_index(".menu-backdrop"));
+    }
 }
