@@ -67,3 +67,21 @@ Create with Claude, screen recording, row `⋮` menu, filter and sort menus, dat
 - `marketplace.json` `source` has several forms; only the relative-path form is read. Skills of the others do not show under Explore until the plugin is installed. Say so in the empty text of a plugin card, not silently.
 - A plugin's skill folder may sit outside `skills/` (a plugin can set its own path in `plugin.json`); the first version reads only `skills/`.
 - Same skill name in user and project folders: the list shows both, `enabled_skills` is by name, so one switch turns both on, as today.
+
+## As built (2026-10-08)
+
+Built as the plan says, in 11 tasks (commits `4391814..` on branch `plan-30`): domain types, `SkillCatalogPort`, `ClaudeSkillCatalogAdapter` (scan, add from folder or zip, create, list and read files), `SkillCatalogUseCase`, pure page logic, the `Customize` state, the Skills tab (`customize_skills.rs`), the Create dialog, a harness fixture for uploads.
+
+Changes made while building:
+- **Show in folder** replaces "Edit in Files panel" (deviation 6): the Files panel only opens files inside a session folder.
+- The page asks for the skills right after the plugins, in one read, from the plugin list it has just got. When the bundled `claude` fails, the skills are still read against an empty plugin list (found in review: user and project skills would have been hidden).
+- A skill switch shows its new state at once and is confirmed by the next read.
+- Added skills open on their Files tab once the lists are fresh; a visit counter drops the request if the person left the page and came back.
+- The Create fields turn auto-capitalisation off; a first letter is no longer upper-cased by the system.
+
+Checked in the real window (harness fixture home, macOS): Mine groups and counts; switch writes `enabled_skills`; the detail Overview and Files with Rendered (no front matter) and Source; Explore cards from a local marketplace and `+` installing the plugin (card leaves Explore, skill appears under "From plugins" with a disabled switch); Create refusing `../x` and creating a skill; folder upload through the system picker, a second upload of the same folder refused with files unchanged; zip upload with one top folder, no temp folder left; a 640 pt wide window (the tree stays beside the file view; it fits).
+
+Not checked: cancelling a picker and the "Choose a .zip file." message in the window (unit-level only), Windows (zip picker, paths, device names), a marketplace that needs credentials.
+
+Deferred minors (from the final review): a trailing `.` and Windows device names are allowed as skill names; `SKILL.md` read through a symlink; a crash during a zip add leaves `.forge-upload-*` in the Claude home; `list_files` and `read_file` trust the skill path they are given; an upload forces the Skills tab and Mine even if the person moved on; a failed later read leaves the old list with the error only in the bar; one nameless plugin entry makes a whole `marketplace.json` unreadable; a symlinked skill folder inside a marketplace is followed (read-only).
+

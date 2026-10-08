@@ -77,6 +77,7 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 23C | Chat view, side panels and suggestions (built) | new | Spec `2026-10-04-chat-view-panels-design.md`: open files from the chat, markdown render and source switch, background-task pill and panel, suggested next prompt |
 | later | Customize: explore | PG-02 | Needs a catalogue source; moved back at the user's request |
 | 30A | Customize page, Plugins tab and marketplaces (built) | PG-02 | Observation round 13; catalogue is the marketplaces the person adds (in-house); spec `2026-10-08-customize-plugins-design.md`; 30B Skills and 30C Connectors follow |
+| 30B | Customize Skills tab: Mine, detail with files, Explore, upload folder or zip, create (built) | PG-02 | Spec `2026-10-08-customize-skills-design.md`; Explore is the skills of plugins in added marketplaces; 30C Connectors follows |
 | 24 | Home dashboard and new-session composer (built) | PG-05, CMP-06 | Needed a new port `UsageStatsPort`; observation round 6 |
 | 25A | Files panel as an editor (built, checked in the real window) | PNL-04 | CodeMirror bundle, auto save and conflict banner, tabs; 25B line comments and 25C search and right click items next |
 | 26 | Responsive layout (built) | UI-01 | The user asked for it before any new feature; observation round 10 |
