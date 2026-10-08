@@ -1578,6 +1578,7 @@ dependencies = [
  "dioxus",
  "forge-adapter-browser",
  "forge-adapter-claude-fs",
+ "forge-adapter-claude-plugins",
  "forge-adapter-config",
  "forge-adapter-dialog",
  "forge-adapter-files",
