@@ -15,7 +15,12 @@ pub fn SkillsTab() -> Element {
                 div { class: "status-line error", "{message}" }
                 Button { label: "Try again", onclick: move |_| customize.reload() }
             },
-            _ => rsx! { div { class: "hint", "Loading…" } },
+            // The plugins were read and the skills were not: the reason is in the bar above.
+            Loaded::Ready(_) => rsx! {
+                div { class: "status-line error", "The skills could not be read." }
+                Button { label: "Try again", onclick: move |_| customize.reload() }
+            },
+            Loaded::Loading => rsx! { div { class: "hint", "Loading…" } },
         };
     };
     if let Some(id) = customize.detail() {
@@ -244,9 +249,9 @@ fn SkillFiles(folder: std::path::PathBuf) -> Element {
                         let rendered = !source && selected.as_deref().is_some_and(is_markdown_file);
                         if rendered {
                             let html = render_markdown(body_after_front_matter(&text));
-                            rsx! { div { class: "file-viewer file-markdown markdown", dangerous_inner_html: "{html}" } }
+                            rsx! { div { class: "skill-rendered markdown", dangerous_inner_html: "{html}" } }
                         } else {
-                            rsx! { pre { class: "file-code", "{text}" } }
+                            rsx! { pre { class: "skill-code", "{text}" } }
                         }
                     }
                 }

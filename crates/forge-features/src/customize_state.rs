@@ -18,6 +18,12 @@ pub enum Loaded {
     Failed(String),
 }
 
+/// Whether a skill that was just added is brought to the person: not when they have gone to another
+/// tab while the picker or the copy was running.
+fn shows_new_skill(tab: CustomizeTab) -> bool {
+    tab == CustomizeTab::Skills
+}
+
 /// What the skills are read against: the plugin catalogue when it was read, else an empty one, so a
 /// broken or missing bundled `claude` still leaves the person's own skills on the page.
 fn plugins_for_skills(loaded: &Loaded) -> CatalogView {
@@ -168,6 +174,9 @@ impl Customize {
                         slot.set(Some(skills));
                     }
                     Err(error) => {
+                        // The old list would pass for current: show the failure instead.
+                        let mut list = this.skills;
+                        list.set(None);
                         let mut slot = this.error;
                         slot.set(Some(format!("Could not read the skills: {error}")));
                     }
@@ -561,12 +570,14 @@ impl Customize {
                 if self.dialog() == Some(Dialog::CreateSkill) {
                     self.close_dialog();
                 }
-                let mut tab = self.tab;
-                tab.set(crate::customize::CustomizeTab::Skills);
-                let mut mode = self.mode;
-                mode.set(crate::customize::CustomizeMode::Mine);
-                // The new skill opens on its Files tab, once the lists are fresh.
-                self.read_all(Some((added.id, added.path)));
+                if shows_new_skill(self.tab()) {
+                    let mut mode = self.mode;
+                    mode.set(CustomizeMode::Mine);
+                    // The new skill opens on its Files tab, once the lists are fresh.
+                    self.read_all(Some((added.id, added.path)));
+                } else {
+                    self.reload();
+                }
             }
             Some(Err(error)) => {
                 let place = if from_dialog && self.dialog() == Some(Dialog::CreateSkill) { self.dialog_error } else { self.error };
@@ -599,5 +610,11 @@ mod tests {
             enabled: vec!["a@m".into()],
         };
         assert_eq!(plugins_for_skills(&Loaded::Ready(view.clone())), view);
+    }
+    #[test]
+    fn a_new_skill_is_shown_only_to_a_person_who_is_still_on_the_skills_tab() {
+        assert!(shows_new_skill(CustomizeTab::Skills));
+        assert!(!shows_new_skill(CustomizeTab::Plugins));
+        assert!(!shows_new_skill(CustomizeTab::Connectors));
     }
 }

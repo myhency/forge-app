@@ -83,5 +83,16 @@ Checked in the real window (harness fixture home, macOS): Mine groups and counts
 
 Not checked: cancelling a picker and the "Choose a .zip file." message in the window (unit-level only), Windows (zip picker, paths, device names), a marketplace that needs credentials.
 
-Deferred minors (from the final review): a trailing `.` and Windows device names are allowed as skill names; `SKILL.md` read through a symlink; a crash during a zip add leaves `.forge-upload-*` in the Claude home; `list_files` and `read_file` trust the skill path they are given; an upload forces the Skills tab and Mine even if the person moved on; a failed later read leaves the old list with the error only in the bar; one nameless plugin entry makes a whole `marketplace.json` unreadable; a symlinked skill folder inside a marketplace is followed (read-only).
+Long content (checked in the window): a skill with 400 sections, a file of 20,000 lines, a file of one 200,000-character line, a file over 512 KB and a binary file. The file box scrolls inside itself (420 px high). The first version showed rendered Markdown through the Files panel's `.file-viewer` class, whose `min-width: max-content` kept paragraphs from wrapping, and plain text clipped long lines; both now use their own classes (`skill-rendered`, `skill-code`) that wrap, with code blocks and tables scrolling sideways inside the page. A file over 512 KB shows "This file is too large to show." and a binary file "This is not a text file."
 
+Minors from the final review, all done after it (with tests where a test can show them):
+- Names: a trailing `.` and Windows device names (`con`, `nul`, `aux`, `prn`, `com1`-`com9`, `lpt1`-`lpt9`, also with an extension) are refused.
+- A folder whose `SKILL.md` is a link, or is over 512 KB, is refused.
+- `.forge-upload-*` folders left by a crashed zip add are swept when the adapter starts.
+- `list_files` and `read_file` work only on a folder that holds a `SKILL.md` of its own.
+- One plugin entry without a name (or not an object) no longer hides the rest of its marketplace.
+- A skill folder inside a marketplace that is a link to somewhere outside its plugin folder is not listed.
+- A successful upload or create no longer pulls the person back to the Skills tab if they went elsewhere meanwhile (no unit test: window state).
+- If a later read of the skills fails, the old list is dropped and the tab says so, with Try again.
+
+Left as is, with the reason: no guard that resets the busy flag if the add task panics (a panic in a Dioxus task ends the app, so there is nothing left to reset; not verified by making one happen).
