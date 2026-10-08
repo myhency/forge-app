@@ -836,6 +836,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .switch.on { background: var(--fg); }
 .switch.on .knob { left: 18px; }
 .switch:disabled { cursor: not-allowed; opacity: 0.55; }
+.customize-detail .customize-tabs { margin-bottom: 16px; }
 .skill-files-bar { margin: 12px 0 8px; }
 .skill-files { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 12px; align-items: start; }
 .chat-narrow .skill-files { grid-template-columns: 1fr; }

@@ -191,6 +191,8 @@ fn CreateSkill() -> Element {
         input {
             class: "customize-field",
             r#type: "text",
+            autocapitalize: "off",
+            spellcheck: false,
             placeholder: "name, for example my-skill",
             value: "{name}",
             disabled: busy,
@@ -199,6 +201,8 @@ fn CreateSkill() -> Element {
         input {
             class: "customize-field",
             r#type: "text",
+            autocapitalize: "off",
+            spellcheck: false,
             placeholder: "what it does and when to use it",
             value: "{description}",
             disabled: busy,
