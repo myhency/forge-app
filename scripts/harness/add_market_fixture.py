@@ -5,6 +5,7 @@ be tried in the harness: in the app, Add marketplace with that folder, then inst
 Run it through launch.sh:  FORGE_HARNESS_EXTRA=scripts/harness/add_market_fixture.py scripts/harness/launch.sh
 """
 import json
+import zipfile
 from pathlib import Path
 
 DEFAULT_DIR = Path("/private/tmp/forge-harness-market")
@@ -42,5 +43,24 @@ def add(directory: Path = DEFAULT_DIR) -> Path:
     return directory
 
 
+UPLOAD_DIR = Path("/private/tmp/forge-harness-skills")
+
+
+def _skill_text(name: str) -> str:
+    return f"---\nname: {name}\ndescription: Fixture skill {name}\n---\n\n# {name}\n\nSay hello from {name}.\n"
+
+
+def add_uploads(directory: Path = UPLOAD_DIR) -> Path:
+    """A skill folder and a skill zip to try Upload skill with."""
+    folder = directory / "upload-me"
+    (folder / "notes").mkdir(parents=True, exist_ok=True)
+    (folder / "SKILL.md").write_text(_skill_text("upload-me"))
+    (folder / "notes" / "extra.md").write_text("# Extra\n\nA second file.\n")
+    with zipfile.ZipFile(directory / "zipped.zip", "w") as archive:
+        archive.writestr("zipped/SKILL.md", _skill_text("zipped"))
+    return directory
+
+
 if __name__ == "__main__":
     print(f"marketplace written to {add()}")
+    print(f"upload fixtures written to {add_uploads()}")

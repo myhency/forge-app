@@ -23,6 +23,18 @@ class AddMarketFixtureTest(unittest.TestCase):
             self.assertEqual(json.loads((plugin / ".claude-plugin" / "plugin.json").read_text())["name"], name)
             self.assertTrue((plugin / "skills" / "greet" / "SKILL.md").is_file())
 
+    def test_the_upload_fixture_has_a_skill_folder_and_a_zip(self):
+        import zipfile
+
+        base = Path(os.path.realpath(tempfile.mkdtemp())) / "uploads"
+        market.add_uploads(base)
+        folder = base / "upload-me"
+        self.assertIn("name: upload-me", (folder / "SKILL.md").read_text())
+        self.assertTrue((folder / "notes" / "extra.md").is_file())
+        with zipfile.ZipFile(base / "zipped.zip") as archive:
+            self.assertIn("zipped/SKILL.md", archive.namelist())
+            self.assertIn("name: zipped", archive.read("zipped/SKILL.md").decode())
+
 
 if __name__ == "__main__":
     unittest.main()
