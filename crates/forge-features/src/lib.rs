@@ -1,6 +1,7 @@
 mod window_width;
 mod blocking;
 mod cards;
+mod customize;
 mod arrange;
 mod attachments;
 mod command_box;
@@ -39,6 +40,9 @@ pub use file_menu::{file_menu, menu_height, submenu_opens_left, FileAction, Menu
 pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
+pub use customize::{
+    check_source, explore_groups, group_title, mine_groups, CustomizeMode, CustomizeTab, Job, JobQueue, PluginGroup, PluginRow,
+};
 pub use attachments::{add_attachments, check_attachments, folder_label, kind_for_path, with_folder_hints, MAX_IMAGE_BYTES};
 pub use command_box::CommandTextArea;
 pub use editor_doc::{normalize_newlines, text_hash, Banner, TabDoc};
