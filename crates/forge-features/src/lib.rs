@@ -2,6 +2,7 @@ mod window_width;
 mod blocking;
 mod cards;
 mod customize;
+mod customize_skills;
 mod customize_state;
 mod arrange;
 mod attachments;
@@ -41,6 +42,10 @@ pub use file_menu::{file_menu, menu_height, submenu_opens_left, FileAction, Menu
 pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
+pub use customize_skills::{
+    body_after_front_matter, explore_skills, file_depth, file_leaf, find_skill, is_markdown_file, origin_label, skill_groups,
+    SkillGroups, SkillPane, SkillRow, SkillText,
+};
 pub use customize_state::{use_customize, use_customize_provider, Busy, Customize, Dialog, Loaded};
 pub use customize::{
     check_source, closes_detail, error_in_dialog, explore_groups, group_title, mine_groups, CustomizeMode, CustomizeTab, Job, JobQueue, Latest, PluginGroup, PluginRow, short_time, version_label,
