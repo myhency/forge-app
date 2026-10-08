@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::connector::ConnectorKind;
+use crate::connector::{mask_url, ConnectorKind};
 
 /// What the Add dialog holds. Values (headers, env) live here only until the CLI is called.
 #[derive(Clone, PartialEq, Eq)]
@@ -51,8 +51,8 @@ pub enum NewTransport {
 impl fmt::Debug for NewTransport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NewTransport::Http { url, headers } => write!(f, "Http({url}, {} headers)", headers.len()),
-            NewTransport::Sse { url, headers } => write!(f, "Sse({url}, {} headers)", headers.len()),
+            NewTransport::Http { url, headers } => write!(f, "Http({}, {} headers)", mask_url(url), headers.len()),
+            NewTransport::Sse { url, headers } => write!(f, "Sse({}, {} headers)", mask_url(url), headers.len()),
             NewTransport::Stdio { command, args, env } => write!(f, "Stdio({command}, {} args, {} env)", args.len(), env.len()),
         }
     }
@@ -72,7 +72,16 @@ impl NewConnector {
             NewTransport::Http { headers, .. } | NewTransport::Sse { headers, .. } => headers,
             NewTransport::Stdio { env, .. } => env,
         };
-        let mut values: Vec<String> = rows.iter().map(|(_, value)| value.clone()).filter(|value| !value.is_empty()).collect();
+        let mut values: Vec<String> = Vec::new();
+        for (_, value) in rows.iter().filter(|(_, value)| !value.is_empty()) {
+            values.push(value.clone());
+            // The CLI prints a value as JSON in places: with the quotes and backslashes escaped.
+            let escaped = serde_json::to_string(value).unwrap_or_default();
+            let escaped = escaped.trim_matches('"').to_string();
+            if escaped != *value && !escaped.is_empty() {
+                values.push(escaped);
+            }
+        }
         values.sort_by_key(|value| std::cmp::Reverse(value.len()));
         values
     }
@@ -310,6 +319,23 @@ mod tests {
         assert_eq!(split_args("a 'b c' \"d e\" \"\"").unwrap(), vec!["a", "b c", "d e", ""]);
         assert_eq!(split_args("--flag=\"x y\"").unwrap(), vec!["--flag=x y"]);
         assert!(split_args("'open").is_err());
+    }
+
+    #[test]
+    fn secrets_also_list_the_json_escaped_form_of_a_value() {
+        let mut draft = http();
+        draft.headers = vec![("X".into(), "a \"q\" b\\c".into())];
+        let secrets = validate_new(&draft, &[]).unwrap().secrets();
+        assert!(secrets.contains(&"a \"q\" b\\c".to_string()));
+        assert!(secrets.contains(&"a \\\"q\\\" b\\\\c".to_string()), "{secrets:?}");
+    }
+
+    #[test]
+    fn debug_hides_a_token_in_the_address_too() {
+        let mut draft = http();
+        draft.url = "https://h/p?token=SECRETQ".into();
+        let made = validate_new(&draft, &[]).unwrap();
+        assert!(!format!("{made:?}").contains("SECRETQ"));
     }
 
     #[test]

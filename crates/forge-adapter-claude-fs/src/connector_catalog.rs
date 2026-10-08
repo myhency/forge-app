@@ -6,7 +6,7 @@ use forge_domain::{entry_from_config, plugin_id, ConnectorEntry, ConnectorSnapsh
 use forge_ports::{ConnectorCatalogError, ConnectorCatalogPort};
 use serde_json::Value;
 
-use crate::mcp::{local_servers, normalize_project_servers, read_optional};
+use crate::mcp::{local_servers, read_optional};
 use crate::skill_catalog::{local_plugin_dir, read_json, KnownMarketplace, MarketplaceFile, OfferedPlugin};
 
 /// Reads the connectors the Customize page lists from the files Claude Code keeps. Writes nothing.
@@ -33,13 +33,28 @@ async fn inside(dir: &Path, file: &Path) -> bool {
     file.starts_with(dir)
 }
 
+/// The servers of a `.mcp.json` (or a plugin's `mcpServers` file). Wrapped in `mcpServers`, every entry is a
+/// server, and one that is not an object is listed as unreadable; bare, the top level may hold other keys
+/// (`version`, a note), so only the objects count.
+fn servers_of(parsed: Value) -> Result<Vec<(String, Value)>, &'static str> {
+    let Value::Object(mut top) = parsed else {
+        return Err("expected a JSON object at the top level");
+    };
+    match top.remove("mcpServers") {
+        Some(Value::Object(wrapped)) => Ok(wrapped.into_iter().collect()),
+        Some(Value::Null) => Ok(Vec::new()),
+        Some(_) => Err("\"mcpServers\" is not an object"),
+        None => Ok(top.into_iter().filter(|(_, config)| config.is_object()).collect()),
+    }
+}
+
 async fn read_servers_file(dir: &Path, file: &Path) -> Option<BTreeMap<String, Value>> {
     if !inside(dir, file).await {
         return None;
     }
     let text = tokio::fs::read_to_string(file).await.ok()?;
     let parsed: Value = serde_json::from_str(&text).ok()?;
-    Some(normalize_project_servers(parsed).ok()?.into_iter().collect())
+    Some(servers_of(parsed).ok()?.into_iter().collect())
 }
 
 /// The servers a plugin folder bundles: its `.mcp.json`, and `mcpServers` of its manifest (an object, or a
@@ -49,7 +64,9 @@ async fn bundled_servers(dir: &Path) -> Vec<(String, Value)> {
     if let Some(servers) = read_servers_file(dir, &dir.join(".mcp.json")).await {
         out.extend(servers);
     }
-    if let Some(manifest) = read_json::<Value>(&dir.join(".claude-plugin").join("plugin.json")).await {
+    let manifest_file = dir.join(".claude-plugin").join("plugin.json");
+    let manifest = if inside(dir, &manifest_file).await { read_json::<Value>(&manifest_file).await } else { None };
+    if let Some(manifest) = manifest {
         match manifest.get("mcpServers") {
             Some(Value::Object(servers)) => out.extend(servers.iter().map(|(name, config)| (name.clone(), config.clone()))),
             Some(Value::String(relative)) => {
@@ -62,13 +79,14 @@ async fn bundled_servers(dir: &Path) -> Vec<(String, Value)> {
             _ => {}
         }
     }
-    out.into_iter().filter(|(_, config)| config.is_object()).collect()
+    out.into_iter().collect()
 }
 
 impl ClaudeConnectorCatalogAdapter {
     async fn read_snapshot(&self, project_path: Option<PathBuf>, plugins: Vec<PluginEntry>) -> Result<ConnectorSnapshot, ConnectorCatalogError> {
         // Later insertions win by name: user, then the project's .mcp.json, then local scope (as the SDK does).
         let mut mine: BTreeMap<String, (ConnectorSource, Value)> = BTreeMap::new();
+        let mut notes: Vec<String> = Vec::new();
         let claude_json = read_optional(&self.claude_json_path).await.map_err(|e| io(&self.claude_json_path, e))?;
         if let Some(text) = &claude_json {
             let parsed: Value = serde_json::from_str(text).map_err(|e| io(&self.claude_json_path, e))?;
@@ -79,12 +97,19 @@ impl ClaudeConnectorCatalogAdapter {
             }
         }
         if let Some(project) = &project_path {
+            // A project file that cannot be read is somebody's mistake in one project: say so, and list the rest.
             let file = project.join(".mcp.json");
-            if let Some(text) = read_optional(&file).await.map_err(|e| io(&file, e))? {
-                let parsed: Value = serde_json::from_str(&text).map_err(|e| io(&file, e))?;
-                for (name, config) in normalize_project_servers(parsed).map_err(|reason| io(&file, reason))? {
-                    mine.insert(name, (ConnectorSource::Project, config));
-                }
+            match read_optional(&file).await {
+                Ok(Some(text)) => match serde_json::from_str::<Value>(&text).map_err(|e| e.to_string()).and_then(|parsed| servers_of(parsed).map_err(String::from)) {
+                    Ok(servers) => {
+                        for (name, config) in servers {
+                            mine.insert(name, (ConnectorSource::Project, config));
+                        }
+                    }
+                    Err(reason) => notes.push(format!("Could not read {}: {reason}", file.display())),
+                },
+                Ok(None) => {}
+                Err(error) => notes.push(format!("Could not read {}: {error}", file.display())),
             }
             if let Some(text) = &claude_json {
                 let local: HashMap<String, Value> = local_servers(text, project).await;
@@ -95,7 +120,6 @@ impl ClaudeConnectorCatalogAdapter {
         }
         let mut connectors: Vec<ConnectorEntry> = mine
             .into_iter()
-            .filter(|(_, (_, config))| config.is_object())
             .map(|(name, (source, config))| entry_from_config(&name, source, true, &config))
             .collect();
 
@@ -131,7 +155,7 @@ impl ClaudeConnectorCatalogAdapter {
             }
         }
         connectors.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-        Ok(ConnectorSnapshot { connectors })
+        Ok(ConnectorSnapshot { connectors, notes })
     }
 }
 
@@ -241,10 +265,49 @@ mod tests {
         std::fs::write(&f.claude_json, r#"{"mcpServers": {"str": "hello", "odd": {"hello": 1}, "ok": {"command": "x"}}}"#).unwrap();
         let s = snapshot(&f, false, vec![]).await.unwrap();
         let kinds: Vec<_> = s.connectors.iter().map(|c| (c.name.as_str(), c.kind)).collect();
-        assert_eq!(kinds, vec![("odd", ConnectorKind::Unknown), ("ok", ConnectorKind::Stdio)]);
+        assert_eq!(kinds, vec![("odd", ConnectorKind::Unknown), ("ok", ConnectorKind::Stdio), ("str", ConnectorKind::Unknown)]);
 
         std::fs::write(&f.claude_json, r#"{"mcpServers": null}"#).unwrap();
         assert!(snapshot(&f, false, vec![]).await.unwrap().connectors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_bare_mcp_json_lists_only_objects_but_a_wrapped_one_lists_every_entry() {
+        let f = fixture();
+        std::fs::write(f.project.join(".mcp.json"), r#"{"note": "hello", "version": 2, "real": {"command": "x"}}"#).unwrap();
+        let s = snapshot(&f, true, vec![]).await.unwrap();
+        assert_eq!(s.connectors.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["real"]);
+
+        std::fs::write(f.project.join(".mcp.json"), r#"{"mcpServers": {"broken": "hello", "real": {"command": "x"}}}"#).unwrap();
+        let s = snapshot(&f, true, vec![]).await.unwrap();
+        let kinds: Vec<_> = s.connectors.iter().map(|c| (c.name.as_str(), c.kind)).collect();
+        assert_eq!(kinds, vec![("broken", ConnectorKind::Unknown), ("real", ConnectorKind::Stdio)]);
+    }
+
+    #[tokio::test]
+    async fn a_project_file_that_cannot_be_read_leaves_a_note_and_the_rest_still_lists() {
+        let f = fixture();
+        std::fs::write(&f.claude_json, json!({"mcpServers": {"u": {"command": "x"}}}).to_string()).unwrap();
+        for bad in ["{oops", "[1, 2]", r#"{"mcpServers": [1]}"#] {
+            std::fs::write(f.project.join(".mcp.json"), bad).unwrap();
+            let s = snapshot(&f, true, vec![]).await.unwrap();
+            assert_eq!(s.connectors.len(), 1, "{bad}");
+            assert_eq!(s.notes.len(), 1, "{bad}");
+            assert!(s.notes[0].contains(".mcp.json"), "{}", s.notes[0]);
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_manifest_that_is_a_link_to_a_file_outside_the_plugin_is_not_read() {
+        let f = fixture();
+        let dir = f.home.join("plugins/cache/hello");
+        std::fs::create_dir_all(dir.join(".claude-plugin")).unwrap();
+        let outside = f._dir.path().join("outside-plugin.json");
+        std::fs::write(&outside, r#"{"mcpServers": {"leak": {"command": "x"}}}"#).unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join(".claude-plugin/plugin.json")).unwrap();
+        let s = snapshot(&f, false, vec![plugin("hello@m", true, Some(&dir))]).await.unwrap();
+        assert!(s.connectors.is_empty(), "{:?}", s.connectors);
     }
 
     #[tokio::test]

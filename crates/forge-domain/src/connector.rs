@@ -73,6 +73,8 @@ pub struct ConnectorEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConnectorSnapshot {
     pub connectors: Vec<ConnectorEntry>,
+    /// Things the person should know that did not stop the list (a project file that could not be read).
+    pub notes: Vec<String>,
 }
 
 /// What `claude mcp get` says about a server, in one line.
@@ -92,6 +94,70 @@ pub fn connector_id(source: &ConnectorSource, name: &str) -> String {
         ConnectorSource::Local => format!("local:{name}"),
         ConnectorSource::Plugin { plugin_id } => format!("plugin:{plugin_id}:{name}"),
     }
+}
+
+const HIDDEN: &str = "•••";
+
+fn looks_secret(name: &str) -> bool {
+    let name = name.to_lowercase();
+    ["key", "token", "secret", "password", "passwd", "auth", "sig"].iter().any(|word| name.contains(word))
+}
+
+/// The address with what looks secret taken out: `user:password@` and the value of a query parameter whose name
+/// says key, token, secret, password, auth or sig. The rest is shown as it is.
+pub fn mask_url(url: &str) -> String {
+    let Some(scheme_end) = url.find("://").map(|at| at + 3) else { return url.to_string() };
+    let (head, rest) = url.split_at(scheme_end);
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(authority_end);
+    let authority = match authority.rfind('@') {
+        Some(at) => format!("{HIDDEN}@{}", &authority[at + 1..]),
+        None => authority.to_string(),
+    };
+    let tail = match tail.find('?') {
+        Some(question) => {
+            let (path, query) = tail.split_at(question);
+            let (query, fragment) = match query.find('#') {
+                Some(hash) => query.split_at(hash),
+                None => (query, ""),
+            };
+            let masked: Vec<String> = query[1..]
+                .split('&')
+                .map(|pair| match pair.split_once('=') {
+                    Some((name, _)) if looks_secret(name) => format!("{name}={HIDDEN}"),
+                    _ => pair.to_string(),
+                })
+                .collect();
+            format!("{path}?{}{fragment}", masked.join("&"))
+        }
+        None => tail.to_string(),
+    };
+    format!("{head}{authority}{tail}")
+}
+
+/// Command arguments with what looks secret taken out: the word after a flag such as `--api-key`, the value of
+/// `--token=…`, and the secret parts of an address.
+pub fn mask_args(args: &[&str]) -> Vec<String> {
+    let mut out = Vec::with_capacity(args.len());
+    let mut hide_next = false;
+    for arg in args {
+        if hide_next {
+            out.push(HIDDEN.to_string());
+            hide_next = false;
+            continue;
+        }
+        if let Some((name, _)) = arg.split_once('=') {
+            if name.starts_with('-') && looks_secret(name) {
+                out.push(format!("{name}={HIDDEN}"));
+                continue;
+            }
+        }
+        if arg.starts_with('-') && looks_secret(arg) {
+            hide_next = true;
+        }
+        out.push(if arg.contains("://") { mask_url(arg) } else { arg.to_string() });
+    }
+    out
 }
 
 fn sorted_keys(config: &Value, key: &str) -> Vec<String> {
@@ -118,9 +184,9 @@ pub fn entry_from_config(name: &str, source: ConnectorSource, installed: bool, c
             .and_then(Value::as_array)
             .map(|args| args.iter().filter_map(Value::as_str).collect::<Vec<_>>())
             .unwrap_or_default();
-        std::iter::once(command).chain(args).collect::<Vec<_>>().join(" ")
+        std::iter::once(command.to_string()).chain(mask_args(&args)).collect::<Vec<_>>().join(" ")
     } else {
-        text("url").unwrap_or_default().to_string()
+        mask_url(text("url").unwrap_or_default())
     };
     ConnectorEntry {
         id: connector_id(&source, name),
@@ -177,6 +243,28 @@ mod tests {
         let e = entry(json!({"type": "http", "url": "https://a", "headers": {"Authorization": "Bearer SECRET-VALUE"}, "env": {"K": "SECRET-ENV"}}));
         let text = format!("{e:?}");
         assert!(!text.contains("SECRET-VALUE") && !text.contains("SECRET-ENV"), "{text}");
+    }
+
+    #[test]
+    fn a_secret_in_the_address_is_hidden_and_the_rest_stays() {
+        assert_eq!(mask_url("https://user:pw@host.example/p?token=abc&x=1#frag"), "https://•••@host.example/p?token=•••&x=1#frag");
+        assert_eq!(mask_url("https://mcp.sentry.dev/mcp"), "https://mcp.sentry.dev/mcp");
+        assert_eq!(mask_url("https://h/p?api_key=1&Sig=2&workspace=7"), "https://h/p?api_key=•••&Sig=•••&workspace=7");
+        assert_eq!(mask_url("not a url"), "not a url");
+    }
+
+    #[test]
+    fn a_secret_in_the_arguments_is_hidden_and_the_rest_stays() {
+        let args = ["-y", "pkg", "--api-key", "sk-123", "--token=abc", "--port", "80", "https://h/p?token=zzz"];
+        assert_eq!(mask_args(&args), vec!["-y", "pkg", "--api-key", "•••", "--token=•••", "--port", "80", "https://h/p?token=•••"]);
+    }
+
+    #[test]
+    fn the_entry_shows_the_masked_address_and_arguments() {
+        let http = entry(json!({"type": "http", "url": "https://u:pw@h/p?token=SECRETQ"}));
+        assert!(!http.target.contains("SECRETQ") && !http.target.contains("pw@"), "{}", http.target);
+        let local = entry(json!({"command": "npx", "args": ["--api-key", "SECRETA"]}));
+        assert_eq!(local.target, "npx --api-key •••");
     }
 
     #[test]
