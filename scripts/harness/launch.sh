@@ -21,6 +21,11 @@ fi
 
 python3 "$here/build_fixture.py" "$run_dir" >/dev/null
 
+# An optional script that adds to the fixture (for example add_preview_samples.py).
+if [[ -n "${FORGE_HARNESS_EXTRA:-}" ]]; then
+  python3 "$FORGE_HARNESS_EXTRA"
+fi
+
 binary="${CARGO_TARGET_DIR:-$root/target}/debug/forge-app"
 FORGE_CLAUDE_HOME="$run_dir/.claude" \
 FORGE_CONFIG_PATH="$run_dir/forge-config/config.json" \
