@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
-use forge_application::{ExtensionsUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
+use forge_application::{ExtensionsUseCase, PluginCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
@@ -35,6 +35,7 @@ pub struct WorkspaceServices {
     pub sessions: Arc<dyn SessionRepositoryPort>,
     pub settings: Arc<SettingsUseCase>,
     pub extensions: Arc<ExtensionsUseCase>,
+    pub plugin_catalog: Arc<PluginCatalogUseCase>,
     pub folder_picker: Arc<dyn FolderPickerPort>,
     pub file_picker: Arc<dyn FilePickerPort>,
     pub terminal: Arc<dyn TerminalPort>,
@@ -49,6 +50,7 @@ pub struct WorkspaceServices {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Active {
     NewSession,
+    Customize,
     Live(LiveSessionId),
 }
 
@@ -249,7 +251,7 @@ impl Workspace {
     pub fn arranged_sidebar(&self, now: OffsetDateTime) -> Vec<ArrangedGroup> {
         let active = match self.active() {
             Active::Live(id) => Some(id),
-            Active::NewSession => None,
+            Active::NewSession | Active::Customize => None,
         };
         arrange(&self.sidebar(), &self.prefs.read(), now, active)
     }
@@ -780,6 +782,13 @@ impl Workspace {
             .map(|entry| entry.handle.clone())
     }
 
+    /// Shows the Customize page in the main pane.
+    pub fn show_customize(&self) {
+        self.close_lightbox();
+        let mut active = self.active;
+        active.set(Active::Customize);
+    }
+
     pub fn show_new_session(&self) {
         self.close_lightbox();
         let mut active = self.active;
@@ -818,7 +827,7 @@ impl Workspace {
     pub fn context_project(&self) -> Option<PathBuf> {
         match self.active() {
             Active::Live(id) => self.live_view(id).map(|view| view.read().project_path.clone()),
-            Active::NewSession => self
+            Active::NewSession | Active::Customize => self
                 .new_folder()
                 .or_else(|| self.new_session_projects().into_iter().next().map(|project| project.path)),
         }
@@ -967,7 +976,7 @@ impl Workspace {
         let order = open_session_order(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local());
         let current = match self.active() {
             Active::Live(id) => Some(id),
-            Active::NewSession => None,
+            Active::NewSession | Active::Customize => None,
         };
         if let Some(target) = cycle_target(&order, current, forward) {
             self.select(target);

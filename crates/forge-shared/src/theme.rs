@@ -226,4 +226,15 @@ mod tests {
             assert!(!rule.contains("rgb"), "a hard-coded color in: {rule}");
         }
     }
+
+    #[test]
+    fn the_customize_menu_sits_above_the_menu_backdrop_that_closes_it() {
+        assert!(z_index(".customize-menu") > z_index(".menu-backdrop"));
+    }
+
+    #[test]
+    fn the_explore_cards_fall_to_one_column_when_the_chat_is_narrow() {
+        assert!(rule(".customize-grid").contains("1fr 1fr"));
+        assert!(rule(".chat-narrow .customize-grid").contains("grid-template-columns: 1fr;"));
+    }
 }

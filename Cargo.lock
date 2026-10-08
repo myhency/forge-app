@@ -1489,6 +1489,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-adapter-claude-plugins"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "forge-domain",
+ "forge-ports",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "forge-adapter-config"
 version = "0.1.0"
 dependencies = [
@@ -1565,6 +1579,7 @@ dependencies = [
  "dioxus",
  "forge-adapter-browser",
  "forge-adapter-claude-fs",
+ "forge-adapter-claude-plugins",
  "forge-adapter-config",
  "forge-adapter-dialog",
  "forge-adapter-files",

@@ -2,6 +2,9 @@ mod changes_panel;
 mod chat_window;
 mod composer_controls;
 mod context_menu;
+mod customize_dialogs;
+mod customize_page;
+mod customize_plugins;
 mod dock;
 mod files_editor;
 mod files_icons;
@@ -30,6 +33,7 @@ mod usage_card;
 mod usage_ring;
 
 pub use chat_window::ChatWindow;
+pub use customize_page::CustomizePage;
 pub use dock::Dock;
 pub use composer_controls::{EffortPicker, ModePicker, ModelPicker};
 pub use filter_menu::SidebarFilterMenu;

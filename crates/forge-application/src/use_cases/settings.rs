@@ -3,18 +3,26 @@ use std::sync::Arc;
 use forge_domain::{normalize_setting, AppConfig, ArchivedRef, SidebarPrefs};
 use forge_ports::{ConfigError, ConfigRepositoryPort};
 
+use super::config_lock::ConfigLock;
+
 /// Reads and changes the settings the UI owns (`base_url`, `api_key`, `model`). Every save loads
 /// the current config first, so the `enabled_*` lists are never lost.
 pub struct SettingsUseCase {
     config: Arc<dyn ConfigRepositoryPort>,
     // Every save reads the config, changes one part and writes it back; two at once would each
     // start from the same file and the later write would drop the earlier change.
-    write_lock: tokio::sync::Mutex<()>,
+    write_lock: ConfigLock,
 }
 
 impl SettingsUseCase {
     pub fn new(config: Arc<dyn ConfigRepositoryPort>) -> Self {
-        Self { config, write_lock: tokio::sync::Mutex::new(()) }
+        Self { config, write_lock: ConfigLock::default() }
+    }
+
+    /// Shares the lock the other config writers hold (see `ConfigLock`).
+    pub fn with_config_lock(mut self, lock: ConfigLock) -> Self {
+        self.write_lock = lock;
+        self
     }
 
     pub async fn load(&self) -> Result<AppConfig, ConfigError> {
@@ -27,7 +35,7 @@ impl SettingsUseCase {
     }
 
     pub async fn save_connection(&self, base_url: &str, api_key: &str) -> Result<AppConfig, ConfigError> {
-        let _saving = self.write_lock.lock().await;
+        let _saving = self.write_lock.hold().await;
         let mut config = self.load_for_update().await?;
         config.base_url = normalize_setting(base_url);
         config.api_key = normalize_setting(api_key);
@@ -36,7 +44,7 @@ impl SettingsUseCase {
     }
 
     pub async fn save_model(&self, model: &str) -> Result<AppConfig, ConfigError> {
-        let _saving = self.write_lock.lock().await;
+        let _saving = self.write_lock.hold().await;
         let mut config = self.load_for_update().await?;
         config.model = normalize_setting(model);
         self.config.save(&config).await?;
@@ -47,7 +55,7 @@ impl SettingsUseCase {
     /// is never replaced: this runs on a click in the sidebar, and replacing the file would drop the
     /// API key without the person having asked for anything of the kind.
     pub async fn save_sidebar(&self, prefs: &SidebarPrefs) -> Result<AppConfig, ConfigError> {
-        let _saving = self.write_lock.lock().await;
+        let _saving = self.write_lock.hold().await;
         let mut config = self.config.load().await?;
         config.sidebar = prefs.clone();
         self.config.save(&config).await?;
@@ -57,7 +65,7 @@ impl SettingsUseCase {
     /// Saves how the Files panel's editor behaves. Like `save_sidebar`, a config that cannot be read
     /// is never replaced, and it shares the write lock.
     pub async fn save_editor(&self, prefs: &forge_domain::EditorPrefs) -> Result<AppConfig, ConfigError> {
-        let _saving = self.write_lock.lock().await;
+        let _saving = self.write_lock.hold().await;
         let mut config = self.config.load().await?;
         config.editor = prefs.clone();
         self.config.save(&config).await?;
@@ -67,7 +75,7 @@ impl SettingsUseCase {
     /// Saves which sessions are archived. Like `save_sidebar`, a config that cannot be read is never
     /// replaced, and it shares the write lock so a quick archive and filter change both survive.
     pub async fn save_archived(&self, archived: &[ArchivedRef]) -> Result<AppConfig, ConfigError> {
-        let _saving = self.write_lock.lock().await;
+        let _saving = self.write_lock.hold().await;
         let mut config = self.config.load().await?;
         config.archived = archived.to_vec();
         self.config.save(&config).await?;

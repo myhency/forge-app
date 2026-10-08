@@ -10,6 +10,7 @@ use forge_ports::{
 };
 use thiserror::Error;
 
+use super::config_lock::ConfigLock;
 use super::toggles::{ToggleMcpServerUseCase, TogglePluginUseCase, ToggleSkillUseCase};
 
 #[derive(Debug, Error)]
@@ -34,6 +35,7 @@ pub struct ExtensionsUseCase {
     mcp: Arc<dyn McpRegistryPort>,
     /// Read as "the project" when no project is active, so only global definitions show.
     global_scope: PathBuf,
+    lock: ConfigLock,
 }
 
 impl ExtensionsUseCase {
@@ -50,7 +52,14 @@ impl ExtensionsUseCase {
             plugins,
             mcp,
             global_scope,
+            lock: ConfigLock::default(),
         }
+    }
+
+    /// Shares the lock the other config writers hold (see `ConfigLock`).
+    pub fn with_config_lock(mut self, lock: ConfigLock) -> Self {
+        self.lock = lock;
+        self
     }
 
     /// The enabled set for a session in `project`. A reader is only called when something of its
@@ -110,6 +119,7 @@ impl ExtensionsUseCase {
 
     pub async fn toggle_skill(&self, name: &str) -> Result<AppConfig, ConfigError> {
         ToggleSkillUseCase::new(self.config.clone())
+            .with_config_lock(self.lock.clone())
             .execute(name)
             .await
     }
@@ -117,12 +127,14 @@ impl ExtensionsUseCase {
     /// `key` is `PluginDefinition::key()`.
     pub async fn toggle_plugin(&self, key: &str) -> Result<AppConfig, ConfigError> {
         TogglePluginUseCase::new(self.config.clone())
+            .with_config_lock(self.lock.clone())
             .execute(key)
             .await
     }
 
     pub async fn toggle_mcp_server(&self, name: &str) -> Result<AppConfig, ConfigError> {
         ToggleMcpServerUseCase::new(self.config.clone())
+            .with_config_lock(self.lock.clone())
             .execute(name)
             .await
     }

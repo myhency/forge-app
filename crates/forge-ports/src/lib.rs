@@ -5,6 +5,7 @@ mod file_picker_port;
 mod files_port;
 mod folder_picker_port;
 mod git_port;
+mod plugin_manager_port;
 mod project_port;
 mod session_port;
 mod sidecar_factory_port;
@@ -23,6 +24,7 @@ pub use extension_ports::{
 };
 pub use file_picker_port::FilePickerPort;
 pub use folder_picker_port::FolderPickerPort;
+pub use plugin_manager_port::{PluginManagerError, PluginManagerPort};
 pub use project_port::{ProjectRepositoryError, ProjectRepositoryPort};
 pub use session_port::{SessionRepositoryError, SessionRepositoryPort};
 pub use sidecar_factory_port::SidecarFactoryPort;
@@ -53,6 +55,8 @@ pub use extension_ports::{MockMcpRegistryPort, MockPluginRepositoryPort, MockSki
 pub use file_picker_port::MockFilePickerPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use folder_picker_port::MockFolderPickerPort;
+#[cfg(any(test, feature = "mocks"))]
+pub use plugin_manager_port::MockPluginManagerPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use project_port::MockProjectRepositoryPort;
 #[cfg(any(test, feature = "mocks"))]

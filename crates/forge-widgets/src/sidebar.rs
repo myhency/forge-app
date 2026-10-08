@@ -118,6 +118,12 @@ pub fn Sidebar() -> Element {
                 }
                 SidebarFilterMenu {}
             }
+            button {
+                class: if active == Active::Customize { "sidebar-link active" } else { "sidebar-link" },
+                onclick: move |_| workspace.show_customize(),
+                span { "✦" }
+                span { "Customize" }
+            }
             div { class: "sidebar-scroll",
             if let Some(message) = notice {
                 div { class: "banner error",
