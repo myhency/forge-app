@@ -138,6 +138,18 @@ Checked in the real window (harness, `FORGE_CLAUDE_HOME` fixture, a local market
 - An 800 pt window: the cards fall to one column and the toolbar wraps without cutting `+ Add`.
 - No `Copy Value` warnings in the app log after the signals moved to the root scope.
 
-Not checked: the spinner during an install (a local install is too fast to catch), the Manage dialog's spinner and error line added in the review fix pass, the failing Git clone message, a GitHub or Git URL marketplace, and Windows. Cosmetic: the row menu of a marketplace overlaps its card and the Done button; the Add field's placeholder is cut at the right edge in a 1200 pt window; "Last updated" shows the raw ISO time.
+After the final review (one reviewer, whole branch) the fix pass and the deferred minors were done, each with a test that failed first where the logic is testable:
+
+- The reader threads no longer wait for a process left behind to close its pipe (the queue could stay "running" forever); a timeout stops the whole process group (`taskkill /T` on Windows); the Linux musl package name is handled; the missing-program text names the platform.
+- An Add marketplace error is shown in the dialog only while that dialog is open, otherwise on the page bar; a queued add counts as adding; the Manage dialog shows a spinner, disables the row menu and shows its own error line; the backdrop does not close the Add dialog while it works.
+- `PluginEntry.scope` and `can_uninstall()`: a plugin installed only in a project or local scope shows "Installed in the project scope. Remove it there." instead of an Uninstall that cannot work.
+- Removing a marketplace drops every enabled key that ends with `@<name>`.
+- Reads of the catalogue are numbered (`Latest`), so a slow older read cannot replace a newer one; the page error bar is cleared when the page opens; a failed uninstall keeps the detail open; the row menu is disabled while a job on that plugin runs.
+- One shared `ConfigLock` (forge-application) is held by every load-edit-save of the Forge config (Settings, the three toggles, the plugin catalogue); a test with a config that yields between load and save shows a lost update without it.
+- "Last updated" reads `2026-10-08 14:04 UTC`; the Add field's placeholder is shorter.
+
+Checked in the real window after that: a failed `file://` source (the CLI's own "Invalid marketplace source format" text), a failed clone of an unreachable `https://127.0.0.1:1/x.git` (the whole git message in the dialog), and an Update that fails because the marketplace folder is gone (the error line inside the Manage dialog).
+
+Not checked: the spinners (a local install and a local update finish in under a second; the busy state is covered by the queue's unit tests), a Git URL marketplace that clones (the CLI clones shallow, which a plain local HTTP server cannot serve; Forge passes the same text it passes for a folder), a GitHub repository (no remote access was made), and Windows (the process-tree kill, `claude.exe`, the paths). Cosmetic and left as it is: the row menu of a marketplace opens over its card and the Done button, like any popup.
 
 Notes for the harness: the window of the harness app paints only while the Mac's display is awake and unlocked (`screencapture` fails or gives a white window otherwise); `osascript keystroke` drops letters when it types fast, so type one key at a time (the existing composer drops them too).
