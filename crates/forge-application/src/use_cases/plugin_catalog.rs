@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_domain::{split_plugin_id, AppConfig, PluginSnapshot};
+use forge_domain::{AppConfig, PluginSnapshot};
 use forge_ports::{ConfigError, ConfigRepositoryPort, PluginManagerError, PluginManagerPort};
 use thiserror::Error;
 
@@ -74,7 +74,8 @@ impl PluginCatalogUseCase {
     /// Removing a marketplace removes its plugins too, so their keys leave the enabled list.
     pub async fn remove_marketplace(&self, name: &str) -> Result<(), PluginCatalogError> {
         self.manager.remove_marketplace(name).await?;
-        self.edit_enabled(|list| list.retain(|key| split_plugin_id(key).1 != Some(name))).await
+        let suffix = format!("@{name}");
+        self.edit_enabled(|list| list.retain(|key| !key.ends_with(&suffix))).await
     }
 
     pub async fn update_marketplace(&self, name: &str) -> Result<(), PluginCatalogError> {
@@ -214,5 +215,14 @@ mod tests {
         use_case.add_marketplace("owner/repo").await.unwrap();
         use_case.update_marketplace("m").await.unwrap();
         assert_eq!(*saves.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn removing_a_marketplace_matches_the_end_of_the_key_so_an_at_sign_in_a_name_does_not_hide_it() {
+        let mut manager = MockPluginManagerPort::new();
+        manager.expect_remove_marketplace().returning(|_| Ok(()));
+        let (config, state, _) = memory_config(&["x@y@m", "a@m", "a@m2", "m"]);
+        use_case(manager, config).remove_marketplace("m").await.unwrap();
+        assert_eq!(state.lock().unwrap().enabled_plugins, ["a@m2", "m"]);
     }
 }

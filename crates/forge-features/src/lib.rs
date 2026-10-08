@@ -43,7 +43,7 @@ pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
 pub use customize_state::{use_customize, use_customize_provider, Busy, Customize, Dialog, Loaded};
 pub use customize::{
-    check_source, error_in_dialog, explore_groups, group_title, mine_groups, CustomizeMode, CustomizeTab, Job, JobQueue, PluginGroup, PluginRow,
+    check_source, closes_detail, error_in_dialog, explore_groups, group_title, mine_groups, CustomizeMode, CustomizeTab, Job, JobQueue, Latest, PluginGroup, PluginRow, short_time,
 };
 pub use attachments::{add_attachments, check_attachments, folder_label, kind_for_path, with_folder_hints, MAX_IMAGE_BYTES};
 pub use command_box::CommandTextArea;

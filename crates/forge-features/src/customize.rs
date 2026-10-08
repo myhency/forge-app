@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use forge_domain::PluginEntry;
+use forge_domain::{split_plugin_id, PluginEntry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CustomizeTab {
@@ -158,6 +158,49 @@ pub fn error_in_dialog(job: &Job, add_dialog_open: bool, manage_dialog_open: boo
     }
 }
 
+/// Whether a finished job closes the plugin detail that is open: an uninstall that worked, of that very
+/// plugin, or a removed marketplace that the plugin belongs to. A failed job leaves the detail where it is.
+pub fn closes_detail(job: &Job, succeeded: bool, detail: Option<&str>) -> bool {
+    let (Some(open), true) = (detail, succeeded) else {
+        return false;
+    };
+    match job {
+        Job::Uninstall(id) => id == open,
+        Job::RemoveMarketplace(name) => split_plugin_id(open).1 == Some(name.as_str()),
+        _ => false,
+    }
+}
+
+/// Numbers the reads of the catalogue so a slow older one cannot overwrite a newer one.
+#[derive(Debug, Default)]
+pub struct Latest {
+    issued: u64,
+}
+
+impl Latest {
+    /// Starts a read and returns its number.
+    pub fn issue(&mut self) -> u64 {
+        self.issued += 1;
+        self.issued
+    }
+
+    /// Whether no later read has been started since `token` was issued.
+    pub fn is_latest(&self, token: u64) -> bool {
+        self.issued == token
+    }
+}
+
+/// `2026-10-08T13:52:10.756Z` as `2026-10-08 13:52 UTC`; any other text is returned as it is.
+pub fn short_time(iso: &str) -> String {
+    let b = iso.as_bytes();
+    let shaped = b.len() >= 16 && b[4] == b'-' && b[7] == b'-' && b[10] == b'T' && b[13] == b':' && iso.is_char_boundary(16);
+    if shaped && iso.ends_with('Z') {
+        format!("{} {} UTC", &iso[..10], &iso[11..16])
+    } else {
+        iso.to_string()
+    }
+}
+
 /// The text of the Add marketplace field, trimmed. One non-empty line that is not an option.
 pub fn check_source(input: &str) -> Result<String, &'static str> {
     let source = input.trim();
@@ -185,6 +228,7 @@ mod tests {
             version: None,
             description: description.into(),
             installed,
+            scope: None,
             install_path: None,
         }
     }
@@ -309,5 +353,36 @@ mod tests {
         assert!(error_in_dialog(&update, false, true));
         assert!(!error_in_dialog(&update, true, false));
         assert!(!error_in_dialog(&Job::Install("a@m".into()), true, true), "an install error is always the page bar's");
+    }
+
+    #[test]
+    fn the_detail_closes_only_when_its_own_plugin_or_marketplace_was_removed() {
+        let uninstall = Job::Uninstall("a@m".into());
+        assert!(closes_detail(&uninstall, true, Some("a@m")));
+        assert!(!closes_detail(&uninstall, false, Some("a@m")), "a failed uninstall keeps the detail");
+        assert!(!closes_detail(&uninstall, true, Some("b@m")), "another plugin's detail stays");
+        assert!(!closes_detail(&uninstall, true, None));
+        let remove = Job::RemoveMarketplace("m".into());
+        assert!(closes_detail(&remove, true, Some("a@m")));
+        assert!(!closes_detail(&remove, true, Some("a@other")));
+        assert!(!closes_detail(&remove, false, Some("a@m")));
+        assert!(!closes_detail(&Job::Install("a@m".into()), true, Some("a@m")));
+    }
+
+    #[test]
+    fn only_the_newest_read_may_show_its_result() {
+        let mut latest = Latest::default();
+        let first = latest.issue();
+        let second = latest.issue();
+        assert!(!latest.is_latest(first), "an older read that lands late must be dropped");
+        assert!(latest.is_latest(second));
+    }
+
+    #[test]
+    fn a_time_from_the_known_marketplaces_file_reads_as_date_and_minutes_in_utc() {
+        assert_eq!(short_time("2026-10-08T13:52:10.756Z"), "2026-10-08 13:52 UTC");
+        assert_eq!(short_time("2026-02-17T04:26:16.034Z"), "2026-02-17 04:26 UTC");
+        assert_eq!(short_time("yesterday"), "yesterday", "anything else is shown as it is");
+        assert_eq!(short_time(""), "");
     }
 }

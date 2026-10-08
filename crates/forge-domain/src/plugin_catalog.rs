@@ -11,7 +11,17 @@ pub struct PluginEntry {
     pub version: Option<String>,
     pub description: String,
     pub installed: bool,
+    /// The scope the install is in (`user`, `project`, `local`), when the CLI says. Only an installed plugin has one.
+    pub scope: Option<String>,
     pub install_path: Option<PathBuf>,
+}
+
+impl PluginEntry {
+    /// Whether this page can uninstall it: Forge always runs `plugin uninstall` for the user scope, so a plugin
+    /// that is installed only in a project or local scope has to be removed there.
+    pub fn can_uninstall(&self) -> bool {
+        self.installed && self.scope.as_deref().map_or(true, |scope| scope == "user")
+    }
 }
 
 /// A marketplace the person (or the terminal's Claude Code) added.
@@ -66,5 +76,27 @@ mod tests {
     fn an_id_splits_at_the_first_at_sign() {
         assert_eq!(split_plugin_id("hello@spike-market"), ("hello", Some("spike-market")));
         assert_eq!(split_plugin_id("hello"), ("hello", None));
+    }
+
+    fn entry(installed: bool, scope: Option<&str>) -> PluginEntry {
+        PluginEntry {
+            id: "a@m".into(),
+            name: "a".into(),
+            marketplace: "m".into(),
+            version: None,
+            description: String::new(),
+            installed,
+            scope: scope.map(String::from),
+            install_path: None,
+        }
+    }
+
+    #[test]
+    fn only_a_user_scope_install_can_be_uninstalled_from_here() {
+        assert!(entry(true, Some("user")).can_uninstall());
+        assert!(entry(true, None).can_uninstall(), "no scope reported: the CLI default is the user scope");
+        assert!(!entry(true, Some("project")).can_uninstall());
+        assert!(!entry(true, Some("local")).can_uninstall());
+        assert!(!entry(false, None).can_uninstall(), "nothing to uninstall");
     }
 }

@@ -82,10 +82,12 @@ fn MineList(groups: Vec<PluginGroup>) -> Element {
                                     div { class: "customize-desc", "{row.entry.description}" }
                                 }
                                 if let Some(version) = row.entry.version.clone() { div { class: "customize-meta", "v{version}" } }
-                                if busy != Busy::No { span { class: "spinner", title: "Working…" } }
+                                if busy != Busy::No { span { class: "spinner", title: if busy == Busy::Waiting { "Waiting…" } else { "Working…" } } }
                                 button {
                                     class: "icon-button",
                                     title: "More",
+                                    // Its label and action came from the list as it was; wait for the list to be read again.
+                                    disabled: busy != Busy::No,
                                     onclick: {
                                         let id = id.clone();
                                         move |event| {
@@ -110,6 +112,7 @@ fn MineList(groups: Vec<PluginGroup>) -> Element {
                                             },
                                             if row.enabled { "Turn off" } else { "Turn on" }
                                         }
+                                        if row.entry.can_uninstall() {
                                         button {
                                             class: "danger",
                                             onclick: {
@@ -121,6 +124,7 @@ fn MineList(groups: Vec<PluginGroup>) -> Element {
                                                 }
                                             },
                                             "Uninstall"
+                                        }
                                         }
                                     }
                                 }
@@ -161,7 +165,7 @@ fn ExploreGrid(groups: Vec<PluginGroup>) -> Element {
                                         div { class: "customize-source", "{group_title(&row.entry.marketplace)}" }
                                     }
                                     if busy != Busy::No {
-                                        span { class: "spinner", title: if busy == Busy::Waiting { "Waiting…" } else { "Installing…" } }
+                                        span { class: "spinner", title: if busy == Busy::Waiting { "Waiting…" } else { "Working…" } }
                                     } else if installed {
                                         span { class: "customize-check", title: "Installed", "✓" }
                                     } else {
@@ -208,6 +212,8 @@ fn PluginDetail(plugin: PluginEntry) -> Element {
                 div { class: "customize-detail-action",
                     if busy != Busy::No {
                         span { class: "spinner", title: "Working…" }
+                    } else if plugin.installed && !plugin.can_uninstall() {
+                        span { class: "hint", "Installed in the {plugin.scope.clone().unwrap_or_default()} scope. Remove it there." }
                     } else if plugin.installed {
                         Button {
                             label: "Uninstall",

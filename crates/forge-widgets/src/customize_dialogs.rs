@@ -42,7 +42,7 @@ fn AddMarketplace() -> Element {
         input {
             class: "customize-field",
             r#type: "text",
-            placeholder: "owner/repo, https://git.example.com/team/plugins.git or /path/to/folder",
+            placeholder: "owner/repo, Git URL or folder path",
             value: "{text}",
             disabled: adding,
             oninput: move |event| text.set(event.value()),
@@ -88,7 +88,7 @@ fn ManageMarketplaces() -> Element {
                 div { class: "customize-main",
                     div { class: "customize-name", "{market.name}" }
                     div { class: "customize-desc", "{market.location}" }
-                    if let Some(when) = market.last_updated.clone() { div { class: "customize-source", "Last updated {when}" } }
+                    if let Some(when) = market.last_updated.clone() { div { class: "customize-source", "Last updated {forge_features::short_time(&when)}" } }
                 }
                 if busy != Busy::No { span { class: "spinner", title: if busy == Busy::Waiting { "Waiting…" } else { "Working…" } } }
                 button {

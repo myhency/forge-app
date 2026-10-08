@@ -71,6 +71,7 @@ pub fn parse_snapshot(
             version: item.version,
             description: String::new(),
             installed: true,
+            scope: item.scope,
             install_path: item.install_path.map(PathBuf::from),
         });
     }
@@ -85,6 +86,7 @@ pub fn parse_snapshot(
             version: item.version,
             description: item.description.unwrap_or_default(),
             installed: false,
+            scope: None,
             install_path: None,
         });
     }
@@ -255,5 +257,27 @@ mod tests {
         assert_eq!(clean_message("", "Something went wrong\n", Some(1)), "Something went wrong");
         assert_eq!(clean_message("  \n", "", Some(3)), "claude exited with code 3");
         assert_eq!(clean_message("", "", None), "claude stopped without an exit code");
+    }
+
+    #[test]
+    fn an_installed_plugin_remembers_the_scope_it_was_installed_in() {
+        let list = r#"{"installed":[
+          {"id":"a@m","version":"1","scope":"project","installPath":"/p"},
+          {"id":"b@m","version":"1","scope":"user","installPath":"/u"},
+          {"id":"c@m","version":"1","installPath":"/n"}],"available":[]}"#;
+        let snapshot = parse_snapshot(list, "[]", &none()).unwrap();
+        let scope = |id: &str| snapshot.plugins.iter().find(|p| p.id == id).unwrap().scope.clone();
+        assert_eq!(scope("a@m").as_deref(), Some("project"));
+        assert_eq!(scope("b@m").as_deref(), Some("user"));
+        assert_eq!(scope("c@m"), None);
+    }
+
+    #[test]
+    fn a_plugin_installed_in_two_scopes_reports_the_user_scope() {
+        let list = r#"{"installed":[
+          {"id":"a@m","scope":"project","installPath":"/p"},
+          {"id":"a@m","scope":"user","installPath":"/u"}],"available":[]}"#;
+        let snapshot = parse_snapshot(list, "[]", &none()).unwrap();
+        assert_eq!(snapshot.plugins[0].scope.as_deref(), Some("user"));
     }
 }

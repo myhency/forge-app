@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dioxus::prelude::*;
 use forge_application::{CatalogView, PluginCatalogUseCase};
 
-use crate::customize::{check_source, error_in_dialog, CustomizeMode, CustomizeTab, Job, JobQueue};
+use crate::customize::{check_source, closes_detail, error_in_dialog, CustomizeMode, CustomizeTab, Job, JobQueue, Latest};
 use crate::workspace::WorkspaceServices;
 
 /// What the last read of the catalogue gave.
@@ -44,6 +44,7 @@ pub struct Customize {
     view: Signal<Loaded>,
     error: Signal<Option<String>>,
     dialog_error: Signal<Option<String>>,
+    reads: Signal<Latest>,
 }
 
 /// Creates the page state and provides it to every descendant. Call it in the page at the top of the tree.
@@ -61,6 +62,7 @@ pub fn use_customize_provider() -> Customize {
         view: Signal::new_in_scope(Loaded::Loading, ScopeId::ROOT),
         error: Signal::new_in_scope(None, ScopeId::ROOT),
         dialog_error: Signal::new_in_scope(None, ScopeId::ROOT),
+        reads: Signal::new_in_scope(Latest::default(), ScopeId::ROOT),
     });
     use_context_provider(move || customize);
     customize
@@ -77,6 +79,8 @@ impl Customize {
         detail.set(None);
         let mut dialog = self.dialog;
         dialog.set(None);
+        // A message from an earlier visit is not news any more.
+        self.dismiss_error();
         let mut view = self.view;
         view.set(Loaded::Loading);
         self.reload();
@@ -86,13 +90,18 @@ impl Customize {
     pub fn reload(&self) {
         let usecase = (*self.usecase.peek()).clone();
         let this = *self;
+        let mut reads = self.reads;
+        let token = reads.write().issue();
         dioxus::core::spawn_forever(async move {
             let loaded = match usecase.catalog().await {
                 Ok(view) => Loaded::Ready(view),
                 Err(error) => Loaded::Failed(error.to_string()),
             };
-            let mut view = this.view;
-            view.set(loaded);
+            // A read that was overtaken by a newer one is dropped, so a stale list never replaces a fresh one.
+            if this.reads.peek().is_latest(token) {
+                let mut view = this.view;
+                view.set(loaded);
+            }
         });
     }
 
@@ -253,6 +262,7 @@ impl Customize {
     fn finished(&self, job: Job, result: Result<(), String>) {
         let add_open = self.dialog() == Some(Dialog::AddMarketplace);
         let manage_open = self.dialog() == Some(Dialog::ManageMarketplaces);
+        let ok = result.is_ok();
         match result {
             // A success closes the Add dialog, but only if it is still the one that is open.
             Ok(()) => {
@@ -267,8 +277,8 @@ impl Customize {
                 place.set(Some(message));
             }
         }
-        // An uninstalled plugin has no detail to show, and a removed marketplace takes its plugins.
-        if matches!(job, Job::Uninstall(_) | Job::RemoveMarketplace(_)) {
+        // An uninstalled plugin has no detail to show, and neither has a plugin of a removed marketplace.
+        if closes_detail(&job, ok, self.detail().as_deref()) {
             self.close_detail();
         }
         let mut queue = self.queue;
