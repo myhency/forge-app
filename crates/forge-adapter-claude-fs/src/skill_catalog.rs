@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use async_trait::async_trait;
@@ -6,7 +7,182 @@ use forge_domain::{plugin_id, skill_id, PluginEntry, SkillEntry, SkillFile, Skil
 use forge_ports::{SkillCatalogError, SkillCatalogPort};
 use serde::Deserialize;
 
-use crate::skills::collect_skills;
+use crate::skills::{collect_skills, parse_frontmatter};
+
+/// A folder copy or a zip may hold this many entries ...
+pub const ENTRY_LIMIT: usize = 500;
+/// ... and this many bytes of file content.
+pub const SIZE_LIMIT: u64 = 20 * 1024 * 1024;
+
+fn io_error(error: std::io::Error) -> SkillCatalogError {
+    SkillCatalogError::Io(error.to_string())
+}
+
+fn invalid(text: &str) -> SkillCatalogError {
+    SkillCatalogError::Invalid(text.to_string())
+}
+
+fn too_big() -> SkillCatalogError {
+    invalid("That skill is too big to add (at most 500 files and 20 MB).")
+}
+
+fn check_name(name: &str) -> Result<(), SkillCatalogError> {
+    let allowed = !name.is_empty()
+        && name.len() <= 64
+        && !name.starts_with('.')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+    if allowed {
+        Ok(())
+    } else {
+        Err(invalid("A skill name can use letters, numbers, - and _ (at most 64 characters)."))
+    }
+}
+
+struct Budget {
+    entries: usize,
+    bytes: u64,
+}
+
+// Copies the files and folders of `from` into `to` (which exists). Symlinks are skipped.
+fn copy_dir(from: &Path, to: &Path, budget: &mut Budget) -> Result<(), SkillCatalogError> {
+    for entry in std::fs::read_dir(from).map_err(io_error)? {
+        let entry = entry.map_err(io_error)?;
+        let kind = entry.file_type().map_err(io_error)?;
+        if kind.is_symlink() {
+            continue;
+        }
+        budget.entries += 1;
+        if budget.entries > ENTRY_LIMIT {
+            return Err(too_big());
+        }
+        let target = to.join(entry.file_name());
+        if kind.is_dir() {
+            std::fs::create_dir(&target).map_err(io_error)?;
+            copy_dir(&entry.path(), &target, budget)?;
+        } else if kind.is_file() {
+            budget.bytes += entry.metadata().map_err(io_error)?.len();
+            if budget.bytes > SIZE_LIMIT {
+                return Err(too_big());
+            }
+            std::fs::copy(entry.path(), &target).map_err(io_error)?;
+        }
+    }
+    Ok(())
+}
+
+// Copies a folder holding a SKILL.md to `<claude home>/skills/<name>`. Never overwrites.
+fn install_folder(claude_home: &Path, source: &Path) -> Result<PathBuf, SkillCatalogError> {
+    let text = std::fs::read_to_string(source.join("SKILL.md")).map_err(|_| invalid("That folder has no SKILL.md."))?;
+    let name = parse_frontmatter(&text)
+        .and_then(|fields| fields.get("name").cloned())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| invalid("SKILL.md needs a name in its front matter."))?;
+    check_name(&name)?;
+    let skills = claude_home.join("skills");
+    std::fs::create_dir_all(&skills).map_err(io_error)?;
+    let dest = skills.join(&name);
+    match std::fs::create_dir(&dest) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err(SkillCatalogError::Exists(name)),
+        Err(e) => return Err(io_error(e)),
+    }
+    let mut budget = Budget { entries: 0, bytes: 0 };
+    if let Err(error) = copy_dir(source, &dest, &mut budget) {
+        let _ = std::fs::remove_dir_all(&dest);
+        return Err(error);
+    }
+    Ok(dest)
+}
+
+// Unpacks `zip_path` into `into` (an empty folder), refusing anything that could write elsewhere.
+fn unpack_zip(zip_path: &Path, into: &Path) -> Result<(), SkillCatalogError> {
+    let file = std::fs::File::open(zip_path).map_err(io_error)?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|_| invalid("That file is not a zip archive."))?;
+    if archive.len() > ENTRY_LIMIT {
+        return Err(too_big());
+    }
+    let mut total: u64 = 0;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|e| SkillCatalogError::Invalid(e.to_string()))?;
+        let Some(relative) = entry.enclosed_name() else {
+            return Err(invalid("The zip has a file outside its own folder."));
+        };
+        if entry.unix_mode().is_some_and(|mode| mode & 0o170000 == 0o120000) {
+            return Err(invalid("The zip has a link in it."));
+        }
+        let target = into.join(relative);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&target).map_err(io_error)?;
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(io_error)?;
+        }
+        let mut out = std::fs::File::create(&target).map_err(io_error)?;
+        // Count what is really written: the size an entry declares can be a lie.
+        let written = std::io::copy(&mut (&mut entry).take(SIZE_LIMIT - total + 1), &mut out).map_err(io_error)?;
+        total += written;
+        if total > SIZE_LIMIT {
+            return Err(too_big());
+        }
+    }
+    Ok(())
+}
+
+// The folder of an unpacked zip that holds SKILL.md: the top, or the one folder at the top.
+fn find_skill_root(unpacked: &Path) -> Result<PathBuf, SkillCatalogError> {
+    if unpacked.join("SKILL.md").is_file() {
+        return Ok(unpacked.to_path_buf());
+    }
+    let mut folders = Vec::new();
+    for entry in std::fs::read_dir(unpacked).map_err(io_error)?.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if entry.path().is_dir() && name != "__MACOSX" && !name.starts_with('.') {
+            folders.push(entry.path());
+        }
+    }
+    match folders.as_slice() {
+        [only] if only.join("SKILL.md").is_file() => Ok(only.clone()),
+        _ => Err(invalid("The zip has no SKILL.md at its top.")),
+    }
+}
+
+fn install_zip(claude_home: &Path, zip_path: &Path) -> Result<PathBuf, SkillCatalogError> {
+    let temp = claude_home.join(format!(".forge-upload-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&temp).map_err(io_error)?;
+    let result = unpack_zip(zip_path, &temp).and_then(|()| find_skill_root(&temp)).and_then(|root| install_folder(claude_home, &root));
+    let _ = std::fs::remove_dir_all(&temp);
+    result
+}
+
+fn create_skill(claude_home: &Path, name: &str, description: &str) -> Result<PathBuf, SkillCatalogError> {
+    check_name(name)?;
+    let description = description.split_whitespace().collect::<Vec<_>>().join(" ");
+    if description.is_empty() {
+        return Err(invalid("Write a short description."));
+    }
+    let skills = claude_home.join("skills");
+    std::fs::create_dir_all(&skills).map_err(io_error)?;
+    let dest = skills.join(name);
+    match std::fs::create_dir(&dest) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err(SkillCatalogError::Exists(name.to_string())),
+        Err(e) => return Err(io_error(e)),
+    }
+    let quoted = description.replace('\\', "\\\\").replace('"', "\\\"");
+    let text = format!(
+        "---\nname: {name}\ndescription: \"{quoted}\"\n---\n\n# {name}\n\nDescribe what this skill does and when Claude should use it.\n"
+    );
+    if let Err(error) = std::fs::write(dest.join("SKILL.md"), text) {
+        let _ = std::fs::remove_dir_all(&dest);
+        return Err(io_error(error));
+    }
+    Ok(dest)
+}
+
+async fn blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T, SkillCatalogError> + Send + 'static) -> Result<T, SkillCatalogError> {
+    tokio::task::spawn_blocking(work).await.map_err(|e| SkillCatalogError::Io(e.to_string()))?
+}
 
 /// Reads and writes the skills the Customize page shows, below the Claude home.
 pub struct ClaudeSkillCatalogAdapter {
@@ -121,16 +297,19 @@ impl SkillCatalogPort for ClaudeSkillCatalogAdapter {
         self.read_snapshot(project_path, plugins).await
     }
 
-    async fn add_from_folder(&self, _source: &Path) -> Result<PathBuf, SkillCatalogError> {
-        Err(SkillCatalogError::Io(NOT_BUILT.into()))
+    async fn add_from_folder(&self, source: &Path) -> Result<PathBuf, SkillCatalogError> {
+        let (home, source) = (self.claude_home.clone(), source.to_path_buf());
+        blocking(move || install_folder(&home, &source)).await
     }
 
-    async fn add_from_zip(&self, _source: &Path) -> Result<PathBuf, SkillCatalogError> {
-        Err(SkillCatalogError::Io(NOT_BUILT.into()))
+    async fn add_from_zip(&self, source: &Path) -> Result<PathBuf, SkillCatalogError> {
+        let (home, source) = (self.claude_home.clone(), source.to_path_buf());
+        blocking(move || install_zip(&home, &source)).await
     }
 
-    async fn create(&self, _name: &str, _description: &str) -> Result<PathBuf, SkillCatalogError> {
-        Err(SkillCatalogError::Io(NOT_BUILT.into()))
+    async fn create(&self, name: &str, description: &str) -> Result<PathBuf, SkillCatalogError> {
+        let (home, name, description) = (self.claude_home.clone(), name.to_string(), description.to_string());
+        blocking(move || create_skill(&home, &name, &description)).await
     }
 
     async fn list_files(&self, _skill_path: &Path) -> Result<Vec<SkillFile>, SkillCatalogError> {
@@ -314,5 +493,229 @@ mod tests {
         write_skill(&home.path().join("skills"), "good", "good", "d");
         let snap = snapshot(home.path(), None, vec![]).await;
         assert_eq!(snap.skills.len(), 1);
+    }
+
+    use std::io::Write;
+
+    fn make_zip(path: &Path, files: &[(&str, &str)]) {
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, body) in files {
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(body.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    fn skill_md(name: &str) -> String {
+        format!("---\nname: {name}\ndescription: A skill\n---\n\nBody\n")
+    }
+
+    fn adapter(home: &Path) -> ClaudeSkillCatalogAdapter {
+        ClaudeSkillCatalogAdapter::new(home.to_path_buf())
+    }
+
+    // Everything below `dir`, as relative paths, to prove nothing was left behind.
+    fn tree(dir: &Path) -> Vec<String> {
+        fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
+            if let Ok(read) = std::fs::read_dir(dir) {
+                for entry in read.flatten() {
+                    let path = entry.path();
+                    out.push(path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/"));
+                    if path.is_dir() {
+                        walk(root, &path, out);
+                    }
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(dir, dir, &mut out);
+        out.sort();
+        out
+    }
+
+    #[tokio::test]
+    async fn a_folder_with_a_skill_is_copied_into_the_user_skills() {
+        let home = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("SKILL.md"), skill_md("pdf")).unwrap();
+        std::fs::create_dir(source.path().join("scripts")).unwrap();
+        std::fs::write(source.path().join("scripts").join("run.sh"), "echo hi").unwrap();
+
+        let added = adapter(home.path()).add_from_folder(source.path()).await.unwrap();
+
+        assert_eq!(added, home.path().join("skills").join("pdf"));
+        assert_eq!(tree(&added), vec!["SKILL.md", "scripts", "scripts/run.sh"]);
+    }
+
+    #[tokio::test]
+    async fn a_folder_without_skill_md_is_refused() {
+        let home = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("README.md"), "hi").unwrap();
+        let error = adapter(home.path()).add_from_folder(source.path()).await.unwrap_err();
+        assert_eq!(error, SkillCatalogError::Invalid("That folder has no SKILL.md.".to_string()));
+        assert!(tree(home.path()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_skill_md_without_a_name_is_refused() {
+        let home = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("SKILL.md"), "---\ndescription: no name\n---\n").unwrap();
+        let error = adapter(home.path()).add_from_folder(source.path()).await.unwrap_err();
+        assert!(matches!(error, SkillCatalogError::Invalid(_)));
+        assert!(tree(home.path()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn adding_a_name_that_exists_is_refused_and_the_old_files_stay() {
+        let home = tempfile::tempdir().unwrap();
+        write_skill(&home.path().join("skills"), "pdf", "pdf", "the old one");
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("SKILL.md"), skill_md("pdf")).unwrap();
+
+        let error = adapter(home.path()).add_from_folder(source.path()).await.unwrap_err();
+
+        assert_eq!(error, SkillCatalogError::Exists("pdf".to_string()));
+        let kept = std::fs::read_to_string(home.path().join("skills").join("pdf").join("SKILL.md")).unwrap();
+        assert!(kept.contains("the old one"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_folder_copy_skips_symlinks() {
+        let home = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("SKILL.md"), skill_md("pdf")).unwrap();
+        std::os::unix::fs::symlink("/etc/passwd", source.path().join("link")).unwrap();
+        let added = adapter(home.path()).add_from_folder(source.path()).await.unwrap();
+        assert_eq!(tree(&added), vec!["SKILL.md"]);
+    }
+
+    #[tokio::test]
+    async fn a_folder_with_too_many_entries_is_refused_and_nothing_is_left() {
+        let home = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("SKILL.md"), skill_md("big")).unwrap();
+        for i in 0..ENTRY_LIMIT {
+            std::fs::write(source.path().join(format!("f{i}.txt")), "x").unwrap();
+        }
+        let error = adapter(home.path()).add_from_folder(source.path()).await.unwrap_err();
+        assert!(matches!(error, SkillCatalogError::Invalid(_)));
+        assert!(!home.path().join("skills").join("big").exists());
+    }
+
+    #[tokio::test]
+    async fn a_zip_with_the_skill_at_its_top_is_added() {
+        let home = tempfile::tempdir().unwrap();
+        let zip_dir = tempfile::tempdir().unwrap();
+        let zip = zip_dir.path().join("pdf.zip");
+        make_zip(&zip, &[("SKILL.md", &skill_md("pdf")), ("notes/a.txt", "a")]);
+
+        let added = adapter(home.path()).add_from_zip(&zip).await.unwrap();
+
+        assert_eq!(added, home.path().join("skills").join("pdf"));
+        assert_eq!(tree(&added), vec!["SKILL.md", "notes", "notes/a.txt"]);
+        // No temp folder is left in the Claude home.
+        assert_eq!(tree(home.path()), vec!["skills", "skills/pdf", "skills/pdf/SKILL.md", "skills/pdf/notes", "skills/pdf/notes/a.txt"]);
+    }
+
+    #[tokio::test]
+    async fn a_zip_with_the_skill_in_its_one_top_folder_is_added() {
+        let home = tempfile::tempdir().unwrap();
+        let zip_dir = tempfile::tempdir().unwrap();
+        let zip = zip_dir.path().join("pdf.zip");
+        make_zip(&zip, &[("pdf-folder/SKILL.md", &skill_md("pdf")), ("__MACOSX/pdf-folder/._SKILL.md", "junk")]);
+        let added = adapter(home.path()).add_from_zip(&zip).await.unwrap();
+        assert_eq!(tree(&added), vec!["SKILL.md"]);
+    }
+
+    #[tokio::test]
+    async fn a_zip_entry_that_leaves_its_folder_is_refused_and_nothing_is_written() {
+        let home = tempfile::tempdir().unwrap();
+        let zip_dir = tempfile::tempdir().unwrap();
+        let zip = zip_dir.path().join("evil.zip");
+        make_zip(&zip, &[("SKILL.md", &skill_md("evil")), ("../evil.txt", "owned")]);
+
+        let error = adapter(home.path()).add_from_zip(&zip).await.unwrap_err();
+
+        assert!(matches!(error, SkillCatalogError::Invalid(_)));
+        assert!(!home.path().join("evil.txt").exists());
+        assert!(!home.path().parent().unwrap().join("evil.txt").exists());
+        assert!(tree(home.path()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_zip_with_a_symlink_entry_is_refused() {
+        let home = tempfile::tempdir().unwrap();
+        let zip_dir = tempfile::tempdir().unwrap();
+        let zip = zip_dir.path().join("link.zip");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&zip).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file("SKILL.md", options).unwrap();
+        writer.write_all(skill_md("link").as_bytes()).unwrap();
+        writer.add_symlink("shortcut", "/etc/passwd", options).unwrap();
+        writer.finish().unwrap();
+
+        let error = adapter(home.path()).add_from_zip(&zip).await.unwrap_err();
+
+        assert!(matches!(error, SkillCatalogError::Invalid(_)));
+        assert!(tree(home.path()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_zip_with_too_many_entries_or_too_much_content_is_refused() {
+        let home = tempfile::tempdir().unwrap();
+        let zip_dir = tempfile::tempdir().unwrap();
+        let many = zip_dir.path().join("many.zip");
+        let names: Vec<String> = (0..=ENTRY_LIMIT).map(|i| format!("f{i}.txt")).collect();
+        let mut files: Vec<(&str, &str)> = names.iter().map(|n| (n.as_str(), "x")).collect();
+        let md = skill_md("many");
+        files.push(("SKILL.md", &md));
+        make_zip(&many, &files);
+        assert!(matches!(adapter(home.path()).add_from_zip(&many).await, Err(SkillCatalogError::Invalid(_))));
+
+        let heavy = zip_dir.path().join("heavy.zip");
+        let md = skill_md("heavy");
+        let blob = "x".repeat(SIZE_LIMIT as usize + 1);
+        make_zip(&heavy, &[("SKILL.md", &md), ("blob.txt", &blob)]);
+        assert!(matches!(adapter(home.path()).add_from_zip(&heavy).await, Err(SkillCatalogError::Invalid(_))));
+        assert!(tree(home.path()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_file_that_is_not_a_zip_is_refused() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("fake.zip");
+        std::fs::write(&fake, "not a zip").unwrap();
+        let error = adapter(home.path()).add_from_zip(&fake).await.unwrap_err();
+        assert_eq!(error, SkillCatalogError::Invalid("That file is not a zip archive.".to_string()));
+    }
+
+    #[tokio::test]
+    async fn create_writes_a_template_that_reads_back_as_a_skill() {
+        let home = tempfile::tempdir().unwrap();
+        let created = adapter(home.path()).create("my-skill", "Does \"things\": well").await.unwrap();
+        assert_eq!(created, home.path().join("skills").join("my-skill"));
+        let snap = snapshot(home.path(), None, vec![]).await;
+        assert_eq!(snap.skills.len(), 1);
+        assert_eq!(snap.skills[0].name, "my-skill");
+        assert!(snap.skills[0].description.contains("things"));
+    }
+
+    #[tokio::test]
+    async fn create_refuses_bad_names_and_existing_names_and_an_empty_description() {
+        let home = tempfile::tempdir().unwrap();
+        let adapter = adapter(home.path());
+        for bad in ["", "../x", "a/b", "a\\b", ".hidden", "has space", &"x".repeat(65)] {
+            let error = adapter.create(bad, "d").await.unwrap_err();
+            assert!(matches!(error, SkillCatalogError::Invalid(_)), "name {bad:?}");
+        }
+        assert!(matches!(adapter.create("ok", "  ").await, Err(SkillCatalogError::Invalid(_))));
+        assert!(tree(home.path()).is_empty());
+        adapter.create("ok", "d").await.unwrap();
+        assert_eq!(adapter.create("ok", "d").await.unwrap_err(), SkillCatalogError::Exists("ok".to_string()));
     }
 }
