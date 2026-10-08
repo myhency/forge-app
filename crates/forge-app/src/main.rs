@@ -156,7 +156,7 @@ fn build_services() -> WorkspaceServices {
     let plugin_config_dir = std::env::var_os("FORGE_CLAUDE_HOME").filter(|home| !home.is_empty()).map(std::path::PathBuf::from);
     let connector_catalog = Arc::new(
         ConnectorCatalogUseCase::new(
-            Arc::new(ClaudeConnectorCatalogAdapter::new(claude_json.clone(), claude_home.clone())),
+            Arc::new(ClaudeConnectorCatalogAdapter::new(cli_claude_json(&claude_json, plugin_config_dir.as_deref()), claude_home.clone())),
             Arc::new(ClaudeMcpCli::new(plugin_binary.clone(), plugin_config_dir.clone())),
             config.clone(),
         )
@@ -209,6 +209,15 @@ fn build_services() -> WorkspaceServices {
 
 // The shell of the terminal panel: the person's own on macOS and Linux; PowerShell, which every
 // Windows 11 has, on Windows.
+/// Where the bundled `claude` keeps the MCP servers it adds. With the real home that is `~/.claude.json`; with
+/// `CLAUDE_CONFIG_DIR` (set only for `FORGE_CLAUDE_HOME`) the CLI keeps `.claude.json` inside that folder.
+fn cli_claude_json(claude_json: &std::path::Path, config_dir: Option<&std::path::Path>) -> std::path::PathBuf {
+    match config_dir {
+        Some(dir) => dir.join(".claude.json"),
+        None => claude_json.to_path_buf(),
+    }
+}
+
 fn default_shell(login_shell: Option<String>) -> String {
     if cfg!(windows) {
         return "powershell.exe".to_string();
@@ -236,6 +245,18 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn the_connectors_are_read_from_the_file_the_bundled_claude_writes() {
+        let real = std::path::PathBuf::from("/home/me/.claude.json");
+        // With the real home the CLI writes ~/.claude.json itself.
+        assert_eq!(cli_claude_json(&real, None), real);
+        // With FORGE_CLAUDE_HOME it keeps .claude.json inside the config folder it was given.
+        assert_eq!(
+            cli_claude_json(&real, Some(Path::new("/fixture/.claude"))),
+            std::path::PathBuf::from("/fixture/.claude/.claude.json")
+        );
+    }
 
     #[cfg(not(windows))]
     #[test]
