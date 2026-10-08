@@ -310,32 +310,32 @@ impl ClaudeSkillCatalogAdapter {
 }
 
 #[derive(Deserialize)]
-struct KnownMarketplace {
+pub(crate) struct KnownMarketplace {
     #[serde(default, rename = "installLocation")]
-    install_location: Option<PathBuf>,
+    pub(crate) install_location: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
-struct MarketplaceFile {
+pub(crate) struct MarketplaceFile {
     // Each entry on its own, so one broken entry does not hide the others.
     #[serde(default)]
-    plugins: Vec<serde_json::Value>,
+    pub(crate) plugins: Vec<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
-struct OfferedPlugin {
-    name: String,
+pub(crate) struct OfferedPlugin {
+    pub(crate) name: String,
     #[serde(default)]
-    source: serde_json::Value,
+    pub(crate) source: serde_json::Value,
 }
 
-async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
+pub(crate) async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
     let text = tokio::fs::read_to_string(path).await.ok()?;
     serde_json::from_str(&text).ok()
 }
 
 /// The folder of a plugin the marketplace keeps inside itself (`"source": "./plugins/x"`); `None` for any other source.
-fn local_plugin_dir(marketplace_dir: &Path, source: &serde_json::Value) -> Option<PathBuf> {
+pub(crate) fn local_plugin_dir(marketplace_dir: &Path, source: &serde_json::Value) -> Option<PathBuf> {
     let relative = Path::new(source.as_str()?.strip_prefix("./")?);
     if relative.components().any(|part| !matches!(part, Component::Normal(_))) {
         return None;

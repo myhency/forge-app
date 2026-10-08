@@ -6,6 +6,7 @@ use forge_application::{CatalogView, PluginCatalogUseCase, SkillCatalogUseCase, 
 use forge_domain::{SkillFile, SkillFileList};
 use forge_ports::{FilePickerPort, FolderPickerPort};
 
+use crate::customize_connectors::Connectors;
 use crate::customize_skills::{set_skill_enabled_in, SkillPane, SkillText};
 use crate::customize::{check_source, closes_detail, error_in_dialog, CustomizeMode, CustomizeTab, Job, JobQueue, Latest};
 use crate::workspace::WorkspaceServices;
@@ -41,6 +42,8 @@ pub enum Dialog {
     ConfirmUninstall(String),
     ConfirmRemoveMarketplace(String),
     CreateSkill,
+    AddConnector,
+    ConfirmRemoveConnector(String),
 }
 
 /// Whether a job about one plugin is running, waiting, or neither.
@@ -81,6 +84,7 @@ pub struct Customize {
     file_reads: Signal<Latest>,
     /// Counts page visits, so an open request made on one visit never lands on the next.
     visit: Signal<u64>,
+    pub(crate) connectors: Connectors,
 }
 
 /// Creates the page state and provides it to every descendant. Call it in the page at the top of the tree.
@@ -114,6 +118,7 @@ pub fn use_customize_provider() -> Customize {
         skill_source: Signal::new_in_scope(false, ScopeId::ROOT),
         file_reads: Signal::new_in_scope(Latest::default(), ScopeId::ROOT),
         visit: Signal::new_in_scope(0, ScopeId::ROOT),
+        connectors: Connectors::new(services.connector_catalog.clone()),
     });
     use_context_provider(move || customize);
     customize
@@ -142,30 +147,49 @@ impl Customize {
         self.dismiss_error();
         let mut view = self.view;
         view.set(Loaded::Loading);
+        // The connectors of the project before are not this project's.
+        self.connectors.forget();
         self.reload();
+    }
+
+    /// The number of the current visit to the page.
+    pub(crate) fn visit_now(&self) -> u64 {
+        *self.visit.peek()
     }
 
     /// Reads the catalogue (plugins, then the skills that depend on it) again. Pinned to the root
     /// scope so leaving the page does not cancel it.
     pub fn reload(&self) {
-        self.read_all(None);
+        self.read_all(None, None);
     }
 
     // `open` is a skill to show once the lists are fresh (one that was just added).
-    fn read_all(&self, open: Option<(String, PathBuf)>) {
+    pub(crate) fn read_all(&self, open: Option<(String, PathBuf)>, open_connector: Option<String>) {
         let usecase = (*self.usecase.peek()).clone();
         let skills_usecase = (*self.skills_usecase.peek()).clone();
+        let connectors_usecase = self.connectors.usecase();
         let project = self.project.peek().clone();
         let this = *self;
         let mut reads = self.reads;
         let token = reads.write().issue();
         let visit = *self.visit.peek();
         dioxus::core::spawn_forever(async move {
+            // The connectors come from files: draw them before the plugin catalogue (a call to `claude`) is back.
+            // Only when there is nothing drawn yet; a list that is there is not swapped for one without plugins.
+            if this.connectors.view.peek().is_none() {
+                if let Ok(early) = connectors_usecase.connectors(project.as_deref(), &plugins_for_skills(&Loaded::Loading)).await {
+                    if this.reads.peek().is_latest(token) && this.connectors.view.peek().is_none() {
+                        let mut slot = this.connectors.view;
+                        slot.set(Some(early));
+                    }
+                }
+            }
             let loaded = match usecase.catalog().await {
                 Ok(view) => Loaded::Ready(view),
                 Err(error) => Loaded::Failed(error.to_string()),
             };
             let skills = skills_usecase.skills(project.as_deref(), &plugins_for_skills(&loaded)).await;
+            let connectors = connectors_usecase.connectors(project.as_deref(), &plugins_for_skills(&loaded)).await;
             // A read that was overtaken by a newer one is dropped, so a stale list never replaces a fresh one.
             if this.reads.peek().is_latest(token) {
                 let mut view = this.view;
@@ -183,6 +207,18 @@ impl Customize {
                         slot.set(Some(format!("Could not read the skills: {error}")));
                     }
                 }
+                match connectors {
+                    Ok(view) => {
+                        let mut slot = this.connectors.view;
+                        slot.set(Some(view));
+                    }
+                    Err(error) => {
+                        // The old list would pass for current: show the failure instead.
+                        let mut slot = this.connectors.view;
+                        slot.set(None);
+                        this.set_error(Some(format!("Could not read the connectors: {error}")));
+                    }
+                }
             }
             // A newer read may have taken the token, but the skill was added all the same: show it,
             // unless the person has left the page and come back since.
@@ -190,6 +226,12 @@ impl Customize {
                 if *this.visit.peek() == visit {
                     this.open_skill(id, path);
                     this.set_skill_pane(SkillPane::Files);
+                }
+            }
+            // A connector that was just added opens once the lists are fresh, unless the person has left and come back.
+            if let Some(id) = open_connector {
+                if *this.visit.peek() == visit {
+                    this.open_connector(id);
                 }
             }
         });
@@ -240,6 +282,7 @@ impl Customize {
     pub fn close_detail(&self) {
         let mut detail = self.detail;
         detail.set(None);
+        self.reset_connection();
         // A file read that is still on its way has no screen to land on.
         let mut reads = self.file_reads;
         reads.write().issue();
@@ -265,6 +308,16 @@ impl Customize {
 
     pub fn error(&self) -> Option<String> {
         self.error.read().clone()
+    }
+
+    pub(crate) fn set_error(&self, message: Option<String>) {
+        let mut error = self.error;
+        error.set(message);
+    }
+
+    pub(crate) fn set_dialog_error(&self, message: Option<String>) {
+        let mut error = self.dialog_error;
+        error.set(message);
     }
 
     pub fn dismiss_error(&self) {
@@ -585,7 +638,7 @@ impl Customize {
                     let mut mode = self.mode;
                     mode.set(CustomizeMode::Mine);
                     // The new skill opens on its Files tab, once the lists are fresh.
-                    self.read_all(Some((added.id, added.path)));
+                    self.read_all(Some((added.id, added.path)), None);
                 } else {
                     self.reload();
                 }

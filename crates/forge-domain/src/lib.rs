@@ -5,6 +5,8 @@ mod command;
 mod config;
 mod effort;
 mod extension;
+mod connector;
+mod connector_form;
 mod plugin_catalog;
 mod skill_catalog;
 mod layout;
@@ -32,6 +34,8 @@ pub use layout::{
     SIDEBAR_RAIL_WIDTH,
 };
 pub use extension::{ActiveExtensions, McpServerDefinition, PluginDefinition, SkillDefinition};
+pub use connector::{connector_id, entry_from_config, mask_args, mask_url, Connection, ConnectorEntry, ConnectorKind, ConnectorSnapshot, ConnectorSource};
+pub use connector_form::{split_args, validate_new, ConnectorDraft, NewConnector, NewTransport};
 pub use plugin_catalog::{plugin_id, split_plugin_id, Marketplace, PluginEntry, PluginSnapshot};
 pub use skill_catalog::{skill_id, SkillEntry, SkillFile, SkillFileList, SkillOrigin, SkillSnapshot};
 pub use permission::{PermissionDecision, PermissionMode};

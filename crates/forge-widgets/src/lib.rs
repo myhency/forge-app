@@ -2,6 +2,8 @@ mod changes_panel;
 mod chat_window;
 mod composer_controls;
 mod context_menu;
+mod customize_connector_dialogs;
+mod customize_connectors;
 mod customize_dialogs;
 mod customize_page;
 mod customize_plugins;

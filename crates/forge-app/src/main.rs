@@ -6,10 +6,10 @@ use dioxus::desktop::muda::{Menu, PredefinedMenuItem, Submenu};
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
 use forge_adapter_claude_fs::{
-    default_claude_home, default_claude_json_path, ClaudeMcpAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
+    default_claude_home, default_claude_json_path, ClaudeConnectorCatalogAdapter, ClaudeMcpAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
     ClaudeSessionAdapter, ClaudeSkillAdapter, ClaudeSkillCatalogAdapter, ClaudeUsageStatsAdapter,
 };
-use forge_adapter_claude_plugins::{claude_binary_for, ClaudePluginCli};
+use forge_adapter_claude_plugins::{claude_binary_for, ClaudeMcpCli, ClaudePluginCli};
 use forge_adapter_dialog::RfdFolderPicker;
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
@@ -21,7 +21,7 @@ use forge_adapter_sleep::CaffeinateSleep;
 #[cfg(windows)]
 use forge_adapter_sleep::WindowsSleep;
 use forge_adapter_terminal::PtyTerminal;
-use forge_application::{ConfigLock, ExtensionsUseCase, PluginCatalogUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase};
+use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase};
 use forge_features::WorkspaceServices;
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
@@ -154,6 +154,14 @@ fn build_services() -> WorkspaceServices {
     // the CLI would keep `.claude.json` inside the folder instead of beside it.
     let plugin_binary = claude_binary_for(std::path::Path::new(&script)).unwrap_or_else(|| format!("no Claude program for {}-{}", std::env::consts::OS, std::env::consts::ARCH).into());
     let plugin_config_dir = std::env::var_os("FORGE_CLAUDE_HOME").filter(|home| !home.is_empty()).map(std::path::PathBuf::from);
+    let connector_catalog = Arc::new(
+        ConnectorCatalogUseCase::new(
+            Arc::new(ClaudeConnectorCatalogAdapter::new(cli_claude_json(&claude_json, plugin_config_dir.as_deref()), claude_home.clone())),
+            Arc::new(ClaudeMcpCli::new(plugin_binary.clone(), plugin_config_dir.clone())),
+            config.clone(),
+        )
+        .with_config_lock(config_lock.clone()),
+    );
     let plugin_catalog = Arc::new(PluginCatalogUseCase::new(
         Arc::new(ClaudePluginCli::new(plugin_binary, claude_home.clone(), plugin_config_dir)),
         config.clone(),
@@ -187,6 +195,7 @@ fn build_services() -> WorkspaceServices {
         extensions,
         plugin_catalog,
         skill_catalog,
+        connector_catalog,
         folder_picker: picker.clone(),
         file_picker: picker,
         terminal: Arc::new(PtyTerminal::new(shell)),
@@ -200,6 +209,15 @@ fn build_services() -> WorkspaceServices {
 
 // The shell of the terminal panel: the person's own on macOS and Linux; PowerShell, which every
 // Windows 11 has, on Windows.
+/// Where the bundled `claude` keeps the MCP servers it adds. With the real home that is `~/.claude.json`; with
+/// `CLAUDE_CONFIG_DIR` (set only for `FORGE_CLAUDE_HOME`) the CLI keeps `.claude.json` inside that folder.
+fn cli_claude_json(claude_json: &std::path::Path, config_dir: Option<&std::path::Path>) -> std::path::PathBuf {
+    match config_dir {
+        Some(dir) => dir.join(".claude.json"),
+        None => claude_json.to_path_buf(),
+    }
+}
+
 fn default_shell(login_shell: Option<String>) -> String {
     if cfg!(windows) {
         return "powershell.exe".to_string();
@@ -227,6 +245,18 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn the_connectors_are_read_from_the_file_the_bundled_claude_writes() {
+        let real = std::path::PathBuf::from("/home/me/.claude.json");
+        // With the real home the CLI writes ~/.claude.json itself.
+        assert_eq!(cli_claude_json(&real, None), real);
+        // With FORGE_CLAUDE_HOME it keeps .claude.json inside the config folder it was given.
+        assert_eq!(
+            cli_claude_json(&real, Some(Path::new("/fixture/.claude"))),
+            std::path::PathBuf::from("/fixture/.claude/.claude.json")
+        );
+    }
 
     #[cfg(not(windows))]
     #[test]
