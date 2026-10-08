@@ -26,15 +26,26 @@ fn too_big() -> SkillCatalogError {
     invalid("That skill is too big to add (at most 500 files and 20 MB).")
 }
 
+// Names Windows keeps for devices, with or without an extension (`con`, `NUL.txt`, `com1`).
+fn is_windows_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_lowercase();
+    matches!(stem.as_str(), "con" | "prn" | "aux" | "nul")
+        || ["com", "lpt"].iter().any(|prefix| {
+            stem.strip_prefix(prefix).is_some_and(|rest| rest.len() == 1 && rest.chars().all(|c| ('1'..='9').contains(&c)))
+        })
+}
+
 fn check_name(name: &str) -> Result<(), SkillCatalogError> {
     let allowed = !name.is_empty()
         && name.len() <= 64
         && !name.starts_with('.')
+        && !name.ends_with('.')
+        && !is_windows_device_name(name)
         && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
     if allowed {
         Ok(())
     } else {
-        Err(invalid("A skill name can use letters, numbers, - and _ (at most 64 characters)."))
+        Err(invalid("A skill name can use letters, numbers, - and _ (at most 64 characters, not ending in a dot)."))
     }
 }
 
@@ -72,7 +83,16 @@ fn copy_dir(from: &Path, to: &Path, budget: &mut Budget) -> Result<(), SkillCata
 
 // Copies a folder holding a SKILL.md to `<claude home>/skills/<name>`. Never overwrites.
 fn install_folder(claude_home: &Path, source: &Path) -> Result<PathBuf, SkillCatalogError> {
-    let text = std::fs::read_to_string(source.join("SKILL.md")).map_err(|_| invalid("That folder has no SKILL.md."))?;
+    // A link is not followed (the copy skips links, so the skill would arrive without its SKILL.md).
+    let skill_md = source.join("SKILL.md");
+    let meta = std::fs::symlink_metadata(&skill_md).map_err(|_| invalid("That folder has no SKILL.md."))?;
+    if !meta.is_file() {
+        return Err(invalid("That folder has no SKILL.md."));
+    }
+    if meta.len() > TEXT_LIMIT {
+        return Err(invalid("SKILL.md is too large to add."));
+    }
+    let text = std::fs::read_to_string(&skill_md).map_err(|_| invalid("That folder has no SKILL.md."))?;
     let name = parse_frontmatter(&text)
         .and_then(|fields| fields.get("name").cloned())
         .filter(|name| !name.is_empty())
@@ -207,7 +227,16 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<SkillFile>) {
     }
 }
 
+// Only a folder with a SKILL.md of its own is a skill; any other folder is not shown.
+fn check_skill_folder(skill_path: &Path) -> Result<(), SkillCatalogError> {
+    match std::fs::symlink_metadata(skill_path.join("SKILL.md")) {
+        Ok(meta) if meta.is_file() => Ok(()),
+        _ => Err(invalid("That folder is not a skill.")),
+    }
+}
+
 fn list_skill_files(skill_path: &Path) -> Result<Vec<SkillFile>, SkillCatalogError> {
+    check_skill_folder(skill_path)?;
     let mut files = Vec::new();
     walk(skill_path, skill_path, &mut files);
     // Compared part by part, so `a` and `a/one.md` stay together and `a-b.md` comes after them.
@@ -216,6 +245,7 @@ fn list_skill_files(skill_path: &Path) -> Result<Vec<SkillFile>, SkillCatalogErr
 }
 
 fn read_skill_file(skill_path: &Path, relative: &str) -> Result<String, SkillCatalogError> {
+    check_skill_folder(skill_path)?;
     let outside = || invalid("That path is outside the skill.");
     let relative = Path::new(relative);
     if relative.components().any(|part| !matches!(part, Component::Normal(_))) {
@@ -243,7 +273,16 @@ pub struct ClaudeSkillCatalogAdapter {
 }
 
 impl ClaudeSkillCatalogAdapter {
+    /// Also removes what a zip add that crashed left behind (`.forge-upload-*` in the Claude home):
+    /// nothing is running yet, so none of it is in use.
     pub fn new(claude_home: PathBuf) -> Self {
+        if let Ok(entries) = std::fs::read_dir(&claude_home) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with(".forge-upload-") {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
+            }
+        }
         Self { claude_home }
     }
 }
@@ -256,8 +295,9 @@ struct KnownMarketplace {
 
 #[derive(Deserialize)]
 struct MarketplaceFile {
+    // Each entry on its own, so one broken entry does not hide the others.
     #[serde(default)]
-    plugins: Vec<OfferedPlugin>,
+    plugins: Vec<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -289,9 +329,32 @@ async fn add_root(
     visited: &mut HashSet<PathBuf>,
     out: &mut Vec<SkillEntry>,
 ) -> Result<(), SkillCatalogError> {
+    add_root_within(root, None, origin, installed, visited, out).await
+}
+
+// `within` keeps out a skill folder that is a link to somewhere outside it (a marketplace is somebody
+// else's folder: what it links to is not its content).
+async fn add_root_within(
+    root: &Path,
+    within: Option<&Path>,
+    origin: SkillOrigin,
+    installed: bool,
+    visited: &mut HashSet<PathBuf>,
+    out: &mut Vec<SkillEntry>,
+) -> Result<(), SkillCatalogError> {
     let mut found = Vec::new();
     collect_skills(root, visited, &mut found).await.map_err(|e| SkillCatalogError::Io(e.to_string()))?;
+    let within = match within {
+        Some(dir) => Some(tokio::fs::canonicalize(dir).await.map_err(|e| SkillCatalogError::Io(e.to_string()))?),
+        None => None,
+    };
     for skill in found {
+        if let Some(dir) = &within {
+            let inside = tokio::fs::canonicalize(&skill.path).await.is_ok_and(|path| path.starts_with(dir));
+            if !inside {
+                continue;
+            }
+        }
         let folder = skill.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| skill.name.clone());
         out.push(SkillEntry {
             id: skill_id(&origin, &folder),
@@ -328,13 +391,21 @@ impl ClaudeSkillCatalogAdapter {
             let Some(file) = read_json::<MarketplaceFile>(&dir.join(".claude-plugin").join("marketplace.json")).await else {
                 continue;
             };
-            for offered in file.plugins {
+            for offered in file.plugins.into_iter().filter_map(|entry| serde_json::from_value::<OfferedPlugin>(entry).ok()) {
                 let id = plugin_id(&offered.name, &market);
                 if installed.contains(id.as_str()) {
                     continue;
                 }
                 let Some(plugin_dir) = local_plugin_dir(&dir, &offered.source) else { continue };
-                let _ = add_root(&plugin_dir.join("skills"), SkillOrigin::Plugin { plugin_id: id }, false, &mut visited, &mut skills).await;
+                let _ = add_root_within(
+                    &plugin_dir.join("skills"),
+                    Some(&plugin_dir),
+                    SkillOrigin::Plugin { plugin_id: id },
+                    false,
+                    &mut visited,
+                    &mut skills,
+                )
+                .await;
             }
         }
         skills.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
@@ -804,6 +875,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let dir = home.path().join("skills").join("pdf");
         std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
         std::fs::write(dir.join("sub").join("a.md"), "hello").unwrap();
         assert_eq!(adapter(home.path()).read_file(&dir, "sub/a.md").await.unwrap(), "hello");
     }
@@ -813,6 +885,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let dir = home.path().join("skills").join("pdf");
         std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
         std::fs::write(home.path().join("secret.txt"), "secret").unwrap();
         let adapter = adapter(home.path());
         for bad in ["../../secret.txt", "..", "/etc/passwd", "sub/../../../secret.txt"] {
@@ -827,6 +900,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let dir = home.path().join("skills").join("pdf");
         std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
         std::fs::write(home.path().join("secret.txt"), "secret").unwrap();
         std::os::unix::fs::symlink(home.path().join("secret.txt"), dir.join("link.txt")).unwrap();
         let result = adapter(home.path()).read_file(&dir, "link.txt").await;
@@ -838,11 +912,110 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let dir = home.path().join("skills").join("pdf");
         std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
         std::fs::write(dir.join("big.txt"), "x".repeat(TEXT_LIMIT as usize + 1)).unwrap();
         std::fs::write(dir.join("bin.dat"), [0xff, 0xfe, 0x00, 0x80]).unwrap();
         let adapter = adapter(home.path());
         for bad in ["big.txt", "bin.dat", "sub"] {
             assert!(matches!(adapter.read_file(&dir, bad).await, Err(SkillCatalogError::Invalid(_))), "{bad}");
         }
+    }
+
+    #[tokio::test]
+    async fn create_refuses_a_trailing_dot_and_windows_device_names() {
+        let home = tempfile::tempdir().unwrap();
+        let adapter = adapter(home.path());
+        for bad in ["name.", "con", "CON", "nul", "Aux", "prn", "com1", "LPT9", "con.txt", "aux.md"] {
+            let result = adapter.create(bad, "d").await;
+            assert!(matches!(result, Err(SkillCatalogError::Invalid(_))), "name {bad:?}: {result:?}");
+        }
+        assert!(tree(home.path()).is_empty());
+        // Names that only look like them are fine.
+        adapter.create("console", "d").await.unwrap();
+        adapter.create("com10", "d").await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_folder_whose_skill_md_is_a_symlink_is_refused() {
+        let home = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        std::fs::write(elsewhere.path().join("real.md"), skill_md("sneaky")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path().join("real.md"), source.path().join("SKILL.md")).unwrap();
+        let error = adapter(home.path()).add_from_folder(source.path()).await.unwrap_err();
+        assert_eq!(error, SkillCatalogError::Invalid("That folder has no SKILL.md.".to_string()));
+        assert!(tree(home.path()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_skill_md_that_is_too_big_to_read_is_refused() {
+        let home = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let mut text = skill_md("big");
+        text.push_str(&"x".repeat(TEXT_LIMIT as usize));
+        std::fs::write(source.path().join("SKILL.md"), text).unwrap();
+        let error = adapter(home.path()).add_from_folder(source.path()).await.unwrap_err();
+        assert!(matches!(error, SkillCatalogError::Invalid(_)));
+        assert!(tree(home.path()).is_empty());
+    }
+
+    #[test]
+    fn leftovers_of_a_zip_add_that_crashed_are_swept_when_the_adapter_starts() {
+        let home = tempfile::tempdir().unwrap();
+        let stale = home.path().join(".forge-upload-1234");
+        std::fs::create_dir_all(stale.join("pdf")).unwrap();
+        std::fs::write(stale.join("pdf").join("SKILL.md"), "x").unwrap();
+        std::fs::create_dir_all(home.path().join("skills").join("keep")).unwrap();
+        std::fs::create_dir_all(home.path().join(".forge-other")).unwrap();
+
+        let _adapter = adapter(home.path());
+
+        assert!(!stale.exists());
+        assert!(home.path().join("skills").join("keep").exists(), "only .forge-upload-* goes");
+        assert!(home.path().join(".forge-other").exists());
+    }
+
+    #[tokio::test]
+    async fn the_files_of_a_folder_that_is_not_a_skill_are_not_listed_or_read() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("not-a-skill");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("notes.txt"), "private").unwrap();
+        let adapter = adapter(home.path());
+        assert_eq!(adapter.list_files(&dir).await.unwrap_err(), SkillCatalogError::Invalid("That folder is not a skill.".to_string()));
+        assert_eq!(adapter.read_file(&dir, "notes.txt").await.unwrap_err(), SkillCatalogError::Invalid("That folder is not a skill.".to_string()));
+    }
+
+    #[tokio::test]
+    async fn one_plugin_entry_without_a_name_does_not_hide_the_rest_of_its_marketplace() {
+        let home = tempfile::tempdir().unwrap();
+        let market = add_marketplace(
+            home.path(),
+            "m",
+            r#"{"plugins":[{"source":"./plugins/nameless"},"just text",{"name":"fine","source":"./plugins/fine"}]}"#,
+        );
+        write_skill(&market.join("plugins").join("fine").join("skills"), "ok", "ok", "d");
+        let snap = snapshot(home.path(), None, vec![]).await;
+        let ids: Vec<_> = snap.skills.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, vec!["plugin:fine@m:ok"]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_skill_folder_that_is_a_symlink_out_of_the_marketplace_is_not_followed() {
+        let home = tempfile::tempdir().unwrap();
+        let market = add_marketplace(home.path(), "m", r#"{"plugins":[{"name":"p","source":"./plugins/p"}]}"#);
+        let outside = tempfile::tempdir().unwrap();
+        write_skill(outside.path(), "secret", "secret", "outside the marketplace");
+        let skills = market.join("plugins").join("p").join("skills");
+        std::fs::create_dir_all(&skills).unwrap();
+        std::os::unix::fs::symlink(outside.path().join("secret"), skills.join("linked")).unwrap();
+        write_skill(&skills, "inside", "inside", "d");
+
+        let snap = snapshot(home.path(), None, vec![]).await;
+
+        let ids: Vec<_> = snap.skills.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, vec!["plugin:p@m:inside"]);
     }
 }
