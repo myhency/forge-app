@@ -6,10 +6,10 @@ use dioxus::desktop::muda::{Menu, PredefinedMenuItem, Submenu};
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
 use forge_adapter_claude_fs::{
-    default_claude_home, default_claude_json_path, ClaudeMcpAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
+    default_claude_home, default_claude_json_path, ClaudeConnectorCatalogAdapter, ClaudeMcpAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
     ClaudeSessionAdapter, ClaudeSkillAdapter, ClaudeSkillCatalogAdapter, ClaudeUsageStatsAdapter,
 };
-use forge_adapter_claude_plugins::{claude_binary_for, ClaudePluginCli};
+use forge_adapter_claude_plugins::{claude_binary_for, ClaudeMcpCli, ClaudePluginCli};
 use forge_adapter_dialog::RfdFolderPicker;
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
@@ -21,7 +21,7 @@ use forge_adapter_sleep::CaffeinateSleep;
 #[cfg(windows)]
 use forge_adapter_sleep::WindowsSleep;
 use forge_adapter_terminal::PtyTerminal;
-use forge_application::{ConfigLock, ExtensionsUseCase, PluginCatalogUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase};
+use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase};
 use forge_features::WorkspaceServices;
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
@@ -154,6 +154,14 @@ fn build_services() -> WorkspaceServices {
     // the CLI would keep `.claude.json` inside the folder instead of beside it.
     let plugin_binary = claude_binary_for(std::path::Path::new(&script)).unwrap_or_else(|| format!("no Claude program for {}-{}", std::env::consts::OS, std::env::consts::ARCH).into());
     let plugin_config_dir = std::env::var_os("FORGE_CLAUDE_HOME").filter(|home| !home.is_empty()).map(std::path::PathBuf::from);
+    let connector_catalog = Arc::new(
+        ConnectorCatalogUseCase::new(
+            Arc::new(ClaudeConnectorCatalogAdapter::new(claude_json.clone(), claude_home.clone())),
+            Arc::new(ClaudeMcpCli::new(plugin_binary.clone(), plugin_config_dir.clone())),
+            config.clone(),
+        )
+        .with_config_lock(config_lock.clone()),
+    );
     let plugin_catalog = Arc::new(PluginCatalogUseCase::new(
         Arc::new(ClaudePluginCli::new(plugin_binary, claude_home.clone(), plugin_config_dir)),
         config.clone(),
@@ -187,6 +195,7 @@ fn build_services() -> WorkspaceServices {
         extensions,
         plugin_catalog,
         skill_catalog,
+        connector_catalog,
         folder_picker: picker.clone(),
         file_picker: picker,
         terminal: Arc::new(PtyTerminal::new(shell)),
