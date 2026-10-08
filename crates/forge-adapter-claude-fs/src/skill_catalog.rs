@@ -184,6 +184,59 @@ async fn blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T, SkillCatal
     tokio::task::spawn_blocking(work).await.map_err(|e| SkillCatalogError::Io(e.to_string()))?
 }
 
+/// A file larger than this is not shown.
+pub const TEXT_LIMIT: u64 = 512 * 1024;
+
+fn walk(root: &Path, dir: &Path, out: &mut Vec<SkillFile>) {
+    let Ok(read) = std::fs::read_dir(dir) else { return };
+    for entry in read.flatten() {
+        if out.len() >= ENTRY_LIMIT {
+            return;
+        }
+        let Ok(kind) = entry.file_type() else { continue };
+        if kind.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        let Ok(relative) = path.strip_prefix(root) else { continue };
+        let relative = relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/");
+        out.push(SkillFile { relative, is_dir: kind.is_dir() });
+        if kind.is_dir() {
+            walk(root, &path, out);
+        }
+    }
+}
+
+fn list_skill_files(skill_path: &Path) -> Result<Vec<SkillFile>, SkillCatalogError> {
+    let mut files = Vec::new();
+    walk(skill_path, skill_path, &mut files);
+    // Compared part by part, so `a` and `a/one.md` stay together and `a-b.md` comes after them.
+    files.sort_by_key(|file| file.relative.split('/').map(str::to_lowercase).collect::<Vec<_>>());
+    Ok(files)
+}
+
+fn read_skill_file(skill_path: &Path, relative: &str) -> Result<String, SkillCatalogError> {
+    let outside = || invalid("That path is outside the skill.");
+    let relative = Path::new(relative);
+    if relative.components().any(|part| !matches!(part, Component::Normal(_))) {
+        return Err(outside());
+    }
+    let root = std::fs::canonicalize(skill_path).map_err(io_error)?;
+    let target = std::fs::canonicalize(root.join(relative)).map_err(io_error)?;
+    if !target.starts_with(&root) {
+        return Err(outside());
+    }
+    let meta = std::fs::metadata(&target).map_err(io_error)?;
+    if !meta.is_file() {
+        return Err(invalid("That is not a file."));
+    }
+    if meta.len() > TEXT_LIMIT {
+        return Err(invalid("This file is too large to show."));
+    }
+    let bytes = std::fs::read(&target).map_err(io_error)?;
+    String::from_utf8(bytes).map_err(|_| invalid("This is not a text file."))
+}
+
 /// Reads and writes the skills the Customize page shows, below the Claude home.
 pub struct ClaudeSkillCatalogAdapter {
     claude_home: PathBuf,
@@ -289,8 +342,6 @@ impl ClaudeSkillCatalogAdapter {
     }
 }
 
-const NOT_BUILT: &str = "not built yet";
-
 #[async_trait]
 impl SkillCatalogPort for ClaudeSkillCatalogAdapter {
     async fn snapshot(&self, project_path: Option<PathBuf>, plugins: Vec<PluginEntry>) -> Result<SkillSnapshot, SkillCatalogError> {
@@ -312,12 +363,14 @@ impl SkillCatalogPort for ClaudeSkillCatalogAdapter {
         blocking(move || create_skill(&home, &name, &description)).await
     }
 
-    async fn list_files(&self, _skill_path: &Path) -> Result<Vec<SkillFile>, SkillCatalogError> {
-        Err(SkillCatalogError::Io(NOT_BUILT.into()))
+    async fn list_files(&self, skill_path: &Path) -> Result<Vec<SkillFile>, SkillCatalogError> {
+        let skill_path = skill_path.to_path_buf();
+        blocking(move || list_skill_files(&skill_path)).await
     }
 
-    async fn read_file(&self, _skill_path: &Path, _relative: &str) -> Result<String, SkillCatalogError> {
-        Err(SkillCatalogError::Io(NOT_BUILT.into()))
+    async fn read_file(&self, skill_path: &Path, relative: &str) -> Result<String, SkillCatalogError> {
+        let (skill_path, relative) = (skill_path.to_path_buf(), relative.to_string());
+        blocking(move || read_skill_file(&skill_path, &relative)).await
     }
 }
 
@@ -717,5 +770,79 @@ mod tests {
         assert!(tree(home.path()).is_empty());
         adapter.create("ok", "d").await.unwrap();
         assert_eq!(adapter.create("ok", "d").await.unwrap_err(), SkillCatalogError::Exists("ok".to_string()));
+    }
+
+    #[tokio::test]
+    async fn list_files_gives_a_tree_order_with_slashes() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("skills").join("pdf");
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
+        std::fs::write(dir.join("a").join("one.md"), "x").unwrap();
+        std::fs::write(dir.join("a-b.md"), "x").unwrap();
+
+        let files = adapter(home.path()).list_files(&dir).await.unwrap();
+
+        let shown: Vec<_> = files.iter().map(|f| (f.relative.as_str(), f.is_dir)).collect();
+        assert_eq!(shown, vec![("a", true), ("a/one.md", false), ("a-b.md", false), ("SKILL.md", false)]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn list_files_leaves_out_symlinks() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("skills").join("pdf");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
+        std::os::unix::fs::symlink("/etc", dir.join("etc")).unwrap();
+        let files = adapter(home.path()).list_files(&dir).await.unwrap();
+        assert_eq!(files.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn read_file_returns_the_text_of_a_file_inside_the_skill() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("skills").join("pdf");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub").join("a.md"), "hello").unwrap();
+        assert_eq!(adapter(home.path()).read_file(&dir, "sub/a.md").await.unwrap(), "hello");
+    }
+
+    #[tokio::test]
+    async fn read_file_refuses_paths_that_leave_the_skill() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("skills").join("pdf");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(home.path().join("secret.txt"), "secret").unwrap();
+        let adapter = adapter(home.path());
+        for bad in ["../../secret.txt", "..", "/etc/passwd", "sub/../../../secret.txt"] {
+            let result = adapter.read_file(&dir, bad).await;
+            assert!(matches!(result, Err(SkillCatalogError::Invalid(_))), "path {bad:?}: {result:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_file_refuses_a_symlink_that_points_out_of_the_skill() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("skills").join("pdf");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(home.path().join("secret.txt"), "secret").unwrap();
+        std::os::unix::fs::symlink(home.path().join("secret.txt"), dir.join("link.txt")).unwrap();
+        let result = adapter(home.path()).read_file(&dir, "link.txt").await;
+        assert!(matches!(result, Err(SkillCatalogError::Invalid(_))));
+    }
+
+    #[tokio::test]
+    async fn read_file_refuses_a_big_file_a_binary_file_and_a_folder() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("skills").join("pdf");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("big.txt"), "x".repeat(TEXT_LIMIT as usize + 1)).unwrap();
+        std::fs::write(dir.join("bin.dat"), [0xff, 0xfe, 0x00, 0x80]).unwrap();
+        let adapter = adapter(home.path());
+        for bad in ["big.txt", "bin.dat", "sub"] {
+            assert!(matches!(adapter.read_file(&dir, bad).await, Err(SkillCatalogError::Invalid(_))), "{bad}");
+        }
     }
 }
