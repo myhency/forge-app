@@ -25,20 +25,26 @@ fn file_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-/// `render_markdown`, with each inline code span that names a known file wrapped in
+/// `render_markdown`, with links to files. Each inline code span that names a known file, and each
+/// bare absolute path in the text (`/dir/name.ext`), is wrapped in
 /// `<span class="file-link" data-path="…" role="link" tabindex="0">`. Code in a fenced or indented
-/// block and text outside code are left alone; a path that holds a quote, `<` or `&` is never put
-/// in an attribute.
+/// block, text inside an existing link, and text outside code that is not an absolute path are left
+/// alone; a path that holds a quote, `<` or `&` is never put in an attribute.
 pub fn render_markdown_linked(source: &str, known: &[String]) -> String {
     let html = render_markdown(source);
+    link_prose_paths(&link_known_code(&html, known))
+}
+
+// The inline code spans that name a known file become links.
+fn link_known_code(html: &str, known: &[String]) -> String {
     if known.is_empty() {
-        return html;
+        return html.to_string();
     }
     const OPEN: &str = "<code>";
     const CLOSE: &str = "</code>";
     const BLOCK: &str = "<pre class=\"code-block\">";
     let mut out = String::with_capacity(html.len());
-    let mut rest = html.as_str();
+    let mut rest = html;
     while let Some(start) = rest.find(OPEN) {
         let (before, from_code) = rest.split_at(start);
         out.push_str(before);
@@ -64,6 +70,98 @@ pub fn render_markdown_linked(source: &str, known: &[String]) -> String {
         rest = &after_open[end + CLOSE.len()..];
     }
     out.push_str(rest);
+    out
+}
+
+fn is_path_char(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '+' | '@' | '~' | '/')
+}
+
+// A path names a file when its last part is `stem.ext` with an extension of 1 to 8 letters or digits.
+fn has_file_extension(path: &str) -> bool {
+    if path.len() < 2 || path.contains("//") {
+        return false;
+    }
+    let name = path.rsplit('/').next().unwrap_or(path);
+    match name.rsplit_once('.') {
+        Some((stem, extension)) => !stem.is_empty() && (1..=8).contains(&extension.len()) && extension.chars().all(|c| c.is_ascii_alphanumeric()),
+        None => false,
+    }
+}
+
+// The byte ranges of the absolute file paths in one text node of the markdown HTML. The text is
+// HTML-escaped, so a path never runs through `&`, `<`, `>` or a quote: those are not path characters.
+fn prose_paths(text: &str) -> Vec<(usize, usize)> {
+    let mut found = Vec::new();
+    let mut from = 0;
+    let mut previous: Option<char> = None;
+    for (index, c) in text.char_indices() {
+        if index >= from && c == '/' && previous.is_none_or(|before| !is_path_char(before) && before != ':') {
+            let run_end = text[index..].find(|ch: char| !is_path_char(ch)).map_or(text.len(), |offset| index + offset);
+            let path = text[index..run_end].trim_end_matches('.');
+            if has_file_extension(path) {
+                found.push((index, index + path.len()));
+            }
+            from = run_end;
+        }
+        previous = Some(c);
+    }
+    found
+}
+
+fn push_linked(out: &mut String, text: &str, link: bool) {
+    if !link {
+        out.push_str(text);
+        return;
+    }
+    let mut last = 0;
+    for (start, end) in prose_paths(text) {
+        out.push_str(&text[last..start]);
+        let path = &text[start..end];
+        out.push_str(&format!("<span class=\"file-link\" data-path=\"{path}\" role=\"link\" tabindex=\"0\">{path}</span>"));
+        last = end;
+    }
+    out.push_str(&text[last..]);
+}
+
+// How deep the text is inside `code`, `pre` and `a` after this tag; text in there is never linked.
+fn next_skipped(tag: &str, skipped: usize) -> usize {
+    let inner = tag.trim_start_matches('<').trim_end_matches('>').trim();
+    let closing = inner.starts_with('/');
+    let name = inner.trim_start_matches('/').split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or("").to_ascii_lowercase();
+    if !matches!(name.as_str(), "code" | "pre" | "a") {
+        return skipped;
+    }
+    if closing {
+        skipped.saturating_sub(1)
+    } else if inner.ends_with('/') {
+        skipped
+    } else {
+        skipped + 1
+    }
+}
+
+// Wraps each bare absolute path in the text nodes of `html`.
+fn link_prose_paths(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut skipped = 0usize;
+    let mut rest = html;
+    while !rest.is_empty() {
+        let Some(open) = rest.find('<') else {
+            push_linked(&mut out, rest, skipped == 0);
+            break;
+        };
+        push_linked(&mut out, &rest[..open], skipped == 0);
+        let from_tag = &rest[open..];
+        let Some(close) = from_tag.find('>') else {
+            out.push_str(from_tag);
+            break;
+        };
+        let tag = &from_tag[..=close];
+        skipped = next_skipped(tag, skipped);
+        out.push_str(tag);
+        rest = &from_tag[close + 1..];
+    }
     out
 }
 
@@ -146,12 +244,66 @@ mod tests {
     }
 
     #[test]
-    fn text_outside_code_and_code_in_a_fenced_block_stay_plain() {
-        assert!(!render_markdown_linked("guide.md and /p/docs/guide.md", &known()).contains("file-link"));
+    fn a_bare_name_in_prose_and_code_in_a_fenced_block_stay_plain() {
+        let prose = render_markdown_linked("guide.md and /p/docs/guide.md", &known());
+        assert!(!prose.contains(r#"data-path="guide.md""#), "a bare name is not a path: {prose}");
+        assert!(prose.contains(r#"data-path="/p/docs/guide.md""#), "{prose}");
         let fenced = render_markdown_linked("```\n/p/docs/guide.md\n```", &known());
         assert!(!fenced.contains("file-link"), "{fenced}");
         let language = render_markdown_linked("```text\nguide.md\n```", &known());
         assert!(!language.contains("file-link"), "{language}");
+    }
+
+    fn linked(text: &str) -> String {
+        render_markdown_linked(text, &[])
+    }
+
+    #[test]
+    fn an_absolute_path_in_prose_becomes_a_link_even_when_no_tool_named_it() {
+        let html = linked("Saved to /tmp/out/report.csv for you");
+        assert!(html.contains(r#"<span class="file-link" data-path="/tmp/out/report.csv" role="link" tabindex="0">/tmp/out/report.csv</span>"#), "{html}");
+    }
+
+    #[test]
+    fn punctuation_and_text_around_a_path_stay_outside_the_link() {
+        let html = linked("see /p/a.md.");
+        assert!(html.contains(r#"data-path="/p/a.md""#) && html.contains("</span>."), "{html}");
+        let html = linked("(/p/a.md)");
+        assert!(html.contains(r#"data-path="/p/a.md""#) && html.contains("</span>)"), "{html}");
+        let html = linked("저장했습니다: /p/보고서.md 입니다");
+        assert!(html.contains(r#"data-path="/p/보고서.md""#) && html.contains("</span> 입니다"), "{html}");
+    }
+
+    #[test]
+    fn two_paths_on_separate_lines_are_two_links() {
+        let html = linked("/p/a.md\n\n/p/b.pdf");
+        assert!(html.contains(r#"data-path="/p/a.md""#) && html.contains(r#"data-path="/p/b.pdf""#), "{html}");
+    }
+
+    #[test]
+    fn a_url_a_relative_path_and_a_path_with_no_extension_are_not_linked() {
+        for text in ["/usr/local/bin", "https://example.com/a.html", "see /", "a/b/c.md", "//cdn.example.com/a.js", "foo:/p/a.md", "~/a.md", "x/p/a.md"] {
+            assert!(!linked(text).contains("file-link"), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_path_in_code_a_code_block_or_a_link_stays_plain() {
+        for text in ["`/p/a.md`", "```\n/p/a.md\n```", "[/p/a.md](https://example.com)", "[x](/p/a.md)"] {
+            assert!(!linked(text).contains("file-link"), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_path_with_an_ampersand_or_a_quote_is_cut_before_it() {
+        assert!(!linked("/p/a&b.md").contains("file-link"));
+        assert!(!linked("/p/a\"b.md").contains("file-link"));
+    }
+
+    #[test]
+    fn prose_paths_and_known_code_spans_link_together() {
+        let html = render_markdown_linked("`guide.md` and /p/other.txt", &known());
+        assert!(html.contains(r#"data-path="/p/docs/guide.md""#) && html.contains(r#"data-path="/p/other.txt""#), "{html}");
     }
 
     #[test]
