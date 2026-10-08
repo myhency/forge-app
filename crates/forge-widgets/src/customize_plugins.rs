@@ -133,10 +133,59 @@ fn MineList(groups: Vec<PluginGroup>) -> Element {
     }
 }
 
-/// The Explore list is written in the next task; this keeps the page compiling meanwhile.
 #[component]
 fn ExploreGrid(groups: Vec<PluginGroup>) -> Element {
-    rsx! { div { class: "hint", "{groups.len()} marketplaces" } }
+    let customize = use_customize();
+    rsx! {
+        for group in groups {
+            div { key: "{group.marketplace}", class: "customize-group",
+                h2 { "{group_title(&group.marketplace)} " span { class: "count", "{group.rows.len()}" } }
+                div { class: "customize-grid",
+                    for row in group.rows {
+                        {
+                            let id = row.entry.id.clone();
+                            let busy = customize.busy(&id);
+                            let installed = row.entry.installed;
+                            rsx! {
+                                div {
+                                    key: "{id}",
+                                    class: "customize-card",
+                                    onclick: {
+                                        let id = id.clone();
+                                        move |_| customize.open_detail(id.clone())
+                                    },
+                                    div { class: "customize-icon", "⌬" }
+                                    div { class: "customize-main",
+                                        div { class: "customize-name", "{row.entry.name}" }
+                                        div { class: "customize-card-desc", "{row.entry.description}" }
+                                        div { class: "customize-source", "{group_title(&row.entry.marketplace)}" }
+                                    }
+                                    if busy != Busy::No {
+                                        span { class: "spinner", title: if busy == Busy::Waiting { "Waiting…" } else { "Installing…" } }
+                                    } else if installed {
+                                        span { class: "customize-check", title: "Installed", "✓" }
+                                    } else {
+                                        button {
+                                            class: "customize-plus",
+                                            title: "Install",
+                                            onclick: {
+                                                let id = id.clone();
+                                                move |event| {
+                                                    event.stop_propagation();
+                                                    customize.run(Job::Install(id.clone()));
+                                                }
+                                            },
+                                            "+"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[component]
