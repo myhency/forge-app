@@ -154,6 +154,8 @@ Checked against GitHub (the user asked for it; in the harness's fixture home onl
 
 Also checked with an `https://` Git URL (the user allowed it): adding `https://github.com/anthropics/claude-plugins-official.git` is stored by the CLI as a `git` source and lists the same 315 plugins; its location shows in Manage marketplaces; Update on it shows the spinner on the row while it fetches and moves "Last updated" forward (14:12 to 14:13 UTC).
 
-Not checked: the spinner of a plugin install (an install finishes before a capture can be taken; the busy state is covered by the queue's unit tests), a Git marketplace on a private server that needs credentials (only the failing connection message was seen), and Windows (the process-tree kill, `claude.exe`, the paths). Cosmetic and left as it is: the row menu of a marketplace opens over its card and the Done button, like any popup.
+Checked by the user: the spinner of a plugin install (an install finishes before the harness can capture it, so the user watched it in the app).
+
+Not checked: a Git marketplace on a private server that needs credentials (only the failing connection message was seen), and Windows (the process-tree kill, `claude.exe`, the paths). Cosmetic and left as it is: the row menu of a marketplace opens over its card and the Done button, like any popup.
 
 Notes for the harness: the window of the harness app paints only while the Mac's display is awake and unlocked (`screencapture` fails or gives a white window otherwise); `osascript keystroke` drops letters when it types fast, so type one key at a time (the existing composer drops them too).
