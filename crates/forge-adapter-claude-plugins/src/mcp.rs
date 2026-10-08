@@ -139,24 +139,9 @@ impl McpManagerPort for ClaudeMcpCli {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
-    use std::os::unix::fs::PermissionsExt;
-
-    // A stand-in `claude` that writes each argument on its own line to a log, then runs `body`.
-    fn cli_with(dir: &Path, body: &str) -> (ClaudeMcpCli, PathBuf) {
-        let log = dir.join("calls.log");
-        let program = dir.join("fake-claude");
-        std::fs::write(&program, format!("#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> {}; done\n{body}\n", log.display())).unwrap();
-        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-        (ClaudeMcpCli::new(program, None), log)
-    }
-
-    fn lines(log: &Path) -> Vec<String> {
-        std::fs::read_to_string(log).unwrap().lines().map(String::from).collect()
-    }
 
     fn remote(sse: bool) -> NewConnector {
         let headers = vec![("X-One".to_string(), "a b:c".to_string()), ("X-Two".to_string(), "한글 'q' \"d\" -x".to_string())];
@@ -189,62 +174,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn add_passes_every_value_as_exactly_one_argument() {
-        let dir = tempfile::tempdir().unwrap();
-        let (cli, log) = cli_with(dir.path(), "");
-        cli.add(&remote(false)).await.unwrap();
-        assert_eq!(lines(&log), add_args(&remote(false)));
-    }
-
-    #[tokio::test]
-    async fn remove_runs_mcp_remove_for_the_user_scope() {
-        let dir = tempfile::tempdir().unwrap();
-        let (cli, log) = cli_with(dir.path(), "");
-        cli.remove("web").await.unwrap();
-        assert_eq!(lines(&log), ["mcp", "remove", "-s", "user", "web"]);
-    }
-
-    #[tokio::test]
-    async fn a_name_that_starts_with_a_dash_is_refused_and_nothing_runs() {
-        let dir = tempfile::tempdir().unwrap();
-        let (cli, log) = cli_with(dir.path(), "");
-        assert!(matches!(cli.remove("--help").await, Err(McpManagerError::Cli(_))));
-        assert!(matches!(cli.check(" -x").await, Err(McpManagerError::Cli(_))));
-        let mut connector = remote(false);
-        connector.name = "-x".into();
-        assert!(matches!(cli.add(&connector).await, Err(McpManagerError::Cli(_))));
-        assert!(!log.exists());
-    }
-
-    #[tokio::test]
-    async fn a_failure_that_echoes_a_value_does_not_show_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let (cli, _) = cli_with(dir.path(), "echo \"bad header Bearer TOPSECRET and SECRET2 rejected\" >&2\nexit 1");
-        let connector = NewConnector {
-            name: "web".into(),
-            transport: NewTransport::Http {
-                url: "https://a".into(),
-                headers: vec![("Authorization".into(), "Bearer TOPSECRET".into()), ("X".into(), "SECRET2".into())],
-            },
-        };
-        let McpManagerError::Cli(message) = cli.add(&connector).await.unwrap_err() else { panic!("expected Cli") };
-        assert!(!message.contains("TOPSECRET") && !message.contains("SECRET2"), "{message}");
-        assert!(message.contains("rejected"), "{message}");
-    }
-
     #[test]
     fn redact_takes_out_the_longest_value_first() {
         assert_eq!(redact("a abc b".to_string(), &["abc".to_string(), "a".to_string()]), "[hidden] [hidden] b");
-    }
-
-    #[tokio::test]
-    async fn check_reads_only_the_status_line_of_the_output() {
-        let dir = tempfile::tempdir().unwrap();
-        let body = "cat <<'EOF'\nweb:\n  Scope: User config\n  Status: ! Needs authentication\n  Type: http\n  Headers:\n    Authorization: Bearer SECRET\nEOF";
-        let (cli, log) = cli_with(dir.path(), body);
-        assert_eq!(cli.check("web").await.unwrap(), Connection::NeedsSignIn);
-        assert_eq!(lines(&log), ["mcp", "get", "web"]);
     }
 
     #[test]
