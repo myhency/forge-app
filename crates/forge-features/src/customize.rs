@@ -85,6 +85,14 @@ impl Job {
             _ => None,
         }
     }
+
+    /// The marketplace name, for the jobs about an existing marketplace (an add has no name yet).
+    pub fn marketplace_name(&self) -> Option<&str> {
+        match self {
+            Job::UpdateMarketplace(name) | Job::RemoveMarketplace(name) => Some(name),
+            _ => None,
+        }
+    }
 }
 
 /// The jobs waiting and the one running. The caller starts what `push` and `finish` return.
@@ -116,9 +124,37 @@ impl JobQueue {
         self.running.as_ref()
     }
 
+    /// Whether an Add marketplace job is running or waiting (the dialog must not take a second one).
+    pub fn adding_marketplace(&self) -> bool {
+        let adding = |job: &Job| matches!(job, Job::AddMarketplace(_));
+        self.running.as_ref().is_some_and(adding) || self.waiting.iter().any(adding)
+    }
+
+    /// Whether an update or remove of this marketplace is running.
+    pub fn running_marketplace(&self, name: &str) -> bool {
+        self.running.as_ref().and_then(Job::marketplace_name) == Some(name)
+    }
+
+    /// Whether an update or remove of this marketplace is waiting.
+    pub fn waits_for_marketplace(&self, name: &str) -> bool {
+        self.waiting.iter().any(|job| job.marketplace_name() == Some(name))
+    }
+
     /// Whether a job about this plugin is waiting (not yet running).
     pub fn waits_for(&self, id: &str) -> bool {
         self.waiting.iter().any(|job| job.plugin_id() == Some(id))
+    }
+}
+
+/// Whether the error of a finished job belongs inside the dialog that is open now, or on the page's bar.
+/// An Add marketplace error goes to the Add dialog's field if that dialog is still open; an update or a
+/// remove goes to the Manage dialog if that is open. Any other case (the dialog was closed, another
+/// one is open, a plugin job) is the page bar's, so no message is lost.
+pub fn error_in_dialog(job: &Job, add_dialog_open: bool, manage_dialog_open: bool) -> bool {
+    match job {
+        Job::AddMarketplace(_) => add_dialog_open,
+        Job::UpdateMarketplace(_) | Job::RemoveMarketplace(_) => manage_dialog_open,
+        _ => false,
     }
 }
 
@@ -235,5 +271,43 @@ mod tests {
         assert!(check_source("   ").is_err());
         assert!(check_source("a\nb").is_err());
         assert!(check_source("--help").is_err(), "an option is not a source");
+    }
+
+    #[test]
+    fn an_add_marketplace_job_counts_while_it_runs_and_while_it_waits() {
+        let mut queue = JobQueue::default();
+        assert!(!queue.adding_marketplace());
+        queue.push(Job::Install("a@m".into()));
+        queue.push(Job::AddMarketplace("o/r".into()));
+        assert!(queue.adding_marketplace(), "waiting behind an install still counts");
+        queue.finish();
+        assert!(queue.adding_marketplace(), "running counts");
+        queue.finish();
+        assert!(!queue.adding_marketplace());
+    }
+
+    #[test]
+    fn a_marketplace_job_knows_its_marketplace_and_the_queue_sees_it_running_or_waiting() {
+        assert_eq!(Job::UpdateMarketplace("m".into()).marketplace_name(), Some("m"));
+        assert_eq!(Job::RemoveMarketplace("m".into()).marketplace_name(), Some("m"));
+        assert_eq!(Job::AddMarketplace("o/r".into()).marketplace_name(), None, "an add has no name yet");
+        assert_eq!(Job::Install("a@m".into()).marketplace_name(), None);
+        let mut queue = JobQueue::default();
+        queue.push(Job::UpdateMarketplace("one".into()));
+        queue.push(Job::RemoveMarketplace("two".into()));
+        assert!(queue.running_marketplace("one") && !queue.running_marketplace("two"));
+        assert!(queue.waits_for_marketplace("two") && !queue.waits_for_marketplace("one"));
+    }
+
+    #[test]
+    fn an_error_stays_in_a_dialog_only_while_that_dialog_is_open() {
+        let add = Job::AddMarketplace("o/r".into());
+        assert!(error_in_dialog(&add, true, false));
+        assert!(!error_in_dialog(&add, false, false), "the dialog was closed: the page bar shows it");
+        assert!(!error_in_dialog(&add, false, true), "another dialog is open: not the add dialog's field");
+        let update = Job::UpdateMarketplace("m".into());
+        assert!(error_in_dialog(&update, false, true));
+        assert!(!error_in_dialog(&update, true, false));
+        assert!(!error_in_dialog(&Job::Install("a@m".into()), true, true), "an install error is always the page bar's");
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dioxus::prelude::*;
 use forge_application::{CatalogView, PluginCatalogUseCase};
 
-use crate::customize::{check_source, CustomizeMode, CustomizeTab, Job, JobQueue};
+use crate::customize::{check_source, error_in_dialog, CustomizeMode, CustomizeTab, Job, JobQueue};
 use crate::workspace::WorkspaceServices;
 
 /// What the last read of the catalogue gave.
@@ -176,6 +176,10 @@ impl Customize {
 
     /// Asks for a job. It starts at once when nothing is running, otherwise it waits its turn.
     pub fn run(&self, job: Job) {
+        if job.marketplace_name().is_some() {
+            let mut error = self.dialog_error;
+            error.set(None);
+        }
         let mut queue = self.queue;
         let start = queue.write().push(job);
         if let Some(job) = start {
@@ -195,9 +199,21 @@ impl Customize {
         }
     }
 
-    /// Whether an Add marketplace job is running (the dialog shows a spinner).
+    /// Whether an Add marketplace job is running or waiting (the dialog shows a spinner and takes no second one).
     pub fn adding_marketplace(&self) -> bool {
-        matches!(self.queue.read().running(), Some(Job::AddMarketplace(_)))
+        self.queue.read().adding_marketplace()
+    }
+
+    /// Whether an update or remove of this marketplace is running or waiting (the Manage dialog's spinner).
+    pub fn busy_marketplace(&self, name: &str) -> Busy {
+        let queue = self.queue.read();
+        if queue.running_marketplace(name) {
+            Busy::Running
+        } else if queue.waits_for_marketplace(name) {
+            Busy::Waiting
+        } else {
+            Busy::No
+        }
     }
 
     /// The Add marketplace button: checks the text, then queues the job.
@@ -235,17 +251,21 @@ impl Customize {
     }
 
     fn finished(&self, job: Job, result: Result<(), String>) {
-        match (&job, result) {
-            (Job::AddMarketplace(_), Ok(())) => self.close_dialog(),
-            (Job::AddMarketplace(_), Err(message)) => {
-                let mut error = self.dialog_error;
-                error.set(Some(message));
+        let add_open = self.dialog() == Some(Dialog::AddMarketplace);
+        let manage_open = self.dialog() == Some(Dialog::ManageMarketplaces);
+        match result {
+            // A success closes the Add dialog, but only if it is still the one that is open.
+            Ok(()) => {
+                if matches!(job, Job::AddMarketplace(_)) && add_open {
+                    self.close_dialog();
+                }
             }
-            (_, Err(message)) => {
-                let mut error = self.error;
-                error.set(Some(message));
+            // An error goes where the person is looking: the open dialog's own line, else the page bar.
+            Err(message) => {
+                let place = if error_in_dialog(&job, add_open, manage_open) { self.dialog_error } else { self.error };
+                let mut place = place;
+                place.set(Some(message));
             }
-            (_, Ok(())) => {}
         }
         // An uninstalled plugin has no detail to show, and a removed marketplace takes its plugins.
         if matches!(job, Job::Uninstall(_) | Job::RemoveMarketplace(_)) {

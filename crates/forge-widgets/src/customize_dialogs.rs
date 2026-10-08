@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::Marketplace;
-use forge_features::{use_customize, Dialog, Job, Loaded};
+use forge_features::{use_customize, Busy, Dialog, Job, Loaded};
 use forge_shared::{Button, ButtonKind};
 
 /// Whichever dialog is open, over the page. A click on the backdrop closes it.
@@ -11,7 +11,14 @@ pub fn CustomizeDialogs() -> Element {
         return rsx! {};
     };
     rsx! {
-        div { class: "settings-backdrop", onclick: move |_| customize.close_dialog(),
+        div {
+            class: "settings-backdrop",
+            // While a marketplace is being added the dialog stays: its result (or its error) shows here.
+            onclick: move |_| {
+                if !customize.adding_marketplace() {
+                    customize.close_dialog();
+                }
+            },
             div { class: "customize-dialog", onclick: move |event| event.stop_propagation(),
                 match dialog {
                     Dialog::AddMarketplace => rsx! { AddMarketplace {} },
@@ -67,19 +74,27 @@ fn ManageMarketplaces() -> Element {
     rsx! {
         h2 { "Manage marketplaces" }
         p { class: "hint", "These are the marketplaces added with Claude Code on this computer. Removing one also removes its plugins." }
+        if let Some(message) = customize.dialog_error() {
+            div { class: "status-line error", "{message}" }
+        }
         if markets.is_empty() {
             div { class: "hint", "No marketplaces yet." }
         }
         for market in markets {
+            {
+            let busy = customize.busy_marketplace(&market.name);
+            rsx! {
             div { key: "{market.name}", class: "customize-market",
                 div { class: "customize-main",
                     div { class: "customize-name", "{market.name}" }
                     div { class: "customize-desc", "{market.location}" }
                     if let Some(when) = market.last_updated.clone() { div { class: "customize-source", "Last updated {when}" } }
                 }
+                if busy != Busy::No { span { class: "spinner", title: if busy == Busy::Waiting { "Waiting…" } else { "Working…" } } }
                 button {
                     class: "icon-button",
                     title: "More",
+                    disabled: busy != Busy::No,
                     onclick: {
                         let name = market.name.clone();
                         move |_| menu.set(if menu() == Some(name.clone()) { None } else { Some(name.clone()) })
@@ -112,6 +127,8 @@ fn ManageMarketplaces() -> Element {
                         }
                     }
                 }
+            }
+            }
             }
         }
         div { class: "customize-dialog-buttons",
