@@ -9,6 +9,7 @@ use forge_adapter_claude_fs::{
     default_claude_home, default_claude_json_path, ClaudeMcpAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
     ClaudeSessionAdapter, ClaudeSkillAdapter, ClaudeUsageStatsAdapter,
 };
+use forge_adapter_claude_plugins::{claude_binary_for, ClaudePluginCli};
 use forge_adapter_dialog::RfdFolderPicker;
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
@@ -20,7 +21,7 @@ use forge_adapter_sleep::CaffeinateSleep;
 #[cfg(windows)]
 use forge_adapter_sleep::WindowsSleep;
 use forge_adapter_terminal::PtyTerminal;
-use forge_application::{ExtensionsUseCase, SessionRegistry, SettingsUseCase};
+use forge_application::{ExtensionsUseCase, PluginCatalogUseCase, SessionRegistry, SettingsUseCase};
 use forge_features::WorkspaceServices;
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
@@ -146,6 +147,15 @@ fn build_services() -> WorkspaceServices {
     let runtime::Runtime { node, script } = runtime::locate_here(DEFAULT_SIDECAR_SCRIPT);
 
     let config = Arc::new(ConfigFileAdapter::new(config_path));
+    // The Claude program that ships with the SDK sits beside the sidecar script. `CLAUDE_CONFIG_DIR` is
+    // set for it only when `FORGE_CLAUDE_HOME` moves the Claude home (the harness); with the real home
+    // the CLI would keep `.claude.json` inside the folder instead of beside it.
+    let plugin_binary = claude_binary_for(std::path::Path::new(&script)).unwrap_or_else(|| "claude-is-not-available".into());
+    let plugin_config_dir = std::env::var_os("FORGE_CLAUDE_HOME").filter(|home| !home.is_empty()).map(std::path::PathBuf::from);
+    let plugin_catalog = Arc::new(PluginCatalogUseCase::new(
+        Arc::new(ClaudePluginCli::new(plugin_binary, claude_home.clone(), plugin_config_dir)),
+        config.clone(),
+    ));
     let factory = Arc::new(SidecarProcessFactory::new(node, script, config.clone()));
     let settings = Arc::new(SettingsUseCase::new(config.clone()));
     // With no project open the tabs read the home directory as the project, so only the global
@@ -169,6 +179,7 @@ fn build_services() -> WorkspaceServices {
         sessions,
         settings,
         extensions,
+        plugin_catalog,
         folder_picker: picker.clone(),
         file_picker: picker,
         terminal: Arc::new(PtyTerminal::new(shell)),

@@ -1,13 +1,14 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, layout_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
-use forge_features::{refocus_workspace, use_settings_provider, use_window_width, use_workspace_provider, Active};
-use forge_widgets::{ChatWindow, Lightbox, NewSessionPanel, SearchPalette, SettingsOverlay, Sidebar};
+use forge_features::{refocus_workspace, use_customize_provider, use_settings_provider, use_window_width, use_workspace_provider, Active};
+use forge_widgets::{ChatWindow, CustomizePage, Lightbox, NewSessionPanel, SearchPalette, SettingsOverlay, Sidebar};
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
 /// the active session. The root also catches the session shortcuts.
 #[component]
 pub fn WorkspacePage() -> Element {
     let settings = use_settings_provider();
+    use_customize_provider();
     let workspace = use_workspace_provider();
     let mut dragging = use_signal(|| false);
     // Key events only reach the root while something inside it has focus. Whenever the overlay
@@ -51,7 +52,7 @@ pub fn WorkspacePage() -> Element {
                 dock.columns.iter().map(|column| column.width as u32).sum()
             }
         }
-        Active::NewSession => 0,
+        Active::NewSession | Active::Customize => 0,
     };
     let docked_sidebar = if hidden { SIDEBAR_RAIL_WIDTH } else { prefs.clamped_width() };
     let layout = layout_for(window_width(), docked_sidebar, dock_width);
@@ -128,6 +129,7 @@ pub fn WorkspacePage() -> Element {
             }
             match workspace.active() {
                 Active::NewSession => rsx! { NewSessionPanel {} },
+                Active::Customize => rsx! { CustomizePage {} },
                 Active::Live(id) => rsx! { ChatWindow { key: "{id:?}", id } },
             }
             SettingsOverlay {}

@@ -2,6 +2,7 @@ mod window_width;
 mod blocking;
 mod cards;
 mod customize;
+mod customize_state;
 mod arrange;
 mod attachments;
 mod command_box;
@@ -40,6 +41,7 @@ pub use file_menu::{file_menu, menu_height, submenu_opens_left, FileAction, Menu
 pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
+pub use customize_state::{use_customize, use_customize_provider, Busy, Customize, Dialog, Loaded};
 pub use customize::{
     check_source, explore_groups, group_title, mine_groups, CustomizeMode, CustomizeTab, Job, JobQueue, PluginGroup, PluginRow,
 };
