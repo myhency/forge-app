@@ -216,7 +216,7 @@ fn ConnectorDetail(row: ConnectorRow) -> Element {
                     }
                 }
             }
-            if entry.installed {
+            if entry.installed && entry.source.checkable() {
                 div { class: "customize-section",
                     div { class: "label", "Connection" }
                     div { class: "customize-check",

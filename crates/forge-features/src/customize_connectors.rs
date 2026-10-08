@@ -97,6 +97,12 @@ pub fn connection_text(state: &ConnectionState) -> String {
     }
 }
 
+/// The names the Add form must not reuse. Without a list there is nothing to check against, and a name used by a
+/// project or local connector would slip through: the add waits for the list.
+fn taken_names_for_add(view: Option<&ConnectorView>) -> Result<Vec<String>, String> {
+    view.map(ConnectorView::taken_names).ok_or_else(|| "The connectors are still loading. Try again in a moment.".to_string())
+}
+
 /// Whether a connector that was just added is brought to the person: not when they have gone to another tab.
 fn shows_new_connector(tab: CustomizeTab) -> bool {
     tab == CustomizeTab::Connectors
@@ -190,10 +196,16 @@ impl Customize {
         if self.connectors_busy() {
             return;
         }
+        let taken = match taken_names_for_add(self.connectors().as_ref()) {
+            Ok(names) => names,
+            Err(message) => {
+                self.set_dialog_error(Some(message));
+                return;
+            }
+        };
         let mut busy = self.connectors.busy;
         busy.set(true);
         self.set_dialog_error(None);
-        let taken = self.connectors().map(|view| view.taken_names()).unwrap_or_default();
         let usecase = self.connectors.usecase();
         let this = *self;
         dioxus::core::spawn_forever(async move {
@@ -349,6 +361,13 @@ mod tests {
         assert_eq!(connection_text(&ConnectionState::Done(Connection::Failed("refused".into()))), "Could not connect: refused");
         assert_eq!(connection_text(&ConnectionState::Done(Connection::Unknown("odd".into()))), "odd");
         assert_eq!(connection_text(&ConnectionState::Failed("took too long".into())), "took too long");
+    }
+
+    #[test]
+    fn an_add_waits_for_the_list_so_a_taken_name_cannot_slip_through() {
+        assert!(taken_names_for_add(None).unwrap_err().contains("loading"));
+        let names = taken_names_for_add(Some(&view())).unwrap();
+        assert_eq!(names, vec!["alpha".to_string(), "beta".to_string()]);
     }
 
     #[test]

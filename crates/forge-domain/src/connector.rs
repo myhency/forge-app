@@ -46,6 +46,12 @@ impl ConnectorSource {
     pub fn removable(&self) -> bool {
         matches!(self, ConnectorSource::User)
     }
+
+    /// Whether `claude mcp get <name>` finds it from where Forge runs it: project and local servers need the
+    /// project as the working directory, and a plugin's server is registered as `plugin:<plugin>:<name>`.
+    pub fn checkable(&self) -> bool {
+        matches!(self, ConnectorSource::User)
+    }
 }
 
 /// One connector as the Customize page lists it. Header and env values are not kept: only their names.
@@ -183,5 +189,14 @@ mod tests {
         assert!(ConnectorSource::User.removable());
         assert!(!ConnectorSource::Project.removable() && !plugin.removable());
         assert_eq!(plugin.plugin_id(), Some("p@m"));
+    }
+
+    #[test]
+    fn only_a_user_connector_can_be_checked_because_get_finds_no_other_scope_from_here() {
+        // `claude mcp get <name>` runs outside the project and does not know plugin servers by their bare name.
+        assert!(ConnectorSource::User.checkable());
+        assert!(!ConnectorSource::Project.checkable());
+        assert!(!ConnectorSource::Local.checkable());
+        assert!(!ConnectorSource::Plugin { plugin_id: "p@m".into() }.checkable());
     }
 }

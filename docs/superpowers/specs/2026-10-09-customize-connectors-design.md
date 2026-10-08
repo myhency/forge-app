@@ -69,7 +69,7 @@ OAuth sign-in in the app; project / local / `.mcp.json` add or remove; editing a
 
 Built as designed, with these differences:
 
-- **Reads.** `ClaudeMcpAdapter` (which starts sessions) is unchanged. The page reads through a new `ClaudeConnectorCatalogAdapter` (port `ConnectorCatalogPort`), as 30B did for skills. It lists user, project (`.mcp.json`) and local-scope servers by the scope that wins a name, plus the servers installed plugins bundle (`.mcp.json` and `mcpServers` of `plugin.json`, as an object or a path inside the plugin) and the ones plugins of added marketplaces offer. A bundled file that leaves its plugin folder through a link is skipped.
+- **Reads.** `ClaudeMcpAdapter` (which starts sessions) is unchanged. The page reads through a new `ClaudeConnectorCatalogAdapter` (port `ConnectorCatalogPort`), as 30B did for skills. It lists user, project (`.mcp.json`) and local-scope servers by the scope that wins a name, plus the servers installed plugins bundle (`.mcp.json` and `mcpServers` of `plugin.json`, as an object or a path inside the plugin) and the ones plugins of added marketplaces offer. A bundled `.mcp.json` or a manifest `mcpServers` path that leaves its plugin folder through a link is skipped (the manifest file `plugin.json` itself is not link-checked).
 - **Form.** Validation is a pure function in the domain (`validate_new`, `split_args`); the use case calls it. `Debug` of the draft and of the new connector prints counts, not values.
 - **Secrets.** The CLI error text has the header and env values taken out (`redact`, longest first). The output of `claude mcp get` is reduced to its `Status:` and `Issue:` lines; the rest (which has the values in clear) is not kept.
 - **`claude` file.** With `FORGE_CLAUDE_HOME` the bundled `claude` keeps `.claude.json` inside the config folder, so the connector read follows it (`cli_claude_json` in `main.rs`). With the real home it is `~/.claude.json`. Found by the real-window check. The session adapter still reads `<home>/.claude.json` in override mode, so servers added from the page do not reach sessions there (harness only).
@@ -86,3 +86,9 @@ Review Focus items, and the tests that pin them: values with spaces, quotes, Kor
 - 30 connectors, a 50-character name, a 300-character address and an 80-character header name: rows keep their height, the long address is cut in the list and wraps in the detail: pass.
 - Not checked in the window: a local connector with env typed in the form (checked by adapter tests and by hand with the CLI), a refused duplicate name or bad address in the dialog (unit tests), a project `.mcp.json` row (adapter test), leaving the tab while an add runs (unit test `a_new_connector_is_shown_only_to_a_person_who_is_still_on_the_connectors_tab`).
 - Not checked at all: Windows, OAuth servers (sign-in itself), a remote server behind a proxy.
+
+### After the final review (2026-10-09)
+
+- "Check connection" is shown only for connectors added by you (`ConnectorSource::checkable`): `claude mcp get <name>` finds project and local servers only from inside the project, and knows a plugin's server as `plugin:<plugin>:<name>`, so from here it would answer about the wrong server or none.
+- The Add button waits for the list (`taken_names_for_add`): without it a name used by a project or local connector could pass the duplicate check.
+- Known and left as they are: removing a name switches it off in the shared, name-keyed `enabled_mcp_servers` for every project; a token inside a URL or in stdio args is shown as written (only header and env values are treated as secret); the list does not draw until the plugin catalogue has been read; "needs sign-in" shows in the detail after a check, not as a tag in the list.
