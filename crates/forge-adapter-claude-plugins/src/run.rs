@@ -207,9 +207,13 @@ mod tests {
         let error = run(&Invocation { program: &program, config_dir: None, args: &[], timeout: Duration::from_millis(2000) }).unwrap_err();
         assert_eq!(error, PluginManagerError::TimedOut);
         let pid = std::fs::read_to_string(dir.path().join("pid")).unwrap().trim().to_string();
-        std::thread::sleep(Duration::from_millis(300));
-        let alive = Command::new("kill").args(["-0", &pid]).stderr(Stdio::null()).status().unwrap().success();
-        assert!(!alive, "the sleep started by the program (pid {pid}) is still running");
+        // The kill is asynchronous: give the process a moment to go, under load too.
+        let is_alive = || Command::new("kill").args(["-0", &pid]).stderr(Stdio::null()).status().unwrap().success();
+        let until = Instant::now() + Duration::from_secs(3);
+        while is_alive() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!is_alive(), "the sleep started by the program (pid {pid}) is still running");
         let _ = Command::new("kill").args(["-9", &pid]).stderr(Stdio::null()).status();
     }
 }
