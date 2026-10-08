@@ -9,6 +9,7 @@ pub enum TabKind {
     /// `lossy`: the bytes were not valid UTF-8. `anyway`: "Show as text anyway" on a binary file.
     Text { lossy: bool, anyway: bool },
     Image { data_url: String },
+    Pdf { data_url: String },
     Binary,
     TooLarge,
     Failed(String),
@@ -41,6 +42,9 @@ pub fn kind_of(content: FileContent) -> TabKind {
         FileContent::Image { bytes, mime } => {
             TabKind::Image { data_url: format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)) }
         }
+        FileContent::Pdf { bytes } => {
+            TabKind::Pdf { data_url: format!("data:application/pdf;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)) }
+        }
         FileContent::Binary => TabKind::Binary,
         FileContent::TooLarge => TabKind::TooLarge,
     }
@@ -54,6 +58,9 @@ pub fn FileKindView(kind: TabKind, path: String, on_anyway: EventHandler<()>, on
             div { class: "files-kind",
                 img { src: "{data_url}", alt: "{path}" }
             }
+        },
+        TabKind::Pdf { data_url } => rsx! {
+            embed { class: "files-pdf", src: "{data_url}", r#type: "application/pdf" }
         },
         TabKind::Binary => rsx! {
             div { class: "files-kind",
@@ -86,6 +93,14 @@ mod tests {
 
     fn version() -> FileVersion {
         FileVersion { modified_ns: 1, len: 1 }
+    }
+
+    #[test]
+    fn a_pdf_becomes_a_data_address_with_its_type_and_has_no_editor() {
+        let kind = kind_of(FileContent::Pdf { bytes: vec![1, 2, 3] });
+        assert_eq!(kind, TabKind::Pdf { data_url: "data:application/pdf;base64,AQID".to_string() });
+        assert!(!kind.shows_editor());
+        assert_eq!(kind.notice(), None);
     }
 
     #[test]

@@ -72,7 +72,7 @@ pub fn contents_to_copy(content: &FileContent) -> Result<String, String> {
     match content {
         FileContent::Text { text, .. } => Ok(text.clone()),
         FileContent::TooLarge => Err("The file is too large to copy".to_string()),
-        FileContent::Binary | FileContent::Image { .. } => Err("Only a text file can be copied".to_string()),
+        FileContent::Binary | FileContent::Image { .. } | FileContent::Pdf { .. } => Err("Only a text file can be copied".to_string()),
     }
 }
 
@@ -788,5 +788,6 @@ mod tests {
         assert!(contents_to_copy(&FileContent::Binary).is_err());
         assert!(contents_to_copy(&FileContent::TooLarge).is_err());
         assert!(contents_to_copy(&FileContent::Image { bytes: vec![1], mime: "image/png".into() }).is_err());
+        assert!(contents_to_copy(&FileContent::Pdf { bytes: vec![1] }).is_err());
     }
 }

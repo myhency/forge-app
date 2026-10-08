@@ -79,6 +79,7 @@ mod tests {
             ".files-editor",
             ".files-kind",
             ".files-kind-button",
+            ".files-pdf",
             ".files-menu-sub",
             ".files-settings-menu",
             ".file-link",

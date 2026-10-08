@@ -30,6 +30,8 @@ pub enum FileContent {
     Text { text: String, version: FileVersion, lossy: bool },
     /// A picture, by its extension; `mime` is for a `data:` address.
     Image { bytes: Vec<u8>, mime: String },
+    /// A PDF, by its extension; shown by the web view's own viewer.
+    Pdf { bytes: Vec<u8> },
     /// The file has a NUL byte near its start.
     Binary,
     /// The file is over `READ_LIMIT`.
