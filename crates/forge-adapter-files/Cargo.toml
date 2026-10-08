@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+dunce = "1"
 forge-ports = { path = "../forge-ports" }
 regex = "1"
 

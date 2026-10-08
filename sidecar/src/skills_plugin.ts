@@ -20,7 +20,7 @@ export function isSafeSkillName(name: string): boolean {
 
 // The SDK does not discover user skills under settingSources ['project'], and ['user', 'project']
 // leaks the user's enabled plugins (spec §17.7). A local plugin is loaded either way, so the enabled
-// skills are gathered into one as symlinks. Returns null when there is nothing safe to gather.
+// skills are gathered into one as symlinks (junctions on Windows). Returns null when there is nothing safe to gather.
 export async function buildSkillsPlugin(skills: Record<string, string>): Promise<SkillsPlugin | null> {
   // Skip a relative target (the link would resolve against the plugin directory) and a name that
   // only differs in case (a case-insensitive filesystem would fail the whole start with EEXIST).
@@ -39,7 +39,9 @@ export async function buildSkillsPlugin(skills: Record<string, string>): Promise
     await writeFile(join(root, ".claude-plugin", "plugin.json"), JSON.stringify({ name: SKILLS_PLUGIN_NAME }));
     await mkdir(join(root, "skills"));
     for (const name of names) {
-      await symlink(skills[name], join(root, "skills", name), "dir");
+      // A directory symlink on Windows needs administrator rights or Developer Mode; a junction needs neither
+      // (and the target is absolute, as a junction requires).
+      await symlink(skills[name], join(root, "skills", name), process.platform === "win32" ? "junction" : "dir");
     }
   } catch (err) {
     await rm(root, { recursive: true, force: true });

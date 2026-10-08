@@ -28,6 +28,16 @@ pub fn shortcut_for(key: &str, ctrl: bool, meta: bool, shift: bool, mac: bool) -
     }
 }
 
+/// Whether the platform's command key is held: Cmd on macOS, Ctrl elsewhere (Meta there is the Windows key).
+pub fn command_pressed(ctrl: bool, meta: bool, mac: bool) -> bool {
+    if mac { meta } else { ctrl }
+}
+
+/// `command_pressed` for the key press `modifiers` describe, on the platform Forge runs on.
+pub fn command_held(modifiers: dioxus::prelude::Modifiers) -> bool {
+    command_pressed(modifiers.ctrl(), modifiers.meta(), cfg!(target_os = "macos"))
+}
+
 /// Whether `shortcut` may act while the settings overlay is open. Only opening settings does: the
 /// session shortcuts would change the session hidden behind the overlay (Plan 6 found ⌘W closing it).
 pub fn shortcut_allowed(shortcut: Shortcut, overlay_open: bool) -> bool {
@@ -37,6 +47,14 @@ pub fn shortcut_allowed(shortcut: Shortcut, overlay_open: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_command_key_is_meta_on_a_mac_and_ctrl_elsewhere() {
+        assert!(command_pressed(false, true, true));
+        assert!(!command_pressed(true, false, true));
+        assert!(command_pressed(true, false, false));
+        assert!(!command_pressed(false, true, false), "the Windows key is not the command key");
+    }
 
     #[test]
     fn cmd_n_and_cmd_w_on_a_mac() {

@@ -93,7 +93,7 @@ pub fn tool_input_lines(input: &Value) -> Vec<InputLine> {
                 Value::String(text) => text.clone(),
                 other => other.to_string(),
             };
-            let is_path = matches!(value, Value::String(text) if text.starts_with('/') && !text.contains(char::is_whitespace));
+            let is_path = matches!(value, Value::String(text) if forge_domain::is_absolute_path(text) && !text.contains(char::is_whitespace));
             InputLine { key: key.clone(), value: tool_detail_text(&text), is_path }
         })
         .collect()

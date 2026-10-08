@@ -94,7 +94,7 @@ async fn collect_skills(
 ) -> Result<(), SkillRepositoryError> {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(canonical) = tokio::fs::canonicalize(&dir).await else {
+        let Ok(canonical) = tokio::fs::canonicalize(&dir).await.map(|path| dunce::simplified(&path).to_path_buf()) else {
             continue;
         };
         if !visited.insert(canonical) {

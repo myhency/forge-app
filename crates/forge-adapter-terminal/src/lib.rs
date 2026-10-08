@@ -49,9 +49,11 @@ impl TerminalPort for PtyTerminal {
             return Err(TerminalError::MissingDirectory(cwd.to_path_buf()));
         }
         let pair = native_pty_system().openpty(pty_size(size)).map_err(failed)?;
-        // A login shell, so the person's PATH from their profile is there: an app started from
-        // the Finder has only a minimal one.
         let mut command = CommandBuilder::new(&self.shell);
+        // A login shell, so the person's PATH from their profile is there: an app started from
+        // the Finder has only a minimal one. (A Windows app gets the whole PATH, and PowerShell's
+        // `-l` is not a login flag.)
+        #[cfg(not(windows))]
         command.arg("-l");
         command.cwd(cwd);
         command.env("TERM", "xterm-256color");
@@ -128,7 +130,7 @@ impl Drop for PtyTerminal {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::time::Duration;
 

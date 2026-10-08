@@ -55,7 +55,7 @@ pub fn code_html(language: &str, code: &str) -> String {
 /// The language token of a file path: its extension, or `""` for a name without one (a dotfile
 /// like `.gitignore` has none).
 pub fn language_of(path: &str) -> &str {
-    let name = path.rsplit('/').next().unwrap_or(path);
+    let name = forge_domain::file_name(path);
     match name.rfind('.') {
         Some(0) | None => "",
         Some(dot) => &name[dot + 1..],

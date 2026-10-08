@@ -57,11 +57,11 @@ pub fn file_menu(target: MenuTarget) -> Vec<MenuEntry> {
                 label: "Open in",
                 entries: vec![item("VS Code", FileAction::OpenVsCode), MenuEntry::Divider, item("Default app", FileAction::OpenDefault)],
             },
-            item("Show in Finder", FileAction::Reveal),
+            item(forge_domain::SHOW_IN_FILE_MANAGER, FileAction::Reveal),
             MenuEntry::Divider,
             item("Show in file tree", FileAction::ShowInTree),
             MenuEntry::Divider,
-            MenuEntry::Action { label: "Find in file", shortcut: Some("⌘F"), action: FileAction::FindInFile, enabled: true },
+            MenuEntry::Action { label: "Find in file", shortcut: Some(forge_domain::KEY_FIND), action: FileAction::FindInFile, enabled: true },
             item("Copy file contents", FileAction::CopyContents),
             item("Reload file", FileAction::Reload),
             MenuEntry::Divider,
@@ -115,9 +115,11 @@ mod tests {
             match entry {
                 MenuEntry::Divider => out.push("—".to_string()),
                 MenuEntry::Action { label, shortcut, .. } => {
+                    // The expected lists below are written for macOS.
+                    let label = label.replace(forge_domain::SHOW_IN_FILE_MANAGER, "Show in Finder");
                     out.push(match shortcut {
-                        Some(key) => format!("{label} [{key}]"),
-                        None => label.to_string(),
+                        Some(key) => format!("{label} [{}]", key.replace(forge_domain::KEY_FIND, "⌘F")),
+                        None => label,
                     })
                 }
                 MenuEntry::Submenu { label, entries } => {

@@ -187,7 +187,7 @@ pub fn FileKindView(kind: TabKind, path: String, on_anyway: EventHandler<()>, on
             div { class: "files-kind",
                 p { "This file looks like binary data and cannot be previewed as text." }
                 div { class: "files-kind-buttons",
-                    button { class: "files-kind-button", r#type: "button", onclick: move |_| on_reveal.call(()), "Show in Finder" }
+                    button { class: "files-kind-button", r#type: "button", onclick: move |_| on_reveal.call(()), "{forge_domain::SHOW_IN_FILE_MANAGER}" }
                     button { class: "files-kind-button", r#type: "button", onclick: move |_| on_anyway.call(()), "Show as text anyway" }
                 }
             }
@@ -198,7 +198,7 @@ pub fn FileKindView(kind: TabKind, path: String, on_anyway: EventHandler<()>, on
                 p { class: "files-kind-sub", "It is too large to preview here." }
                 p { class: "files-kind-sub", "{path}" }
                 div { class: "files-kind-buttons",
-                    button { class: "files-kind-button", r#type: "button", onclick: move |_| on_reveal.call(()), "Show in Finder" }
+                    button { class: "files-kind-button", r#type: "button", onclick: move |_| on_reveal.call(()), "{forge_domain::SHOW_IN_FILE_MANAGER}" }
                 }
             }
         },

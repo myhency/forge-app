@@ -74,6 +74,7 @@ async fn read_cwd(path: &Path) -> Option<PathBuf> {
 pub(crate) async fn folder_key(path: &Path) -> PathBuf {
     tokio::fs::canonicalize(path)
         .await
+        .map(|path| dunce::simplified(&path).to_path_buf())
         .unwrap_or_else(|_| path.to_path_buf())
 }
 

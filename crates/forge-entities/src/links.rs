@@ -1,4 +1,4 @@
-use forge_domain::Message;
+use forge_domain::{file_name, is_absolute_path, Message};
 
 use crate::highlight::escape_html;
 use crate::markdown::render_markdown;
@@ -12,17 +12,13 @@ pub fn known_paths(messages: &[Message]) -> Vec<String> {
             continue;
         }
         let path = ["file_path", "notebook_path"].iter().find_map(|key| call.input.get(*key).and_then(|value| value.as_str()));
-        if let Some(path) = path.filter(|path| path.starts_with('/')) {
+        if let Some(path) = path.filter(|path| is_absolute_path(path)) {
             if !paths.iter().any(|known| known == path) {
                 paths.push(path.to_string());
             }
         }
     }
     paths
-}
-
-fn file_name(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
 }
 
 /// `render_markdown`, with links to files. Each inline code span that names a known file, and each
@@ -74,7 +70,7 @@ fn link_known_code(html: &str, known: &[String]) -> String {
 }
 
 fn is_path_char(c: char) -> bool {
-    c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '+' | '@' | '~' | '/')
+    c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '+' | '@' | '~' | '/' | '\\')
 }
 
 // A path names a file when its last part is `stem.ext` with an extension of 1 to 8 letters or digits.
@@ -82,7 +78,7 @@ fn has_file_extension(path: &str) -> bool {
     if path.len() < 2 || path.contains("//") {
         return false;
     }
-    let name = path.rsplit('/').next().unwrap_or(path);
+    let name = file_name(path);
     match name.rsplit_once('.') {
         Some((stem, extension)) => !stem.is_empty() && (1..=8).contains(&extension.len()) && extension.chars().all(|c| c.is_ascii_alphanumeric()),
         None => false,
@@ -93,10 +89,16 @@ fn has_file_extension(path: &str) -> bool {
 // HTML-escaped, so a path never runs through `&`, `<`, `>` or a quote: those are not path characters.
 // A particle written straight after the extension (`/p/a.md를`) is not part of the path.
 fn cut_glued_suffix(run: &str) -> &str {
-    let name_start = run.rfind('/').map_or(0, |slash| slash + 1);
+    let name_start = run.rfind(['/', '\\']).map_or(0, |slash| slash + 1);
     let Some(dot) = run[name_start..].rfind('.').map(|offset| name_start + offset) else { return run };
     let extension_end = run[dot + 1..].find(|c: char| !c.is_ascii_alphanumeric()).map_or(run.len(), |offset| dot + 1 + offset);
     if extension_end > dot + 1 && run[extension_end..].chars().next().is_some_and(|c| !c.is_ascii()) { &run[..extension_end] } else { run }
+}
+
+// `C:\` or `C:/` at the start of `text`. Only a capital drive letter: `a:/x` in prose is not a path.
+fn starts_drive(text: &str) -> bool {
+    let mut chars = text.chars();
+    matches!((chars.next(), chars.next(), chars.next()), (Some(drive), Some(':'), Some('/' | '\\')) if drive.is_ascii_uppercase())
 }
 
 fn prose_paths(text: &str) -> Vec<(usize, usize)> {
@@ -104,8 +106,10 @@ fn prose_paths(text: &str) -> Vec<(usize, usize)> {
     let mut from = 0;
     let mut previous: Option<char> = None;
     for (index, c) in text.char_indices() {
-        if index >= from && c == '/' && previous.is_none_or(|before| !is_path_char(before) && before != ':') {
-            let run_end = text[index..].find(|ch: char| !is_path_char(ch)).map_or(text.len(), |offset| index + offset);
+        let starts_path = c == '/' || starts_drive(&text[index..]);
+        if index >= from && starts_path && previous.is_none_or(|before| !is_path_char(before) && before != ':') {
+            let skip = if c == '/' { 0 } else { 2 };
+            let run_end = text[index + skip..].find(|ch: char| !is_path_char(ch)).map_or(text.len(), |offset| index + skip + offset);
             let path = cut_glued_suffix(&text[index..run_end]).trim_end_matches('.');
             if has_file_extension(path) {
                 found.push((index, index + path.len()));
@@ -180,7 +184,7 @@ fn resolve_escaped<'a>(escaped_text: &str, known: &'a [String]) -> Option<&'a st
         let mut found = None;
         if let Some(position) = escaped_known.iter().position(|path| path == escaped_text) {
             found = Some(position);
-        } else if !escaped_text.contains('/') {
+        } else if !escaped_text.contains(['/', '\\']) {
             let matches: Vec<usize> = known.iter().enumerate().filter(|(_, path)| escape_html(file_name(path)) == escaped_text).map(|(index, _)| index).collect();
             if matches.len() == 1 {
                 found = Some(matches[0]);
@@ -338,5 +342,25 @@ mod tests {
         let html = render_markdown_linked("<script>x</script> `guide.md`", &known());
         assert!(!html.contains("<script"), "{html}");
         assert_eq!(render_markdown_linked("**hi**", &[]), crate::render_markdown("**hi**"));
+    }
+
+    #[test]
+    fn windows_paths_link_in_prose_and_in_known_code_spans() {
+        let html = render_markdown_linked("Saved C:\\work\\a.md and D:/x/b.rs now.", &[]);
+        assert!(html.contains("data-path=\"C:\\work\\a.md\""), "{html}");
+        assert!(html.contains("data-path=\"D:/x/b.rs\""), "{html}");
+        let html = render_markdown_linked("ratio a:/b.txt", &[]);
+        assert!(!html.contains("file-link"), "{html}");
+        let known = vec!["C:\\p\\src\\a.rs".to_string()];
+        let html = render_markdown_linked("see `a.rs`", &known);
+        assert!(html.contains("data-path=\"C:\\p\\src\\a.rs\""), "{html}");
+        let messages = [assistant(vec![call("Edit", json!({ "file_path": "C:\\p\\a.rs" }))])];
+        assert_eq!(known_paths(&messages), vec!["C:\\p\\a.rs".to_string()]);
+    }
+
+    #[test]
+    fn text_that_only_looks_like_a_drive_is_not_linked() {
+        let html = render_markdown_linked("see foo:/p/a.md or https://x.io/a.html", &[]);
+        assert!(!html.contains("file-link"), "{html}");
     }
 }
