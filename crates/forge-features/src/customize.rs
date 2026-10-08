@@ -190,6 +190,18 @@ impl Latest {
     }
 }
 
+/// How a plugin's version reads in a list: `v1.0.0` for a version number, and the first seven characters for a
+/// commit hash (a plugin from a Git marketplace is versioned by the commit it was taken from).
+pub fn version_label(version: &str) -> String {
+    let hex = version.len() >= 8 && version.bytes().all(|b| b.is_ascii_hexdigit());
+    let has_letter = version.bytes().any(|b| b.is_ascii_alphabetic());
+    if hex && has_letter {
+        version[..7].to_string()
+    } else {
+        format!("v{version}")
+    }
+}
+
 /// `2026-10-08T13:52:10.756Z` as `2026-10-08 13:52 UTC`; any other text is returned as it is.
 pub fn short_time(iso: &str) -> String {
     let b = iso.as_bytes();
@@ -384,5 +396,15 @@ mod tests {
         assert_eq!(short_time("2026-02-17T04:26:16.034Z"), "2026-02-17 04:26 UTC");
         assert_eq!(short_time("yesterday"), "yesterday", "anything else is shown as it is");
         assert_eq!(short_time(""), "");
+    }
+
+    #[test]
+    fn a_version_number_gets_a_v_and_a_commit_hash_is_cut_short() {
+        assert_eq!(version_label("1.0.0"), "v1.0.0");
+        assert_eq!(version_label("0.2.0-beta.1"), "v0.2.0-beta.1");
+        assert_eq!(version_label("b78ac49cdc6b"), "b78ac49", "plugins of a Git marketplace are versioned by commit");
+        assert_eq!(version_label("b78ac49cdc6b4d1e8f3a9b0c1d2e3f4a5b6c7d8e"), "b78ac49");
+        assert_eq!(version_label("20240101"), "v20240101", "a short run of digits is a version, not a hash");
+        assert_eq!(version_label("deadbeef"), "deadbee");
     }
 }

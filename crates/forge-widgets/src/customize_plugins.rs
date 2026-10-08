@@ -81,7 +81,7 @@ fn MineList(groups: Vec<PluginGroup>) -> Element {
                                     }
                                     div { class: "customize-desc", "{row.entry.description}" }
                                 }
-                                if let Some(version) = row.entry.version.clone() { div { class: "customize-meta", "v{version}" } }
+                                if let Some(version) = row.entry.version.clone() { div { class: "customize-meta", "{forge_features::version_label(&version)}" } }
                                 if busy != Busy::No { span { class: "spinner", title: if busy == Busy::Waiting { "Waiting…" } else { "Working…" } } }
                                 button {
                                     class: "icon-button",
@@ -206,7 +206,7 @@ fn PluginDetail(plugin: PluginEntry) -> Element {
                     h2 { "{plugin.name}" }
                     div { class: "hint",
                         "{group_title(&plugin.marketplace)}"
-                        if let Some(version) = plugin.version.clone() { " · v{version}" }
+                        if let Some(version) = plugin.version.clone() { " · {forge_features::version_label(&version)}" }
                     }
                 }
                 div { class: "customize-detail-action",
