@@ -6,13 +6,13 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::CardKind;
-use forge_entities::is_markdown;
+use forge_entities::has_rendered_view;
 use forge_features::{file_menu, group_hits, parse_files_query, split_hit, run_blocking, use_workspace, Banner, FileAction, FileTree, MenuTarget, FilesQuery, Panel};
 use forge_ports::{ContentHit, FilesPort, SearchOptions};
 
 use crate::context_menu::ContextMenu;
 use crate::files_editor::{use_editor_channel, use_editor_driver, FromPage};
-use crate::files_kinds::{FileKindView, TabKind};
+use crate::files_kinds::{FileKindView, RenderedView, TabKind};
 use crate::files_menu::FilesMenu;
 use crate::files_state::FilesCtx;
 use crate::files_tabs::{FilesTabs, TabView};
@@ -59,7 +59,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         tabs: use_signal(|| stored_tabs.clone()),
         kinds: use_signal(HashMap::new),
         docs: use_signal(HashMap::new),
-        markdown: use_signal(HashMap::new),
+        rendered: use_signal(HashMap::new),
         source: use_signal(|| stored_source.clone()),
         pending: use_signal(HashMap::new),
         confirm: use_signal(|| None),
@@ -69,7 +69,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         ready: use_signal(|| false),
         unavailable: use_signal(|| false),
     };
-    // The tabs and the markdown source set go to the store whenever they change, so they outlive the panel.
+    // The tabs and the source set go to the store whenever they change, so they outlive the panel.
     {
         let (tabs, source) = (ctx.tabs, ctx.source);
         use_effect(move || {
@@ -196,9 +196,9 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let tab_views: Vec<TabView> = ctx.tabs.read().tabs().iter().map(|tab| TabView { path: tab.path.clone(), preview: tab.preview }).collect();
     let unavailable = *ctx.unavailable.read();
     let is_text = kind.as_ref().is_some_and(TabKind::shows_editor);
-    let markdown_selected = is_text && selected.as_deref().is_some_and(is_markdown);
+    let rendered_selected = is_text && selected.as_deref().is_some_and(has_rendered_view);
     let source_on = selected.as_ref().is_some_and(|path| ctx.source.read().contains(path));
-    let shows_editor = is_text && !unavailable && (!markdown_selected || source_on);
+    let shows_editor = is_text && !unavailable && (!rendered_selected || source_on);
 
     let tools = rsx! {
         button {
@@ -210,7 +210,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             onclick: move |_| workspace.update_editor_prefs(|prefs| prefs.tree = !prefs.tree),
             "☰"
         }
-        if markdown_selected {
+        if rendered_selected {
             button {
                 class: "icon-button files-source-toggle",
                 r#type: "button",
@@ -377,10 +377,10 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             },
             None => rsx! { div { class: "dock-note", "Loading…" } },
         },
-        (Some(path), Some(TabKind::Text { .. })) if markdown_selected && !source_on => {
-            let html = ctx.markdown.read().get(path).cloned().unwrap_or_default();
-            rsx! { div { class: "changes-diff", div { class: "file-viewer file-markdown markdown", "aria-label": "{path}", dangerous_inner_html: "{html}" } } }
-        }
+        (Some(path), Some(TabKind::Text { .. })) if rendered_selected && !source_on => match ctx.rendered.read().get(path).cloned() {
+            Some(rendered) => rsx! { RenderedView { key: "{path}", rendered, path: path.clone() } },
+            None => rsx! { div { class: "dock-note", "Loading…" } },
+        },
         (Some(_), Some(TabKind::Text { .. })) => rsx! {},
         (Some(path), Some(other)) => {
             let (anyway_ctx, reveal_ctx) = (ctx.clone(), ctx.clone());
