@@ -28,7 +28,7 @@ fn failed(path: &Path, reason: impl std::fmt::Display) -> McpRegistryError {
     McpRegistryError::ListFailed(format!("{}: {}", path.display(), reason))
 }
 
-async fn read_optional(path: &Path) -> Result<Option<String>, McpRegistryError> {
+pub(crate) async fn read_optional(path: &Path) -> Result<Option<String>, McpRegistryError> {
     match tokio::fs::read_to_string(path).await {
         Ok(contents) => Ok(Some(contents)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -36,7 +36,7 @@ async fn read_optional(path: &Path) -> Result<Option<String>, McpRegistryError> 
     }
 }
 
-fn normalize_project_servers(parsed: Value) -> Result<HashMap<String, Value>, &'static str> {
+pub(crate) fn normalize_project_servers(parsed: Value) -> Result<HashMap<String, Value>, &'static str> {
     let Value::Object(mut top) = parsed else {
         return Err("expected a JSON object at the top level");
     };
@@ -80,7 +80,7 @@ async fn project_keys(project_path: &Path) -> Vec<String> {
 
 // Best-effort by design: a malformed `projects` value must never break the global listing, so a
 // parse failure here simply means "no local-scope servers".
-async fn local_servers(contents: &str, project_path: &Path) -> HashMap<String, Value> {
+pub(crate) async fn local_servers(contents: &str, project_path: &Path) -> HashMap<String, Value> {
     let Ok(parsed) = serde_json::from_str::<ProjectsClaudeJson>(contents) else {
         return HashMap::new();
     };

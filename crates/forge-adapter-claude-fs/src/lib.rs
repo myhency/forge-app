@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+mod connector_catalog;
 mod fork;
 mod sessions;
 mod skill_catalog;
@@ -12,6 +13,7 @@ mod trash;
 mod usage;
 mod usage_stats;
 
+pub use connector_catalog::ClaudeConnectorCatalogAdapter;
 pub use sessions::ClaudeSessionAdapter;
 pub use skill_catalog::ClaudeSkillCatalogAdapter;
 pub use skills::ClaudeSkillAdapter;
