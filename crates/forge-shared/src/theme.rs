@@ -25,6 +25,13 @@ mod tests {
     }
 
     #[test]
+    fn the_lightbox_sits_above_settings_and_the_search_palette() {
+        let lightbox = z_index(".lightbox-backdrop");
+        assert!(lightbox > z_index(".settings-backdrop"));
+        assert!(lightbox > z_index(".palette-backdrop"));
+    }
+
+    #[test]
     fn the_floating_dock_starts_below_the_chat_header_so_its_tools_stay_reachable() {
         assert!(rule(".dock-float .dock").contains("top: 64px"));
     }
@@ -86,6 +93,10 @@ mod tests {
             ".files-svg",
             ".files-svg-bar",
             ".files-icon",
+            ".lightbox-backdrop",
+            ".lightbox-image",
+            ".lightbox-close",
+            ".lightbox-caption",
             ".files-menu-sub",
             ".files-settings-menu",
             ".file-link",

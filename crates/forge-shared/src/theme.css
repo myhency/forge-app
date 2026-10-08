@@ -766,3 +766,9 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 }
 
 .files-icon { flex: none; align-self: center; color: var(--fg-muted); }
+.lightbox-backdrop { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: var(--bg-overlay); outline: none; cursor: zoom-out; }
+.lightbox-figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 80vw; }
+.lightbox-frame { position: relative; display: flex; }
+.lightbox-image { max-width: 80vw; max-height: calc(80vh - 40px); border-radius: 4px; }
+.lightbox-close { position: absolute; top: -30px; right: -30px; width: 26px; height: 26px; border: none; background: transparent; color: #fff; font: inherit; font-size: 24px; line-height: 1; cursor: pointer; }
+.lightbox-caption { max-width: 80vw; color: #fff; font-size: 14px; text-align: center; overflow-wrap: anywhere; }

@@ -66,7 +66,7 @@ pub use sidebar::{
     LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,
 };
 pub use terminal_tabs::{TabId, TerminalTabs};
-pub use workspace::{use_workspace, use_workspace_provider, Active, Workspace, WorkspaceServices};
+pub use workspace::{use_workspace, use_workspace_provider, Active, Picture, Workspace, WorkspaceServices};
 pub use blocking::run_blocking;
 pub use file_tree::{parse_files_query, FileTree, FilesQuery, TreeRow};
 pub use preview_tabs::{normalize_url, PreviewTabId, PreviewTabs};

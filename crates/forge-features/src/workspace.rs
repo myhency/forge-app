@@ -58,6 +58,15 @@ struct LiveEntry {
     view: Signal<LiveSessionView>,
 }
 
+/// A picture shown over the window by a click on a picture path in the chat.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Picture {
+    /// The session folder, which `FilesPort::read` takes as its root.
+    pub folder: PathBuf,
+    /// The picture's path inside the folder.
+    pub relative: String,
+}
+
 /// The UI-side session store: the sidebar's past sessions, the open sessions and the active one.
 /// It is `Copy` (every field is a signal), so event handlers can capture it freely.
 #[derive(Clone, Copy)]
@@ -78,6 +87,7 @@ pub struct Workspace {
     archived: Signal<Vec<ArchivedRef>>,
     docks: Signal<DockStates>,
     file_requests: Signal<HashMap<LiveSessionId, String>>,
+    lightbox: Signal<Option<Picture>>,
     cards: Signal<Cards>,
     files_stores: Signal<HashMap<LiveSessionId, FilesStore>>,
     queued_files: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
@@ -119,6 +129,7 @@ pub fn use_workspace_provider() -> Workspace {
             archived: Signal::new(Vec::new()),
             docks: Signal::new(DockStates::default()),
             file_requests: Signal::new(HashMap::new()),
+            lightbox: Signal::new(None),
             cards: Signal::new(Cards::default()),
             files_stores: Signal::new(HashMap::new()),
             queued_files: Signal::new(HashMap::new()),
@@ -494,7 +505,7 @@ impl Workspace {
 
     /// Opens a file in the session's Files panel. The path must be absolute and inside the session
     /// folder; anything else only sets a notice. The panel opens if it is closed and shows the file
-    /// once it is mounted.
+    /// once it is mounted. A picture opens in the lightbox instead.
     pub fn open_file(&self, id: LiveSessionId, absolute_path: String) {
         let Some(view) = self.live_view(id) else { return };
         let folder = view.read().project_path.clone();
@@ -503,6 +514,12 @@ impl Workspace {
             notice.set(Some("Only files inside the session folder can be opened here.".to_string()));
             return;
         };
+        // A picture opens in the lightbox over the window, not in the Files panel.
+        if forge_entities::preview_kind(&relative) == forge_entities::PreviewKind::Image {
+            let mut lightbox = self.lightbox;
+            lightbox.set(Some(Picture { folder, relative }));
+            return;
+        }
         self.change_dock(id, |dock| {
             if !dock.is_open(Panel::Files) {
                 dock.toggle(Panel::Files);
@@ -527,6 +544,16 @@ impl Workspace {
     pub fn clear_file_request(&self, id: LiveSessionId) {
         let mut requests = self.file_requests;
         requests.write().remove(&id);
+    }
+
+    /// The picture shown over the window, if any.
+    pub fn lightbox(&self) -> Option<Picture> {
+        self.lightbox.read().clone()
+    }
+
+    pub fn close_lightbox(&self) {
+        let mut lightbox = self.lightbox;
+        lightbox.set(None);
     }
 
     /// The cards (excerpts and comments) of this session that are not sent yet.
