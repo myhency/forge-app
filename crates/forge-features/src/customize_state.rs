@@ -1,8 +1,12 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use dioxus::prelude::*;
-use forge_application::{CatalogView, PluginCatalogUseCase};
+use forge_application::{CatalogView, PluginCatalogUseCase, SkillCatalogUseCase, SkillView, SkillsError};
+use forge_domain::SkillFile;
+use forge_ports::{FilePickerPort, FolderPickerPort};
 
+use crate::customize_skills::{SkillPane, SkillText};
 use crate::customize::{check_source, closes_detail, error_in_dialog, CustomizeMode, CustomizeTab, Job, JobQueue, Latest};
 use crate::workspace::WorkspaceServices;
 
@@ -21,6 +25,7 @@ pub enum Dialog {
     ManageMarketplaces,
     ConfirmUninstall(String),
     ConfirmRemoveMarketplace(String),
+    CreateSkill,
 }
 
 /// Whether a job about one plugin is running, waiting, or neither.
@@ -45,6 +50,19 @@ pub struct Customize {
     error: Signal<Option<String>>,
     dialog_error: Signal<Option<String>>,
     reads: Signal<Latest>,
+    skills_usecase: Signal<Arc<SkillCatalogUseCase>>,
+    folder_picker: Signal<Arc<dyn FolderPickerPort>>,
+    file_picker: Signal<Arc<dyn FilePickerPort>>,
+    project: Signal<Option<PathBuf>>,
+    skills: Signal<Option<SkillView>>,
+    skills_busy: Signal<bool>,
+    skill_dir: Signal<Option<PathBuf>>,
+    skill_pane: Signal<SkillPane>,
+    skill_files: Signal<Vec<SkillFile>>,
+    skill_file: Signal<Option<String>>,
+    skill_text: Signal<SkillText>,
+    skill_source: Signal<bool>,
+    file_reads: Signal<Latest>,
 }
 
 /// Creates the page state and provides it to every descendant. Call it in the page at the top of the tree.
@@ -63,6 +81,19 @@ pub fn use_customize_provider() -> Customize {
         error: Signal::new_in_scope(None, ScopeId::ROOT),
         dialog_error: Signal::new_in_scope(None, ScopeId::ROOT),
         reads: Signal::new_in_scope(Latest::default(), ScopeId::ROOT),
+        skills_usecase: Signal::new_in_scope(services.skill_catalog.clone(), ScopeId::ROOT),
+        folder_picker: Signal::new_in_scope(services.folder_picker.clone(), ScopeId::ROOT),
+        file_picker: Signal::new_in_scope(services.file_picker.clone(), ScopeId::ROOT),
+        project: Signal::new_in_scope(None, ScopeId::ROOT),
+        skills: Signal::new_in_scope(None, ScopeId::ROOT),
+        skills_busy: Signal::new_in_scope(false, ScopeId::ROOT),
+        skill_dir: Signal::new_in_scope(None, ScopeId::ROOT),
+        skill_pane: Signal::new_in_scope(SkillPane::Overview, ScopeId::ROOT),
+        skill_files: Signal::new_in_scope(Vec::new(), ScopeId::ROOT),
+        skill_file: Signal::new_in_scope(None, ScopeId::ROOT),
+        skill_text: Signal::new_in_scope(SkillText::Empty, ScopeId::ROOT),
+        skill_source: Signal::new_in_scope(false, ScopeId::ROOT),
+        file_reads: Signal::new_in_scope(Latest::default(), ScopeId::ROOT),
     });
     use_context_provider(move || customize);
     customize
@@ -73,8 +104,11 @@ pub fn use_customize() -> Customize {
 }
 
 impl Customize {
-    /// Called when the page appears: back to the list, then read the catalogue.
-    pub fn open_page(&self) {
+    /// Called when the page appears: back to the list, then read the catalogue. `project` is the
+    /// folder whose `.claude/skills` the Skills tab lists as well.
+    pub fn open_page(&self, project: Option<PathBuf>) {
+        let mut project_signal = self.project;
+        project_signal.set(project);
         let mut detail = self.detail;
         detail.set(None);
         let mut dialog = self.dialog;
@@ -86,9 +120,17 @@ impl Customize {
         self.reload();
     }
 
-    /// Reads the catalogue again. Pinned to the root scope so leaving the page does not cancel it.
+    /// Reads the catalogue (plugins, then the skills that depend on it) again. Pinned to the root
+    /// scope so leaving the page does not cancel it.
     pub fn reload(&self) {
+        self.read_all(None);
+    }
+
+    // `open` is a skill to show once the lists are fresh (one that was just added).
+    fn read_all(&self, open: Option<(String, PathBuf)>) {
         let usecase = (*self.usecase.peek()).clone();
+        let skills_usecase = (*self.skills_usecase.peek()).clone();
+        let project = self.project.peek().clone();
         let this = *self;
         let mut reads = self.reads;
         let token = reads.write().issue();
@@ -97,10 +139,29 @@ impl Customize {
                 Ok(view) => Loaded::Ready(view),
                 Err(error) => Loaded::Failed(error.to_string()),
             };
+            let skills = match &loaded {
+                Loaded::Ready(plugins) => Some(skills_usecase.skills(project.as_deref(), plugins).await),
+                _ => None,
+            };
             // A read that was overtaken by a newer one is dropped, so a stale list never replaces a fresh one.
             if this.reads.peek().is_latest(token) {
                 let mut view = this.view;
                 view.set(loaded);
+                match skills {
+                    Some(Ok(skills)) => {
+                        let mut slot = this.skills;
+                        slot.set(Some(skills));
+                    }
+                    Some(Err(error)) => {
+                        let mut slot = this.error;
+                        slot.set(Some(format!("Could not read the skills: {error}")));
+                    }
+                    None => {}
+                }
+                if let Some((id, path)) = open {
+                    this.open_skill(id, path);
+                    this.set_skill_pane(SkillPane::Files);
+                }
             }
         });
     }
@@ -150,6 +211,9 @@ impl Customize {
     pub fn close_detail(&self) {
         let mut detail = self.detail;
         detail.set(None);
+        // A file read that is still on its way has no screen to land on.
+        let mut reads = self.file_reads;
+        reads.write().issue();
     }
 
     pub fn dialog(&self) -> Option<Dialog> {
@@ -287,6 +351,200 @@ impl Customize {
         self.reload();
         if let Some(next) = next {
             self.start(next);
+        }
+    }
+
+    pub fn skills(&self) -> Option<SkillView> {
+        self.skills.read().clone()
+    }
+
+    pub fn skills_busy(&self) -> bool {
+        *self.skills_busy.read()
+    }
+
+    pub fn skill_pane(&self) -> SkillPane {
+        *self.skill_pane.read()
+    }
+
+    pub fn set_skill_pane(&self, pane: SkillPane) {
+        let mut current = self.skill_pane;
+        current.set(pane);
+    }
+
+    pub fn skill_files(&self) -> Vec<SkillFile> {
+        self.skill_files.read().clone()
+    }
+
+    pub fn skill_file(&self) -> Option<String> {
+        self.skill_file.read().clone()
+    }
+
+    pub fn skill_text(&self) -> SkillText {
+        self.skill_text.read().clone()
+    }
+
+    pub fn skill_source(&self) -> bool {
+        *self.skill_source.read()
+    }
+
+    pub fn set_skill_source(&self, source: bool) {
+        let mut current = self.skill_source;
+        current.set(source);
+    }
+
+    /// Opens a skill's detail (Overview) and starts reading its files; SKILL.md is selected first.
+    pub fn open_skill(&self, id: String, path: PathBuf) {
+        let mut detail = self.detail;
+        detail.set(Some(id));
+        self.set_skill_pane(SkillPane::Overview);
+        self.set_skill_source(false);
+        let mut dir = self.skill_dir;
+        dir.set(Some(path.clone()));
+        let mut files = self.skill_files;
+        files.set(Vec::new());
+        let mut file = self.skill_file;
+        file.set(None);
+        let mut text = self.skill_text;
+        text.set(SkillText::Empty);
+        let usecase = (*self.skills_usecase.peek()).clone();
+        let this = *self;
+        let mut reads = self.file_reads;
+        let token = reads.write().issue();
+        dioxus::core::spawn_forever(async move {
+            let listed = usecase.files(&path).await;
+            if !this.file_reads.peek().is_latest(token) {
+                return;
+            }
+            match listed {
+                Ok(listed) => {
+                    let has_skill_md = listed.iter().any(|file| file.relative == "SKILL.md");
+                    let mut files = this.skill_files;
+                    files.set(listed);
+                    if has_skill_md {
+                        this.select_skill_file("SKILL.md".to_string());
+                    }
+                }
+                Err(error) => {
+                    let mut text = this.skill_text;
+                    text.set(SkillText::Failed(error.to_string()));
+                }
+            }
+        });
+    }
+
+    /// Shows one file of the open skill.
+    pub fn select_skill_file(&self, relative: String) {
+        let Some(path) = self.skill_dir.peek().clone() else { return };
+        let mut file = self.skill_file;
+        file.set(Some(relative.clone()));
+        let mut text = self.skill_text;
+        text.set(SkillText::Loading);
+        let usecase = (*self.skills_usecase.peek()).clone();
+        let this = *self;
+        let mut reads = self.file_reads;
+        let token = reads.write().issue();
+        dioxus::core::spawn_forever(async move {
+            let result = usecase.read(&path, &relative).await;
+            if this.file_reads.peek().is_latest(token) {
+                let mut text = this.skill_text;
+                text.set(match result {
+                    Ok(content) => SkillText::Ready(content),
+                    Err(error) => SkillText::Failed(error.to_string()),
+                });
+            }
+        });
+    }
+
+    /// Switches a user or project skill on or off. The list is read again afterwards.
+    pub fn set_skill_enabled(&self, name: String, on: bool) {
+        let usecase = (*self.skills_usecase.peek()).clone();
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            if let Err(error) = usecase.set_enabled(&name, on).await {
+                let mut slot = this.error;
+                slot.set(Some(error.to_string()));
+            }
+            this.reload();
+        });
+    }
+
+    /// The Upload skill items: the system picker, then the copy. A cancelled picker does nothing.
+    pub fn upload_skill_folder(&self) {
+        self.upload(false);
+    }
+
+    pub fn upload_skill_zip(&self) {
+        self.upload(true);
+    }
+
+    fn upload(&self, zip: bool) {
+        if self.skills_busy() {
+            return;
+        }
+        let mut busy = self.skills_busy;
+        busy.set(true);
+        let usecase = (*self.skills_usecase.peek()).clone();
+        let folder_picker = (*self.folder_picker.peek()).clone();
+        let file_picker = (*self.file_picker.peek()).clone();
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            let outcome = if zip {
+                match file_picker.pick_files().await.into_iter().next() {
+                    None => None,
+                    Some(path) if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("zip")) => Some(usecase.add_zip(&path).await),
+                    Some(_) => Some(Err(SkillsError::Catalog(forge_ports::SkillCatalogError::Invalid("Choose a .zip file.".to_string())))),
+                }
+            } else {
+                match folder_picker.pick_folder().await {
+                    None => None,
+                    Some(path) => Some(usecase.add_folder(&path).await),
+                }
+            };
+            this.skill_added(outcome, false);
+        });
+    }
+
+    /// The Create dialog's button: writes the template, then opens the new skill on its Files tab.
+    pub fn create_skill(&self, name: &str, description: &str) {
+        if self.skills_busy() {
+            return;
+        }
+        let mut busy = self.skills_busy;
+        busy.set(true);
+        let mut dialog_error = self.dialog_error;
+        dialog_error.set(None);
+        let usecase = (*self.skills_usecase.peek()).clone();
+        let (name, description) = (name.to_string(), description.to_string());
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            let outcome = Some(usecase.create(&name, &description).await);
+            this.skill_added(outcome, true);
+        });
+    }
+
+    // The end of an upload or a create. A success shows the new skill; an error goes where the
+    // person is looking (the Create dialog's line, else the page bar).
+    fn skill_added(&self, outcome: Option<Result<forge_application::AddedSkill, SkillsError>>, from_dialog: bool) {
+        let mut busy = self.skills_busy;
+        busy.set(false);
+        match outcome {
+            None => {}
+            Some(Ok(added)) => {
+                if self.dialog() == Some(Dialog::CreateSkill) {
+                    self.close_dialog();
+                }
+                let mut tab = self.tab;
+                tab.set(crate::customize::CustomizeTab::Skills);
+                let mut mode = self.mode;
+                mode.set(crate::customize::CustomizeMode::Mine);
+                // The new skill opens on its Files tab, once the lists are fresh.
+                self.read_all(Some((added.id, added.path)));
+            }
+            Some(Err(error)) => {
+                let place = if from_dialog && self.dialog() == Some(Dialog::CreateSkill) { self.dialog_error } else { self.error };
+                let mut place = place;
+                place.set(Some(error.to_string()));
+            }
         }
     }
 }

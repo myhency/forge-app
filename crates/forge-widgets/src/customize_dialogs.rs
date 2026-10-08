@@ -25,6 +25,8 @@ pub fn CustomizeDialogs() -> Element {
                     Dialog::ManageMarketplaces => rsx! { ManageMarketplaces {} },
                     Dialog::ConfirmUninstall(id) => rsx! { ConfirmUninstall { id } },
                     Dialog::ConfirmRemoveMarketplace(name) => rsx! { ConfirmRemove { name } },
+                    // Drawn in Task 9 of the plan.
+                    Dialog::CreateSkill => rsx! {},
                 }
             }
         }

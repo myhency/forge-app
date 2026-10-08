@@ -13,7 +13,7 @@ const TABS: [(CustomizeTab, &str); 3] =
 #[component]
 pub fn CustomizePage() -> Element {
     let customize = use_customize();
-    use_hook(move || customize.open_page());
+    use_hook(move || customize.open_page(None));
     let tab = customize.tab();
     let mode = customize.mode();
     let mut add_menu = use_signal(|| false);
