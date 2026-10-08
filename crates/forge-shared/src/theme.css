@@ -808,6 +808,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .customize-meta { flex: none; color: var(--fg-muted); font-size: 12px; }
 .tag { padding: 1px 8px; border-radius: 6px; background: var(--bg-hover); color: var(--fg-muted); font-size: 12px; font-weight: 400; }
 .tag.off { border: 1px solid var(--border); background: transparent; }
+.tag.warn { background: var(--bg-hover); color: var(--fg); border: 1px solid var(--border); }
 .spinner { flex: none; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--fg); border-radius: 50%; animation: customize-spin 0.8s linear infinite; }
 @keyframes customize-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }

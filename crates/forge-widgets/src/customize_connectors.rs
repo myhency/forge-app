@@ -74,6 +74,29 @@ pub fn ConnectorsTab() -> Element {
     }
 }
 
+/// What went wrong on the way to the list but did not stop it: a project file that could not be read, and a
+/// plugin read that failed (the connectors of plugins are then missing). Shown above the list, not in a detail.
+#[component]
+pub fn ConnectorNotes() -> Element {
+    let customize = use_customize();
+    if customize.detail().is_some() {
+        return rsx! {};
+    }
+    let notes = customize.connectors().map(|view| view.snapshot.notes).unwrap_or_default();
+    let plugins_failed = match customize.view() {
+        Loaded::Failed(message) => Some(message),
+        _ => None,
+    };
+    rsx! {
+        for note in notes {
+            div { key: "{note}", class: "status-line error customize-wrap", "{note}" }
+        }
+        if let Some(message) = plugins_failed {
+            div { class: "status-line error customize-wrap", "The connectors of plugins are not shown: {message}" }
+        }
+    }
+}
+
 fn kind_tag(kind: ConnectorKind) -> &'static str {
     match kind {
         ConnectorKind::Stdio => "local",
@@ -104,6 +127,9 @@ fn ConnectorGroup(title: String, rows: Vec<ConnectorRow>) -> Element {
                                     "{row.entry.name}"
                                     span { class: "tag", "{kind_tag(row.entry.kind)}" }
                                     span { class: "tag", "{source_label(&row.entry.source)}" }
+                                    if let Some(tag) = customize.checked_tag(&row.entry.name) {
+                                        span { class: "tag warn", "{tag}" }
+                                    }
                                 }
                                 div { class: "customize-desc", "{row.entry.target}" }
                             }

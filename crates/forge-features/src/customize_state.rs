@@ -147,7 +147,14 @@ impl Customize {
         self.dismiss_error();
         let mut view = self.view;
         view.set(Loaded::Loading);
+        // The connectors of the project before are not this project's.
+        self.connectors.forget();
         self.reload();
+    }
+
+    /// The number of the current visit to the page.
+    pub(crate) fn visit_now(&self) -> u64 {
+        *self.visit.peek()
     }
 
     /// Reads the catalogue (plugins, then the skills that depend on it) again. Pinned to the root
@@ -167,6 +174,16 @@ impl Customize {
         let token = reads.write().issue();
         let visit = *self.visit.peek();
         dioxus::core::spawn_forever(async move {
+            // The connectors come from files: draw them before the plugin catalogue (a call to `claude`) is back.
+            // Only when there is nothing drawn yet; a list that is there is not swapped for one without plugins.
+            if this.connectors.view.peek().is_none() {
+                if let Ok(early) = connectors_usecase.connectors(project.as_deref(), &plugins_for_skills(&Loaded::Loading)).await {
+                    if this.reads.peek().is_latest(token) && this.connectors.view.peek().is_none() {
+                        let mut slot = this.connectors.view;
+                        slot.set(Some(early));
+                    }
+                }
+            }
             let loaded = match usecase.catalog().await {
                 Ok(view) => Loaded::Ready(view),
                 Err(error) => Loaded::Failed(error.to_string()),

@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use forge_features::{use_customize, use_workspace, CustomizeMode, CustomizeTab, Dialog};
 use forge_shared::{Button, ButtonKind};
 
-use crate::customize_connectors::ConnectorsTab;
+use crate::customize_connectors::{ConnectorNotes, ConnectorsTab};
 use crate::customize_dialogs::CustomizeDialogs;
 use crate::customize_plugins::PluginsTab;
 use crate::customize_skills::SkillsTab;
@@ -114,6 +114,9 @@ pub fn CustomizePage() -> Element {
                     "{message} "
                     Button { label: "Dismiss", onclick: move |_| customize.dismiss_error() }
                 }
+            }
+            if tab == CustomizeTab::Connectors {
+                ConnectorNotes {}
             }
             match tab {
                 CustomizeTab::Plugins => rsx! { PluginsTab {} },

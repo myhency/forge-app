@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use dioxus::prelude::*;
@@ -103,9 +104,25 @@ fn taken_names_for_add(view: Option<&ConnectorView>) -> Result<Vec<String>, Stri
     view.map(ConnectorView::taken_names).ok_or_else(|| "The connectors are still loading. Try again in a moment.".to_string())
 }
 
-/// Whether a connector that was just added is brought to the person: not when they have gone to another tab.
-fn shows_new_connector(tab: CustomizeTab) -> bool {
-    tab == CustomizeTab::Connectors
+/// Whether a connector that was just added is brought to the person: not when they have gone to another tab,
+/// and not when they have left the page and come back since the add began (`then` is the visit it began in).
+fn opens_new_connector(tab: CustomizeTab, then: u64, now: u64) -> bool {
+    tab == CustomizeTab::Connectors && then == now
+}
+
+/// The tag a list row carries for a connector that was checked earlier in this visit and is not fine.
+pub fn connection_tag(connection: &Connection) -> Option<&'static str> {
+    match connection {
+        Connection::NeedsSignIn => Some("needs sign-in"),
+        Connection::Failed(_) => Some("not connected"),
+        Connection::Connected | Connection::Unknown(_) => None,
+    }
+}
+
+/// Whether a running connector job holds this dialog open (its backdrop and Cancel do nothing until it ends).
+/// Other dialogs are not held by it.
+pub fn connector_dialog_busy(dialog: &Dialog, connectors_busy: bool) -> bool {
+    connectors_busy && matches!(dialog, Dialog::AddConnector | Dialog::ConfirmRemoveConnector(_))
 }
 
 /// The Connectors tab's own signals. Owned by the root scope like the rest of the page state.
@@ -116,6 +133,8 @@ pub(crate) struct Connectors {
     busy: Signal<bool>,
     connection: Signal<ConnectionState>,
     checks: Signal<Latest>,
+    /// What checks of this visit found, by name: the list shows a tag for one that is not fine.
+    checked: Signal<HashMap<String, Connection>>,
 }
 
 impl Connectors {
@@ -126,7 +145,16 @@ impl Connectors {
             busy: Signal::new_in_scope(false, ScopeId::ROOT),
             connection: Signal::new_in_scope(ConnectionState::Idle, ScopeId::ROOT),
             checks: Signal::new_in_scope(Latest::default(), ScopeId::ROOT),
+            checked: Signal::new_in_scope(HashMap::new(), ScopeId::ROOT),
         }
+    }
+
+    /// A new visit starts with nothing known about earlier checks, and no list of the project before.
+    pub(crate) fn forget(&self) {
+        let mut checked = self.checked;
+        checked.write().clear();
+        let mut view = self.view;
+        view.set(None);
     }
 
     pub(crate) fn usecase(&self) -> Arc<ConnectorCatalogUseCase> {
@@ -145,6 +173,11 @@ impl Customize {
 
     pub fn connection(&self) -> ConnectionState {
         self.connectors.connection.read().clone()
+    }
+
+    /// The tag for a connector that an earlier check of this visit found not fine.
+    pub fn checked_tag(&self, name: &str) -> Option<&'static str> {
+        self.connectors.checked.read().get(name).and_then(connection_tag)
     }
 
     /// A late answer of a check belongs to the connector that was open; leaving it drops the answer.
@@ -169,6 +202,10 @@ impl Customize {
         let this = *self;
         dioxus::core::spawn_forever(async move {
             let result = usecase.check(&name).await;
+            if let Ok(answer) = &result {
+                let mut checked = this.connectors.checked;
+                checked.write().insert(name.clone(), answer.clone());
+            }
             if this.connectors.checks.peek().is_latest(token) {
                 let mut connection = this.connectors.connection;
                 connection.set(match result {
@@ -208,15 +245,16 @@ impl Customize {
         self.set_dialog_error(None);
         let usecase = self.connectors.usecase();
         let this = *self;
+        let visit = self.visit_now();
         dioxus::core::spawn_forever(async move {
             let result = usecase.add(&draft, &taken).await;
-            this.connector_added(result);
+            this.connector_added(result, visit);
         });
     }
 
     // A success shows the new connector, but only to a person who is still on this tab. An error goes
     // where the person is looking: the Add dialog's line, else the page bar.
-    fn connector_added(&self, result: Result<AddedConnector, ConnectorsError>) {
+    fn connector_added(&self, result: Result<AddedConnector, ConnectorsError>, visit: u64) {
         let mut busy = self.connectors.busy;
         busy.set(false);
         match result {
@@ -224,7 +262,10 @@ impl Customize {
                 if self.dialog() == Some(Dialog::AddConnector) {
                     self.close_dialog();
                 }
-                if shows_new_connector(self.tab()) {
+                // A later check of a connector that was removed and added again must not carry the old answer.
+                let mut checked = self.connectors.checked;
+                checked.write().remove(&added.name);
+                if opens_new_connector(self.tab(), visit, self.visit_now()) {
                     self.set_mode(CustomizeMode::Mine);
                     self.read_all(None, Some(added.id));
                 } else {
@@ -244,6 +285,7 @@ impl Customize {
     /// The Remove dialog's button.
     pub fn remove_connector(&self, name: String) {
         if self.connectors_busy() {
+            self.set_dialog_error(Some("Another change to the connectors is still running. Try again in a moment.".to_string()));
             return;
         }
         let mut busy = self.connectors.busy;
@@ -258,6 +300,8 @@ impl Customize {
             let in_dialog = matches!(this.dialog(), Some(Dialog::ConfirmRemoveConnector(_)));
             match result {
                 Ok(()) => {
+                    let mut checked = this.connectors.checked;
+                    checked.write().remove(&name);
                     if in_dialog {
                         this.close_dialog();
                     }
@@ -293,6 +337,7 @@ mod tests {
     fn view() -> ConnectorView {
         ConnectorView {
             snapshot: ConnectorSnapshot {
+                notes: vec![],
                 connectors: vec![
                     entry("alpha", ConnectorSource::User, true, json!({"type": "http", "url": "https://sentry.example/mcp"})),
                     entry("beta", ConnectorSource::Project, true, json!({"command": "npx"})),
@@ -371,9 +416,27 @@ mod tests {
     }
 
     #[test]
-    fn a_new_connector_is_shown_only_to_a_person_who_is_still_on_the_connectors_tab() {
-        assert!(shows_new_connector(CustomizeTab::Connectors));
-        assert!(!shows_new_connector(CustomizeTab::Plugins));
-        assert!(!shows_new_connector(CustomizeTab::Skills));
+    fn a_new_connector_opens_only_for_a_person_who_is_still_on_the_connectors_tab_of_the_same_visit() {
+        assert!(opens_new_connector(CustomizeTab::Connectors, 3, 3));
+        assert!(!opens_new_connector(CustomizeTab::Connectors, 3, 4), "left the page and came back");
+        assert!(!opens_new_connector(CustomizeTab::Plugins, 3, 3));
+        assert!(!opens_new_connector(CustomizeTab::Skills, 3, 3));
+    }
+
+    #[test]
+    fn a_connector_checked_earlier_shows_a_tag_in_the_list_only_when_it_is_not_fine() {
+        assert_eq!(connection_tag(&Connection::NeedsSignIn), Some("needs sign-in"));
+        assert_eq!(connection_tag(&Connection::Failed("x".into())), Some("not connected"));
+        assert_eq!(connection_tag(&Connection::Connected), None);
+        assert_eq!(connection_tag(&Connection::Unknown("x".into())), None);
+    }
+
+    #[test]
+    fn only_the_dialogs_of_a_running_connector_job_hold_the_backdrop() {
+        assert!(connector_dialog_busy(&Dialog::AddConnector, true));
+        assert!(connector_dialog_busy(&Dialog::ConfirmRemoveConnector("a".into()), true));
+        assert!(!connector_dialog_busy(&Dialog::AddConnector, false));
+        assert!(!connector_dialog_busy(&Dialog::ManageMarketplaces, true));
+        assert!(!connector_dialog_busy(&Dialog::ConfirmUninstall("a".into()), true));
     }
 }

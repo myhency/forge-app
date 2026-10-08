@@ -171,7 +171,7 @@ mod tests {
         catalog
             .expect_snapshot()
             .withf(|project, _| project.as_deref() == Some(Path::new("/work")))
-            .returning(move |_, _| Ok(ConnectorSnapshot { connectors: vec![returned.clone()] }));
+            .returning(move |_, _| Ok(ConnectorSnapshot { connectors: vec![returned.clone()], notes: vec![] }));
         let (config, _) = memory_config(&["web"]);
         let view = use_case(catalog, MockMcpManagerPort::new(), config)
             .connectors(Some(Path::new("/work")), &plugin_view(&["p@m"], 1))
@@ -188,6 +188,7 @@ mod tests {
         let at = |name: &str, source| entry_from_config(name, source, true, &serde_json::json!({"command": "x"}));
         let view = ConnectorView {
             snapshot: ConnectorSnapshot {
+                notes: vec![],
                 connectors: vec![at("a", ConnectorSource::User), at("b", ConnectorSource::Project), at("c", ConnectorSource::Plugin { plugin_id: "p@m".into() })],
             },
             enabled: vec![],

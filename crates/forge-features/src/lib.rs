@@ -43,7 +43,7 @@ pub use file_menu::{file_menu, menu_height, submenu_opens_left, FileAction, Menu
 pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
-pub use customize_connectors::{connection_text, connector_groups, explore_connectors, find_connector, source_label, ConnectionState, ConnectorGroups, ConnectorRow};
+pub use customize_connectors::{connection_tag, connection_text, connector_dialog_busy, connector_groups, explore_connectors, find_connector, source_label, ConnectionState, ConnectorGroups, ConnectorRow};
 pub use customize_skills::{
     body_after_front_matter, explore_skills, highlighted_code, file_depth, file_leaf, find_skill, is_markdown_file, origin_label, set_skill_enabled_in, skill_groups,
     SkillGroups, SkillPane, SkillRow, SkillText,

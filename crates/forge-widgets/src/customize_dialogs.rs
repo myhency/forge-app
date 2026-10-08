@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::Marketplace;
-use forge_features::{use_customize, Busy, Dialog, Job, Loaded};
+use forge_features::{connector_dialog_busy, use_customize, Busy, Dialog, Job, Loaded};
 use forge_shared::{Button, ButtonKind};
 
 use crate::customize_connector_dialogs::{AddConnector, ConfirmRemoveConnector};
@@ -12,12 +12,13 @@ pub fn CustomizeDialogs() -> Element {
     let Some(dialog) = customize.dialog() else {
         return rsx! {};
     };
+    let dialog_for_click = dialog.clone();
     rsx! {
         div {
             class: "settings-backdrop",
             // While a marketplace is being added the dialog stays: its result (or its error) shows here.
             onclick: move |_| {
-                if !customize.adding_marketplace() && !customize.connectors_busy() {
+                if !customize.adding_marketplace() && !connector_dialog_busy(&dialog_for_click, customize.connectors_busy()) {
                     customize.close_dialog();
                 }
             },

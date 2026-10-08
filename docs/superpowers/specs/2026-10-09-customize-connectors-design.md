@@ -91,4 +91,14 @@ Review Focus items, and the tests that pin them: values with spaces, quotes, Kor
 
 - "Check connection" is shown only for connectors added by you (`ConnectorSource::checkable`): `claude mcp get <name>` finds project and local servers only from inside the project, and knows a plugin's server as `plugin:<plugin>:<name>`, so from here it would answer about the wrong server or none.
 - The Add button waits for the list (`taken_names_for_add`): without it a name used by a project or local connector could pass the duplicate check.
-- Known and left as they are: removing a name switches it off in the shared, name-keyed `enabled_mcp_servers` for every project; a token inside a URL or in stdio args is shown as written (only header and env values are treated as secret); the list does not draw until the plugin catalogue has been read; "needs sign-in" shows in the detail after a check, not as a tag in the list.
+- The minors of that review were then done (2026-10-09):
+  - A value echoed JSON-escaped is also taken out of CLI errors (`NewConnector::secrets`).
+  - `plugin.json` is link-checked like the other bundled files.
+  - An entry of `mcpServers` that is not an object is listed as unreadable; in a bare `.mcp.json` only objects count, because the top level may hold other keys.
+  - A project `.mcp.json` that cannot be read no longer stops the tab: the rest lists and a note above the list names the file (`ConnectorSnapshot.notes`).
+  - The list is drawn from files first; the plugin catalogue (a call to `claude`) fills in the plugin connectors after. A failed plugin read says so above the list.
+  - A connector that was added opens only in the visit it was added in; a new visit clears the list of the project before.
+  - Only the Add and Remove dialogs are held by a running connector job, and a Remove pressed while another change runs says so.
+  - A connector checked earlier in the visit with the answer "needs sign-in" or "not connected" carries that tag in the list.
+  - A token in an address (`user:password@`, a `token=`/`key=`/`secret=`/`auth=`/`sig=` query value) and a value after a flag such as `--api-key` are shown as `•••` in the list, the detail and the debug text.
+- Known and left as they are: removing a name switches it off in the shared, name-keyed `enabled_mcp_servers` for every project (the page only removes a user connector that wins its name in the project it shows, but it cannot know the other projects).
