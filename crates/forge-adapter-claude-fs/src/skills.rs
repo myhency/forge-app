@@ -32,7 +32,7 @@ fn is_block_scalar_marker(value: &str) -> bool {
     matches!(chars.next(), Some('>' | '|')) && chars.all(|c| matches!(c, '+' | '-' | '0'..='9'))
 }
 
-fn parse_frontmatter(contents: &str) -> Option<HashMap<String, String>> {
+pub(crate) fn parse_frontmatter(contents: &str) -> Option<HashMap<String, String>> {
     let contents = contents.strip_prefix('\u{feff}').unwrap_or(contents);
     let mut lines = contents.lines();
     if lines.next()?.trim_end() != "---" {
@@ -72,7 +72,7 @@ fn parse_frontmatter(contents: &str) -> Option<HashMap<String, String>> {
     None
 }
 
-async fn read_skill(path: &Path) -> Option<SkillDefinition> {
+pub(crate) async fn read_skill(path: &Path) -> Option<SkillDefinition> {
     let contents = tokio::fs::read_to_string(path).await.ok()?;
     let frontmatter = parse_frontmatter(&contents)?;
     let name = frontmatter.get("name").filter(|n| !n.is_empty())?.clone();
@@ -87,7 +87,7 @@ async fn read_skill(path: &Path) -> Option<SkillDefinition> {
     })
 }
 
-async fn collect_skills(
+pub(crate) async fn collect_skills(
     root: &Path,
     visited: &mut HashSet<PathBuf>,
     skills: &mut Vec<SkillDefinition>,

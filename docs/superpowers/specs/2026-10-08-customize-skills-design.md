@@ -26,7 +26,7 @@ From Round 13:
 3. **Detail** has no "connectors and tools" card (Forge cannot tell what a skill talks to), no version menu and no download icon.
 4. **Switch on a plugin skill** is disabled with the note "turned on and off with its plugin"; a user or project skill uses `enabled_skills`.
 5. Not built: create with Claude, screen recording, the row `⋮` menu, filter and sort, the dates.
-6. **Create** makes a `SKILL.md` template and opens the detail on the Files tab with an "Edit in Files panel" button (25A editor); there is no editor inside this page.
+6. **Create** makes a `SKILL.md` template and opens the detail on the Files tab with a "Show in folder" button (`Workspace::reveal`). The Files panel (25A) cannot be used: it only opens files inside a session's folder, and this page has no session. There is no editor inside this page.
 
 ## Design
 
