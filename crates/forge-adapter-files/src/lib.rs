@@ -15,7 +15,7 @@ const SEARCH_FILE_BYTES: u64 = 1024 * 1024;
 const HIT_TEXT_CHARS: usize = 200;
 // A long line keeps this much text before the match, so the match shows in a narrow list.
 const HIT_LEAD_CHARS: usize = 24;
-const IMAGE_TYPES: [(&str, &str); 8] = [
+const IMAGE_TYPES: [(&str, &str); 7] = [
     ("png", "image/png"),
     ("jpg", "image/jpeg"),
     ("jpeg", "image/jpeg"),
@@ -23,7 +23,6 @@ const IMAGE_TYPES: [(&str, &str); 8] = [
     ("webp", "image/webp"),
     ("bmp", "image/bmp"),
     ("ico", "image/x-icon"),
-    ("svg", "image/svg+xml"),
 ];
 
 /// Reads files under a root with `std::fs`. A path is resolved (symlinks included) and must stay
@@ -61,6 +60,10 @@ fn is_skipped(name: &str) -> bool {
 
 fn looks_binary(bytes: &[u8]) -> bool {
     bytes[..bytes.len().min(BINARY_SNIFF)].contains(&0)
+}
+
+fn is_pdf(path: &Path) -> bool {
+    path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
 }
 
 fn image_mime(path: &Path) -> Option<&'static str> {
@@ -109,6 +112,9 @@ impl FilesPort for LocalFiles {
             return Ok(FileContent::TooLarge);
         }
         let bytes = fs::read(&file).map_err(failed)?;
+        if is_pdf(&file) {
+            return Ok(FileContent::Pdf { bytes });
+        }
         if let Some(mime) = image_mime(&file) {
             return Ok(FileContent::Image { bytes, mime: mime.to_string() });
         }
@@ -374,13 +380,34 @@ mod tests {
     fn an_image_is_read_as_bytes_by_its_extension_in_any_case() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("a.PNG"), [0x89, b'P', b'N', b'G', 0]).unwrap();
-        fs::write(dir.path().join("v.svg"), "<svg/>").unwrap();
         let files = LocalFiles::new();
         assert_eq!(
             files.read(dir.path(), "a.PNG").unwrap(),
             FileContent::Image { bytes: vec![0x89, b'P', b'N', b'G', 0], mime: "image/png".to_string() }
         );
-        assert_eq!(files.read(dir.path(), "v.svg").unwrap(), FileContent::Image { bytes: b"<svg/>".to_vec(), mime: "image/svg+xml".to_string() });
+    }
+
+    #[test]
+    fn an_svg_is_read_as_text_so_its_source_can_be_shown() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("v.svg"), "<svg/>").unwrap();
+        let FileContent::Text { text, lossy, .. } = LocalFiles::new().read(dir.path(), "v.svg").unwrap() else { panic!("not text") };
+        assert_eq!(text, "<svg/>");
+        assert!(!lossy);
+    }
+
+    #[test]
+    fn a_pdf_is_read_as_bytes_by_its_extension_in_any_case() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.PDF"), b"%PDF-1.4\0\x01").unwrap();
+        assert_eq!(LocalFiles::new().read(dir.path(), "a.PDF").unwrap(), FileContent::Pdf { bytes: b"%PDF-1.4\0\x01".to_vec() });
+    }
+
+    #[test]
+    fn a_pdf_over_the_limit_is_too_large() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("big.pdf"), vec![0u8; READ_LIMIT + 1]).unwrap();
+        assert_eq!(LocalFiles::new().read(dir.path(), "big.pdf").unwrap(), FileContent::TooLarge);
     }
 
     #[test]

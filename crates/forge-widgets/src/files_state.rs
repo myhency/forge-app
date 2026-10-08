@@ -6,12 +6,12 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::LineRange;
-use forge_entities::{code_html, is_markdown, language_of, render_markdown};
+use forge_entities::{code_html, has_rendered_view, language_of};
 use forge_features::{normalize_newlines, run_blocking, Banner, EditorTabs, FileAction, Restore, TabDoc, Workspace};
 use forge_ports::{FileContent, FilesError, FilesPort, WriteError};
 
 use crate::files_editor::{editor_language, EditorHandle, FromPage};
-use crate::files_kinds::{kind_of, TabKind};
+use crate::files_kinds::{kind_of, render_for, Rendered, TabKind};
 
 // Highlighting a file larger than this would keep the UI busy, so the fallback shows plain text.
 const HIGHLIGHT_LIMIT: usize = 200_000;
@@ -25,7 +25,7 @@ pub enum Pending {
     Close,
     /// Write the text the page holds now and close the tab (Save on the close question).
     SaveAndClose,
-    /// A markdown tab goes back to its rendered view.
+    /// A tab with a rendered view goes back to it.
     Render,
     /// A tool call finished: re-read the file when the tab is clean and the disk changed.
     Refresh,
@@ -72,7 +72,7 @@ pub fn contents_to_copy(content: &FileContent) -> Result<String, String> {
     match content {
         FileContent::Text { text, .. } => Ok(text.clone()),
         FileContent::TooLarge => Err("The file is too large to copy".to_string()),
-        FileContent::Binary | FileContent::Image { .. } => Err("Only a text file can be copied".to_string()),
+        FileContent::Binary | FileContent::Image { .. } | FileContent::Pdf { .. } => Err("Only a text file can be copied".to_string()),
     }
 }
 
@@ -89,9 +89,9 @@ pub struct FilesCtx {
     pub tabs: Signal<EditorTabs>,
     pub kinds: Signal<HashMap<String, TabKind>>,
     pub docs: Signal<HashMap<String, TabDoc>>,
-    /// Rendered markdown of a markdown tab.
-    pub markdown: Signal<HashMap<String, String>>,
-    /// Markdown tabs shown as source (editable) instead of rendered.
+    /// The rendered view of a markdown, csv, html or svg tab.
+    pub rendered: Signal<HashMap<String, Rendered>>,
+    /// Tabs with a rendered view that show their source (editable) instead.
     pub source: Signal<HashSet<String>>,
     pub pending: Signal<HashMap<String, Pending>>,
     /// A tab with edits that cannot be saved on its own, and the text it holds, waiting for an answer.
@@ -123,8 +123,8 @@ impl FilesCtx {
     /// A search hit was clicked: show the file, then open the find bar on the line. The command waits
     /// behind the load in the page's queue; a tab that is not loaded yet keeps it until it shows.
     pub fn find_in_file(&self, path: &str, query: &str, options: forge_ports::SearchOptions, line: usize) {
-        // A markdown file opens rendered, which has no lines to find in: show its source.
-        if is_markdown(path) {
+        // A file with a rendered view opens rendered, which has no lines to find in: show its source.
+        if has_rendered_view(path) {
             let mut source = self.source;
             source.write().insert(path.to_string());
         }
@@ -192,11 +192,11 @@ impl FilesCtx {
         self.tabs.peek().selected().map(str::to_string)
     }
 
-    // Whether the editor in the page is what the tab shows: a text tab, and for markdown only in source mode.
+    // Whether the editor in the page is what the tab shows: a text tab, and for a file with a rendered view only in source mode.
     fn editor_visible(&self, path: &str) -> bool {
         !*self.unavailable.peek()
             && self.kinds.peek().get(path).is_some_and(TabKind::shows_editor)
-            && (!is_markdown(path) || self.source.peek().contains(path))
+            && (!has_rendered_view(path) || self.source.peek().contains(path))
     }
 
     /// Opens a file from the tree, a search hit or a link in the chat.
@@ -278,12 +278,12 @@ impl FilesCtx {
         }
     }
 
-    // The text of a file that was just read, line ends as `\n`: markdown is rendered, and the editor
-    // takes it when it is the selected tab's view.
+    // The text of a file that was just read, line ends as `\n`: a file with a rendered view is
+    // rendered, and the editor takes it when it is the selected tab's view.
     fn take_text(&self, path: &str, text: &str, read_only: bool, quiet: bool, dirty: bool) {
-        if is_markdown(path) {
-            let mut markdown = self.markdown;
-            markdown.write().insert(path.to_string(), render_markdown(text));
+        if let Some(view) = render_for(path, text) {
+            let mut rendered = self.rendered;
+            rendered.write().insert(path.to_string(), view);
         }
         if *self.unavailable.peek() {
             let language = if text.len() > HIGHLIGHT_LIMIT { "" } else { language_of(path) };
@@ -481,9 +481,10 @@ impl FilesCtx {
                 }
             }
             Pending::Render => {
-                if let Some(text) = text {
-                    let mut markdown = self.markdown;
-                    markdown.write().insert(key, render_markdown(&text));
+                let view = text.as_deref().and_then(|text| render_for(&key, text));
+                if let Some(view) = view {
+                    let mut rendered = self.rendered;
+                    rendered.write().insert(key, view);
                 }
             }
             Pending::Refresh => self.refresh(key, text),
@@ -598,11 +599,11 @@ impl FilesCtx {
     fn forget(&self, path: &str) {
         self.handle.forget(path);
         self.workspace.clear_draft(self.id, path);
-        let (mut kinds, mut docs, mut markdown, mut source, mut pending, mut fallback) =
-            (self.kinds, self.docs, self.markdown, self.source, self.pending, self.fallback);
+        let (mut kinds, mut docs, mut rendered, mut source, mut pending, mut fallback) =
+            (self.kinds, self.docs, self.rendered, self.source, self.pending, self.fallback);
         kinds.write().remove(path);
         docs.write().remove(path);
-        markdown.write().remove(path);
+        rendered.write().remove(path);
         source.write().remove(path);
         pending.write().remove(path);
         fallback.write().remove(path);
@@ -652,7 +653,7 @@ impl FilesCtx {
         tabs.write().reorder(from, to);
     }
 
-    /// The markdown `</>` button: source (editable) or rendered.
+    /// The `</>` button of a file with a rendered view: source (editable) or rendered.
     pub fn toggle_source(&self, path: &str) {
         let mut source = self.source;
         let is_source = source.peek().contains(path);
@@ -788,5 +789,6 @@ mod tests {
         assert!(contents_to_copy(&FileContent::Binary).is_err());
         assert!(contents_to_copy(&FileContent::TooLarge).is_err());
         assert!(contents_to_copy(&FileContent::Image { bytes: vec![1], mime: "image/png".into() }).is_err());
+        assert!(contents_to_copy(&FileContent::Pdf { bytes: vec![1] }).is_err());
     }
 }

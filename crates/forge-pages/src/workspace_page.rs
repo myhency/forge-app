@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, layout_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
 use forge_features::{refocus_workspace, use_settings_provider, use_window_width, use_workspace_provider, Active};
-use forge_widgets::{ChatWindow, NewSessionPanel, SearchPalette, SettingsOverlay, Sidebar};
+use forge_widgets::{ChatWindow, Lightbox, NewSessionPanel, SearchPalette, SettingsOverlay, Sidebar};
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
 /// the active session. The root also catches the session shortcuts.
@@ -15,7 +15,7 @@ pub fn WorkspacePage() -> Element {
     // and focus falls to <body>, which silences every shortcut until the next click. Give focus
     // back to the root — but only if nothing has it, so a composer the person is typing in keeps it.
     use_effect(move || {
-        let _ = (settings.is_open(), workspace.search_open(), workspace.active());
+        let _ = (settings.is_open(), workspace.search_open(), workspace.active(), workspace.lightbox().is_some());
         refocus_workspace();
     });
 
@@ -132,6 +132,7 @@ pub fn WorkspacePage() -> Element {
             }
             SettingsOverlay {}
             SearchPalette {}
+            Lightbox {}
         }
     }
 }

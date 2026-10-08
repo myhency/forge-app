@@ -337,3 +337,60 @@ Forge in the harness (window 1200 x 832 pt), a live session in `my-app` on the r
 - **Permission card with the Changes panel open (chat column about 420 pt):** the button row does not fit: `Always allow` and `Allow once` wrap to two lines, and the black `Allow once` button with its `⌄` is **cut off at the right edge of the column**. The message box's control row wraps and the stop button drops to its own line below. The diff header wraps (path on two lines, `new content` on two lines). The scroll-to-end arrow sits on top of the `Normal` tab.
 - **Question card (two questions, long English descriptions, panel open):** no height cap at all: the card is the whole chat column from the top bar (card top at 160 px of the 1387 px screenshot) down to where the message box begins, the message box is pushed to the bottom edge and its control row and send/stop button are below the window. The `1/2` chip, title, `×` are at the top, `Other` and `Skip` / `Next` at the bottom of a card that is as tall as its content; on a short window the footer would leave the window as well. There is no collapse button.
 - **Differences to the Claude app (see part 2 and 3):** Claude caps both cards at 60 % of the window height and scrolls only the diff/command/option list; stacks the three buttons vertically in a narrow column; has a collapse `⌄` on the question card.
+
+## Round 12: which files the right panel can show (2026-10-08)
+
+Same real app, session `hello.txt 파일 생성 및 읽기` under forge-observe. Eight sample files were made in `/private/tmp/forge-observe/samples/` (csv, json, pdf, ipynb, html, png, svg, aiff) and clicked once each in the Files panel tree. No message was sent. The panel was closed again; the sample files were left.
+
+Docs (code.claude.com/docs/en/desktop): "Click a file path in the chat or diff viewer to open it in the file pane. HTML, PDF, image, and video paths open in the Browser pane instead." The docs do not list other types.
+
+What the Files panel showed in the real app (all as an italic preview tab, file name row `samples / name`):
+
+| File | Tree icon | Panel body | `</>` toggle |
+|---|---|---|---|
+| `.csv` | table icon | rendered table: grey header row, grey cells with white gaps (same look as a markdown table) | yes, switches to source |
+| `.html` | globe icon | the page rendered inside the panel (red h1, a real button) | yes |
+| `.pdf` | plain file icon | the PDF drawn inline on a dark grey background, page at the top | no |
+| `.png` | image icon | the picture at its own size, centred | no |
+| `.svg` | image icon | drawn on a dark green background, zoom in, zoom out and fit buttons at the bottom right | yes |
+| `.json` | `</>` icon | source with syntax colours, NOT pretty printed (one line stays one line) | no |
+| `.ipynb` | plain file icon | raw JSON text, not a notebook view | no |
+| `.aiff` (audio) | plain file icon | "이 파일은 바이너리 데이터로 보이며 텍스트로 미리 볼 수 없습니다." with `Finder에서 보기` and `그래도 텍스트로 보기` | no |
+
+- Already in Forge (Plan 25): text editor, markdown rendered with `</>`, picture (png, jpg, gif, webp, svg as a plain image), the binary note with the same two buttons, too large note.
+- Not in Forge: csv table, html rendered, pdf, svg zoom bar and source toggle, a dark backdrop for pdf and svg.
+- Not seen: video (no sample made), a large csv, a pdf with many pages (scroll, page count, zoom), whether the html runs scripts or opens links, whether an image has zoom, what a click on a pdf path in the chat does (the docs say it opens the Browser pane, not the Files panel).
+
+### Round 12, part 2: PDF pages, big csv, html scripts and links (2026-10-08)
+
+Same session and folder. More samples were added to `samples/`: `multi.pdf` (12 pages), `big.csv` (5000 rows, 6 columns), `wide.csv` (40 columns), `script.html` (an inline script, a button, three links, a relative image and a relative stylesheet), `other.html`, `s.css`. No message was sent. Both link dialogs were cancelled.
+
+- **PDF with many pages:** all pages are stacked in one column, each page as wide as the panel, separated by a thick dark line; the mouse wheel scrolls through them. No page counter, no zoom control and no toolbar showed (not even on hover or while scrolling). Not tried: pinch or ⌘ zoom, text selection, a search in the PDF.
+- **Big csv:** the table shows only the first 500 rows, with a grey note above it: "처음 500개 행만 표시합니다. 더 보려면 소스로 전환하세요." (only the first 500 rows are shown; switch to the source to see more). Long cell text wraps, so a row can grow tall; a column that does not fit is cut at the right edge and the table scrolls sideways.
+- **Wide csv (40 columns):** the table keeps every column at its natural width and scrolls sideways; no wrapping of the header. The `</>` toggle stays at the right of the file-name row.
+- **`.css` file:** gets the `</>` icon in the tree (a code file), opens as text.
+- **HTML scripts:** run. `script.html` showed "script RAN" (an inline `<script>` changed the text) and the button's `onclick` changed its label to "clicked". So the page is live, not a static render.
+- **HTML relative resources:** a relative `<img src="pic.png">` showed a broken image icon and the `<link rel="stylesheet">` was not applied (the h1 stayed black). So files next to the html are NOT loaded; only what is inside the file works.
+- **HTML links:** a click on the relative link `other.html` opened a dialog "외부 링크 열기" ("You are leaving Claude to visit an external link") with the address `https://www.claudeusercontent.com/other.html`, buttons `취소` and `링크 열기` (so the page is shown from the `claudeusercontent.com` origin, and a relative link resolves against it). The external link opened the same dialog with `https://example.com/`. The `#anchor` link did nothing visible (the page was too short to scroll). No link navigated inside the panel.
+- **Not seen:** the chat path click (needs a message that names an html or pdf path; the docs say it opens the Browser pane, not the Files panel), video files, whether a pdf or an image can zoom.
+
+### Round 12, part 3: clicking a path in the chat (2026-10-08, one message sent with the user's OK)
+
+In the same throwaway session one message was sent: "도구는 쓰지 말고, 아래 세 경로를 백틱 없이 그대로 한 줄씩만 답해줘. <page.html> <doc.pdf> <pic.png>" (no tool). The reply listed the three absolute paths, each as a blue underlined link. A small grey "이번 세션에서 Claude는 어떤가요?" rating row showed under the reply (not touched). The cookie modal was closed with `나중에`; nothing else was chosen. Panels were closed again at the end.
+
+- **Click on the `.html` path:** opened the BROWSER pane (the globe icon in the title bar turned blue), not the Files panel. The Browser pane stacked UNDER the open Files panel in the same right-hand column (Files above, Browser below, each with its own header). The first time it showed the "사이트에 로그인 상태 유지" cookie modal (the one from Round 5). After `나중에` the pane showed a tab `page.html` (not italic) with `×` and `+`, a bar with back, forward, reload, a URL field holding the plain path `/private/tmp/forge-observe/samples/page.html`, and the element-picker icon at the right; the page was drawn under it (red "Hello HTML" and the button). Header icons: a layout icon, `⋮`, expand, close.
+- **Click on the `.pdf` path:** a new tab `doc.pdf` in the same Browser pane. It shows a full PDF viewer (the browser engine's own): a dark toolbar with a sidebar toggle, page box "1 / 1", zoom out and in, fit to page, rotate, draw/annotate, undo, redo, download, print and `⋮`; a thumbnail strip at the left (page 1 selected, its number under it) and the page at the right. So the same PDF has two looks: bare stacked pages in the Files panel, a full viewer in the Browser pane.
+- **Click on the `.png` path:** neither panel. A dark overlay (lightbox) covered the window with the picture in its middle (the red square), the absolute path as a white caption under it, and a white `×` at the top right of the picture. `×` closed it. So an image path in the chat opens a lightbox, which the docs do not say (they say the Browser pane).
+- **The Files tree and the chat path are different doors:** clicking the file in the Files tree (Round 12 part 1) gives the Files panel look (pdf bare, html in the panel); clicking its path in the chat gives the Browser pane look (pdf viewer, html with a URL bar).
+- **Not seen:** the `.mp4` path (no sample), `⋮` and the layout icon of the Browser pane, what the Browser pane does with a `.csv`, `.md` or `.svg` path in the chat, whether an image lightbox has zoom or arrows.
+
+### Round 12, part 4: csv, md, svg and png paths in the chat, and the image lightbox (2026-10-08, a second message sent with the user's OK)
+
+Same session. One more message with no tool: "아래 네 경로를 … <samples/data.csv> <README.md> <samples/pic.svg> <samples/pic.png>"; the reply gave four blue links.
+
+- **`.csv` path:** opens in the FILES panel, as an italic preview tab `data.csv` rendered as the table; the tree opens its folder and marks the file's row.
+- **`.md` path:** opens in the FILES panel, rendered (italic tab `README.md`), the tree row marked.
+- **`.svg` path:** opens in the BROWSER pane as a new tab `pic.svg` (white page, the picture at its own size at the top left, URL field with the path). Not the Files panel, unlike a click on the same file in the tree (that shows the dark-green zoom viewer).
+- **So the rule seen so far:** html, pdf, svg open in the Browser pane; csv and md open in the Files panel; png opens a lightbox. The Browser pane keeps its tabs while it is closed and opened again (`page.html`, `doc.pdf`, `pic.svg` were all still there).
+- **Image lightbox (png):** the mouse wheel does nothing. A click on the picture closes it. No zoom control showed (only the `×`). Keyboard zoom was not tried (the one attempt was a mistake, see below). Not seen: a larger picture, arrows between pictures.
+- **A mistake in this round, put right:** `claude_app.py key equal cmd` typed e, q, u, a, l with ⌘ (the script only knows a few key names and sent the rest as letters). In the real app that archived the session `hello.txt 파일 생성 및 읽기` (⌘A is archive, A in the session menu) and marked it unread (U); the app was not quit. Both were undone through the session's right click menu (`보관 해제`, `읽음으로 표시`) and the Status filter, which was switched to `보관됨` to look, was set back to `활성`. The script now exits with an error for an unknown multi letter key name.

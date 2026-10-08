@@ -79,5 +79,6 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 24 | Home dashboard and new-session composer (built) | PG-05, CMP-06 | Needed a new port `UsageStatsPort`; observation round 6 |
 | 25A | Files panel as an editor (built, checked in the real window) | PNL-04 | CodeMirror bundle, auto save and conflict banner, tabs; 25B line comments and 25C search and right click items next |
 | 26 | Responsive layout (built) | UI-01 | The user asked for it before any new feature; observation round 10 |
+| 28 | File previews (built) | PNL-04 | Spec `2026-10-08-file-previews-design.md`: csv, html, svg and pdf in the Files panel, tree icons, absolute path links, picture lightbox; observation round 12 |
 
 Plan 13's earlier candidates (packaging the app, chat view extras, trash restore, split panes) and Plan 12's deferred minors (spec §23.8) are not in this table; they are in the backlog under `OTH`.
