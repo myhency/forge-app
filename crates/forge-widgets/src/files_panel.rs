@@ -170,6 +170,9 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             let Some(card) = workspace.cards(id).into_iter().find(|c| c.id == card_id) else { return };
             let Ok(relative) = std::path::Path::new(&card.path).strip_prefix(&ctx.cwd) else { return };
             let key = relative.to_string_lossy().to_string();
+            // Keys use `/`; a Windows path comes with `\`, which on other systems is part of a name.
+            #[cfg(windows)]
+            let key = key.replace('\\', "/");
             ctx.open(key.clone());
             ctx.handle.focus_comment(&key, card_id);
         });

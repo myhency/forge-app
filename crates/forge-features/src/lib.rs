@@ -60,7 +60,7 @@ pub use search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
 pub use send_message::SendMessageBox;
 pub use settings::{use_settings, use_settings_provider, ExtensionKind, Settings, SettingsSection, SettingsStatus};
 pub use settings_draft::ConnectionDraft;
-pub use shortcut::{shortcut_allowed, shortcut_for, Shortcut};
+pub use shortcut::{command_held, command_pressed, shortcut_allowed, shortcut_for, Shortcut};
 pub use sidebar::{
     cycle_target, mark_archived, marker_for, menu_key_action, merge_sidebar, open_order, replace_project_sessions, ArchiveAction, DeleteAction, EntryKey,
     LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,

@@ -27,7 +27,7 @@ pub enum ManageSessionError {
     EmptyTitle,
     #[error("the title can be at most {max} characters")]
     TitleTooLong { max: usize },
-    #[error("Close the session first (⌘W) to delete it.")]
+    #[error("Close the session first ({}) to delete it.", forge_domain::KEY_CLOSE_SESSION)]
     SessionOpen,
     #[error("{0}")]
     Repository(#[from] SessionRepositoryError),
@@ -712,7 +712,7 @@ mod tests {
         assert!(matches!(result, Err(ManageSessionError::SessionOpen)));
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Close the session first (⌘W) to delete it."
+            format!("Close the session first ({}) to delete it.", forge_domain::KEY_CLOSE_SESSION)
         );
     }
 

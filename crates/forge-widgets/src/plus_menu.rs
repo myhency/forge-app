@@ -24,7 +24,7 @@ pub struct PlusRow {
 
 pub fn plus_rows() -> [PlusRow; 5] {
     [
-        PlusRow { label: "Add file or photo", action: PlusAction::AddFiles, shortcut: Some("⌘U"), submenu: false },
+        PlusRow { label: "Add file or photo", action: PlusAction::AddFiles, shortcut: Some(forge_domain::KEY_ADD_FILES), submenu: false },
         PlusRow { label: "Add folder", action: PlusAction::AddFolder, shortcut: None, submenu: false },
         PlusRow { label: "Slash commands", action: PlusAction::SlashCommands, shortcut: None, submenu: false },
         PlusRow { label: "Connectors", action: PlusAction::Connectors, shortcut: None, submenu: true },
@@ -224,6 +224,6 @@ mod tests {
 
     #[test]
     fn the_first_row_shows_the_command_u_shortcut() {
-        assert_eq!(plus_rows()[0].shortcut, Some("⌘U"));
+        assert_eq!(plus_rows()[0].shortcut, Some(forge_domain::KEY_ADD_FILES));
     }
 }

@@ -34,7 +34,7 @@ const CODE_EXTENSIONS: [&str; 30] = [
 
 // The extension in lower case; `None` for a name with no dot or with nothing before it.
 fn extension_of(path: &str) -> Option<String> {
-    let name = path.rsplit('/').next().unwrap_or(path);
+    let name = forge_domain::file_name(path);
     let (stem, extension) = name.rsplit_once('.')?;
     (!stem.is_empty() && !extension.is_empty()).then(|| extension.to_ascii_lowercase())
 }

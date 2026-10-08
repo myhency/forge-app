@@ -97,11 +97,11 @@ pub fn Sidebar() -> Element {
             div { class: "sidebar-top",
                 button {
                     class: "sidebar-search",
-                    title: "Search sessions (⌘K)",
+                    title: "Search sessions ({forge_domain::KEY_SEARCH})",
                     onclick: move |_| workspace.open_search(),
                     span { "⌕" }
                     span { "Search" }
-                    span { class: "keys", "⌘K" }
+                    span { class: "keys", "{forge_domain::KEY_SEARCH}" }
                 }
                 button {
                     class: "icon-button sidebar-hide",
@@ -190,7 +190,7 @@ pub fn Sidebar() -> Element {
                 button { class: "sidebar-footer-button", onclick: move |_| settings.open(),
                     span { "⚙" }
                     span { "Settings" }
-                    span { class: "keys", "⌘," }
+                    span { class: "keys", "{forge_domain::KEY_SETTINGS}" }
                 }
             }
         }

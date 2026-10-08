@@ -148,7 +148,7 @@ pub fn tool_kind(name: &str) -> ToolKind {
 }
 
 pub(crate) fn file_name(path: &str) -> String {
-    path.rsplit('/').next().filter(|name| !name.is_empty()).unwrap_or(path).to_string()
+    path.rsplit(['/', '\\']).next().filter(|name| !name.is_empty()).unwrap_or(path).to_string()
 }
 
 fn tool_row(call: &ToolCall) -> ToolRow {

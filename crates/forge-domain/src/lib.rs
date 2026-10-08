@@ -6,6 +6,8 @@ mod config;
 mod effort;
 mod extension;
 mod layout;
+mod keys;
+mod paths;
 mod permission;
 mod project;
 mod search;
@@ -21,6 +23,8 @@ pub use config::{
     MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
 };
 pub use effort::{AvailableModel, EffortLevel};
+pub use keys::{SHOW_IN_FILE_MANAGER, KEY_ADD_FILES, KEY_ALLOW_ALWAYS, KEY_ANSWER, KEY_CLOSE_SESSION, KEY_FIND, KEY_SEARCH, KEY_SETTINGS};
+pub use paths::{file_name, has_parent_part, is_absolute_path, path_parts};
 pub use layout::{
     keep_peek, layout_for, workspace_class, DockMode, Layout, SidebarMode, MIN_CHAT_WIDTH, MIN_WINDOW_WIDTH, NARROW_CHAT_BELOW, SIDEBAR_OVERLAY_UP_TO,
     SIDEBAR_RAIL_WIDTH,

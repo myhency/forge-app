@@ -49,8 +49,10 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
             onmounted: move |mounted| take_focus_unless_typing(mounted.data()),
             onkeydown: move |event: KeyboardEvent| {
                 let modifiers = event.modifiers();
-                let other = modifiers.intersects(Modifiers::CONTROL | Modifiers::ALT);
-                if let Some(key) = permission_key(&event.code().to_string(), modifiers.shift(), modifiers.meta(), other) {
+                let command = forge_features::command_held(modifiers);
+                // The command key is Ctrl off the Mac. Alt rules a key out, and so does the other of Ctrl and Meta (the Windows key).
+                let other = modifiers.alt() || ((modifiers.ctrl() || modifiers.meta()) && !command);
+                if let Some(key) = permission_key(&event.code().to_string(), modifiers.shift(), command, other) {
                     event.stop_propagation();
                     event.prevent_default();
                     decide_key(match key {
@@ -90,7 +92,7 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                     onclick: move |_| always(PermissionDecision::AllowAlways),
                     "Always allow"
                     span { class: "perm-key", "2" }
-                    span { class: "perm-key", "⇧⌘↩" }
+                    span { class: "perm-key", "{forge_domain::KEY_ALLOW_ALWAYS}" }
                 }
                 div { class: "perm-primary",
                     button {
@@ -99,7 +101,7 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                         onclick: move |_| once(PermissionDecision::AllowOnce),
                         "Allow once"
                         span { class: "perm-key", "3" }
-                        span { class: "perm-key", "⌘↩" }
+                        span { class: "perm-key", "{forge_domain::KEY_ANSWER}" }
                     }
                     button {
                         class: "perm-button primary perm-more",

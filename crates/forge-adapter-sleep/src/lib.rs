@@ -78,6 +78,58 @@ impl Drop for CaffeinateSleep {
     }
 }
 
+/// Keeps Windows awake while anyone holds it. `SetThreadExecutionState` belongs to the thread that
+/// calls it, so each holder has a thread that sets it and parks until the holder lets go; the
+/// state is reset when that thread ends, and Windows drops it if Forge itself dies.
+#[cfg(windows)]
+pub struct WindowsSleep {
+    held: Mutex<HashMap<u64, std::sync::mpsc::Sender<()>>>,
+}
+
+#[cfg(windows)]
+impl WindowsSleep {
+    pub fn new() -> Self {
+        Self { held: Mutex::new(HashMap::new()) }
+    }
+}
+
+#[cfg(windows)]
+impl Default for WindowsSleep {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(windows)]
+impl SleepPort for WindowsSleep {
+    fn hold(&self, key: u64) -> Result<(), String> {
+        use windows_sys::Win32::System::Power::{SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED};
+
+        let mut held = self.held.lock().unwrap();
+        if held.contains_key(&key) {
+            return Ok(());
+        }
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        std::thread::Builder::new()
+            .name("forge-keep-awake".to_string())
+            .spawn(move || {
+                // SAFETY: a plain Win32 call with flag constants.
+                unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) };
+                // Ends when the sender is dropped (a release, or Forge quitting).
+                let _ = released.recv();
+                unsafe { SetThreadExecutionState(ES_CONTINUOUS) };
+            })
+            .map_err(|error| format!("could not keep the PC awake: {error}"))?;
+        held.insert(key, release);
+        Ok(())
+    }
+
+    fn release(&self, key: u64) {
+        self.held.lock().unwrap().remove(&key);
+    }
+}
+
+#[cfg(unix)]
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -18,23 +18,26 @@ fn clean(path: &Path) -> Option<std::path::PathBuf> {
         return None;
     }
     let mut parts: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut prefix = std::ffi::OsString::new();
     for component in path.components() {
         match component {
-            Component::RootDir | Component::Prefix(_) | Component::CurDir => {}
+            Component::Prefix(drive) => prefix = drive.as_os_str().to_os_string(),
+            Component::RootDir | Component::CurDir => {}
             Component::ParentDir => {
                 parts.pop()?;
             }
             Component::Normal(part) => parts.push(part),
         }
     }
-    let mut cleaned = std::path::PathBuf::from("/");
+    // The drive stays: `C:\a` and `D:\a` are different folders.
+    let mut cleaned = std::path::PathBuf::from(if prefix.is_empty() { "/".into() } else { prefix.push("\\"); prefix });
     cleaned.extend(parts);
     Some(cleaned)
 }
 
 /// Whether the file is shown rendered by default: `.md` and `.markdown`, any case.
 pub fn is_markdown(path: &str) -> bool {
-    let name = path.rsplit('/').next().unwrap_or(path);
+    let name = forge_domain::file_name(path);
     match name.rsplit_once('.') {
         Some((stem, extension)) => !stem.is_empty() && matches!(extension.to_ascii_lowercase().as_str(), "md" | "markdown"),
         None => false,

@@ -66,6 +66,7 @@ struct ProjectsClaudeJson {
 async fn project_keys(project_path: &Path) -> Vec<String> {
     let resolved = tokio::fs::canonicalize(project_path)
         .await
+        .map(|path| dunce::simplified(&path).to_path_buf())
         .unwrap_or_else(|_| project_path.to_path_buf());
     let mut keys: Vec<String> = Vec::new();
     for path in [resolved.as_path(), project_path] {

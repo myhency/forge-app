@@ -41,12 +41,12 @@ fn failed(error: impl std::fmt::Display) -> FilesError {
 }
 
 fn resolve(root: &Path, relative: &str) -> Result<PathBuf, FilesError> {
-    let root = root.canonicalize().map_err(failed)?;
+    let root = dunce::canonicalize(root).map_err(failed)?;
     let relative = Path::new(relative);
     if relative.is_absolute() || relative.components().any(|part| matches!(part, Component::ParentDir)) {
         return Err(FilesError::Outside);
     }
-    let resolved = root.join(relative).canonicalize().map_err(failed)?;
+    let resolved = dunce::canonicalize(root.join(relative)).map_err(failed)?;
     if resolved.starts_with(&root) {
         Ok(resolved)
     } else {
@@ -160,7 +160,7 @@ impl FilesPort for LocalFiles {
     }
 
     fn search(&self, root: &Path, query: &str, options: SearchOptions, limit: usize) -> Result<Vec<ContentHit>, FilesError> {
-        let root = root.canonicalize().map_err(failed)?;
+        let root = dunce::canonicalize(root).map_err(failed)?;
         let mut hits = Vec::new();
         if query.is_empty() || limit == 0 {
             return Ok(hits);
@@ -297,6 +297,7 @@ fn search_dir(dir: &Path, prefix: &str, matcher: &Matcher, limit: usize, visited
 #[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
     use forge_ports::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, SearchOptions, WriteError, READ_LIMIT};
@@ -470,6 +471,7 @@ mod tests {
         assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "mine");
     }
 
+    #[cfg(unix)]
     #[test]
     fn write_leaves_no_temporary_file_and_keeps_the_permissions() {
         use std::os::unix::fs::PermissionsExt;
@@ -486,6 +488,7 @@ mod tests {
         assert_eq!(names, vec!["run.sh".to_string()], "the temporary file is gone");
     }
 
+    #[cfg(unix)]
     #[test]
     fn write_refuses_paths_that_leave_the_folder_and_says_why_a_missing_file_fails() {
         let dir = tree();
@@ -499,6 +502,7 @@ mod tests {
         assert!(matches!(files.write(dir.path(), "nope.txt", "x", None), Err(WriteError::Failed(_))));
     }
 
+    #[cfg(unix)]
     #[test]
     fn write_into_a_folder_that_cannot_be_written_is_a_message_and_keeps_the_old_text() {
         use std::os::unix::fs::PermissionsExt;
@@ -526,6 +530,7 @@ mod tests {
         assert_eq!(hits.iter().map(|hit| hit.path.as_str()).collect::<Vec<_>>(), vec!["small.txt"]);
     }
 
+    #[cfg(unix)]
     #[test]
     fn paths_that_leave_the_folder_are_refused() {
         let dir = tree();
@@ -561,6 +566,7 @@ mod tests {
         assert_eq!(hits, expected);
     }
 
+    #[cfg(unix)]
     #[test]
     fn search_stops_at_the_limit_and_ignores_an_empty_query_binary_files_and_symlinks() {
         let dir = tree();

@@ -33,10 +33,10 @@ pub fn valid_output_path(path: &str, task_id: &str) -> bool {
     if task_id.is_empty() || !task_id.chars().all(|c| c.is_ascii_alphanumeric()) {
         return false;
     }
-    if !path.starts_with('/') || path.contains('\0') || path.split('/').any(|part| part == "..") {
+    if !forge_domain::is_absolute_path(path) || path.contains('\0') || forge_domain::has_parent_part(path) {
         return false;
     }
-    path.ends_with(&format!("/tasks/{task_id}.output"))
+    path.replace('\\', "/").ends_with(&format!("/tasks/{task_id}.output"))
 }
 
 /// One card of the Tasks panel.
@@ -225,5 +225,12 @@ mod tests {
         assert_eq!(pill_label(1), "1 background task");
         assert_eq!(pill_label(2), "2 background tasks");
         assert_eq!(pill_label(0), "0 background tasks");
+    }
+
+    #[test]
+    fn a_windows_output_path_is_valid_and_a_parent_part_is_not() {
+        assert!(valid_output_path("C:\\Users\\me\\AppData\\Local\\Temp\\claude\\x\\tasks\\abc1.output", "abc1"));
+        assert!(!valid_output_path("C:\\Users\\..\\tasks\\abc1.output", "abc1"));
+        assert!(!valid_output_path("C:\\Users\\me\\other\\abc1.output", "abc1"));
     }
 }

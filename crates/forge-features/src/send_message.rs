@@ -88,7 +88,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                     draft.set(text);
                     return;
                 }
-                if event.code() == Code::KeyU && event.modifiers().meta() {
+                if event.code() == Code::KeyU && crate::command_held(event.modifiers()) {
                     event.prevent_default();
                     composer.add_files();
                 }

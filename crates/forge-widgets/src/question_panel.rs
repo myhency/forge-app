@@ -85,7 +85,7 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
                     skip_key();
                 } else if collapsed() {
                     // The options are hidden: their keys must not pick anything.
-                } else if matches!(code.as_str(), "Enter" | "NumpadEnter") && modifiers.meta() {
+                } else if matches!(code.as_str(), "Enter" | "NumpadEnter") && forge_features::command_held(modifiers) {
                     event.stop_propagation();
                     event.prevent_default();
                     advance_key();
@@ -146,7 +146,7 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
                             value: "{current.other}",
                             // The panel's number keys must not fire while the person types.
                             onkeydown: move |event: KeyboardEvent| {
-                                if event.code().to_string() != "Escape" && !event.modifiers().meta() {
+                                if event.code().to_string() != "Escape" && !forge_features::command_held(event.modifiers()) {
                                     event.stop_propagation();
                                 }
                             },
@@ -170,7 +170,7 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
                         disabled: !ready,
                         onclick: move |_| advance_button(),
                         if last { "Submit" } else { "Next" }
-                        span { class: "perm-key", "⌘↩" }
+                        span { class: "perm-key", "{forge_domain::KEY_ANSWER}" }
                     }
                 }
             }

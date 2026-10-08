@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+mod runtime;
+
 use dioxus::desktop::muda::{Menu, PredefinedMenuItem, Submenu};
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
@@ -13,7 +15,10 @@ use forge_adapter_sidecar::SidecarProcessFactory;
 use forge_adapter_browser::SystemBrowser;
 use forge_adapter_files::LocalFiles;
 use forge_adapter_git::GitCli;
+#[cfg(not(windows))]
 use forge_adapter_sleep::CaffeinateSleep;
+#[cfg(windows)]
+use forge_adapter_sleep::WindowsSleep;
 use forge_adapter_terminal::PtyTerminal;
 use forge_application::{ExtensionsUseCase, SessionRegistry, SettingsUseCase};
 use forge_features::WorkspaceServices;
@@ -138,8 +143,7 @@ fn build_services() -> WorkspaceServices {
     .expect("could not resolve the home directory");
     let config_path = config_path(std::env::var_os("FORGE_CONFIG_PATH"), default_config_path())
         .expect("could not resolve the config directory");
-    let node = std::env::var("FORGE_NODE").unwrap_or_else(|_| "node".to_string());
-    let script = std::env::var("FORGE_SIDECAR_SCRIPT").unwrap_or_else(|_| DEFAULT_SIDECAR_SCRIPT.to_string());
+    let runtime::Runtime { node, script } = runtime::locate_here(DEFAULT_SIDECAR_SCRIPT);
 
     let config = Arc::new(ConfigFileAdapter::new(config_path));
     let factory = Arc::new(SidecarProcessFactory::new(node, script, config.clone()));
@@ -158,7 +162,7 @@ fn build_services() -> WorkspaceServices {
     let projects = Arc::new(ClaudeProjectAdapter::new(claude_home.clone()));
     let registry = Arc::new(SessionRegistry::new(factory, sessions.clone(), extensions.clone()).with_warm_up());
     let picker = Arc::new(RfdFolderPicker::new());
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    let shell = default_shell(std::env::var("SHELL").ok());
     WorkspaceServices {
         registry,
         projects,
@@ -168,12 +172,28 @@ fn build_services() -> WorkspaceServices {
         folder_picker: picker.clone(),
         file_picker: picker,
         terminal: Arc::new(PtyTerminal::new(shell)),
-        sleep: Arc::new(CaffeinateSleep::new()),
+        sleep: keep_awake(),
         git: Arc::new(GitCli::new()),
         files: Arc::new(LocalFiles::new()),
         browser: Arc::new(SystemBrowser::new()),
         usage_stats: Arc::new(ClaudeUsageStatsAdapter::new(claude_home.clone())),
     }
+}
+
+// The shell of the terminal panel: the person's own on macOS and Linux; PowerShell, which every
+// Windows 11 has, on Windows.
+fn default_shell(login_shell: Option<String>) -> String {
+    if cfg!(windows) {
+        return "powershell.exe".to_string();
+    }
+    login_shell.filter(|shell| !shell.is_empty()).unwrap_or_else(|| "/bin/zsh".to_string())
+}
+
+fn keep_awake() -> Arc<dyn forge_ports::SleepPort> {
+    #[cfg(windows)]
+    return Arc::new(WindowsSleep::new());
+    #[cfg(not(windows))]
+    return Arc::new(CaffeinateSleep::new());
 }
 
 #[component]
@@ -189,6 +209,21 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_terminal_runs_the_login_shell_or_zsh() {
+        assert_eq!(default_shell(Some("/bin/bash".into())), "/bin/bash");
+        assert_eq!(default_shell(Some(String::new())), "/bin/zsh");
+        assert_eq!(default_shell(None), "/bin/zsh");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_terminal_runs_powershell_whatever_shell_is_set() {
+        assert_eq!(default_shell(Some("C:\\Git\\bin\\bash.exe".into())), "powershell.exe");
+        assert_eq!(default_shell(None), "powershell.exe");
+    }
 
     fn paths(override_home: Option<&str>) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
         claude_paths(
