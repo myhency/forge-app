@@ -781,6 +781,7 @@ impl Workspace {
     }
 
     pub fn show_new_session(&self) {
+        self.close_lightbox();
         let mut active = self.active;
         active.set(Active::NewSession);
     }
@@ -835,6 +836,7 @@ impl Workspace {
     }
 
     pub fn select(&self, id: LiveSessionId) {
+        self.close_lightbox();
         let mut active = self.active;
         active.set(Active::Live(id));
     }

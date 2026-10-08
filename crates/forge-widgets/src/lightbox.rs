@@ -45,15 +45,19 @@ fn LightboxBody(picture: Picture) -> Element {
             class: "lightbox-backdrop",
             tabindex: "0",
             role: "dialog",
+            "aria-modal": "true",
             "aria-label": "Picture",
             onmounted: move |mounted| async move {
                 let _ = mounted.set_focus(true).await;
             },
             onclick: move |_| workspace.close_lightbox(),
             onkeydown: move |event: KeyboardEvent| {
+                // Nothing behind the picture takes keys while it is shown.
+                event.stop_propagation();
                 if event.key() == Key::Escape {
-                    event.stop_propagation();
                     workspace.close_lightbox();
+                } else if event.key() == Key::Tab {
+                    event.prevent_default();
                 }
             },
             if let Some(data_url) = data_url {

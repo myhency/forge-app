@@ -664,10 +664,12 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .files-csv { overflow: auto; }
 .files-csv table { width: max-content; min-width: 100%; }
 .files-csv td { max-width: 320px; overflow-wrap: anywhere; }
-.files-csv-note { margin: 0 0 8px; color: var(--fg-muted); font-size: 12px; }
+.files-csv-note { margin: 0 0 8px; font-family: var(--font); color: var(--fg-muted); font-size: 12px; white-space: normal; }
 .files-svg { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: #2b2b2b; }
 .files-svg-stage { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
 .files-svg-bar { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 4px; padding: 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.85); }
+.files-svg-bar .icon-button { color: #3a3a3a; }
+.files-svg-bar .icon-button:hover { background: rgba(0,0,0,0.08); color: #000; }
 .files-settings-menu { position: fixed; bottom: auto; right: auto; min-width: 230px; }
 .files-menu-row { position: relative; }
 .files-menu-sub { position: absolute; top: 0; right: calc(100% + 4px); left: auto; bottom: auto; min-width: 90px; }

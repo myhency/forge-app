@@ -52,7 +52,7 @@ def make_pdf(pages):
 
 
 HTML = (
-    '<!doctype html><html><body><h1>Hello HTML</h1><p id="out">script has not run</p>'
+    '<!doctype html><html><body><h1>Hello HTML</h1><p id="out">script has not run</p><p>static text shows</p>'
     "<script>document.getElementById('out').textContent='script RAN';</script>"
     '<a href="https://example.com">link</a></body></html>\n'
 )

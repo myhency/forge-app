@@ -97,23 +97,26 @@ pub fn RenderedView(rendered: Rendered, path: String) -> Element {
             }
         },
         Rendered::Csv(table) => rsx! { CsvView { table, path } },
-        // No `allow-same-origin`, popups, forms or top navigation: a page can run its own script and
-        // nothing else, and a link in it goes nowhere.
+        // An empty sandbox: no scripts, no same-origin, popups, forms or top navigation. A link in the
+        // page goes nowhere.
         Rendered::Html(source) => rsx! {
-            iframe { class: "files-html", title: "{path}", srcdoc: "{source}", "sandbox": "allow-scripts" }
+            iframe { class: "files-html", title: "{path}", srcdoc: "{source}", "sandbox": HTML_SANDBOX }
         },
         Rendered::Svg(data_url) => rsx! { SvgView { data_url, path } },
     }
 }
 
+/// The html frame's sandbox: nothing allowed. Scripts are off because every frame of the web view can reach the app's IPC handler.
+pub const HTML_SANDBOX: &str = "";
+
 #[component]
 fn CsvView(table: CsvTable, path: String) -> Element {
     rsx! {
         div { class: "changes-diff",
+            if table.truncated {
+                p { class: "files-csv-note", "Only the first {CSV_ROW_LIMIT} rows are shown. Switch to the source to see the rest." }
+            }
             div { class: "file-viewer file-markdown markdown files-csv", "aria-label": "{path}",
-                if table.truncated {
-                    p { class: "files-csv-note", "Only the first {CSV_ROW_LIMIT} rows are shown. Switch to the source to see the rest." }
-                }
                 table {
                     thead {
                         tr {
@@ -208,6 +211,11 @@ mod tests {
     use forge_ports::FileVersion;
 
     use super::*;
+
+    #[test]
+    fn the_html_frame_allows_nothing() {
+        assert_eq!(HTML_SANDBOX, "");
+    }
 
     fn version() -> FileVersion {
         FileVersion { modified_ns: 1, len: 1 }

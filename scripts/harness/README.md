@@ -14,7 +14,7 @@ so the real `~/.claude` and the real Forge config are never read or written. The
 `my-app` and the missing `my_app` (one Claude directory, two headings), and `a/app` and `b/app`
 (headings `app (a)` and `app (b)`).
 
-`FORGE_HARNESS_EXTRA=scripts/harness/add_preview_samples.py scripts/harness/launch.sh` also writes preview samples (csv, html, svg, png, pdf) into `my-app/samples/` and a reply in the session "Read the config" that names five of them by absolute path.
+`FORGE_HARNESS_EXTRA=scripts/harness/add_preview_samples.py scripts/harness/launch.sh` also writes preview samples (csv, html, svg, png, pdf) into `my-app/samples/` and a reply in the session "Read the config" that names five of them by absolute path. The html sample shows "script has not run" because scripts are off in the html frame.
 
 `click.py` takes pixels of the PNG file. An image viewer may show it scaled down (the viewer says by how
 much); multiply the coordinates you read off by that factor.

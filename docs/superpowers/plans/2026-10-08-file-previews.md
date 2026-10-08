@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - A csv table shows at most 500 data rows (`CSV_ROW_LIMIT = 500`); over that a note shows above it. The first record is the header.
-- An html file renders in `<iframe srcdoc sandbox="allow-scripts">` and nothing else is allowed in the sandbox: no `allow-same-origin`, `allow-popups`, `allow-top-navigation`, `allow-forms`.
+- An html file renders in `<iframe srcdoc sandbox="">` (no scripts and nothing else allowed; see spec Deviation 5).
 - `READ_LIMIT` (10 MiB) stays the cap for every read; a PDF over it is `TooLarge`.
 - html, pdf and svg paths clicked in the chat open in the Files panel (a chosen deviation); only picture paths (png, jpg, jpeg, gif, webp, bmp, ico) open the lightbox.
 - A bare absolute path is linked only when it starts with `/`, has no space, is not preceded by a letter, digit, `/`, `:`, `.`, `~`, `-`, `_`, `+` or `@`, and ends in an extension of 1 to 8 ASCII letters or digits. Trailing `.` is cut. Paths inside `code`, `pre` and `a` are never linked.
@@ -995,7 +995,7 @@ pub fn RenderedView(rendered: Rendered, path: String) -> Element {
         // No `allow-same-origin`, popups, forms or top navigation: a page can run its own script and
         // nothing else, and a link in it goes nowhere.
         Rendered::Html(source) => rsx! {
-            iframe { class: "files-html", title: "{path}", srcdoc: "{source}", "sandbox": "allow-scripts" }
+            iframe { class: "files-html", title: "{path}", srcdoc: "{source}", "sandbox": HTML_SANDBOX }
         },
         Rendered::Svg(data_url) => rsx! { SvgView { data_url, path } },
     }
@@ -1847,7 +1847,7 @@ Open the session "Read the config" (group `my-app`), then open the Files panel f
 1. Tree: `big.csv`, `data.csv` show a table icon; `page.html` a globe; `pic.png` and `pic.svg` a picture; `data.json` the `</>` icon; `doc.pdf` and `multi.pdf` a plain page.
 2. `data.csv` opens as a table with a grey header; the `</>` button shows its source; clicking it again shows the table; edit a cell in the source, toggle back: the table shows the new text.
 3. `big.csv` shows 500 rows and the note "Only the first 500 rows are shown. Switch to the source to see the rest."
-4. `page.html` shows "script RAN" in the frame; the link in it does nothing; `</>` shows the source.
+4. `page.html` shows "script has not run" in the frame; the link in it does nothing; `</>` shows the source.
 5. `pic.svg` is drawn on a dark backdrop; `+`, `−` and `⤢` change the size; `</>` shows the source.
 6. `doc.pdf` and `multi.pdf` show the PDF viewer on a dark backdrop; `multi.pdf` scrolls to page 12.
 7. In the chat, the five paths in the last reply are links. A click on `data.csv` shows the table in the Files panel; `page.html`, `doc.pdf` and `pic.svg` open in the Files panel; `pic.png` opens the lightbox with the path under the picture; `×`, a click and Escape each close it.

@@ -15,7 +15,7 @@ pub fn WorkspacePage() -> Element {
     // and focus falls to <body>, which silences every shortcut until the next click. Give focus
     // back to the root — but only if nothing has it, so a composer the person is typing in keeps it.
     use_effect(move || {
-        let _ = (settings.is_open(), workspace.search_open(), workspace.active());
+        let _ = (settings.is_open(), workspace.search_open(), workspace.active(), workspace.lightbox().is_some());
         refocus_workspace();
     });
 

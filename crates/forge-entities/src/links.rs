@@ -91,6 +91,14 @@ fn has_file_extension(path: &str) -> bool {
 
 // The byte ranges of the absolute file paths in one text node of the markdown HTML. The text is
 // HTML-escaped, so a path never runs through `&`, `<`, `>` or a quote: those are not path characters.
+// A particle written straight after the extension (`/p/a.md를`) is not part of the path.
+fn cut_glued_suffix(run: &str) -> &str {
+    let name_start = run.rfind('/').map_or(0, |slash| slash + 1);
+    let Some(dot) = run[name_start..].rfind('.').map(|offset| name_start + offset) else { return run };
+    let extension_end = run[dot + 1..].find(|c: char| !c.is_ascii_alphanumeric()).map_or(run.len(), |offset| dot + 1 + offset);
+    if extension_end > dot + 1 && run[extension_end..].chars().next().is_some_and(|c| !c.is_ascii()) { &run[..extension_end] } else { run }
+}
+
 fn prose_paths(text: &str) -> Vec<(usize, usize)> {
     let mut found = Vec::new();
     let mut from = 0;
@@ -98,7 +106,7 @@ fn prose_paths(text: &str) -> Vec<(usize, usize)> {
     for (index, c) in text.char_indices() {
         if index >= from && c == '/' && previous.is_none_or(|before| !is_path_char(before) && before != ':') {
             let run_end = text[index..].find(|ch: char| !is_path_char(ch)).map_or(text.len(), |offset| index + offset);
-            let path = text[index..run_end].trim_end_matches('.');
+            let path = cut_glued_suffix(&text[index..run_end]).trim_end_matches('.');
             if has_file_extension(path) {
                 found.push((index, index + path.len()));
             }
@@ -298,6 +306,18 @@ mod tests {
     fn a_path_with_an_ampersand_or_a_quote_is_cut_before_it() {
         assert!(!linked("/p/a&b.md").contains("file-link"));
         assert!(!linked("/p/a\"b.md").contains("file-link"));
+    }
+
+    #[test]
+    fn a_particle_glued_to_the_extension_is_not_part_of_the_path() {
+        let html = linked("/p/a.md를 열어 보세요");
+        assert!(html.contains(r#"data-path="/p/a.md""#) && html.contains("</span>를"), "{html}");
+        let html = linked("/p/보고서.md에");
+        assert!(html.contains(r#"data-path="/p/보고서.md""#), "{html}");
+        let html = linked("/p/v1.2/a.md를");
+        assert!(html.contains(r#"data-path="/p/v1.2/a.md""#), "{html}");
+        assert!(linked("(/p/a.md)").contains(r#"data-path="/p/a.md""#));
+        assert!(linked("see /p/a.md.").contains(r#"data-path="/p/a.md""#));
     }
 
     #[test]

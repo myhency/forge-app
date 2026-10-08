@@ -15,7 +15,7 @@ Opening a file from the Files tree (Round 12 part 1 and 2):
 | File | Body | `</>` toggle |
 |---|---|---|
 | csv | table (grey header and cells, white gaps); only the first 500 rows, with the note "처음 500개 행만 표시합니다. 더 보려면 소스로 전환하세요."; wide tables scroll sideways | yes |
-| html | rendered in the panel; inline scripts run; files next to it (images, css) do not load; links do nothing in the panel (the real app asks "외부 링크 열기") | yes |
+| html | rendered in the panel; scripts do not run (Deviation 5); files next to it (images, css) do not load; links do nothing in the panel (the real app asks "외부 링크 열기") | yes |
 | svg | drawn on a dark backdrop with zoom in, zoom out and fit buttons | yes |
 | pdf | pages stacked on a dark backdrop | no |
 | png, jpg, ... | the picture, centred | no |
@@ -32,10 +32,11 @@ A path in the chat (Round 12 part 3 and 4): any absolute path in a reply text is
 2. PDF in the Files panel uses the web view's own PDF viewer. It brings its own floating zoom, fit and download buttons, which the real app's Files panel does not show. Kept: it costs nothing and is the only way to scroll and zoom a PDF without a PDF library.
 3. HTML links do nothing (no "외부 링크 열기" dialog). A later plan can add the dialog.
 4. The lightbox also closes on Esc (the real app was not tried with Esc).
+5. **Deviation 5.** html scripts do not run: every frame of the web view can post to the app's IPC handler (checked in the real window: `window.webkit.messageHandlers.ipc` is an object inside `sandbox="allow-scripts"`), so a page's script could drive the app. A later plan can show html in a separate web view with no IPC handler.
 
 ## Spike (done, throwaway code removed)
 
-In the real Forge window (macOS web view, the same engine as the app): a PDF as a `data:application/pdf;base64` URL draws in both `<embed type="application/pdf">` and `<iframe>`, with the viewer's buttons. An HTML file in `<iframe sandbox="allow-scripts" srcdoc>` and as a `data:text/html` iframe both run an inline script; a relative image does not load; a click on a link in it does nothing in the panel. A 10 MB limit (`READ_LIMIT`) keeps data URLs small enough. Not tried: a PDF with many pages scrolled to the end, and whether a link click opens the system browser behind the window.
+In the real Forge window (macOS web view, the same engine as the app): a PDF as a `data:application/pdf;base64` URL draws in both `<embed type="application/pdf">` and `<iframe>`, with the viewer's buttons. An HTML file in `<iframe sandbox="allow-scripts" srcdoc>` and as a `data:text/html` iframe both ran an inline script (this is why Deviation 5 turns scripts off: the frame can also reach the app's IPC handler); a relative image does not load; a click on a link in it does nothing in the panel. A 10 MB limit (`READ_LIMIT`) keeps data URLs small enough. Not tried: a PDF with many pages scrolled to the end, and whether a link click opens the system browser behind the window.
 
 ## Design
 
@@ -56,7 +57,7 @@ Markdown already has a "rendered unless in `source` set" rule (`files_state.rs`:
 New widget `FileRendered { kind, text, path }` in `files_kinds.rs` chooses the body:
 
 - `Csv`: `forge-entities::csv::parse(text, 500) -> CsvTable { rows, total_rows, truncated }`, an RFC 4180 reader (quoted fields, doubled quotes, newlines inside quotes, CRLF, a BOM skipped). The first row is the header. A row shorter than the header is padded. Over 500 data rows the note shows above the table. The table uses the markdown table's colours.
-- `Html`: `<iframe srcdoc sandbox="allow-scripts">`. No `allow-same-origin`, `allow-popups`, `allow-top-navigation`, `allow-forms`. White background, fills the panel.
+- `Html`: `<iframe srcdoc sandbox="">`. An empty sandbox: no scripts, no `allow-same-origin`, `allow-popups`, `allow-top-navigation`, `allow-forms`. White background, fills the panel.
 - `Svg`: `<img src="data:image/svg+xml;base64,…">` in a scroll box on a dark backdrop, with three buttons (zoom in, zoom out, fit) that change a scale signal (step 1.25, range 0.1 to 8, fit = 1 and centred).
 - `Pdf`: `<embed type="application/pdf" src="data:…">` filling the panel on a dark backdrop (no `</>`).
 - `Markdown`: unchanged.
