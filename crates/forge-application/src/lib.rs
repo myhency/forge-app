@@ -19,4 +19,4 @@ pub use use_cases::{
     ResumeSessionError, ResumeSessionUseCase, SendMessageUseCase, SettingsUseCase,
     StartSessionUseCase, ToggleMcpServerUseCase, TogglePluginUseCase, ToggleSkillUseCase,
 };
-pub use use_cases::{CatalogView, PluginCatalogError, PluginCatalogUseCase};
+pub use use_cases::{CatalogView, ConfigLock, PluginCatalogError, PluginCatalogUseCase};

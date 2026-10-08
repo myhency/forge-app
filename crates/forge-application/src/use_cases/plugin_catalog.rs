@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use super::config_lock::ConfigLock;
+
 use forge_domain::{AppConfig, PluginSnapshot};
 use forge_ports::{ConfigError, ConfigRepositoryPort, PluginManagerError, PluginManagerPort};
 use thiserror::Error;
@@ -25,11 +27,18 @@ pub struct CatalogView {
 pub struct PluginCatalogUseCase {
     manager: Arc<dyn PluginManagerPort>,
     config: Arc<dyn ConfigRepositoryPort>,
+    lock: ConfigLock,
 }
 
 impl PluginCatalogUseCase {
     pub fn new(manager: Arc<dyn PluginManagerPort>, config: Arc<dyn ConfigRepositoryPort>) -> Self {
-        Self { manager, config }
+        Self { manager, config, lock: ConfigLock::default() }
+    }
+
+    /// Shares the lock the other config writers hold (see `ConfigLock`).
+    pub fn with_config_lock(mut self, lock: ConfigLock) -> Self {
+        self.lock = lock;
+        self
     }
 
     pub async fn catalog(&self) -> Result<CatalogView, PluginCatalogError> {
@@ -84,6 +93,7 @@ impl PluginCatalogUseCase {
 
     // Loads, edits and saves the list; saves only when it changed.
     async fn edit_enabled(&self, edit: impl FnOnce(&mut Vec<String>)) -> Result<(), PluginCatalogError> {
+        let _held = self.lock.hold().await;
         let mut config: AppConfig = self.config.load().await?;
         let before = config.enabled_plugins.clone();
         edit(&mut config.enabled_plugins);
@@ -224,5 +234,38 @@ mod tests {
         let (config, state, _) = memory_config(&["x@y@m", "a@m", "a@m2", "m"]);
         use_case(manager, config).remove_marketplace("m").await.unwrap();
         assert_eq!(state.lock().unwrap().enabled_plugins, ["a@m2", "m"]);
+    }
+
+    // A config repository whose load gives the other task a turn, so two unguarded load-edit-save
+    // sequences interleave the way two real writers can.
+    struct SlowConfig {
+        stored: StdMutex<AppConfig>,
+    }
+
+    #[async_trait::async_trait]
+    impl ConfigRepositoryPort for SlowConfig {
+        async fn load(&self) -> Result<AppConfig, ConfigError> {
+            let snapshot = self.stored.lock().unwrap().clone();
+            tokio::task::yield_now().await;
+            Ok(snapshot)
+        }
+        async fn save(&self, config: &AppConfig) -> Result<(), ConfigError> {
+            *self.stored.lock().unwrap() = config.clone();
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn two_writers_that_share_the_config_lock_do_not_lose_each_others_change() {
+        let config = Arc::new(SlowConfig { stored: StdMutex::new(AppConfig::default()) });
+        let lock = ConfigLock::default();
+        let first = PluginCatalogUseCase::new(Arc::new(MockPluginManagerPort::new()), config.clone()).with_config_lock(lock.clone());
+        let second = PluginCatalogUseCase::new(Arc::new(MockPluginManagerPort::new()), config.clone()).with_config_lock(lock);
+        let (a, b) = tokio::join!(first.set_enabled("a@m", true), second.set_enabled("b@m", true));
+        a.unwrap();
+        b.unwrap();
+        let mut saved = config.stored.lock().unwrap().enabled_plugins.clone();
+        saved.sort();
+        assert_eq!(saved, ["a@m", "b@m"]);
     }
 }

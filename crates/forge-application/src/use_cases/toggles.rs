@@ -3,6 +3,8 @@ use std::sync::Arc;
 use forge_domain::AppConfig;
 use forge_ports::{ConfigError, ConfigRepositoryPort};
 
+use super::config_lock::ConfigLock;
+
 fn toggle_membership(list: &mut Vec<String>, name: &str) {
     if let Some(pos) = list.iter().position(|existing| existing == name) {
         list.remove(pos);
@@ -13,14 +15,22 @@ fn toggle_membership(list: &mut Vec<String>, name: &str) {
 
 pub struct ToggleSkillUseCase {
     config: Arc<dyn ConfigRepositoryPort>,
+    lock: ConfigLock,
 }
 
 impl ToggleSkillUseCase {
     pub fn new(config: Arc<dyn ConfigRepositoryPort>) -> Self {
-        Self { config }
+        Self { config, lock: ConfigLock::default() }
+    }
+
+    /// Shares the lock the other config writers hold (see `ConfigLock`).
+    pub fn with_config_lock(mut self, lock: ConfigLock) -> Self {
+        self.lock = lock;
+        self
     }
 
     pub async fn execute(&self, name: &str) -> Result<AppConfig, ConfigError> {
+        let _held = self.lock.hold().await;
         let mut config = self.config.load().await?;
         toggle_membership(&mut config.enabled_skills, name);
         self.config.save(&config).await?;
@@ -30,14 +40,22 @@ impl ToggleSkillUseCase {
 
 pub struct TogglePluginUseCase {
     config: Arc<dyn ConfigRepositoryPort>,
+    lock: ConfigLock,
 }
 
 impl TogglePluginUseCase {
     pub fn new(config: Arc<dyn ConfigRepositoryPort>) -> Self {
-        Self { config }
+        Self { config, lock: ConfigLock::default() }
+    }
+
+    /// Shares the lock the other config writers hold (see `ConfigLock`).
+    pub fn with_config_lock(mut self, lock: ConfigLock) -> Self {
+        self.lock = lock;
+        self
     }
 
     pub async fn execute(&self, name: &str) -> Result<AppConfig, ConfigError> {
+        let _held = self.lock.hold().await;
         let mut config = self.config.load().await?;
         toggle_membership(&mut config.enabled_plugins, name);
         self.config.save(&config).await?;
@@ -47,14 +65,22 @@ impl TogglePluginUseCase {
 
 pub struct ToggleMcpServerUseCase {
     config: Arc<dyn ConfigRepositoryPort>,
+    lock: ConfigLock,
 }
 
 impl ToggleMcpServerUseCase {
     pub fn new(config: Arc<dyn ConfigRepositoryPort>) -> Self {
-        Self { config }
+        Self { config, lock: ConfigLock::default() }
+    }
+
+    /// Shares the lock the other config writers hold (see `ConfigLock`).
+    pub fn with_config_lock(mut self, lock: ConfigLock) -> Self {
+        self.lock = lock;
+        self
     }
 
     pub async fn execute(&self, name: &str) -> Result<AppConfig, ConfigError> {
+        let _held = self.lock.hold().await;
         let mut config = self.config.load().await?;
         toggle_membership(&mut config.enabled_mcp_servers, name);
         self.config.save(&config).await?;

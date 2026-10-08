@@ -21,7 +21,7 @@ use forge_adapter_sleep::CaffeinateSleep;
 #[cfg(windows)]
 use forge_adapter_sleep::WindowsSleep;
 use forge_adapter_terminal::PtyTerminal;
-use forge_application::{ExtensionsUseCase, PluginCatalogUseCase, SessionRegistry, SettingsUseCase};
+use forge_application::{ConfigLock, ExtensionsUseCase, PluginCatalogUseCase, SessionRegistry, SettingsUseCase};
 use forge_features::WorkspaceServices;
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
@@ -147,6 +147,8 @@ fn build_services() -> WorkspaceServices {
     let runtime::Runtime { node, script } = runtime::locate_here(DEFAULT_SIDECAR_SCRIPT);
 
     let config = Arc::new(ConfigFileAdapter::new(config_path));
+    // Every use case that loads, edits and saves the Forge config holds this one lock while it does.
+    let config_lock = ConfigLock::default();
     // The Claude program that ships with the SDK sits beside the sidecar script. `CLAUDE_CONFIG_DIR` is
     // set for it only when `FORGE_CLAUDE_HOME` moves the Claude home (the harness); with the real home
     // the CLI would keep `.claude.json` inside the folder instead of beside it.
@@ -155,9 +157,9 @@ fn build_services() -> WorkspaceServices {
     let plugin_catalog = Arc::new(PluginCatalogUseCase::new(
         Arc::new(ClaudePluginCli::new(plugin_binary, claude_home.clone(), plugin_config_dir)),
         config.clone(),
-    ));
+    ).with_config_lock(config_lock.clone()));
     let factory = Arc::new(SidecarProcessFactory::new(node, script, config.clone()));
-    let settings = Arc::new(SettingsUseCase::new(config.clone()));
+    let settings = Arc::new(SettingsUseCase::new(config.clone()).with_config_lock(config_lock.clone()));
     // With no project open the tabs read the home directory as the project, so only the global
     // definitions (`~/.claude/skills`, the global MCP servers) show.
     let home = claude_home.parent().map(std::path::Path::to_path_buf).unwrap_or_else(|| claude_home.clone());
@@ -167,7 +169,7 @@ fn build_services() -> WorkspaceServices {
         Arc::new(ClaudePluginAdapter::new(claude_home.clone())),
         Arc::new(ClaudeMcpAdapter::new(claude_json)),
         home,
-    ));
+    ).with_config_lock(config_lock.clone()));
     let sessions = Arc::new(ClaudeSessionAdapter::new(claude_home.clone()));
     let projects = Arc::new(ClaudeProjectAdapter::new(claude_home.clone()));
     let registry = Arc::new(SessionRegistry::new(factory, sessions.clone(), extensions.clone()).with_warm_up());
