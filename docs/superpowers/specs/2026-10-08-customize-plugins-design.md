@@ -132,8 +132,12 @@ Checked in the real window (harness, `FORGE_CLAUDE_HOME` fixture, a local market
 - Sidebar entry "Customize"; the page with tabs, Mine, Explore, search and `+ Add`.
 - Mine empty text; Explore with no marketplace ("Add a marketplace to find plugins." and the button).
 - Add marketplace dialog: a wrong path shows the CLI's "Path does not exist: /no/such/dir"; the right path closes the dialog and Explore shows `harness-market` with two cards.
-- `+` on a card installs it (a check replaces `+`); Mine lists it under `harness-market` with its version and description; the row menu shows "Turn off" and a red "Uninstall"; "Turn off" writes the plugin out of Forge's `enabled_plugins`.
+- `+` on a card installs it (a check replaces `+`) and switches it on in Forge (`enabled_plugins` gets `hello@harness-market`); Mine lists it under `harness-market` with its version and description; the row menu shows "Turn off" and a red "Uninstall"; "Turn off" gives the "Off" tag and takes the key out of `enabled_plugins`.
+- The plugin detail (name, "marketplace · version", description, "Installed at" a path under the fixture home, `Uninstall`); the uninstall confirmation ("Other Claude Code installs on this computer lose it too.") and the uninstall (Mine is empty again, `enabled_plugins` is `[]`).
+- Manage marketplaces (name, folder, last update as an ISO time), the row menu (Update, red Remove), the remove confirmation and the removal ("No marketplaces yet.").
+- An 800 pt window: the cards fall to one column and the toolbar wraps without cutting `+ Add`.
+- No `Copy Value` warnings in the app log after the signals moved to the root scope.
 
-Not checked (the Mac's screen was locked when the check was resumed): the plugin detail screen, the uninstall confirmation and an uninstall, Manage marketplaces (Update, Remove and its confirmation), the "Off" tag after turning off, a narrow window (one column of cards), the spinner during an install (a local install is too fast to catch), Windows, a GitHub or Git URL marketplace, and the message of a failing Git clone. The `placeholder` of the Add field is cut at the right edge in a 1200 pt window.
+Not checked: the spinner during an install (a local install is too fast to catch), the Manage dialog's spinner and error line added in the review fix pass, the failing Git clone message, a GitHub or Git URL marketplace, and Windows. Cosmetic: the row menu of a marketplace overlaps its card and the Done button; the Add field's placeholder is cut at the right edge in a 1200 pt window; "Last updated" shows the raw ISO time.
 
 Notes for the harness: the window of the harness app paints only while the Mac's display is awake and unlocked (`screencapture` fails or gives a white window otherwise); `osascript keystroke` drops letters when it types fast, so type one key at a time (the existing composer drops them too).
