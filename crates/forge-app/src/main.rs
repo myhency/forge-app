@@ -150,7 +150,7 @@ fn build_services() -> WorkspaceServices {
     // The Claude program that ships with the SDK sits beside the sidecar script. `CLAUDE_CONFIG_DIR` is
     // set for it only when `FORGE_CLAUDE_HOME` moves the Claude home (the harness); with the real home
     // the CLI would keep `.claude.json` inside the folder instead of beside it.
-    let plugin_binary = claude_binary_for(std::path::Path::new(&script)).unwrap_or_else(|| "claude-is-not-available".into());
+    let plugin_binary = claude_binary_for(std::path::Path::new(&script)).unwrap_or_else(|| format!("no Claude program for {}-{}", std::env::consts::OS, std::env::consts::ARCH).into());
     let plugin_config_dir = std::env::var_os("FORGE_CLAUDE_HOME").filter(|home| !home.is_empty()).map(std::path::PathBuf::from);
     let plugin_catalog = Arc::new(PluginCatalogUseCase::new(
         Arc::new(ClaudePluginCli::new(plugin_binary, claude_home.clone(), plugin_config_dir)),

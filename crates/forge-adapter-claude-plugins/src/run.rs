@@ -1,6 +1,6 @@
 use std::io::Read;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -54,6 +54,23 @@ pub(crate) struct Invocation<'a> {
     pub timeout: Duration,
 }
 
+/// Stops the program and the processes it started.
+fn kill_tree(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        // A negative pid is the whole process group, which `process_group(0)` made the child's own.
+        unsafe {
+            libc::kill(-(child.id() as i32), libc::SIGKILL);
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill").args(["/PID", &child.id().to_string(), "/T", "/F"]).output();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// Runs the program, waits at most `timeout`, and returns what it wrote to stdout. A non-zero exit
 /// is `Cli` with the message from `clean_message`.
 pub(crate) fn run(invocation: &Invocation) -> Result<String, PluginManagerError> {
@@ -69,6 +86,12 @@ pub(crate) fn run(invocation: &Invocation) -> Result<String, PluginManagerError>
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // Its own process group, so a timeout can stop everything the program started (a `git clone`, say).
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
     match invocation.config_dir {
         Some(dir) => command.env("CLAUDE_CONFIG_DIR", dir),
         None => command.env_remove("CLAUDE_CONFIG_DIR"),
@@ -83,8 +106,7 @@ pub(crate) fn run(invocation: &Invocation) -> Result<String, PluginManagerError>
             Ok(Some(status)) => break status,
             // The reader threads are left to finish on their own: a grandchild may hold the pipes open.
             Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
+                kill_tree(&mut child);
                 return Err(PluginManagerError::TimedOut);
             }
             Ok(None) => thread::sleep(Duration::from_millis(10)),
@@ -176,5 +198,18 @@ mod tests {
         let out = run(&invocation(&program, None, &[], 10)).unwrap();
         assert!(started.elapsed() < Duration::from_secs(4), "took {:?}", started.elapsed());
         assert_eq!(out.trim(), "done");
+    }
+
+    #[test]
+    fn a_command_that_times_out_takes_the_processes_it_started_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let program = script(dir.path(), &format!("sleep 30 &\necho $! > {}/pid\nwait", dir.path().display()));
+        let error = run(&Invocation { program: &program, config_dir: None, args: &[], timeout: Duration::from_millis(2000) }).unwrap_err();
+        assert_eq!(error, PluginManagerError::TimedOut);
+        let pid = std::fs::read_to_string(dir.path().join("pid")).unwrap().trim().to_string();
+        std::thread::sleep(Duration::from_millis(300));
+        let alive = Command::new("kill").args(["-0", &pid]).stderr(Stdio::null()).status().unwrap().success();
+        assert!(!alive, "the sleep started by the program (pid {pid}) is still running");
+        let _ = Command::new("kill").args(["-9", &pid]).stderr(Stdio::null()).status();
     }
 }
