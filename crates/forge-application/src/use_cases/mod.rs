@@ -1,4 +1,5 @@
 mod config_lock;
+mod connector_catalog;
 mod extensions;
 mod plugin_catalog;
 mod skill_catalog;
@@ -8,6 +9,7 @@ mod sidecar_commands;
 mod toggles;
 
 pub use config_lock::ConfigLock;
+pub use connector_catalog::{AddedConnector, ConnectorCatalogUseCase, ConnectorView, ConnectorsError};
 pub use extensions::{ExtensionsError, ExtensionsUseCase};
 pub use plugin_catalog::{CatalogView, PluginCatalogError, PluginCatalogUseCase};
 pub use skill_catalog::{AddedSkill, SkillCatalogUseCase, SkillView, SkillsError};
