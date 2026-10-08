@@ -16,7 +16,6 @@ pub fn CustomizePage() -> Element {
     let customize = use_customize();
     let workspace = use_workspace();
     use_hook(move || customize.open_page(workspace.context_project()));
-    use_hook(move || customize.open_page(workspace.context_project()));
     let tab = customize.tab();
     let mode = customize.mode();
     let mut add_menu = use_signal(|| false);

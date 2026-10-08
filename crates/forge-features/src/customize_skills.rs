@@ -100,6 +100,17 @@ pub fn is_markdown_file(relative: &str) -> bool {
     relative.to_lowercase().ends_with(".md")
 }
 
+/// Puts `name` in or out of the view's enabled skills, so a switch shows its new state before the
+/// lists are read again. The plugins' own list is left alone.
+pub fn set_skill_enabled_in(view: &mut SkillView, name: &str, on: bool) {
+    let present = view.enabled_skills.iter().any(|key| key == name);
+    if on && !present {
+        view.enabled_skills.push(name.to_string());
+    } else if !on {
+        view.enabled_skills.retain(|key| key != name);
+    }
+}
+
 /// `text` without a leading `---` ... `---` front matter block; unchanged when there is none or it never closes.
 pub fn body_after_front_matter(text: &str) -> &str {
     let rest = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -213,5 +224,16 @@ mod tests {
         assert_eq!(body_after_front_matter("# No front matter\n"), "# No front matter\n");
         assert_eq!(body_after_front_matter("---\nnever closed\n"), "---\nnever closed\n");
         assert_eq!(body_after_front_matter("---\r\nname: x\r\n---\r\nBody"), "Body");
+    }
+    #[test]
+    fn switching_a_skill_updates_the_view_at_once() {
+        let mut v = view();
+        set_skill_enabled_in(&mut v, "lint", true);
+        set_skill_enabled_in(&mut v, "lint", true);
+        assert_eq!(v.enabled_skills, vec!["greet".to_string(), "lint".to_string()]);
+        set_skill_enabled_in(&mut v, "greet", false);
+        assert_eq!(v.enabled_skills, vec!["lint".to_string()]);
+        // The plugins' list is the plugins' own, never touched by a skill switch.
+        assert_eq!(v.enabled_plugins, vec!["hello@m".to_string()]);
     }
 }

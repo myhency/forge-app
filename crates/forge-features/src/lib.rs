@@ -43,7 +43,7 @@ pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
 pub use customize_skills::{
-    body_after_front_matter, explore_skills, file_depth, file_leaf, find_skill, is_markdown_file, origin_label, skill_groups,
+    body_after_front_matter, explore_skills, file_depth, file_leaf, find_skill, is_markdown_file, origin_label, set_skill_enabled_in, skill_groups,
     SkillGroups, SkillPane, SkillRow, SkillText,
 };
 pub use customize_state::{use_customize, use_customize_provider, Busy, Customize, Dialog, Loaded};

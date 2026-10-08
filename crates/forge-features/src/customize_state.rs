@@ -6,7 +6,7 @@ use forge_application::{CatalogView, PluginCatalogUseCase, SkillCatalogUseCase, 
 use forge_domain::SkillFile;
 use forge_ports::{FilePickerPort, FolderPickerPort};
 
-use crate::customize_skills::{SkillPane, SkillText};
+use crate::customize_skills::{set_skill_enabled_in, SkillPane, SkillText};
 use crate::customize::{check_source, closes_detail, error_in_dialog, CustomizeMode, CustomizeTab, Job, JobQueue, Latest};
 use crate::workspace::WorkspaceServices;
 
@@ -16,6 +16,15 @@ pub enum Loaded {
     Loading,
     Ready(CatalogView),
     Failed(String),
+}
+
+/// What the skills are read against: the plugin catalogue when it was read, else an empty one, so a
+/// broken or missing bundled `claude` still leaves the person's own skills on the page.
+fn plugins_for_skills(loaded: &Loaded) -> CatalogView {
+    match loaded {
+        Loaded::Ready(view) => view.clone(),
+        _ => CatalogView { snapshot: forge_domain::PluginSnapshot::default(), enabled: Vec::new() },
+    }
 }
 
 /// A dialog over the page.
@@ -63,6 +72,8 @@ pub struct Customize {
     skill_text: Signal<SkillText>,
     skill_source: Signal<bool>,
     file_reads: Signal<Latest>,
+    /// Counts page visits, so an open request made on one visit never lands on the next.
+    visit: Signal<u64>,
 }
 
 /// Creates the page state and provides it to every descendant. Call it in the page at the top of the tree.
@@ -94,6 +105,7 @@ pub fn use_customize_provider() -> Customize {
         skill_text: Signal::new_in_scope(SkillText::Empty, ScopeId::ROOT),
         skill_source: Signal::new_in_scope(false, ScopeId::ROOT),
         file_reads: Signal::new_in_scope(Latest::default(), ScopeId::ROOT),
+        visit: Signal::new_in_scope(0, ScopeId::ROOT),
     });
     use_context_provider(move || customize);
     customize
@@ -109,6 +121,11 @@ impl Customize {
     pub fn open_page(&self, project: Option<PathBuf>) {
         let mut project_signal = self.project;
         project_signal.set(project);
+        let mut visit = self.visit;
+        *visit.write() += 1;
+        // A file read still on its way belongs to the earlier visit.
+        let mut file_reads = self.file_reads;
+        file_reads.write().issue();
         let mut detail = self.detail;
         detail.set(None);
         let mut dialog = self.dialog;
@@ -134,31 +151,32 @@ impl Customize {
         let this = *self;
         let mut reads = self.reads;
         let token = reads.write().issue();
+        let visit = *self.visit.peek();
         dioxus::core::spawn_forever(async move {
             let loaded = match usecase.catalog().await {
                 Ok(view) => Loaded::Ready(view),
                 Err(error) => Loaded::Failed(error.to_string()),
             };
-            let skills = match &loaded {
-                Loaded::Ready(plugins) => Some(skills_usecase.skills(project.as_deref(), plugins).await),
-                _ => None,
-            };
+            let skills = skills_usecase.skills(project.as_deref(), &plugins_for_skills(&loaded)).await;
             // A read that was overtaken by a newer one is dropped, so a stale list never replaces a fresh one.
             if this.reads.peek().is_latest(token) {
                 let mut view = this.view;
                 view.set(loaded);
                 match skills {
-                    Some(Ok(skills)) => {
+                    Ok(skills) => {
                         let mut slot = this.skills;
                         slot.set(Some(skills));
                     }
-                    Some(Err(error)) => {
+                    Err(error) => {
                         let mut slot = this.error;
                         slot.set(Some(format!("Could not read the skills: {error}")));
                     }
-                    None => {}
                 }
-                if let Some((id, path)) = open {
+            }
+            // A newer read may have taken the token, but the skill was added all the same: show it,
+            // unless the person has left the page and come back since.
+            if let Some((id, path)) = open {
+                if *this.visit.peek() == visit {
                     this.open_skill(id, path);
                     this.set_skill_pane(SkillPane::Files);
                 }
@@ -460,9 +478,19 @@ impl Customize {
         let usecase = (*self.skills_usecase.peek()).clone();
         let this = *self;
         dioxus::core::spawn_forever(async move {
-            if let Err(error) = usecase.set_enabled(&name, on).await {
-                let mut slot = this.error;
-                slot.set(Some(error.to_string()));
+            match usecase.set_enabled(&name, on).await {
+                Ok(()) => {
+                    // Show the new state now; the read after it only confirms.
+                    let mut slot = this.skills;
+                    let mut held = slot.write();
+                    if let Some(view) = held.as_mut() {
+                        set_skill_enabled_in(view, &name, on);
+                    }
+                }
+                Err(error) => {
+                    let mut slot = this.error;
+                    slot.set(Some(error.to_string()));
+                }
             }
             this.reload();
         });
@@ -546,5 +574,30 @@ impl Customize {
                 place.set(Some(error.to_string()));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use forge_domain::{Marketplace, PluginSnapshot};
+
+    #[test]
+    fn a_failed_plugin_read_still_lets_the_skills_be_read_with_no_plugins() {
+        let failed = plugins_for_skills(&Loaded::Failed("claude is missing".into()));
+        assert_eq!(failed, CatalogView { snapshot: PluginSnapshot::default(), enabled: vec![] });
+        assert_eq!(plugins_for_skills(&Loaded::Loading), failed);
+    }
+
+    #[test]
+    fn a_good_plugin_read_is_passed_on_as_it_is() {
+        let view = CatalogView {
+            snapshot: PluginSnapshot {
+                plugins: vec![],
+                marketplaces: vec![Marketplace { name: "m".into(), kind: "git".into(), location: String::new(), last_updated: None }],
+            },
+            enabled: vec!["a@m".into()],
+        };
+        assert_eq!(plugins_for_skills(&Loaded::Ready(view.clone())), view);
     }
 }
