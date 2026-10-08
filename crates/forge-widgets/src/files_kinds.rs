@@ -1,5 +1,6 @@
 use base64::Engine;
 use dioxus::prelude::*;
+use forge_entities::{parse_csv, preview_kind, render_markdown, CsvTable, PreviewKind, CSV_ROW_LIMIT};
 use forge_ports::FileContent;
 
 /// What an open tab shows.
@@ -50,6 +51,123 @@ pub fn kind_of(content: FileContent) -> TabKind {
     }
 }
 
+/// What a file with a rendered view shows when it is not in source mode.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Rendered {
+    /// The markdown as HTML.
+    Markdown(String),
+    Csv(CsvTable),
+    /// The file's own text, drawn in a sandboxed frame.
+    Html(String),
+    /// A `data:` address of the svg.
+    Svg(String),
+}
+
+/// The rendered view of `text` for the file at `path`; `None` for a file with no rendered view.
+pub fn render_for(path: &str, text: &str) -> Option<Rendered> {
+    match preview_kind(path) {
+        PreviewKind::Markdown => Some(Rendered::Markdown(render_markdown(text))),
+        PreviewKind::Csv => Some(Rendered::Csv(parse_csv(text, CSV_ROW_LIMIT))),
+        PreviewKind::Html => Some(Rendered::Html(text.to_string())),
+        PreviewKind::Svg => Some(Rendered::Svg(format!("data:image/svg+xml;base64,{}", base64::engine::general_purpose::STANDARD.encode(text)))),
+        _ => None,
+    }
+}
+
+const ZOOM_STEP: f64 = 1.25;
+const ZOOM_MIN: f64 = 0.1;
+const ZOOM_MAX: f64 = 8.0;
+
+/// The zoom after one step: `1` in, `-1` out, any other direction leaves it.
+pub fn zoom_step(current: f64, direction: i32) -> f64 {
+    match direction {
+        1 => (current * ZOOM_STEP).min(ZOOM_MAX),
+        -1 => (current / ZOOM_STEP).max(ZOOM_MIN),
+        _ => current,
+    }
+}
+
+/// The body of a tab that is shown rendered. Keyed by the path by the caller, so a tab keeps its own zoom.
+#[component]
+pub fn RenderedView(rendered: Rendered, path: String) -> Element {
+    match rendered {
+        Rendered::Markdown(html) => rsx! {
+            div { class: "changes-diff",
+                div { class: "file-viewer file-markdown markdown", "aria-label": "{path}", dangerous_inner_html: "{html}" }
+            }
+        },
+        Rendered::Csv(table) => rsx! { CsvView { table, path } },
+        // No `allow-same-origin`, popups, forms or top navigation: a page can run its own script and
+        // nothing else, and a link in it goes nowhere.
+        Rendered::Html(source) => rsx! {
+            iframe { class: "files-html", title: "{path}", srcdoc: "{source}", "sandbox": "allow-scripts" }
+        },
+        Rendered::Svg(data_url) => rsx! { SvgView { data_url, path } },
+    }
+}
+
+#[component]
+fn CsvView(table: CsvTable, path: String) -> Element {
+    rsx! {
+        div { class: "changes-diff",
+            div { class: "file-viewer file-markdown markdown files-csv", "aria-label": "{path}",
+                if table.truncated {
+                    p { class: "files-csv-note", "Only the first {CSV_ROW_LIMIT} rows are shown. Switch to the source to see the rest." }
+                }
+                table {
+                    thead {
+                        tr {
+                            for (index, cell) in table.header.iter().enumerate() {
+                                th { key: "{index}", "{cell}" }
+                            }
+                        }
+                    }
+                    tbody {
+                        for (row_index, row) in table.rows.iter().enumerate() {
+                            tr { key: "{row_index}",
+                                for (index, cell) in row.iter().enumerate() {
+                                    td { key: "{index}", "{cell}" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn SvgView(data_url: String, path: String) -> Element {
+    let mut scale = use_signal(|| 1.0_f64);
+    rsx! {
+        div { class: "files-svg",
+            div { class: "files-svg-stage",
+                img { src: "{data_url}", alt: "{path}", style: "zoom: {scale}" }
+            }
+            div { class: "files-svg-bar",
+                button {
+                    class: "icon-button",
+                    r#type: "button",
+                    title: "Zoom out",
+                    "aria-label": "Zoom out",
+                    onclick: move |_| scale.set(zoom_step(scale(), -1)),
+                    "−"
+                }
+                button {
+                    class: "icon-button",
+                    r#type: "button",
+                    title: "Zoom in",
+                    "aria-label": "Zoom in",
+                    onclick: move |_| scale.set(zoom_step(scale(), 1)),
+                    "+"
+                }
+                button { class: "icon-button", r#type: "button", title: "Fit", "aria-label": "Fit", onclick: move |_| scale.set(1.0), "⤢" }
+            }
+        }
+    }
+}
+
 /// The body of a tab that has no editor: a picture, a binary file, a file that is too large.
 #[component]
 pub fn FileKindView(kind: TabKind, path: String, on_anyway: EventHandler<()>, on_reveal: EventHandler<()>) -> Element {
@@ -93,6 +211,42 @@ mod tests {
 
     fn version() -> FileVersion {
         FileVersion { modified_ns: 1, len: 1 }
+    }
+
+    #[test]
+    fn each_rendered_kind_is_made_from_its_text_and_other_files_have_no_rendered_view() {
+        assert!(matches!(render_for("a.md", "# Hi"), Some(Rendered::Markdown(html)) if html.contains("<h1>")));
+        match render_for("a.csv", "a,b\n1,2\n") {
+            Some(Rendered::Csv(table)) => assert_eq!(table.rows.len(), 1),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(render_for("a.html", "<p>x</p>"), Some(Rendered::Html("<p>x</p>".to_string())));
+        assert_eq!(
+            render_for("a.svg", "<svg/>"),
+            Some(Rendered::Svg("data:image/svg+xml;base64,PHN2Zy8+".to_string()))
+        );
+        for plain in ["a.rs", "a.json", "a.png", "a.pdf", "a"] {
+            assert_eq!(render_for(plain, "x"), None, "{plain}");
+        }
+    }
+
+    #[test]
+    fn the_csv_view_is_cut_at_the_row_limit() {
+        let text: String = std::iter::once("n\n".to_string()).chain((0..CSV_ROW_LIMIT + 3).map(|n| format!("{n}\n"))).collect();
+        let Some(Rendered::Csv(table)) = render_for("big.csv", &text) else { panic!("not a table") };
+        assert_eq!(table.rows.len(), CSV_ROW_LIMIT);
+        assert!(table.truncated);
+    }
+
+    #[test]
+    fn zooming_steps_by_a_quarter_and_stays_between_a_tenth_and_eight() {
+        assert_eq!(zoom_step(1.0, 1), 1.25);
+        assert_eq!(zoom_step(1.25, -1), 1.0);
+        assert_eq!(zoom_step(7.0, 1), 8.0);
+        assert_eq!(zoom_step(8.0, 1), 8.0);
+        assert_eq!(zoom_step(0.11, -1), 0.1);
+        assert_eq!(zoom_step(0.1, -1), 0.1);
+        assert_eq!(zoom_step(2.0, 0), 2.0);
     }
 
     #[test]
