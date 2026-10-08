@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 mod fork;
 mod sessions;
+mod skill_catalog;
 mod skills;
 mod plugins;
 mod mcp;
@@ -12,6 +13,7 @@ mod usage;
 mod usage_stats;
 
 pub use sessions::ClaudeSessionAdapter;
+pub use skill_catalog::ClaudeSkillCatalogAdapter;
 pub use skills::ClaudeSkillAdapter;
 pub use plugins::ClaudePluginAdapter;
 pub use mcp::ClaudeMcpAdapter;

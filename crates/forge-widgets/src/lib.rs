@@ -5,6 +5,7 @@ mod context_menu;
 mod customize_dialogs;
 mod customize_page;
 mod customize_plugins;
+mod customize_skills;
 mod dock;
 mod files_editor;
 mod files_icons;

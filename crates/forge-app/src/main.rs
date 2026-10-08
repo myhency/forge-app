@@ -7,7 +7,7 @@ use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
 use forge_adapter_claude_fs::{
     default_claude_home, default_claude_json_path, ClaudeMcpAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
-    ClaudeSessionAdapter, ClaudeSkillAdapter, ClaudeUsageStatsAdapter,
+    ClaudeSessionAdapter, ClaudeSkillAdapter, ClaudeSkillCatalogAdapter, ClaudeUsageStatsAdapter,
 };
 use forge_adapter_claude_plugins::{claude_binary_for, ClaudePluginCli};
 use forge_adapter_dialog::RfdFolderPicker;
@@ -21,7 +21,7 @@ use forge_adapter_sleep::CaffeinateSleep;
 #[cfg(windows)]
 use forge_adapter_sleep::WindowsSleep;
 use forge_adapter_terminal::PtyTerminal;
-use forge_application::{ConfigLock, ExtensionsUseCase, PluginCatalogUseCase, SessionRegistry, SettingsUseCase};
+use forge_application::{ConfigLock, ExtensionsUseCase, PluginCatalogUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase};
 use forge_features::WorkspaceServices;
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
@@ -158,6 +158,10 @@ fn build_services() -> WorkspaceServices {
         Arc::new(ClaudePluginCli::new(plugin_binary, claude_home.clone(), plugin_config_dir)),
         config.clone(),
     ).with_config_lock(config_lock.clone()));
+    let skill_catalog = Arc::new(
+        SkillCatalogUseCase::new(Arc::new(ClaudeSkillCatalogAdapter::new(claude_home.clone())), config.clone())
+            .with_config_lock(config_lock.clone()),
+    );
     let factory = Arc::new(SidecarProcessFactory::new(node, script, config.clone()));
     let settings = Arc::new(SettingsUseCase::new(config.clone()).with_config_lock(config_lock.clone()));
     // With no project open the tabs read the home directory as the project, so only the global
@@ -182,6 +186,7 @@ fn build_services() -> WorkspaceServices {
         settings,
         extensions,
         plugin_catalog,
+        skill_catalog,
         folder_picker: picker.clone(),
         file_picker: picker,
         terminal: Arc::new(PtyTerminal::new(shell)),

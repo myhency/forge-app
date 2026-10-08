@@ -25,6 +25,7 @@ pub fn CustomizeDialogs() -> Element {
                     Dialog::ManageMarketplaces => rsx! { ManageMarketplaces {} },
                     Dialog::ConfirmUninstall(id) => rsx! { ConfirmUninstall { id } },
                     Dialog::ConfirmRemoveMarketplace(name) => rsx! { ConfirmRemove { name } },
+                    Dialog::CreateSkill => rsx! { CreateSkill {} },
                 }
             }
         }
@@ -174,6 +175,51 @@ fn ConfirmRemove(name: String) -> Element {
                     customize.run(Job::RemoveMarketplace(name.clone()));
                 },
             }
+        }
+    }
+}
+
+#[component]
+fn CreateSkill() -> Element {
+    let customize = use_customize();
+    let mut name = use_signal(String::new);
+    let mut description = use_signal(String::new);
+    let busy = customize.skills_busy();
+    rsx! {
+        h2 { "Create skill" }
+        p { class: "hint", "Makes a SKILL.md in your skills folder. Letters, numbers, - and _ in the name." }
+        input {
+            class: "customize-field",
+            r#type: "text",
+            autocapitalize: "off",
+            spellcheck: false,
+            placeholder: "name, for example my-skill",
+            value: "{name}",
+            disabled: busy,
+            oninput: move |event| name.set(event.value()),
+        }
+        input {
+            class: "customize-field",
+            r#type: "text",
+            autocapitalize: "off",
+            spellcheck: false,
+            placeholder: "what it does and when to use it",
+            value: "{description}",
+            disabled: busy,
+            oninput: move |event| description.set(event.value()),
+            onkeydown: move |event| {
+                if event.key() == Key::Enter && !busy {
+                    customize.create_skill(&name(), &description());
+                }
+            },
+        }
+        if let Some(message) = customize.dialog_error() {
+            div { class: "status-line error", "{message}" }
+        }
+        div { class: "customize-dialog-buttons",
+            if busy { span { class: "spinner", title: "Creating…" } }
+            Button { label: "Cancel", disabled: busy, onclick: move |_| customize.close_dialog() }
+            Button { label: "Create", kind: ButtonKind::Primary, disabled: busy, onclick: move |_| customize.create_skill(&name(), &description()) }
         }
     }
 }

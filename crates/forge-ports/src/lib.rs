@@ -9,6 +9,7 @@ mod plugin_manager_port;
 mod project_port;
 mod session_port;
 mod sidecar_factory_port;
+mod skill_catalog_port;
 mod sidecar_port;
 mod sleep_port;
 mod terminal_port;
@@ -28,6 +29,7 @@ pub use plugin_manager_port::{PluginManagerError, PluginManagerPort};
 pub use project_port::{ProjectRepositoryError, ProjectRepositoryPort};
 pub use session_port::{SessionRepositoryError, SessionRepositoryPort};
 pub use sidecar_factory_port::SidecarFactoryPort;
+pub use skill_catalog_port::{SkillCatalogError, SkillCatalogPort};
 pub use sleep_port::SleepPort;
 pub use terminal_port::{TerminalError, TerminalEvent, TerminalId, TerminalPort, TerminalSession, TerminalSize, OUTPUT_BATCH_LIMIT};
 pub use usage_stats_port::{UsageStatsError, UsageStatsPort};
@@ -65,3 +67,5 @@ pub use session_port::MockSessionRepositoryPort;
 pub use sidecar_factory_port::MockSidecarFactoryPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use sidecar_port::MockSidecarPort;
+#[cfg(any(test, feature = "mocks"))]
+pub use skill_catalog_port::MockSkillCatalogPort;
