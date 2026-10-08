@@ -141,8 +141,11 @@ def press(name, mods):
     clause = f" using {{{using}}}" if mods else ""
     if name in KEY_CODES or name in LETTER_CODES:
         action = f"key code {KEY_CODES.get(name, LETTER_CODES.get(name))}"
-    else:
+    elif len(name) == 1:
         action = f'keystroke "{name}"'
+    else:
+        # "equal" would otherwise be typed as e, q, u, a, l (with cmd: five shortcuts in the real app).
+        sys.exit(f"unknown key name {name!r}; use one of {sorted(KEY_CODES)} or a single letter")
     subprocess.run(["osascript", "-e", f'tell application "System Events" to {action}{clause}'], check=True)
 
 
