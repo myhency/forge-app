@@ -3,6 +3,8 @@ use forge_domain::Marketplace;
 use forge_features::{use_customize, Busy, Dialog, Job, Loaded};
 use forge_shared::{Button, ButtonKind};
 
+use crate::customize_connector_dialogs::{AddConnector, ConfirmRemoveConnector};
+
 /// Whichever dialog is open, over the page. A click on the backdrop closes it.
 #[component]
 pub fn CustomizeDialogs() -> Element {
@@ -15,7 +17,7 @@ pub fn CustomizeDialogs() -> Element {
             class: "settings-backdrop",
             // While a marketplace is being added the dialog stays: its result (or its error) shows here.
             onclick: move |_| {
-                if !customize.adding_marketplace() {
+                if !customize.adding_marketplace() && !customize.connectors_busy() {
                     customize.close_dialog();
                 }
             },
@@ -26,6 +28,8 @@ pub fn CustomizeDialogs() -> Element {
                     Dialog::ConfirmUninstall(id) => rsx! { ConfirmUninstall { id } },
                     Dialog::ConfirmRemoveMarketplace(name) => rsx! { ConfirmRemove { name } },
                     Dialog::CreateSkill => rsx! { CreateSkill {} },
+                    Dialog::AddConnector => rsx! { AddConnector {} },
+                    Dialog::ConfirmRemoveConnector(name) => rsx! { ConfirmRemoveConnector { name } },
                 }
             }
         }

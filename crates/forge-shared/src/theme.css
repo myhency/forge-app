@@ -859,3 +859,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .customize-field { width: 100%; padding: 8px 10px; margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; box-sizing: border-box; }
 .customize-dialog-buttons { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .customize-market { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 10px; }
+.customize-check { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.connection-line { color: var(--fg-muted); min-width: 0; }
+.customize-wrap { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+.customize-pair { display: flex; gap: 8px; }
+.customize-pair .customize-field { flex: 1 1 0; min-width: 0; }
