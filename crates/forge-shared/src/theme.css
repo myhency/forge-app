@@ -840,8 +840,10 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .skill-files-bar { margin: 12px 0 8px; }
 .skill-files { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 12px; align-items: start; }
 .chat-narrow .skill-files { grid-template-columns: 1fr; }
+.skill-tree-column { min-width: 0; }
+.skill-tree-note { margin-top: 6px; font-size: 12px; }
 .skill-tree { display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); max-height: 420px; overflow-y: auto; }
-.skill-tree-row { padding: 4px 8px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 13px; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.skill-tree-row { flex: none; padding: 4px 8px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 13px; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .skill-tree-row:hover:not(:disabled) { background: var(--bg-hover); }
 .skill-tree-row.active { background: var(--bg-hover); font-weight: 600; }
 .skill-tree-row:disabled { color: var(--fg-muted); cursor: default; }

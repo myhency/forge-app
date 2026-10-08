@@ -4,7 +4,7 @@ use std::sync::Arc;
 use super::config_lock::ConfigLock;
 use super::plugin_catalog::CatalogView;
 
-use forge_domain::{skill_id, AppConfig, SkillFile, SkillOrigin, SkillSnapshot};
+use forge_domain::{skill_id, AppConfig, SkillFileList, SkillOrigin, SkillSnapshot};
 use forge_ports::{ConfigError, ConfigRepositoryPort, SkillCatalogError, SkillCatalogPort};
 use thiserror::Error;
 
@@ -97,7 +97,7 @@ impl SkillCatalogUseCase {
         self.added(path).await
     }
 
-    pub async fn files(&self, skill_path: &Path) -> Result<Vec<SkillFile>, SkillsError> {
+    pub async fn files(&self, skill_path: &Path) -> Result<SkillFileList, SkillsError> {
         Ok(self.port.list_files(skill_path).await?)
     }
 

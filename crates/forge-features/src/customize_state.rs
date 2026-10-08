@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use forge_application::{CatalogView, PluginCatalogUseCase, SkillCatalogUseCase, SkillView, SkillsError};
-use forge_domain::SkillFile;
+use forge_domain::{SkillFile, SkillFileList};
 use forge_ports::{FilePickerPort, FolderPickerPort};
 
 use crate::customize_skills::{set_skill_enabled_in, SkillPane, SkillText};
@@ -74,6 +74,7 @@ pub struct Customize {
     skill_dir: Signal<Option<PathBuf>>,
     skill_pane: Signal<SkillPane>,
     skill_files: Signal<Vec<SkillFile>>,
+    skill_files_cut: Signal<bool>,
     skill_file: Signal<Option<String>>,
     skill_text: Signal<SkillText>,
     skill_source: Signal<bool>,
@@ -107,6 +108,7 @@ pub fn use_customize_provider() -> Customize {
         skill_dir: Signal::new_in_scope(None, ScopeId::ROOT),
         skill_pane: Signal::new_in_scope(SkillPane::Overview, ScopeId::ROOT),
         skill_files: Signal::new_in_scope(Vec::new(), ScopeId::ROOT),
+        skill_files_cut: Signal::new_in_scope(false, ScopeId::ROOT),
         skill_file: Signal::new_in_scope(None, ScopeId::ROOT),
         skill_text: Signal::new_in_scope(SkillText::Empty, ScopeId::ROOT),
         skill_source: Signal::new_in_scope(false, ScopeId::ROOT),
@@ -402,6 +404,11 @@ impl Customize {
         self.skill_files.read().clone()
     }
 
+    /// Whether the skill has more files than the list shows.
+    pub fn skill_files_cut(&self) -> bool {
+        *self.skill_files_cut.read()
+    }
+
     pub fn skill_file(&self) -> Option<String> {
         self.skill_file.read().clone()
     }
@@ -429,6 +436,8 @@ impl Customize {
         dir.set(Some(path.clone()));
         let mut files = self.skill_files;
         files.set(Vec::new());
+        let mut cut = self.skill_files_cut;
+        cut.set(false);
         let mut file = self.skill_file;
         file.set(None);
         let mut text = self.skill_text;
@@ -443,8 +452,10 @@ impl Customize {
                 return;
             }
             match listed {
-                Ok(listed) => {
+                Ok(SkillFileList { files: listed, truncated }) => {
                     let has_skill_md = listed.iter().any(|file| file.relative == "SKILL.md");
+                    let mut cut = this.skill_files_cut;
+                    cut.set(truncated);
                     let mut files = this.skill_files;
                     files.set(listed);
                     if has_skill_md {

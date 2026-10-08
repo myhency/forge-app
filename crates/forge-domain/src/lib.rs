@@ -33,7 +33,7 @@ pub use layout::{
 };
 pub use extension::{ActiveExtensions, McpServerDefinition, PluginDefinition, SkillDefinition};
 pub use plugin_catalog::{plugin_id, split_plugin_id, Marketplace, PluginEntry, PluginSnapshot};
-pub use skill_catalog::{skill_id, SkillEntry, SkillFile, SkillOrigin, SkillSnapshot};
+pub use skill_catalog::{skill_id, SkillEntry, SkillFile, SkillFileList, SkillOrigin, SkillSnapshot};
 pub use permission::{PermissionDecision, PermissionMode};
 pub use background::{BackgroundTaskInfo, RunningTask};
 pub use project::ProjectSummary;

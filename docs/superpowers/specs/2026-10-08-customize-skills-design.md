@@ -96,3 +96,12 @@ Minors from the final review, all done after it (with tests where a test can sho
 - If a later read of the skills fails, the old list is dropped and the tab says so, with Try again.
 
 Left as is, with the reason: no guard that resets the busy flag if the add task panics (a panic in a Dioxus task ends the app, so there is nothing left to reset; not verified by making one happen).
+
+### Skills with code files (checked in the window, 2026-10-09)
+
+A fixture skill with scripts (`.py` with tabs and Korean comments, `.sh`, a CRLF `.bat`), sources (`.tsx`, `.rs`), data (`.json`, `.csv`, `.svg`, `.html`, a minified one-line `.js`), a dotfile, a Korean file name, a five-folder-deep chain, an empty file, a `.png`, a `.pdf` and 530 files in one folder. Everything text shows as it is (tags such as `<div>` and `<script>` stay text, nothing runs). Found and fixed:
+- **The file list collapsed.** The tree is a column flex box with a height cap and its rows hide overflow, so with more rows than fit (about ten) they shrank to nothing and only a thin bar showed. Earlier checks had at most five rows. Rows now do not shrink (`flex: none`).
+- **A skill with more than 500 files lost its important files.** The list stopped after 500 entries in disk order, so `many/` filled it and `SKILL.md`, `scripts/` and `src/` were missing, with no hint. The list now goes folder by folder from the top, `SKILL.md` first, at most 100 entries per folder and 500 in all, and says when it left files out ("Only the first files are listed. Use Show in folder to see all of them."). `list_files` returns a `SkillFileList { files, truncated }`.
+- **Code files had no colours** while code blocks in `SKILL.md` and the Files panel did. A file of a known extension up to 100,000 characters is now coloured with the same highlighter (escaped, so markup stays text); a longer one, one with no extension and one with very long lines stay plain.
+- A binary file says "This is not a text file, so it is not shown here. Use Show in folder to open it."; an empty file says "This file is empty."; a file over 512 KB says it is too large and points to Show in folder.
+

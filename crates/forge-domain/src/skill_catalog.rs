@@ -46,6 +46,13 @@ pub struct SkillFile {
     pub is_dir: bool,
 }
 
+/// The files of one skill, as many as the page shows. `truncated` is true when there were more.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SkillFileList {
+    pub files: Vec<SkillFile>,
+    pub truncated: bool,
+}
+
 /// Every skill the Customize page shows, sorted by name then id.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SkillSnapshot {

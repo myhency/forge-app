@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use forge_domain::{PluginEntry, SkillFile, SkillSnapshot};
+use forge_domain::{PluginEntry, SkillFileList, SkillSnapshot};
 use thiserror::Error;
 
 #[cfg(any(test, feature = "mocks"))]
@@ -33,7 +33,8 @@ pub trait SkillCatalogPort: Send + Sync {
     async fn add_from_zip(&self, source: &Path) -> Result<PathBuf, SkillCatalogError>;
     /// Writes a SKILL.md template. Returns the new skill's folder.
     async fn create(&self, name: &str, description: &str) -> Result<PathBuf, SkillCatalogError>;
-    async fn list_files(&self, skill_path: &Path) -> Result<Vec<SkillFile>, SkillCatalogError>;
+    /// The skill's files, shallow ones first, at most 500; the list says when it was cut.
+    async fn list_files(&self, skill_path: &Path) -> Result<SkillFileList, SkillCatalogError>;
     /// One text file of the skill; `relative` uses `/`.
     async fn read_file(&self, skill_path: &Path, relative: &str) -> Result<String, SkillCatalogError>;
 }

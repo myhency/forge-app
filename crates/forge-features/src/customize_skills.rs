@@ -111,6 +111,19 @@ pub fn set_skill_enabled_in(view: &mut SkillView, name: &str, on: bool) {
     }
 }
 
+/// A text file longer than this is shown as plain text: highlighting it would hold the window up.
+pub const HIGHLIGHT_LIMIT: usize = 100_000;
+
+/// The text of a file as escaped HTML for a `<pre>`, with syntax colours when its extension names a
+/// language. `None` when the file has no extension or is too long to colour: show it as plain text.
+pub fn highlighted_code(path: &str, text: &str) -> Option<String> {
+    let language = forge_entities::language_of(path);
+    if language.is_empty() || text.len() > HIGHLIGHT_LIMIT {
+        return None;
+    }
+    Some(forge_entities::code_html(language, text))
+}
+
 /// `text` without a leading `---` ... `---` front matter block; unchanged when there is none or it never closes.
 pub fn body_after_front_matter(text: &str) -> &str {
     let rest = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -235,5 +248,25 @@ mod tests {
         assert_eq!(v.enabled_skills, vec!["lint".to_string()]);
         // The plugins' list is the plugins' own, never touched by a skill switch.
         assert_eq!(v.enabled_plugins, vec!["hello@m".to_string()]);
+    }
+    #[test]
+    fn a_code_file_of_a_known_language_is_highlighted_and_escaped() {
+        let html = highlighted_code("src/lib.rs", "fn main() { let a = 1 < 2; }\n").unwrap();
+        assert!(html.contains("<span class=\"hl-"), "{html}");
+        assert!(html.contains("&lt;"), "the < is escaped: {html}");
+    }
+
+    #[test]
+    fn markup_in_a_file_is_never_passed_on_as_markup() {
+        let html = highlighted_code("data/page.html", "<script>alert(\"x\")</script>\n").unwrap();
+        assert!(!html.contains("<script"), "{html}");
+        assert!(html.contains("&lt;"));
+    }
+
+    #[test]
+    fn a_file_with_no_known_extension_or_a_very_big_one_is_left_plain() {
+        assert_eq!(highlighted_code("notes/README", "text\n"), None);
+        let big = "let a = 1;\n".repeat(HIGHLIGHT_LIMIT / 5);
+        assert_eq!(highlighted_code("big.rs", &big), None);
     }
 }

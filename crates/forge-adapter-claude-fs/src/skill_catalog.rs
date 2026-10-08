@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use async_trait::async_trait;
-use forge_domain::{plugin_id, skill_id, PluginEntry, SkillEntry, SkillFile, SkillOrigin, SkillSnapshot};
+use forge_domain::{plugin_id, skill_id, PluginEntry, SkillEntry, SkillFile, SkillFileList, SkillOrigin, SkillSnapshot};
 use forge_ports::{SkillCatalogError, SkillCatalogPort};
 use serde::Deserialize;
 
@@ -204,27 +204,50 @@ async fn blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T, SkillCatal
     tokio::task::spawn_blocking(work).await.map_err(|e| SkillCatalogError::Io(e.to_string()))?
 }
 
+/// A single folder shows at most this many entries, so one huge folder cannot hide its siblings.
+pub const DIR_LIMIT: usize = 100;
+
 /// A file larger than this is not shown.
 pub const TEXT_LIMIT: u64 = 512 * 1024;
 
-fn walk(root: &Path, dir: &Path, out: &mut Vec<SkillFile>) {
-    let Ok(read) = std::fs::read_dir(dir) else { return };
-    for entry in read.flatten() {
-        if out.len() >= ENTRY_LIMIT {
-            return;
-        }
-        let Ok(kind) = entry.file_type() else { continue };
-        if kind.is_symlink() {
-            continue;
-        }
-        let path = entry.path();
-        let Ok(relative) = path.strip_prefix(root) else { continue };
-        let relative = relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/");
-        out.push(SkillFile { relative, is_dir: kind.is_dir() });
-        if kind.is_dir() {
-            walk(root, &path, out);
+// Folder by folder, shallow ones first, so a skill with a huge folder still shows its SKILL.md and
+// top folders. Within a folder: SKILL.md first, then by name, at most DIR_LIMIT of them. Stops at
+// ENTRY_LIMIT. Says so when anything was left out.
+fn walk(root: &Path) -> SkillFileList {
+    let mut list = SkillFileList::default();
+    let mut queue = std::collections::VecDeque::from([root.to_path_buf()]);
+    while let Some(dir) = queue.pop_front() {
+        let Ok(read) = std::fs::read_dir(&dir) else { continue };
+        let mut entries: Vec<_> = read.flatten().collect();
+        entries.sort_by_key(|entry| {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            (name != "skill.md", name)
+        });
+        let mut shown_here = 0;
+        for entry in entries {
+            let Ok(kind) = entry.file_type() else { continue };
+            if kind.is_symlink() {
+                continue;
+            }
+            if shown_here >= DIR_LIMIT {
+                list.truncated = true;
+                break;
+            }
+            if list.files.len() >= ENTRY_LIMIT {
+                list.truncated = true;
+                return list;
+            }
+            shown_here += 1;
+            let path = entry.path();
+            let Ok(relative) = path.strip_prefix(root) else { continue };
+            let relative = relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/");
+            list.files.push(SkillFile { relative, is_dir: kind.is_dir() });
+            if kind.is_dir() {
+                queue.push_back(path);
+            }
         }
     }
+    list
 }
 
 // Only a folder with a SKILL.md of its own is a skill; any other folder is not shown.
@@ -235,13 +258,12 @@ fn check_skill_folder(skill_path: &Path) -> Result<(), SkillCatalogError> {
     }
 }
 
-fn list_skill_files(skill_path: &Path) -> Result<Vec<SkillFile>, SkillCatalogError> {
+fn list_skill_files(skill_path: &Path) -> Result<SkillFileList, SkillCatalogError> {
     check_skill_folder(skill_path)?;
-    let mut files = Vec::new();
-    walk(skill_path, skill_path, &mut files);
+    let mut list = walk(skill_path);
     // Compared part by part, so `a` and `a/one.md` stay together and `a-b.md` comes after them.
-    files.sort_by_key(|file| file.relative.split('/').map(str::to_lowercase).collect::<Vec<_>>());
-    Ok(files)
+    list.files.sort_by_key(|file| file.relative.split('/').map(str::to_lowercase).collect::<Vec<_>>());
+    Ok(list)
 }
 
 fn read_skill_file(skill_path: &Path, relative: &str) -> Result<String, SkillCatalogError> {
@@ -261,10 +283,10 @@ fn read_skill_file(skill_path: &Path, relative: &str) -> Result<String, SkillCat
         return Err(invalid("That is not a file."));
     }
     if meta.len() > TEXT_LIMIT {
-        return Err(invalid("This file is too large to show."));
+        return Err(invalid("This file is too large to show. Use Show in folder to open it."));
     }
     let bytes = std::fs::read(&target).map_err(io_error)?;
-    String::from_utf8(bytes).map_err(|_| invalid("This is not a text file."))
+    String::from_utf8(bytes).map_err(|_| invalid("This is not a text file, so it is not shown here. Use Show in folder to open it."))
 }
 
 /// Reads and writes the skills the Customize page shows, below the Claude home.
@@ -434,7 +456,7 @@ impl SkillCatalogPort for ClaudeSkillCatalogAdapter {
         blocking(move || create_skill(&home, &name, &description)).await
     }
 
-    async fn list_files(&self, skill_path: &Path) -> Result<Vec<SkillFile>, SkillCatalogError> {
+    async fn list_files(&self, skill_path: &Path) -> Result<SkillFileList, SkillCatalogError> {
         let skill_path = skill_path.to_path_buf();
         blocking(move || list_skill_files(&skill_path)).await
     }
@@ -852,7 +874,8 @@ mod tests {
         std::fs::write(dir.join("a").join("one.md"), "x").unwrap();
         std::fs::write(dir.join("a-b.md"), "x").unwrap();
 
-        let files = adapter(home.path()).list_files(&dir).await.unwrap();
+        let listed = adapter(home.path()).list_files(&dir).await.unwrap();
+        let files = listed.files;
 
         let shown: Vec<_> = files.iter().map(|f| (f.relative.as_str(), f.is_dir)).collect();
         assert_eq!(shown, vec![("a", true), ("a/one.md", false), ("a-b.md", false), ("SKILL.md", false)]);
@@ -866,7 +889,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("SKILL.md"), "x").unwrap();
         std::os::unix::fs::symlink("/etc", dir.join("etc")).unwrap();
-        let files = adapter(home.path()).list_files(&dir).await.unwrap();
+        let files = adapter(home.path()).list_files(&dir).await.unwrap().files;
         assert_eq!(files.len(), 1);
     }
 
@@ -1017,5 +1040,53 @@ mod tests {
 
         let ids: Vec<_> = snap.skills.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, vec!["plugin:p@m:inside"]);
+    }
+
+    #[tokio::test]
+    async fn a_skill_with_many_files_lists_the_shallow_ones_first_and_says_it_was_cut() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("skills").join("coder");
+        std::fs::create_dir_all(dir.join("many")).unwrap();
+        std::fs::create_dir_all(dir.join("scripts")).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
+        std::fs::write(dir.join("scripts").join("run.py"), "x").unwrap();
+        for i in 0..(ENTRY_LIMIT + 30) {
+            std::fs::write(dir.join("many").join(format!("f{i:03}.txt")), "x").unwrap();
+        }
+
+        let listed = adapter(home.path()).list_files(&dir).await.unwrap();
+
+        assert!(listed.truncated);
+        assert!(listed.files.len() <= ENTRY_LIMIT);
+        let names: Vec<&str> = listed.files.iter().map(|f| f.relative.as_str()).collect();
+        for needed in ["SKILL.md", "scripts", "scripts/run.py", "many"] {
+            assert!(names.contains(&needed), "{needed} is missing from {} entries", names.len());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_folder_with_more_than_the_limit_at_its_top_still_lists_skill_md() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("skills").join("flat");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
+        for i in 0..(ENTRY_LIMIT + 5) {
+            std::fs::write(dir.join(format!("a{i:03}.txt")), "x").unwrap();
+        }
+        let listed = adapter(home.path()).list_files(&dir).await.unwrap();
+        assert!(listed.truncated);
+        assert!(listed.files.iter().any(|f| f.relative == "SKILL.md"));
+    }
+
+    #[tokio::test]
+    async fn a_skill_that_fits_is_not_marked_cut() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("skills").join("small");
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
+        std::fs::write(dir.join("a").join("one.md"), "x").unwrap();
+        let listed = adapter(home.path()).list_files(&dir).await.unwrap();
+        assert!(!listed.truncated);
+        assert_eq!(listed.files.len(), 3);
     }
 }

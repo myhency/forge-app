@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_entities::render_markdown;
 use forge_features::{
-    body_after_front_matter, explore_skills, file_depth, file_leaf, find_skill, is_markdown_file, origin_label, skill_groups,
+    body_after_front_matter, explore_skills, highlighted_code, file_depth, file_leaf, find_skill, is_markdown_file, origin_label, skill_groups,
     use_customize, use_workspace, Busy, CustomizeMode, Dialog, Job, Loaded, SkillPane, SkillRow, SkillText,
 };
 use forge_shared::{Button, ButtonKind};
@@ -209,6 +209,7 @@ fn SkillFiles(folder: std::path::PathBuf) -> Element {
             Button { label: "Show in folder", onclick: move |_| workspace.reveal(&folder) }
         }
         div { class: "skill-files",
+            div { class: "skill-tree-column",
             div { class: "skill-tree",
                 for file in files {
                     {
@@ -228,6 +229,10 @@ fn SkillFiles(folder: std::path::PathBuf) -> Element {
                         }
                     }
                 }
+            }
+            if customize.skill_files_cut() {
+                div { class: "hint skill-tree-note", "Only the first files are listed. Use Show in folder to see all of them." }
+            }
             }
             div { class: "skill-view",
                 if let Some(path) = selected.clone() {
@@ -250,6 +255,10 @@ fn SkillFiles(folder: std::path::PathBuf) -> Element {
                         if rendered {
                             let html = render_markdown(body_after_front_matter(&text));
                             rsx! { div { class: "skill-rendered markdown", dangerous_inner_html: "{html}" } }
+                        } else if text.is_empty() {
+                            rsx! { div { class: "hint", "This file is empty." } }
+                        } else if let Some(html) = selected.as_deref().and_then(|path| highlighted_code(path, &text)) {
+                            rsx! { pre { class: "skill-code", dangerous_inner_html: "{html}" } }
                         } else {
                             rsx! { pre { class: "skill-code", "{text}" } }
                         }
