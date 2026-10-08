@@ -1,4 +1,5 @@
 mod binary;
+mod mcp;
 mod parse;
 mod run;
 
@@ -11,6 +12,7 @@ use forge_ports::{PluginManagerError, PluginManagerPort};
 use tokio::sync::Mutex;
 
 pub use binary::claude_binary_for;
+pub use mcp::ClaudeMcpCli;
 use run::{run, Invocation};
 
 const QUICK: Duration = Duration::from_secs(20);
