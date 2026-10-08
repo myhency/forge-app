@@ -5,6 +5,7 @@ mod command;
 mod config;
 mod effort;
 mod extension;
+mod plugin_catalog;
 mod layout;
 mod keys;
 mod paths;
@@ -30,6 +31,7 @@ pub use layout::{
     SIDEBAR_RAIL_WIDTH,
 };
 pub use extension::{ActiveExtensions, McpServerDefinition, PluginDefinition, SkillDefinition};
+pub use plugin_catalog::{plugin_id, split_plugin_id, Marketplace, PluginEntry, PluginSnapshot};
 pub use permission::{PermissionDecision, PermissionMode};
 pub use background::{BackgroundTaskInfo, RunningTask};
 pub use project::ProjectSummary;
