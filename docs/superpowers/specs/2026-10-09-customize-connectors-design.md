@@ -64,3 +64,25 @@ OAuth sign-in in the app; project / local / `.mcp.json` add or remove; editing a
 - `claude mcp get` output is text, not a stable format. The mapping is kept in one function with a fallback of "unknown", and tested with captured real output.
 - A terminal Claude Code writing `~/.claude.json` at the same moment as our `claude mcp add`: both go through the CLI's own writer, so Forge never writes that file.
 - A plugin-bundled server may use variables like `${CLAUDE_PLUGIN_ROOT}`; the detail shows them as written.
+
+## As built (2026-10-09)
+
+Built as designed, with these differences:
+
+- **Reads.** `ClaudeMcpAdapter` (which starts sessions) is unchanged. The page reads through a new `ClaudeConnectorCatalogAdapter` (port `ConnectorCatalogPort`), as 30B did for skills. It lists user, project (`.mcp.json`) and local-scope servers by the scope that wins a name, plus the servers installed plugins bundle (`.mcp.json` and `mcpServers` of `plugin.json`, as an object or a path inside the plugin) and the ones plugins of added marketplaces offer. A bundled file that leaves its plugin folder through a link is skipped.
+- **Form.** Validation is a pure function in the domain (`validate_new`, `split_args`); the use case calls it. `Debug` of the draft and of the new connector prints counts, not values.
+- **Secrets.** The CLI error text has the header and env values taken out (`redact`, longest first). The output of `claude mcp get` is reduced to its `Status:` and `Issue:` lines; the rest (which has the values in clear) is not kept.
+- **`claude` file.** With `FORGE_CLAUDE_HOME` the bundled `claude` keeps `.claude.json` inside the config folder, so the connector read follows it (`cli_claude_json` in `main.rs`). With the real home it is `~/.claude.json`. Found by the real-window check. The session adapter still reads `<home>/.claude.json` in override mode, so servers added from the page do not reach sessions there (harness only).
+
+Review Focus items, and the tests that pin them: values with spaces, quotes, Korean and a leading dash reach the CLI as one argument (adapter test `add_passes_every_value_as_exactly_one_argument`, `add_args` tests); an echoed value is not shown (`a_failure_that_echoes_a_value_does_not_show_it`); a taken name is refused before the CLI runs and a second add while one runs does nothing (`add_checks_the_form_first...`, `add_connector` busy guard); remove drops the Forge switch (`remove_runs_the_cli_and_drops_the_name...`); odd files do not hide the rest (`odd_files_do_not_hide_the_rest`, `a_broken_plugin_file_or_a_manifest_path_outside_the_plugin_is_skipped`).
+
+### Checked in the real window (harness, bundled `claude`, macOS)
+
+- Empty Connectors tab: pass. Add dialog (name, type switch, address, header rows with a password field): pass.
+- Add an http connector with a header: it opens in its detail, the header shows `X-Key: ••••••`, the value is only in the CLI's file, the switch is on: pass.
+- Check connection on `https://mcp.sentry.dev/mcp`: "Needs sign-in. Run /mcp in the terminal's Claude Code to sign in.": pass. Found and fixed: the result text collapsed into a one-character column and the button wrapped (CSS, `.customize-check`).
+- Explore showed the connector of a plugin of the fixture marketplace; `+` installed the plugin and the connector moved to "From plugins" with a switch that cannot be pressed: pass.
+- Remove (confirm dialog): the server left the CLI's file and the name left `enabled_mcp_servers`: pass.
+- 30 connectors, a 50-character name, a 300-character address and an 80-character header name: rows keep their height, the long address is cut in the list and wraps in the detail: pass.
+- Not checked in the window: a local connector with env typed in the form (checked by adapter tests and by hand with the CLI), a refused duplicate name or bad address in the dialog (unit tests), a project `.mcp.json` row (adapter test), leaving the tab while an add runs (unit test `a_new_connector_is_shown_only_to_a_person_who_is_still_on_the_connectors_tab`).
+- Not checked at all: Windows, OAuth servers (sign-in itself), a remote server behind a proxy.
