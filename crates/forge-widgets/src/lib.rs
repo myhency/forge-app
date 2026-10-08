@@ -4,6 +4,7 @@ mod composer_controls;
 mod context_menu;
 mod dock;
 mod files_editor;
+mod files_icons;
 mod files_kinds;
 mod files_menu;
 mod files_panel;

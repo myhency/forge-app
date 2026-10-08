@@ -85,6 +85,7 @@ mod tests {
             ".files-csv-note",
             ".files-svg",
             ".files-svg-bar",
+            ".files-icon",
             ".files-menu-sub",
             ".files-settings-menu",
             ".file-link",

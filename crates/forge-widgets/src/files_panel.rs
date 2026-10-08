@@ -6,12 +6,13 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::CardKind;
-use forge_entities::has_rendered_view;
+use forge_entities::{has_rendered_view, icon_of};
 use forge_features::{file_menu, group_hits, parse_files_query, split_hit, run_blocking, use_workspace, Banner, FileAction, FileTree, MenuTarget, FilesQuery, Panel};
 use forge_ports::{ContentHit, FilesPort, SearchOptions};
 
 use crate::context_menu::ContextMenu;
 use crate::files_editor::{use_editor_channel, use_editor_driver, FromPage};
+use crate::files_icons::FileTypeIcon;
 use crate::files_kinds::{FileKindView, RenderedView, TabKind};
 use crate::files_menu::FilesMenu;
 use crate::files_state::FilesCtx;
@@ -306,7 +307,11 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                                                 ctx.open(path.clone());
                                             }
                                         },
-                                        span { class: "files-mark", "{mark}" }
+                                        if is_dir {
+                                            span { class: "files-mark", "{mark}" }
+                                        } else {
+                                            FileTypeIcon { icon: icon_of(&row.path) }
+                                        }
                                         span { "{row.name}" }
                                     }
                                 }

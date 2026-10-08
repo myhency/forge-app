@@ -764,3 +764,5 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
   .home-top { padding-left: 25px; padding-right: 25px; }
   .new-session { padding-left: 25px; padding-right: 25px; }
 }
+
+.files-icon { flex: none; align-self: center; color: var(--fg-muted); }
