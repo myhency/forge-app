@@ -112,3 +112,28 @@ Skills tab (30B), Connectors tab (30C), project-scope or local-scope installs, p
 - The `available` JSON fields are not yet seen (see Spike).
 - Uninstalling here removes the plugin from the terminal's Claude Code as well; the confirmation says so.
 - The plugin detail screen is a guess (Deviation 3).
+
+## As built (2026-10-08)
+
+Built on `plan-30` by the plan `docs/superpowers/plans/2026-10-08-customize-plugins.md`.
+
+Changes from the design:
+
+- The port has no `update(id)` (plugin update): the page has no button for it. It has `update_marketplace`.
+- The page search is an always visible text field, not an icon.
+- `CLAUDE_CONFIG_DIR` is set for the child process only when `FORGE_CLAUDE_HOME` is set (the harness). With the real home it stays unset, because with it set the CLI keeps `.claude.json` inside the folder instead of beside it (seen in the spike: the temp home got its own `.claude.json`).
+- Fields of `available` entries as seen: `pluginId`, `name`, `description`, `marketplaceName`, `source`, and `version` when the marketplace has one. No author. An installed plugin's description is read from its `.claude-plugin/plugin.json`; a marketplace's "last updated" comes from `known_marketplaces.json` (the CLI's `marketplace list --json` has none).
+- Errors of the CLI arrive on stderr and start with `✘ `; the page shows them without that mark.
+- `Customize` signals are created in the root scope (`Signal::new_in_scope(.., ScopeId::ROOT)`), because `spawn_forever` tasks write to them.
+- The package layout needed no change: `scripts/package/stage-runtime.mjs` already puts `claude` at `sidecar/node_modules/@anthropic-ai/claude-agent-sdk-<platform>/`, where `claude_binary_for` looks.
+
+Checked in the real window (harness, `FORGE_CLAUDE_HOME` fixture, a local marketplace with two plugins):
+
+- Sidebar entry "Customize"; the page with tabs, Mine, Explore, search and `+ Add`.
+- Mine empty text; Explore with no marketplace ("Add a marketplace to find plugins." and the button).
+- Add marketplace dialog: a wrong path shows the CLI's "Path does not exist: /no/such/dir"; the right path closes the dialog and Explore shows `harness-market` with two cards.
+- `+` on a card installs it (a check replaces `+`); Mine lists it under `harness-market` with its version and description; the row menu shows "Turn off" and a red "Uninstall"; "Turn off" writes the plugin out of Forge's `enabled_plugins`.
+
+Not checked (the Mac's screen was locked when the check was resumed): the plugin detail screen, the uninstall confirmation and an uninstall, Manage marketplaces (Update, Remove and its confirmation), the "Off" tag after turning off, a narrow window (one column of cards), the spinner during an install (a local install is too fast to catch), Windows, a GitHub or Git URL marketplace, and the message of a failing Git clone. The `placeholder` of the Add field is cut at the right edge in a 1200 pt window.
+
+Notes for the harness: the window of the harness app paints only while the Mac's display is awake and unlocked (`screencapture` fails or gives a white window otherwise); `osascript keystroke` drops letters when it types fast, so type one key at a time (the existing composer drops them too).
