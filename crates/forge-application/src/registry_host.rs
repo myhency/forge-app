@@ -12,6 +12,10 @@ use crate::registry::SessionRegistry;
 use crate::routine_runner::{RoutineHost, RunRequest};
 use crate::use_cases::RoutinesUseCase;
 
+/// How long and how often `watch` retries a write that needs the history line to exist.
+const RETRY: Duration = Duration::from_millis(250);
+const RETRIES: u32 = 40;
+
 /// A session this young is never called finished: right after the send its phase may still be Idle.
 const GRACE: Duration = Duration::from_secs(60);
 
@@ -126,29 +130,54 @@ impl RegistryHost {
         found
     }
 
-    /// Reports the Claude session id of a run once it is known, and keeps the rules the person
-    /// answered "always allow" with the routine.
+    /// Follows one run's session. It writes the Claude session id to the run's history line once the line
+    /// exists, turns the line into a failed start when the session never got going, and keeps the rules the
+    /// person answered "always allow" with the routine. The line is written by the runner after `start`
+    /// returns, so what is seen first is retried for a few seconds.
     fn watch(&self, request: &RunRequest, handle: &LiveSessionHandle) {
         let routines = self.routines.clone();
-        let routine_id = request.routine_id.clone();
-        let due_ms = request.due_ms;
+        let (routine_id, created, due_ms) = (request.routine_id.clone(), request.routine_created, request.due_ms);
         let mut updates = handle.subscribe();
         // Runs on the app's tokio runtime. Ends when the session closes (the channel ends).
         tokio::spawn(async move {
-            let mut reported_session = false;
+            let mut session: Option<String> = None;
+            let mut session_stored = false;
+            let mut failure: Option<String> = None;
+            let mut failure_stored = false;
             let mut known_rules: Vec<String> = Vec::new();
-            while updates.changed().await.is_ok() {
-                let view = updates.borrow_and_update().clone();
-                if !reported_session {
-                    if let Some(id) = &view.claude_session_id {
-                        reported_session = true;
-                        let _ = routines.set_run_session(&routine_id, due_ms, id.0.clone()).await;
+            let mut attempts = 0u32;
+            loop {
+                let pending = (session.is_some() && !session_stored) || (failure.is_some() && !failure_stored);
+                tokio::select! {
+                    changed = updates.changed() => {
+                        if changed.is_err() {
+                            break;
+                        }
+                    }
+                    _ = tokio::time::sleep(RETRY), if pending && attempts < RETRIES => {
+                        attempts += 1;
                     }
                 }
-                if view.allowed_rules != known_rules {
-                    let new: Vec<String> = view.allowed_rules.iter().filter(|rule| !known_rules.contains(rule)).cloned().collect();
-                    known_rules = view.allowed_rules.clone();
-                    let _ = routines.add_allowed(&routine_id, new).await;
+                let (claude_id, phase, last_error, rules) = {
+                    let view = updates.borrow_and_update();
+                    (view.claude_session_id.clone(), view.phase, view.last_error.clone(), view.allowed_rules.clone())
+                };
+                if session.is_none() {
+                    session = claude_id.map(|id| id.0);
+                }
+                if failure.is_none() && session.is_none() && phase == Phase::Failed {
+                    failure = Some(last_error.unwrap_or_else(|| "The session could not start".to_string()));
+                }
+                if let (Some(id), false) = (&session, session_stored) {
+                    session_stored = routines.set_run_session(&routine_id, due_ms, id.clone()).await.unwrap_or(false);
+                }
+                if let (Some(message), false) = (&failure, failure_stored) {
+                    failure_stored = routines.fail_run(&routine_id, due_ms, message.clone()).await.unwrap_or(false);
+                }
+                if rules != known_rules {
+                    let new: Vec<String> = rules.iter().filter(|rule| !known_rules.contains(rule)).cloned().collect();
+                    known_rules = rules;
+                    let _ = routines.add_allowed(&routine_id, created, new).await;
                 }
             }
         });
@@ -281,6 +310,7 @@ mod tests {
     fn request(allowed: Vec<&str>) -> RunRequest {
         RunRequest {
             routine_id: "a".to_string(),
+            routine_created: 1,
             due_ms: 5,
             folder: PathBuf::from("/work/a"),
             permission_mode: PermissionMode::Plan,
@@ -427,5 +457,88 @@ mod tests {
         // ... until the person has looked at it: a draft in it must not be thrown away.
         host.keep_open(handle.id());
         assert!(host.finished_with_age(OLD).is_empty());
+    }
+
+    /// A routine "A" created at 1, as the runner would have it when it starts a run.
+    async fn routine_a(routines: &RoutinesUseCase) {
+        routines
+            .create(
+                RoutineDraft {
+                    name: "A".into(),
+                    description: "d".into(),
+                    instructions: String::new(),
+                    folder: Some("/work/a".into()),
+                    permission_mode: PermissionMode::Default,
+                    model: None,
+                    schedule: Schedule::Manual,
+                },
+                1,
+            )
+            .await
+            .unwrap();
+    }
+
+    fn started_line() -> forge_domain::RoutineRun {
+        forge_domain::RoutineRun {
+            routine_id: "a".to_string(),
+            due_ms: 5,
+            started_ms: 5,
+            outcome: forge_domain::RunOutcome::Started,
+            session_id: None,
+            routine_created: 1,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_sidecar_that_cannot_start_turns_the_started_line_into_a_failed_start_even_if_the_line_is_written_late() {
+        let (factory, _spawns) = factory_returning(vec![Err(forge_ports::SidecarError::SpawnFailed("no node".to_string()))]);
+        let registry = Arc::new(SessionRegistry::new(factory, Arc::new(MockSessionRepositoryPort::new()), no_extensions()));
+        let (routines, store) = memory_routines();
+        routine_a(&routines).await;
+        let (host, _started) = RegistryHost::new(registry, routines.clone());
+
+        host.start(request(vec![])).await.unwrap();
+        // The runner records the line after `start` returns; the session may have failed by then.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        routines.record_run(started_line(), None).await.unwrap();
+
+        for _ in 0..100 {
+            if matches!(store.lock().unwrap().routine_runs[0].outcome, forge_domain::RunOutcome::Skipped(_)) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let outcome = store.lock().unwrap().routine_runs[0].outcome.clone();
+        match outcome {
+            forge_domain::RunOutcome::Skipped(forge_domain::SkipReason::StartFailed(message)) => assert!(message.contains("no node"), "{message}"),
+            other => panic!("expected a failed start, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn the_session_id_is_stored_even_when_it_arrives_before_the_line_is_written() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let registry = Arc::new(SessionRegistry::new(factory, Arc::new(MockSessionRepositoryPort::new()), no_extensions()));
+        let (routines, store) = memory_routines();
+        routine_a(&routines).await;
+        let (host, mut started) = RegistryHost::new(registry, routines.clone());
+        host.start(request(vec![])).await.unwrap();
+        let handle = started.try_recv().unwrap();
+        let mut view = handle.subscribe();
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        control.push(SidecarEvent::SessionStarted { session_id: "s-9".to_string() });
+        wait_for(&mut view, "the session id", |v| v.claude_session_id.is_some()).await;
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        routines.record_run(started_line(), None).await.unwrap();
+
+        for _ in 0..100 {
+            if store.lock().unwrap().routine_runs[0].session_id.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(store.lock().unwrap().routine_runs[0].session_id.as_deref(), Some("s-9"));
     }
 }

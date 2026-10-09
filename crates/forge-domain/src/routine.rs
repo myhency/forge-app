@@ -332,6 +332,10 @@ pub struct RoutineRun {
     pub outcome: RunOutcome,
     /// The Claude session id, known a moment after the run started.
     pub session_id: Option<String>,
+    /// When the routine this line belongs to was created, so a late line of a deleted routine is not taken
+    /// for one of a new routine with the same id. `0` for a line written before this was kept.
+    #[serde(default)]
+    pub routine_created: i64,
 }
 
 /// What a tick should do about one routine.
@@ -755,7 +759,7 @@ mod tests {
     }
 
     fn run(routine: &str, due: i64) -> RoutineRun {
-        RoutineRun { routine_id: routine.to_string(), due_ms: due, started_ms: due, outcome: RunOutcome::Started, session_id: None }
+        RoutineRun { routine_id: routine.to_string(), due_ms: due, started_ms: due, outcome: RunOutcome::Started, session_id: None, routine_created: 0 }
     }
 
     #[test]

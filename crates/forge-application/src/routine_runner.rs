@@ -7,12 +7,15 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use forge_domain::{decide, Decision, PermissionMode, Routine, RoutineRun, RunOutcome, SkipReason};
 
-use crate::use_cases::{RoutineError, RoutinesUseCase};
+use crate::use_cases::{BaselineMove, RoutineError, RoutinesUseCase};
 
 /// What a host needs to start one run.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunRequest {
     pub routine_id: String,
+    /// When the routine was created: a late report from a deleted routine's session must not reach a new
+    /// routine with the same id.
+    pub routine_created: i64,
     /// The due time of this run; the host reports the session id against it.
     pub due_ms: i64,
     pub folder: PathBuf,
@@ -76,8 +79,9 @@ impl RoutineRunner {
                         started_ms: now_ms,
                         outcome: RunOutcome::Skipped(SkipReason::Missed),
                         session_id: None,
+                        routine_created: routine.created_at,
                     };
-                    if let Err(error) = self.routines.record_run(run, Some(now_ms)).await {
+                    if let Err(error) = self.routines.record_run(run, Some(BaselineMove { to: now_ms, seen: routine.clone() })).await {
                         first_error.get_or_insert(error);
                     }
                 }
@@ -87,8 +91,8 @@ impl RoutineRunner {
                         Ok(()) => RunOutcome::Started,
                         Err(reason) => RunOutcome::Skipped(reason),
                     };
-                    let run = RoutineRun { routine_id: routine.id.clone(), due_ms, started_ms: now_ms, outcome, session_id: None };
-                    if let Err(error) = self.routines.record_run(run, Some(due_ms)).await {
+                    let run = RoutineRun { routine_id: routine.id.clone(), due_ms, started_ms: now_ms, outcome, session_id: None, routine_created: routine.created_at };
+                    if let Err(error) = self.routines.record_run(run, Some(BaselineMove { to: due_ms, seen: routine.clone() })).await {
                         first_error.get_or_insert(error);
                     }
                 }
@@ -113,7 +117,7 @@ impl RoutineRunner {
                 SkipReason::Missed => "Not run.".to_string(),
             })
         })?;
-        let run = RoutineRun { routine_id: routine.id, due_ms: now_ms, started_ms: now_ms, outcome: RunOutcome::Started, session_id: None };
+        let run = RoutineRun { routine_id: routine.id, due_ms: now_ms, started_ms: now_ms, outcome: RunOutcome::Started, session_id: None, routine_created: routine.created_at };
         self.routines.record_run(run, None).await
     }
 
@@ -134,6 +138,7 @@ impl RoutineRunner {
         let date = zone.timestamp_millis_opt(now_ms).single().map(|time| time.format("%b %-d").to_string()).unwrap_or_default();
         let request = RunRequest {
             routine_id: routine.id.clone(),
+            routine_created: routine.created_at,
             due_ms,
             folder: routine.folder.clone(),
             permission_mode: routine.permission_mode,
@@ -233,7 +238,7 @@ mod tests {
     async fn a_due_routine_starts_a_session_with_its_settings_and_the_baseline_moves_to_the_due_time() {
         let setup = setup();
         let routine = setup.routines.create(draft("Review", "/work", Schedule::Daily { hour: 9, minute: 0 }), at(9, 12, 0)).await.unwrap();
-        setup.routines.add_allowed("review", vec!["Read".to_string()]).await.unwrap();
+        setup.routines.add_allowed("review", at(9, 12, 0), vec!["Read".to_string()]).await.unwrap();
         let due = at(10, 9, 0) + forge_domain::delay_ms("review");
 
         setup.runner.tick(due + 5_000, &zone()).await.unwrap();

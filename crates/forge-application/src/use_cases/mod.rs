@@ -13,7 +13,7 @@ pub use config_lock::ConfigLock;
 pub use connector_catalog::{AddedConnector, ConnectorCatalogUseCase, ConnectorView, ConnectorsError};
 pub use extensions::{ExtensionsError, ExtensionsUseCase};
 pub use plugin_catalog::{CatalogView, PluginCatalogError, PluginCatalogUseCase};
-pub use routines::{RoutineError, RoutinesUseCase};
+pub use routines::{BaselineMove, RoutineError, RoutinesUseCase};
 pub use skill_catalog::{AddedSkill, SkillCatalogUseCase, SkillView, SkillsError};
 pub use session_lifecycle::{ResumeSessionError, ResumeSessionUseCase, StartSessionUseCase};
 pub use settings::SettingsUseCase;

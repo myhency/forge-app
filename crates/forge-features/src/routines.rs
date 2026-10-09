@@ -229,9 +229,13 @@ pub fn history_rows(runs: &[RoutineRun], routine_id: &str, state_of: &dyn Fn(&st
     rows.sort_by_key(|run| std::cmp::Reverse(run.due_ms));
     rows.into_iter()
         .map(|run| match &run.outcome {
+            // The session id arrives a moment after the run started; until then there is nothing to ask.
             RunOutcome::Started => HistoryRow {
                 due_ms: run.due_ms,
-                text: state_of(run.session_id.as_deref().unwrap_or("")).to_string(),
+                text: match run.session_id.as_deref() {
+                    Some(id) => state_of(id).to_string(),
+                    None => "Starting…".to_string(),
+                },
                 session_id: run.session_id.clone(),
             },
             RunOutcome::Skipped(reason) => HistoryRow { due_ms: run.due_ms, text: skip_text(reason), session_id: None },
@@ -300,7 +304,7 @@ mod tests {
     }
 
     fn run(id: &str, due: i64) -> RoutineRun {
-        RoutineRun { routine_id: id.to_string(), due_ms: due, started_ms: due, outcome: RunOutcome::Started, session_id: Some("s".to_string()) }
+        RoutineRun { routine_id: id.to_string(), due_ms: due, started_ms: due, outcome: RunOutcome::Started, session_id: Some("s".to_string()), routine_created: 0 }
     }
 
     fn sample() -> Vec<Routine> {
@@ -424,6 +428,14 @@ mod tests {
         assert_eq!(texts, vec!["Done", "Skipped: Forge was closed or the computer was asleep", "Done", "Skipped: could not start (no node)"]);
         assert_eq!(rows[0].session_id.as_deref(), Some("s"));
         assert_eq!(rows[1].session_id, None);
+    }
+
+    #[test]
+    fn a_started_run_without_a_session_yet_reads_starting_and_is_not_clickable() {
+        let runs = vec![RoutineRun { session_id: None, ..run("a", 5) }];
+        let rows = history_rows(&runs, "a", &|_| "Done");
+        assert_eq!(rows[0].text, "Starting…");
+        assert_eq!(rows[0].session_id, None);
     }
 
     #[test]

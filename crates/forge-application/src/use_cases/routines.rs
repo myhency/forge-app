@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_domain::{push_run, routine_id, validate_draft, AppConfig, Routine, RoutineDraft, RoutineRun};
+use forge_domain::{push_run, routine_id, validate_draft, AppConfig, Routine, RoutineDraft, RoutineRun, RunOutcome, SkipReason};
 use forge_ports::{ConfigError, ConfigRepositoryPort};
 use thiserror::Error;
 
@@ -18,6 +18,20 @@ pub enum RoutineError {
     Refused(String),
     #[error("failed to read or write the Forge config: {0}")]
     Config(#[from] ConfigError),
+}
+
+/// Moves a routine's count to `to`, but only if the routine is still as the tick saw it (`seen`): not
+/// edited, paused or switched on while the tick was running.
+#[derive(Debug, Clone)]
+pub struct BaselineMove {
+    pub to: i64,
+    pub seen: Routine,
+}
+
+impl BaselineMove {
+    fn still_applies(&self, now: &Routine) -> bool {
+        now.baseline == self.seen.baseline && now.schedule == self.seen.schedule && now.enabled == self.seen.enabled
+    }
 }
 
 /// Keeps the routines and their history in Forge's config. Every change loads, edits and saves
@@ -120,13 +134,19 @@ impl RoutinesUseCase {
         .await
     }
 
-    /// Adds a history line and, when `baseline` is given, moves the routine's count there. A routine
-    /// deleted meanwhile only loses the baseline; the line is kept.
-    pub async fn record_run(&self, run: RoutineRun, baseline: Option<i64>) -> Result<(), RoutineError> {
+    /// Adds a history line and, when `move_baseline` is given, moves the routine's count. A line of a routine
+    /// that is gone, or of an older routine of the same name, is not kept.
+    pub async fn record_run(&self, run: RoutineRun, move_baseline: Option<BaselineMove>) -> Result<(), RoutineError> {
         self.edit(|config| {
-            if let Some(baseline) = baseline {
-                if let Some(routine) = config.routines.iter_mut().find(|routine| routine.id == run.routine_id) {
-                    routine.baseline = baseline;
+            let Some(routine) = config.routines.iter_mut().find(|routine| routine.id == run.routine_id) else {
+                return Ok(());
+            };
+            if run.routine_created != 0 && run.routine_created != routine.created_at {
+                return Ok(());
+            }
+            if let Some(movement) = move_baseline {
+                if movement.still_applies(routine) {
+                    routine.baseline = movement.to;
                 }
             }
             push_run(&mut config.routine_runs, run);
@@ -135,25 +155,52 @@ impl RoutinesUseCase {
         .await
     }
 
-    /// Fills in the Claude session id of a run once it is known. A run that is gone, or already has
-    /// one, is left alone.
-    pub async fn set_run_session(&self, routine_id: &str, due_ms: i64, session_id: String) -> Result<(), RoutineError> {
+    /// Fills in the Claude session id of a run once it is known. `false` when there is no such run yet (it
+    /// may not be written yet) or it already has one.
+    pub async fn set_run_session(&self, routine_id: &str, due_ms: i64, session_id: String) -> Result<bool, RoutineError> {
         self.edit(|config| {
-            if let Some(run) = config
+            let found = config
                 .routine_runs
                 .iter_mut()
-                .find(|run| run.routine_id == routine_id && run.due_ms == due_ms && run.session_id.is_none())
-            {
-                run.session_id = Some(session_id);
-            }
-            Ok(())
+                .find(|run| run.routine_id == routine_id && run.due_ms == due_ms && run.session_id.is_none() && run.outcome == RunOutcome::Started);
+            Ok(match found {
+                Some(run) => {
+                    run.session_id = Some(session_id);
+                    true
+                }
+                None => false,
+            })
         })
         .await
     }
 
-    pub async fn add_allowed(&self, id: &str, rules: Vec<String>) -> Result<Routine, RoutineError> {
+    /// A run that was recorded as started but whose session never got going becomes a failed start. `false`
+    /// when there is no such run, or it has a session (it did start).
+    pub async fn fail_run(&self, routine_id: &str, due_ms: i64, message: String) -> Result<bool, RoutineError> {
+        self.edit(|config| {
+            let found = config
+                .routine_runs
+                .iter_mut()
+                .find(|run| run.routine_id == routine_id && run.due_ms == due_ms && run.session_id.is_none() && run.outcome == RunOutcome::Started);
+            Ok(match found {
+                Some(run) => {
+                    run.outcome = RunOutcome::Skipped(SkipReason::StartFailed(message));
+                    true
+                }
+                None => false,
+            })
+        })
+        .await
+    }
+
+    /// Adds rules the person answered "always allow" to. `created_at` is the creation time of the routine the
+    /// session belonged to: if the routine was deleted and another has its id now, nothing is added to it.
+    pub async fn add_allowed(&self, id: &str, created_at: i64, rules: Vec<String>) -> Result<Routine, RoutineError> {
         self.edit(|config| {
             let routine = find(config, id)?;
+            if routine.created_at != created_at {
+                return Err(RoutineError::NotFound(id.to_string()));
+            }
             for rule in rules {
                 if !routine.always_allowed.contains(&rule) {
                     routine.always_allowed.push(rule);
@@ -212,7 +259,12 @@ mod tests {
     }
 
     fn run(routine: &str, due: i64) -> RoutineRun {
-        RoutineRun { routine_id: routine.to_string(), due_ms: due, started_ms: due, outcome: RunOutcome::Started, session_id: None }
+        RoutineRun { routine_id: routine.to_string(), due_ms: due, started_ms: due, outcome: RunOutcome::Started, session_id: None, routine_created: 0 }
+    }
+
+    /// The routine as a tick would have seen it.
+    async fn seen(routines: &RoutinesUseCase, id: &str) -> Routine {
+        routines.snapshot().await.unwrap().0.into_iter().find(|routine| routine.id == id).unwrap()
     }
 
     #[tokio::test]
@@ -245,7 +297,7 @@ mod tests {
     async fn update_keeps_the_id_and_the_allowed_rules_and_restarts_the_count_only_when_the_schedule_changes() {
         let (routines, _) = memory();
         let made = routines.create(draft("A"), 10).await.unwrap();
-        routines.add_allowed("a", vec!["Bash(npm test:*)".to_string()]).await.unwrap();
+        routines.add_allowed("a", 10, vec!["Bash(npm test:*)".to_string()]).await.unwrap();
         let same_schedule = routines.update("a", RoutineDraft { description: "new".into(), ..draft("Renamed") }, 99).await.unwrap();
         assert_eq!(same_schedule.id, "a", "the id never changes");
         assert_eq!(same_schedule.name, "Renamed");
@@ -282,27 +334,84 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn record_run_moves_the_baseline_only_when_asked_and_ignores_a_deleted_routine() {
+    async fn record_run_moves_the_baseline_only_when_asked_and_drops_the_line_of_a_deleted_routine() {
         let (routines, store) = memory();
         routines.create(draft("A"), 1).await.unwrap();
         routines.record_run(run("a", 5), None).await.unwrap();
         assert_eq!(store.lock().unwrap().routines[0].baseline, 1);
-        routines.record_run(run("a", 6), Some(77)).await.unwrap();
+        let before = seen(&routines, "a").await;
+        routines.record_run(run("a", 6), Some(BaselineMove { to: 77, seen: before })).await.unwrap();
         assert_eq!(store.lock().unwrap().routines[0].baseline, 77);
-        routines.record_run(run("gone", 7), Some(1)).await.unwrap();
-        assert_eq!(store.lock().unwrap().routine_runs.len(), 3, "the line is kept");
+        let ghost = Routine { id: "gone".to_string(), ..seen(&routines, "a").await };
+        routines.record_run(run("gone", 7), Some(BaselineMove { to: 1, seen: ghost })).await.unwrap();
+        assert_eq!(store.lock().unwrap().routine_runs.len(), 2, "a line for a routine that is not there is not kept");
     }
 
     #[tokio::test]
-    async fn a_session_id_is_attached_once_to_the_matching_run_and_a_missing_run_is_ignored() {
+    async fn a_tick_that_saw_an_old_routine_does_not_overwrite_an_edit_or_a_pause() {
+        let (routines, store) = memory();
+        routines.create(draft("A"), 10).await.unwrap();
+        let old = seen(&routines, "a").await;
+
+        // The person changes the schedule while the tick is running: the count restarted at 50 and stays.
+        routines.update("a", RoutineDraft { schedule: Schedule::Daily { hour: 9, minute: 0 }, ..draft("A") }, 50).await.unwrap();
+        routines.record_run(run("a", 20), Some(BaselineMove { to: 77, seen: old.clone() })).await.unwrap();
+        assert_eq!(store.lock().unwrap().routines[0].baseline, 50);
+        assert_eq!(store.lock().unwrap().routine_runs.len(), 1, "the line is still written");
+
+        // Paused while the tick was running: the count stays where it was.
+        let before_pause = seen(&routines, "a").await;
+        routines.set_enabled("a", false, 60).await.unwrap();
+        routines.record_run(run("a", 30), Some(BaselineMove { to: 88, seen: before_pause })).await.unwrap();
+        assert_eq!(store.lock().unwrap().routines[0].baseline, 50);
+    }
+
+    #[tokio::test]
+    async fn a_late_line_or_rule_of_a_deleted_routine_does_not_land_on_a_new_routine_of_the_same_name() {
+        let (routines, store) = memory();
+        routines.create(draft("A"), 10).await.unwrap();
+        routines.delete("a").await.unwrap();
+        routines.create(draft("A"), 20).await.unwrap();
+
+        // The old routine's session finishes now: its line and its "always allow" carry the old creation time.
+        let late = RoutineRun { routine_created: 10, ..run("a", 12) };
+        routines.record_run(late, None).await.unwrap();
+        assert!(store.lock().unwrap().routine_runs.is_empty(), "not shown by the new routine");
+        assert!(matches!(routines.add_allowed("a", 10, vec!["Bash(rm:*)".to_string()]).await, Err(RoutineError::NotFound(_))));
+        assert!(store.lock().unwrap().routines[0].always_allowed.is_empty(), "nothing is auto-approved for the new routine");
+
+        // The new routine's own lines and rules are accepted.
+        routines.record_run(RoutineRun { routine_created: 20, ..run("a", 25) }, None).await.unwrap();
+        routines.add_allowed("a", 20, vec!["Read".to_string()]).await.unwrap();
+        assert_eq!(store.lock().unwrap().routine_runs.len(), 1);
+        assert_eq!(store.lock().unwrap().routines[0].always_allowed, vec!["Read".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn a_session_id_is_attached_once_to_the_matching_run_and_the_answer_says_whether_it_was_found() {
+        let (routines, store) = memory();
+        routines.create(draft("A"), 1).await.unwrap();
+        assert!(!routines.set_run_session("a", 5, "early".to_string()).await.unwrap(), "the line is not written yet");
+        routines.record_run(run("a", 5), None).await.unwrap();
+        assert!(routines.set_run_session("a", 5, "s-1".to_string()).await.unwrap());
+        assert!(!routines.set_run_session("a", 5, "s-2".to_string()).await.unwrap(), "already has one");
+        assert!(!routines.set_run_session("a", 999, "s-3".to_string()).await.unwrap());
+        assert!(!routines.set_run_session("gone", 5, "s-4".to_string()).await.unwrap());
+        assert_eq!(store.lock().unwrap().routine_runs[0].session_id.as_deref(), Some("s-1"));
+    }
+
+    #[tokio::test]
+    async fn a_run_that_never_got_a_session_can_be_turned_into_a_failed_start() {
         let (routines, store) = memory();
         routines.create(draft("A"), 1).await.unwrap();
         routines.record_run(run("a", 5), None).await.unwrap();
-        routines.set_run_session("a", 5, "s-1".to_string()).await.unwrap();
-        routines.set_run_session("a", 5, "s-2".to_string()).await.unwrap();
-        routines.set_run_session("a", 999, "s-3".to_string()).await.unwrap();
-        routines.set_run_session("gone", 5, "s-4".to_string()).await.unwrap();
-        assert_eq!(store.lock().unwrap().routine_runs[0].session_id.as_deref(), Some("s-1"));
+        routines.record_run(RoutineRun { session_id: Some("s".to_string()), ..run("a", 6) }, None).await.unwrap();
+        assert!(routines.fail_run("a", 5, "no node".to_string()).await.unwrap());
+        assert!(!routines.fail_run("a", 6, "late".to_string()).await.unwrap(), "a run that has a session did start");
+        assert!(!routines.fail_run("a", 5, "again".to_string()).await.unwrap(), "only once");
+        let runs = store.lock().unwrap().routine_runs.clone();
+        assert_eq!(runs[0].outcome, RunOutcome::Skipped(SkipReason::StartFailed("no node".to_string())));
+        assert_eq!(runs[1].outcome, RunOutcome::Started);
     }
 
     #[tokio::test]
@@ -310,7 +419,8 @@ mod tests {
         let (routines, store) = memory();
         routines.create(draft("A"), 1).await.unwrap();
         let skipped = RoutineRun { outcome: RunOutcome::Skipped(SkipReason::Busy), ..run("a", 5) };
-        routines.record_run(skipped.clone(), Some(5)).await.unwrap();
+        let before = seen(&routines, "a").await;
+        routines.record_run(skipped.clone(), Some(BaselineMove { to: 5, seen: before })).await.unwrap();
         assert_eq!(store.lock().unwrap().routine_runs, vec![skipped]);
     }
 
@@ -318,8 +428,8 @@ mod tests {
     async fn allowed_rules_are_added_once_and_can_be_removed() {
         let (routines, _) = memory();
         routines.create(draft("A"), 1).await.unwrap();
-        routines.add_allowed("a", vec!["Read".to_string(), "Bash(ls:*)".to_string()]).await.unwrap();
-        let routine = routines.add_allowed("a", vec!["Read".to_string()]).await.unwrap();
+        routines.add_allowed("a", 1, vec!["Read".to_string(), "Bash(ls:*)".to_string()]).await.unwrap();
+        let routine = routines.add_allowed("a", 1, vec!["Read".to_string()]).await.unwrap();
         assert_eq!(routine.always_allowed, vec!["Read".to_string(), "Bash(ls:*)".to_string()]);
         let routine = routines.remove_allowed("a", "Read").await.unwrap();
         assert_eq!(routine.always_allowed, vec!["Bash(ls:*)".to_string()]);
