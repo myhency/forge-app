@@ -12,7 +12,7 @@ use crate::message::{attachment_label, ToolDetail};
 use crate::question::AnswerPair;
 use crate::relative_time::relative_time;
 use crate::tool_summary::elapsed_label;
-use crate::transcript_view::TranscriptView;
+use forge_domain::TranscriptView;
 use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolRow};
 
 fn counts(added: usize, removed: usize) -> Option<(String, String)> {

@@ -18,7 +18,6 @@ mod question;
 mod relative_time;
 mod sidebar_item;
 mod tool_summary;
-mod transcript_view;
 mod turn;
 mod turn_view;
 mod usage_card;
@@ -42,7 +41,7 @@ pub use preview::{has_rendered_view, icon_of, preview_kind, FileIcon, PreviewKin
 pub use question::{answer_pairs, answers_map, questions_of, AnswerPair, Picks, Question, QuestionOption, QUESTION_TOOL};
 pub use relative_time::relative_time;
 pub use sidebar_item::{SessionMarker, SidebarItem};
-pub use transcript_view::TranscriptView;
+pub use forge_domain::TranscriptView;
 pub use turn::{Clock, Turns};
 pub use turn_view::{build_turns, live_state, Activity, CardFile, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolKind, ToolRow, Waiting};
 pub use tool_summary::{elapsed_label, tool_call_status, tool_detail_text, tool_input_lines, tool_input_summary, InputLine, ToolCallStatus};

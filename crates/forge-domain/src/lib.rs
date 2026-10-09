@@ -17,6 +17,9 @@ mod project;
 mod routine;
 mod search;
 mod session;
+mod output_style;
+mod session_defaults;
+mod transcript_view;
 mod usage;
 mod usage_stats;
 
@@ -39,6 +42,9 @@ pub use connector::{connector_id, entry_from_config, mask_args, mask_url, Connec
 pub use connector_form::{split_args, validate_new, ConnectorDraft, NewConnector, NewTransport};
 pub use plugin_catalog::{plugin_id, split_plugin_id, Marketplace, PluginEntry, PluginSnapshot};
 pub use skill_catalog::{skill_id, SkillEntry, SkillFile, SkillFileList, SkillOrigin, SkillSnapshot};
+pub use output_style::OutputStyle;
+pub use session_defaults::SessionDefaults;
+pub use transcript_view::TranscriptView;
 pub use permission::{PermissionDecision, PermissionMode};
 pub use background::{BackgroundTaskInfo, RunningTask};
 pub use project::ProjectSummary;

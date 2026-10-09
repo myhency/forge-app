@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::diff::{diff_for_tool, diff_for_tool_call};
 use crate::question::{answer_pairs, AnswerPair, QUESTION_TOOL};
 use crate::tool_summary::{tool_call_status, tool_input_summary, ToolCallStatus};
-use crate::transcript_view::TranscriptView;
+use forge_domain::TranscriptView;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolKind {

@@ -142,7 +142,7 @@ impl EditorPrefs {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub base_url: Option<String>,
     pub api_key: Option<String>,
@@ -165,6 +165,55 @@ pub struct AppConfig {
     pub routines: Vec<crate::Routine>,
     #[serde(default)]
     pub routine_runs: Vec<crate::RoutineRun>,
+    /// The transcript view a session opens in until the person picks one for it.
+    #[serde(default, deserialize_with = "lenient")]
+    pub default_transcript_view: crate::TranscriptView,
+    /// The output style new sessions start with; `None` is the SDK's own default.
+    #[serde(default, deserialize_with = "lenient")]
+    pub output_style: Option<crate::OutputStyle>,
+    /// Whether Claude predicts the next prompt after each answer.
+    #[serde(default = "default_true")]
+    pub prompt_suggestions: bool,
+    /// Whether the bypass-permissions mode may be chosen at all.
+    #[serde(default)]
+    pub allow_bypass_mode: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+// A value this Forge does not know (a hand edit, or a newer Forge) reads as the default, so the
+// rest of the config still loads.
+fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            base_url: None,
+            api_key: None,
+            model: None,
+            enabled_skills: Vec::new(),
+            enabled_plugins: Vec::new(),
+            enabled_mcp_servers: Vec::new(),
+            sidebar: SidebarPrefs::default(),
+            editor: EditorPrefs::default(),
+            archived: Vec::new(),
+            routines: Vec::new(),
+            routine_runs: Vec::new(),
+            default_transcript_view: crate::TranscriptView::default(),
+            output_style: None,
+            prompt_suggestions: true,
+            allow_bypass_mode: false,
+        }
+    }
 }
 
 /// What a settings text field is stored as: trimmed, and `None` when nothing is left.
@@ -382,5 +431,36 @@ mod tests {
         for stored in [2u8, 4, 8] {
             assert_eq!(EditorPrefs { tab_size: stored, ..EditorPrefs::default() }.clamped_tab_size(), stored);
         }
+    }
+
+    #[test]
+    fn an_old_config_loads_with_the_code_tab_defaults() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":null,"api_key":null}"#).unwrap();
+        assert_eq!(config.default_transcript_view, crate::TranscriptView::Normal);
+        assert_eq!(config.output_style, None);
+        assert!(config.prompt_suggestions, "suggestions stay on for a config written before the switch existed");
+        assert!(!config.allow_bypass_mode);
+        assert_eq!(AppConfig::default().prompt_suggestions, true, "the derived Default agrees with the file default");
+    }
+
+    #[test]
+    fn the_code_tab_values_round_trip() {
+        let config = AppConfig {
+            default_transcript_view: crate::TranscriptView::Detailed,
+            output_style: Some(crate::OutputStyle::Concise),
+            prompt_suggestions: false,
+            allow_bypass_mode: true,
+            ..AppConfig::default()
+        };
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(back, config);
+    }
+
+    #[test]
+    fn an_unknown_style_or_view_in_the_file_does_not_stop_the_config_loading() {
+        let config: AppConfig =
+            serde_json::from_str(r#"{"base_url":null,"api_key":null,"output_style":"poetic","default_transcript_view":"loud"}"#).unwrap();
+        assert_eq!(config.output_style, None);
+        assert_eq!(config.default_transcript_view, crate::TranscriptView::Normal);
     }
 }
