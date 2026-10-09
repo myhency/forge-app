@@ -91,3 +91,8 @@ Real Claude home, a user connector `figma` (`https://mcp.figma.com/mcp`), the pe
 - Sign in → the dialog reached "Authenticating with figma… A browser window will open for authentication", with "Return here after authenticating in your browser. Press Esc to go back." below the URL: pass.
 - After the browser sign-in the terminal printed `Authentication successful. Connected to figma.`: this is what `mark::SIGNED` (`Authentication successful`) matches. The dialog's status line went to "Connected" (the automatic check), and after Close the detail screen said "Connected", the "Sign in" button was gone: pass.
 - The shell of the dialog ended with Close (the remaining `claude` process has no terminal and belongs to the app's own sidecar).
+
+### Added after the real sign-in: the connector list follows changes made outside Forge
+
+The list was read only when the Customize page opened, so a connector added, removed or signed in with the terminal's Claude Code did not show until the person left the page and came back (found when a connector added with `claude mcp add` was missing from an open Connectors tab). Now `Customize::refresh_connectors` reads the list from the files again (no `claude` call), when the person arrives on the Connectors tab (`refreshes_on_tab`) and when the Forge window gets focus back (a `focus` listener of the page). It skips while the first read is still on its way or an add or remove runs, and the newest refresh wins.
+Checked in the real window: a connector added with the CLI while the page was open showed after Plugins → Connectors; another showed after going to Finder and back to Forge, with no click.

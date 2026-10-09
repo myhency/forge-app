@@ -17,6 +17,19 @@ pub fn CustomizePage() -> Element {
     let customize = use_customize();
     let workspace = use_workspace();
     use_hook(move || customize.open_page(workspace.context_project()));
+    // Coming back to the window (from the terminal, say) reads the connectors again. One listener at a time: a
+    // visit that replaces another takes its place.
+    use_future(move || async move {
+        let mut focus = document::eval(
+            "if (window.__forgeFocus) window.removeEventListener('focus', window.__forgeFocus); \
+             window.__forgeFocus = () => dioxus.send(1); \
+             window.addEventListener('focus', window.__forgeFocus); \
+             await new Promise(() => {});",
+        );
+        while focus.recv::<i32>().await.is_ok() {
+            customize.refresh_connectors();
+        }
+    });
     let tab = customize.tab();
     let mode = customize.mode();
     let mut add_menu = use_signal(|| false);

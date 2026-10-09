@@ -7,7 +7,7 @@ use forge_application::{AddedConnector, ConnectorCatalogUseCase, ConnectorView, 
 use forge_domain::{Connection, ConnectorDraft, ConnectorEntry, ConnectorSource};
 
 use crate::customize::{CustomizeMode, CustomizeTab, Latest};
-use crate::customize_state::{Customize, Dialog};
+use crate::customize_state::{plugins_for_skills, Customize, Dialog};
 use crate::{SignInAction, SignInOutcome, SignInRun, SignInStop, TapHandle};
 
 /// One connector in a list: the entry and whether it is on.
@@ -112,6 +112,12 @@ pub enum SignInState {
     Failed,
 }
 
+/// Arriving on the Connectors tab reads its list again: a connector may have been added, removed or signed in
+/// somewhere else (the terminal's Claude Code) since the page was opened.
+pub fn refreshes_on_tab(tab: CustomizeTab) -> bool {
+    tab == CustomizeTab::Connectors
+}
+
 /// "Sign in" is offered for a connector whose check said it needs sign-in.
 pub fn shows_sign_in(state: &ConnectionState) -> bool {
     matches!(state, ConnectionState::Done(Connection::NeedsSignIn))
@@ -187,6 +193,8 @@ pub(crate) struct Connectors {
     checked: Signal<HashMap<String, Connection>>,
     sign_in: Signal<SignInState>,
     sign_in_tap: Signal<Option<TapHandle>>,
+    /// The newest refresh of the list wins (see `refresh_connectors`).
+    refreshes: Signal<Latest>,
 }
 
 impl Connectors {
@@ -200,6 +208,7 @@ impl Connectors {
             checked: Signal::new_in_scope(HashMap::new(), ScopeId::ROOT),
             sign_in: Signal::new_in_scope(SignInState::Idle, ScopeId::ROOT),
             sign_in_tap: Signal::new_in_scope(None, ScopeId::ROOT),
+            refreshes: Signal::new_in_scope(Latest::default(), ScopeId::ROOT),
         }
     }
 
@@ -240,6 +249,29 @@ impl Customize {
         checks.write().issue();
         let mut connection = self.connectors.connection;
         connection.set(ConnectionState::Idle);
+    }
+
+    /// Reads the connectors from the files again, without the plugin catalogue (no `claude` call). For a return to
+    /// the tab or to the window, where something may have changed outside Forge. Not while a list is still being
+    /// read for the first time, nor while an add or remove runs (its own read follows).
+    pub fn refresh_connectors(&self) {
+        if self.connectors.view.peek().is_none() || self.connectors_busy() {
+            return;
+        }
+        let usecase = self.connectors.usecase();
+        let project = self.project.peek().clone();
+        let plugins = plugins_for_skills(&self.view());
+        let mut refreshes = self.connectors.refreshes;
+        let token = refreshes.write().issue();
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            if let Ok(list) = usecase.connectors(project.as_deref(), &plugins).await {
+                if this.connectors.refreshes.peek().is_latest(token) && !this.connectors_busy() {
+                    let mut slot = this.connectors.view;
+                    slot.set(Some(list));
+                }
+            }
+        });
     }
 
     pub fn sign_in_state(&self) -> SignInState {
@@ -593,5 +625,12 @@ mod tests {
     fn the_sign_in_dialog_is_never_closed_by_its_backdrop() {
         assert!(connector_dialog_busy(&Dialog::SignInConnector("web".into()), false));
         assert!(!connector_dialog_busy(&Dialog::AddConnector, false));
+    }
+
+    #[test]
+    fn only_arriving_on_the_connectors_tab_reads_the_connectors_again() {
+        assert!(refreshes_on_tab(CustomizeTab::Connectors));
+        assert!(!refreshes_on_tab(CustomizeTab::Plugins));
+        assert!(!refreshes_on_tab(CustomizeTab::Skills));
     }
 }

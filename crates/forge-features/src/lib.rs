@@ -46,7 +46,7 @@ pub use file_menu::{file_menu, menu_height, submenu_opens_left, FileAction, Menu
 pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
-pub use customize_connectors::{connection_tag, connection_text, connector_dialog_busy, connector_groups, explore_connectors, find_connector, shows_sign_in, sign_in_cwd, sign_in_status, source_label, stop_text, ConnectionState, ConnectorGroups, ConnectorRow, SignInState};
+pub use customize_connectors::{connection_tag, connection_text, connector_dialog_busy, connector_groups, explore_connectors, find_connector, refreshes_on_tab, shows_sign_in, sign_in_cwd, sign_in_status, source_label, stop_text, ConnectionState, ConnectorGroups, ConnectorRow, SignInState};
 pub use sign_in::{Action as SignInAction, Outcome as SignInOutcome, StopReason as SignInStop};
 pub use sign_in_run::SignInRun;
 pub use terminal_tap::{TapHandle, TerminalTap};
