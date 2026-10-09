@@ -19,7 +19,7 @@ Forge status was read from `crates/` on 2026-10-03.
 | SES-09 | Recovery screen for a session whose transcript is missing ("CLI 세션 가져오기", archive, delete) and a bar for a missing folder ("폴더 선택", archive) | seen | partial | M | won't (Plan 15) | Forge opens such a session view-only (spec §23). The import action was not tried. Plan 15: the missing-transcript screen cannot occur in Forge, which lists sessions from the transcripts on disk; "폴더 선택" is unchecked. |
 | SES-10 | Edit the sidebar ("사이드바 편집…", under "더보기") | partly | none | S | deferred (user, 2026-10-09) | Only the menu item seen. Probably chooses which items show. |
 | SES-11 | Sidebar width, collapse button, back/forward history buttons in the title bar | seen | partial | S | Plan 17 (built: collapse, resize) | Collapse and resize built (a drag handle; the real app was not checked for resizing). Back and forward are SES-12. |
-| SES-12 | Back and forward history buttons in the title bar | seen | none | M | - | Left out of Plan 17 (SES-11); needs a navigation history model. |
+| SES-12 | Back and forward history buttons in the title bar | seen | built | M | Plan 37 | Buttons ← → at the top of the sidebar (and in the hidden rail); `NavHistory` keeps 50 screens, skips closed sessions. No keyboard shortcut: none is in the official list. Real window checked. |
 
 ## CMP: composer (the input box)
 

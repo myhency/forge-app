@@ -56,5 +56,5 @@ pub use session_row::SessionRow;
 pub use session_tools::SessionTools;
 pub use settings_overlay::SettingsOverlay;
 pub use shortcuts_dialog::ShortcutsDialog;
-pub use sidebar::{project_label, project_labels, Sidebar};
+pub use sidebar::{project_label, project_labels, NavButtons, Sidebar};
 pub use usage_ring::UsageRing;

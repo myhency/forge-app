@@ -461,6 +461,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .effort-help { margin-left: auto; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%; color: var(--fg-muted); font-size: 11px; cursor: help; }
 .effort-ends { display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--fg-muted); font-size: 11px; }
 .effort-slider { width: 100%; margin: 0 0 8px; accent-color: var(--accent); }
+.nav-button:disabled { opacity: 0.35; cursor: default; background: transparent; }
+.sidebar-rail .nav-button { display: block; margin-top: 4px; }
 .sidebar-top { display: flex; align-items: center; gap: 4px; margin: 0 4px 8px; }
 .sidebar-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--fg-muted); font: inherit; text-align: left; cursor: pointer; }
 .sidebar-search:hover { border-color: var(--fg-muted); }

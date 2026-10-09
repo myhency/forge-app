@@ -3,6 +3,7 @@ mod session_notices;
 mod settings_pages;
 mod window_width;
 mod blocking;
+mod nav_history;
 mod cards;
 mod closed_sessions;
 mod customize;

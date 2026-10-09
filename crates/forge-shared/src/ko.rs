@@ -209,6 +209,8 @@ pub static KO: &[(&str, &str)] = &[
     ("Get API key", "API 키 받기"),
     ("Get help", "도움 받기"),
     ("Give the connector a name.", "커넥터 이름을 입력하세요."),
+    ("Go back", "뒤로 가기"),
+    ("Go forward", "앞으로 가기"),
     ("Go to line", "줄로 이동"),
     ("Go to line (1-{max})", "줄로 이동 (1-{max})"),
     ("Go to session 1…9", "세션 1…9로 이동"),
