@@ -244,6 +244,20 @@ pub fn waiting_notice(routine_name: &str, tool_name: &str) -> (String, String) {
     ("Routine needs your approval".to_string(), format!("{routine_name} wants to use {tool_name}"))
 }
 
+/// The UTC offset `zone` has at `ms`: summer and winter times each get their own.
+pub fn offset_at<Tz: chrono::TimeZone>(zone: &Tz, ms: i64) -> time::UtcOffset {
+    use chrono::Offset;
+    zone.timestamp_millis_opt(ms)
+        .single()
+        .and_then(|instant| time::UtcOffset::from_whole_seconds(instant.offset().fix().local_minus_utc()).ok())
+        .unwrap_or(time::UtcOffset::UTC)
+}
+
+/// `when_label` in the person's own time zone, with the offset that was in force at `ms`.
+pub fn local_when_label(ms: i64) -> String {
+    when_label(ms, offset_at(&chrono::Local, ms))
+}
+
 const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /// "Oct 9, 10:19 AM" in `offset`.
@@ -434,6 +448,19 @@ mod tests {
             waiting_notice("Daily review", "Bash"),
             ("Routine needs your approval".to_string(), "Daily review wants to use Bash".to_string())
         );
+    }
+
+    #[test]
+    fn the_offset_follows_the_date_so_a_summer_and_a_winter_time_are_both_right() {
+        use chrono_tz::America::New_York;
+        let winter = time::macros::datetime!(2026-01-15 17:00:00 UTC).unix_timestamp() * 1000;
+        let summer = time::macros::datetime!(2026-07-15 17:00:00 UTC).unix_timestamp() * 1000;
+        assert_eq!(offset_at(&New_York, winter), time::UtcOffset::from_hms(-5, 0, 0).unwrap());
+        assert_eq!(offset_at(&New_York, summer), time::UtcOffset::from_hms(-4, 0, 0).unwrap());
+        assert_eq!(when_label(winter, offset_at(&New_York, winter)), "Jan 15, 12:00 PM");
+        assert_eq!(when_label(summer, offset_at(&New_York, summer)), "Jul 15, 1:00 PM");
+        let india = chrono::FixedOffset::east_opt(5 * 3600 + 1800).unwrap();
+        assert_eq!(offset_at(&india, winter), time::UtcOffset::from_hms(5, 30, 0).unwrap());
     }
 
     #[test]

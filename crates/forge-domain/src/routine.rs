@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use chrono::{DateTime, TimeZone};
+use chrono::{DateTime, LocalResult, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::PermissionMode;
@@ -14,12 +14,16 @@ pub const MAX_DELAY_MS: i64 = 5 * 60 * 1000;
 const MIN_GAP_FOR_DELAY_MS: i64 = 10 * 60 * 1000;
 /// History kept per routine.
 pub const KEEP_RUNS: usize = 50;
-/// How many occurrences `decide` walks before it stops looking for the latest one.
+/// How many occurrences `decide` walks inside one look-back window.
 const SCAN_LIMIT: usize = 2000;
+/// How far back from "now" `decide` looks for the latest occurrence, narrowest first (milliseconds).
+const LOOKBACKS_MS: [i64; 5] = [3_600_000, 86_400_000, 8 * 86_400_000, 40 * 86_400_000, 400 * 86_400_000];
 
 const DAY_NAMES: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const DAY_WORDS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const FIVE_FIELDS: &str = "A cron expression has five fields: minute hour day month weekday";
+const MONTH_NAMES: [&str; 12] = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+const WEEKDAY_RANGE: &str = "Weekday must be 0 to 7 (or SUN to SAT)";
 
 /// When a routine runs. These are the six tabs of the form. `day` is 0 (Sunday) to 6.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,8 +58,13 @@ impl Schedule {
     fn engine(&self) -> Result<Option<cron::Schedule>, String> {
         match self.engine_text()? {
             None => Ok(None),
-            Some(text) => cron::Schedule::from_str(&text).map(Some).map_err(|error| error.to_string()),
+            Some(text) => cron::Schedule::from_str(&text).map(Some).map_err(|_| "That cron expression cannot be scheduled".to_string()),
         }
+    }
+
+    /// The schedule ready for repeated use (parsed once); `None` for `Manual` and for one that cannot be read.
+    fn prepare(&self) -> Option<Engine> {
+        self.engine().ok()?.map(|schedule| Engine { schedule })
     }
 
     /// Why this schedule cannot be used, in words for the form.
@@ -68,13 +77,15 @@ impl Schedule {
             }
             _ => {}
         }
-        self.engine().map(|_| ())
+        match self.engine()? {
+            Some(schedule) if schedule.upcoming(Utc).next().is_none() => Err("That expression never runs (check the day and the month)".to_string()),
+            _ => Ok(()),
+        }
     }
 
     /// The first time strictly after `after`; `None` for `Manual` and for a schedule that cannot be read.
     pub fn next_after<Tz: TimeZone>(&self, after: &DateTime<Tz>) -> Option<DateTime<Tz>> {
-        let engine = self.engine().ok()??;
-        engine.after(after).next()
+        self.prepare()?.next_after(after)
     }
 
     /// How a card and the detail screen say it: "Every day at 9:00 AM".
@@ -102,46 +113,165 @@ fn clock(hour: u8, minute: u8) -> String {
     format!("{twelve}:{minute:02} {suffix}")
 }
 
-/// Five usual fields in, the six the engine wants out. A bad count is refused here, in words.
+/// A parsed schedule. It works on calendar (wall clock) times carried as UTC and turns each result into a
+/// real instant in the person's zone: so a time that does not exist (the hour skipped when the clocks go
+/// forward) runs when the gap ends, and a repeated hour (clocks back) runs once.
+struct Engine {
+    schedule: cron::Schedule,
+}
+
+impl Engine {
+    fn next_after<Tz: TimeZone>(&self, after: &DateTime<Tz>) -> Option<DateTime<Tz>> {
+        let zone = after.timezone();
+        let mut from = Utc.from_utc_datetime(&after.naive_local());
+        for _ in 0..8 {
+            let nominal = self.schedule.after(&from).next()?;
+            if let Some(instant) = place(&zone, nominal.naive_utc(), after) {
+                return Some(instant);
+            }
+            from = nominal;
+        }
+        None
+    }
+}
+
+/// The instant of calendar time `wall` in `zone`, when it is later than `after`.
+fn place<Tz: TimeZone>(zone: &Tz, wall: NaiveDateTime, after: &DateTime<Tz>) -> Option<DateTime<Tz>> {
+    match zone.from_local_datetime(&wall) {
+        LocalResult::Single(instant) => (instant > *after).then_some(instant),
+        LocalResult::Ambiguous(first, second) => [first, second].into_iter().find(|instant| instant > after),
+        LocalResult::None => {
+            // Inside the gap: the first quarter hour that exists.
+            let mut probe = wall;
+            for _ in 0..16 {
+                probe += chrono::Duration::minutes(15);
+                match zone.from_local_datetime(&probe) {
+                    LocalResult::Single(instant) => return (instant > *after).then_some(instant),
+                    LocalResult::Ambiguous(first, _) => return (first > *after).then_some(first),
+                    LocalResult::None => {}
+                }
+            }
+            None
+        }
+    }
+}
+
+/// Five usual fields in, the six the engine wants out. A field that cannot work is named in words.
 fn engine_expression(expression: &str) -> Result<String, String> {
     let fields: Vec<&str> = expression.split_whitespace().collect();
     if fields.len() != 5 {
         return Err(FIVE_FIELDS.to_string());
     }
-    Ok(format!("0 {} {} {} {} {}", fields[0], fields[1], fields[2], fields[3], weekday_names(fields[4])))
-}
-
-/// `1-5`, `0,6` and `*/2` in the usual numbers become names; `*` and names stay.
-fn weekday_names(field: &str) -> String {
-    field
-        .split(',')
-        .map(|part| {
-            let (range, step) = match part.split_once('/') {
-                Some((range, step)) => (range, Some(step)),
-                None => (part, None),
-            };
-            let range = range.split('-').map(day_name).collect::<Vec<_>>().join("-");
-            match step {
-                Some(step) => format!("{range}/{step}"),
-                None => range,
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn day_name(token: &str) -> String {
-    match token {
-        "0" | "7" => "SUN",
-        "1" => "MON",
-        "2" => "TUE",
-        "3" => "WED",
-        "4" => "THU",
-        "5" => "FRI",
-        "6" => "SAT",
-        other => other,
+    check_field("Minute", fields[0], 0, 59, &[])?;
+    check_field("Hour", fields[1], 0, 23, &[])?;
+    check_field("Day of the month", fields[2], 1, 31, &[])?;
+    check_field("Month", fields[3], 1, 12, &MONTH_NAMES)?;
+    let weekdays = weekday_names(fields[4])?;
+    // Standard cron runs on either; the engine wants both. Asking for both is refused rather than misread.
+    if fields[2] != "*" && weekdays != "*" {
+        return Err("Use either a day of the month or a weekday, not both".to_string());
     }
-    .to_string()
+    Ok(format!("0 {} {} {} {} {}", fields[0], fields[1], fields[2], fields[3], weekdays))
+}
+
+/// Checks one field of a cron expression: lists, ranges and steps of numbers (or `names`) inside `min..=max`.
+fn check_field(label: &str, text: &str, min: u32, max: u32, names: &[&str]) -> Result<(), String> {
+    for part in text.split(',') {
+        let (range, step) = match part.split_once('/') {
+            Some((range, step)) => (range, Some(step)),
+            None => (part, None),
+        };
+        if let Some(step) = step {
+            if !matches!(step.parse::<u32>(), Ok(count) if count >= 1) {
+                return Err(format!("{label}: the step must be a whole number of at least 1"));
+            }
+        }
+        if range == "*" {
+            continue;
+        }
+        let tokens: Vec<&str> = range.split('-').collect();
+        if tokens.len() > 2 {
+            return Err(format!("{label} has a value that is not understood"));
+        }
+        let values = tokens.iter().map(|token| field_value(label, token, min, max, names)).collect::<Result<Vec<u32>, String>>()?;
+        if values.len() == 2 && values[0] > values[1] {
+            return Err(format!("{label}: the range runs backwards"));
+        }
+    }
+    Ok(())
+}
+
+fn field_value(label: &str, token: &str, min: u32, max: u32, names: &[&str]) -> Result<u32, String> {
+    if let Ok(number) = token.parse::<u32>() {
+        return if (min..=max).contains(&number) { Ok(number) } else { Err(format!("{label} must be {min} to {max}")) };
+    }
+    match names.iter().position(|name| name.eq_ignore_ascii_case(token)) {
+        Some(index) => Ok(min + index as u32),
+        None => Err(format!("{label} has a value that is not understood")),
+    }
+}
+
+/// The weekday field for the engine, which counts weekdays from another start than the usual `0` or `7`
+/// for Sunday: numbers become names, and a range or a step is written out (`1-7` is every day, `5-7` is
+/// Friday to Sunday, `1/2` is Monday, Wednesday, Friday: a start with a step runs to Saturday). `*` and names
+/// stay as they are.
+fn weekday_names(field: &str) -> Result<String, String> {
+    let mut parts: Vec<String> = Vec::new();
+    for part in field.split(',') {
+        let (range, step) = match part.split_once('/') {
+            Some((range, step)) => (range, Some(step)),
+            None => (part, None),
+        };
+        let every: usize = match step {
+            Some(text) => text.parse::<usize>().ok().filter(|count| *count >= 1).ok_or("Weekday: the step must be a whole number of at least 1")?,
+            None => 1,
+        };
+        if range == "*" {
+            parts.push(match step {
+                Some(text) => format!("*/{text}"),
+                None => "*".to_string(),
+            });
+            continue;
+        }
+        let tokens: Vec<&str> = range.split('-').collect();
+        let numbers: Option<Vec<usize>> = tokens.iter().map(|token| token.parse::<usize>().ok()).collect();
+        match numbers {
+            Some(numbers) if numbers.len() <= 2 => {
+                if numbers.iter().any(|number| *number > 7) {
+                    return Err(WEEKDAY_RANGE.to_string());
+                }
+                let low = numbers[0];
+                let high = match numbers.get(1) {
+                    Some(high) => *high,
+                    None if step.is_some() => 6.max(low),
+                    None => low,
+                };
+                if low > high {
+                    return Err("Weekday: the range runs backwards".to_string());
+                }
+                let mut days: Vec<&str> = Vec::new();
+                for day in (low..=high).step_by(every) {
+                    let name = DAY_NAMES[day % 7];
+                    if !days.contains(&name) {
+                        days.push(name);
+                    }
+                }
+                parts.push(days.join(","));
+            }
+            Some(_) => return Err("Weekday has a value that is not understood".to_string()),
+            None => {
+                // Names: SUN-SAT, optionally as a range.
+                if !tokens.iter().all(|token| DAY_NAMES.iter().any(|name| name.eq_ignore_ascii_case(token))) {
+                    return Err(WEEKDAY_RANGE.to_string());
+                }
+                parts.push(match step {
+                    Some(text) => format!("{}/{text}", range.to_uppercase()),
+                    None => range.to_uppercase(),
+                });
+            }
+        }
+    }
+    Ok(parts.join(","))
 }
 
 /// A saved routine. Times are epoch milliseconds. `baseline` is where the next due time is counted
@@ -223,12 +353,41 @@ pub fn delay_ms(id: &str) -> i64 {
     (hash % MAX_DELAY_MS as u64) as i64
 }
 
-fn delay_for<Tz: TimeZone>(schedule: &Schedule, id: &str, first: &DateTime<Tz>) -> i64 {
-    match schedule.next_after(first) {
+fn delay_for<Tz: TimeZone>(engine: &Engine, id: &str, first: &DateTime<Tz>) -> i64 {
+    match engine.next_after(first) {
         Some(second) if second.timestamp_millis() - first.timestamp_millis() >= MIN_GAP_FOR_DELAY_MS => delay_ms(id),
         Some(_) => 0,
         None => delay_ms(id),
     }
+}
+
+/// The latest occurrence at or before `limit_ms`, given that `first` (the first one after the baseline) is
+/// known to be due. It looks back from `limit_ms` in growing steps, so a long closed time costs a few steps,
+/// not one per missed occurrence.
+fn latest_occurrence<Tz: TimeZone>(engine: &Engine, zone: &Tz, first: &DateTime<Tz>, limit_ms: i64) -> i64 {
+    let first_ms = first.timestamp_millis();
+    for lookback in LOOKBACKS_MS {
+        let start_ms = first_ms.max(limit_ms - lookback);
+        let Some(mut cursor) = zone.timestamp_millis_opt(start_ms).single() else {
+            continue;
+        };
+        let mut latest = None;
+        for _ in 0..SCAN_LIMIT {
+            let Some(next) = engine.next_after(&cursor) else { break };
+            if next.timestamp_millis() > limit_ms {
+                break;
+            }
+            latest = Some(next.timestamp_millis());
+            cursor = next;
+        }
+        if let Some(latest) = latest {
+            return latest;
+        }
+        if start_ms == first_ms {
+            break;
+        }
+    }
+    first_ms
 }
 
 /// What to do about `routine` at `now_ms`. Of all the times that passed since the baseline only the
@@ -238,30 +397,25 @@ pub fn decide<Tz: TimeZone>(routine: &Routine, now_ms: i64, zone: &Tz) -> Decisi
     if !routine.enabled || matches!(routine.schedule, Schedule::Manual) {
         return Decision::Wait;
     }
+    let Some(engine) = routine.schedule.prepare() else {
+        return Decision::Wait;
+    };
     let Some(start) = zone.timestamp_millis_opt(routine.baseline).single() else {
         return Decision::Wait;
     };
-    let Some(first) = routine.schedule.next_after(&start) else {
+    let Some(first) = engine.next_after(&start) else {
         return Decision::Wait;
     };
-    let delay = delay_for(&routine.schedule, &routine.id, &first);
-    let mut latest = None;
-    let mut current = first;
-    for _ in 0..SCAN_LIMIT {
-        let due = current.timestamp_millis() + delay;
-        if due > now_ms {
-            break;
-        }
-        latest = Some(due);
-        match routine.schedule.next_after(&current) {
-            Some(next) => current = next,
-            None => break,
-        }
+    let delay = delay_for(&engine, &routine.id, &first);
+    let limit_ms = now_ms - delay;
+    if first.timestamp_millis() > limit_ms {
+        return Decision::Wait;
     }
-    match latest {
-        None => Decision::Wait,
-        Some(due_ms) if now_ms - due_ms <= MISSED_AFTER_MS => Decision::Run { due_ms },
-        Some(due_ms) => Decision::Missed { due_ms },
+    let due_ms = latest_occurrence(&engine, zone, &first, limit_ms) + delay;
+    if now_ms - due_ms <= MISSED_AFTER_MS {
+        Decision::Run { due_ms }
+    } else {
+        Decision::Missed { due_ms }
     }
 }
 
@@ -447,11 +601,24 @@ mod tests {
     }
 
     #[test]
-    fn a_once_a_minute_schedule_after_days_closed_is_still_one_decision() {
+    fn a_once_a_minute_schedule_after_days_closed_is_one_decision_for_the_latest_minute() {
         let routine = routine(Schedule::Cron { expression: "* * * * *".to_string() }, at(1, 0, 0));
+        assert_eq!(decide(&routine, at(9, 12, 0), &zone()), Decision::Run { due_ms: at(9, 12, 0) });
+    }
+
+    #[test]
+    fn days_closed_under_a_daily_schedule_is_one_missed_line_for_the_latest_day() {
+        let routine = routine(daily_nine(), at(1, 10, 0));
+        let due = at(9, 9, 0) + delay_ms(&routine.id);
+        assert_eq!(decide(&routine, at(9, 12, 0), &zone()), Decision::Missed { due_ms: due });
+    }
+
+    #[test]
+    fn a_long_gap_finds_the_latest_occurrence_not_the_first_after_the_baseline() {
+        let routine = routine(Schedule::Weekly { day: 1, hour: 9, minute: 0 }, at(1, 0, 0) - 40 * 86_400_000);
         match decide(&routine, at(9, 12, 0), &zone()) {
-            Decision::Missed { .. } => {}
-            other => panic!("expected one Missed, got {other:?}"),
+            Decision::Missed { due_ms } => assert!(due_ms > at(1, 0, 0), "the latest Monday, not the first one after the baseline: {due_ms}"),
+            other => panic!("{other:?}"),
         }
     }
 
@@ -476,6 +643,87 @@ mod tests {
         // The clock was set back: nothing runs until the time catches up.
         let routine = routine(Schedule::Hourly, at(9, 15, 0));
         assert_eq!(decide(&routine, at(9, 10, 0), &zone()), Decision::Wait);
+    }
+
+    #[test]
+    fn standard_weekday_ranges_and_steps_are_accepted() {
+        let from = zone().with_ymd_and_hms(2026, 10, 9, 10, 0, 0).unwrap(); // Friday
+        let next = |text: &str| Schedule::Cron { expression: text.to_string() }.next_after(&from).map(|time| time.timestamp_millis());
+        assert_eq!(next("0 9 * * 1-7"), Some(at(10, 9, 0)), "1-7 is every day");
+        assert_eq!(next("0 9 * * 5-7"), Some(at(10, 9, 0)), "Friday to Sunday: the next 9:00 is Saturday");
+        assert_eq!(next("0 9 * * 6-7"), Some(at(10, 9, 0)));
+        assert_eq!(next("0 9 * * 0,6"), Some(at(10, 9, 0)), "Saturday and Sunday");
+        assert_eq!(next("0 9 * * 1/2"), Some(at(12, 9, 0)), "1/2 runs from Monday to Saturday in steps of two: Monday, Wednesday, Friday; Friday 9:00 has passed");
+        assert_eq!(next("0 9 * * MON-FRI"), Some(at(12, 9, 0)), "names still work");
+    }
+
+    #[test]
+    fn a_bad_field_is_named_in_plain_words() {
+        let why = |text: &str| Schedule::Cron { expression: text.to_string() }.validate().unwrap_err();
+        assert_eq!(why("61 * * * *"), "Minute must be 0 to 59");
+        assert_eq!(why("0 24 * * *"), "Hour must be 0 to 23");
+        assert_eq!(why("0 0 32 * *"), "Day of the month must be 1 to 31");
+        assert_eq!(why("0 0 * 13 *"), "Month must be 1 to 12");
+        assert_eq!(why("0 0 * * 8"), "Weekday must be 0 to 7 (or SUN to SAT)");
+        assert_eq!(why("*/0 * * * *"), "Minute: the step must be a whole number of at least 1");
+        assert_eq!(why("5-1 * * * *"), "Minute: the range runs backwards");
+        assert_eq!(why("a * * * *"), "Minute has a value that is not understood");
+        assert_eq!(why("0 9 1 * 1"), "Use either a day of the month or a weekday, not both");
+        for text in ["0 9 1 * *", "0 9 * * 1", "0 9 * * *"] {
+            assert!(Schedule::Cron { expression: text.to_string() }.validate().is_ok(), "{text}");
+        }
+    }
+
+    #[test]
+    fn an_expression_that_never_runs_is_refused() {
+        let error = Schedule::Cron { expression: "0 0 31 2 *".to_string() }.validate().unwrap_err();
+        assert!(error.contains("never runs"), "{error}");
+    }
+
+    #[test]
+    fn negative_and_half_hour_offsets_give_the_right_instants() {
+        let new_york_winter = FixedOffset::west_opt(5 * 3600).unwrap();
+        let from = new_york_winter.with_ymd_and_hms(2026, 1, 15, 10, 0, 0).unwrap();
+        let next = daily_nine().next_after(&from).unwrap();
+        assert_eq!(next.timestamp_millis(), new_york_winter.with_ymd_and_hms(2026, 1, 16, 9, 0, 0).unwrap().timestamp_millis());
+        let india = FixedOffset::east_opt(5 * 3600 + 1800).unwrap();
+        let from = india.with_ymd_and_hms(2026, 1, 15, 8, 0, 0).unwrap();
+        let next = daily_nine().next_after(&from).unwrap();
+        assert_eq!(next.timestamp_millis(), india.with_ymd_and_hms(2026, 1, 15, 9, 0, 0).unwrap().timestamp_millis());
+    }
+
+    #[test]
+    fn a_time_inside_the_spring_forward_gap_runs_when_the_gap_ends() {
+        use chrono_tz::America::New_York;
+        // 2026-03-08: 02:00 to 03:00 does not exist in New York.
+        let from = New_York.with_ymd_and_hms(2026, 3, 7, 12, 0, 0).unwrap();
+        let schedule = Schedule::Daily { hour: 2, minute: 30 };
+        let gap_day = schedule.next_after(&from).unwrap();
+        assert_eq!(gap_day.format("%Y-%m-%d %H:%M").to_string(), "2026-03-08 03:00", "moved to the end of the gap, not skipped");
+        let after_it = schedule.next_after(&gap_day).unwrap();
+        assert_eq!(after_it.format("%Y-%m-%d %H:%M").to_string(), "2026-03-09 02:30", "and once only");
+    }
+
+    #[test]
+    fn the_repeated_hour_of_fall_back_does_not_run_twice() {
+        use chrono_tz::America::New_York;
+        // 2026-11-01: 01:00 to 02:00 happens twice in New York.
+        let from = New_York.with_ymd_and_hms(2026, 10, 31, 12, 0, 0).unwrap();
+        let schedule = Schedule::Daily { hour: 1, minute: 30 };
+        let first = schedule.next_after(&from).unwrap();
+        assert_eq!(first.format("%Y-%m-%d %H:%M %Z").to_string(), "2026-11-01 01:30 EDT");
+        let second = schedule.next_after(&first).unwrap();
+        assert_eq!(second.format("%Y-%m-%d %H:%M").to_string(), "2026-11-02 01:30", "not again at 01:30 EST");
+    }
+
+    #[test]
+    fn hourly_across_the_gap_is_not_doubled() {
+        use chrono_tz::America::New_York;
+        let from = New_York.with_ymd_and_hms(2026, 3, 8, 1, 30, 0).unwrap();
+        let hour_after_gap = Schedule::Hourly.next_after(&from).unwrap();
+        assert_eq!(hour_after_gap.format("%H:%M").to_string(), "03:00");
+        let next = Schedule::Hourly.next_after(&hour_after_gap).unwrap();
+        assert_eq!(next.format("%H:%M").to_string(), "04:00");
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_features::{history_rows, local_offset, use_routines, use_workspace, when_label, RoutineDialog};
+use forge_features::{history_rows, local_when_label, use_routines, use_workspace, RoutineDialog};
 use forge_shared::{Button, ButtonKind, Switch};
 
 /// One routine: its settings at the left, its instructions and history at the right.
@@ -14,7 +14,6 @@ pub fn RoutineDetail(id: String) -> Element {
             Button { label: "Back to routines", onclick: move |_| routines.show_list() }
         };
     };
-    let offset = local_offset();
     let state_of = |session_id: &str| workspace.run_state(session_id);
     let rows = history_rows(&routines.runs(), &routine.id, &state_of);
     let waiting = routines.waiting().contains(&routine.id);
@@ -104,7 +103,7 @@ pub fn RoutineDetail(id: String) -> Element {
                 }
                 for row in rows {
                     {
-                        let when = when_label(row.due_ms, offset);
+                        let when = local_when_label(row.due_ms);
                         let session = row.session_id.clone();
                         let text = row.text.clone();
                         rsx! {
