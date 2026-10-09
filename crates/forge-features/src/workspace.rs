@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
-use forge_application::{ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
+use forge_application::{Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
@@ -22,7 +22,7 @@ use crate::tool_activity::finished_tool_calls;
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, open_session_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
-use crate::sidebar::{cycle_target, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
+use crate::sidebar::{archive_key_plan, cycle_target, ArchiveKey, SidebarEntry, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
 
 // Typing waits this long before the transcripts are scanned.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -117,6 +117,7 @@ pub struct Workspace {
     search_hits: Signal<Vec<SearchHit>>,
     search_task: Signal<Option<dioxus::core::Task>>,
     closed: Signal<ClosedSessions>,
+    rename_request: Signal<Option<EntryKey>>,
 }
 
 /// Creates the workspace, provides it to every descendant and loads the sidebar once. Call it in
@@ -160,6 +161,7 @@ pub fn use_workspace_provider() -> Workspace {
             search_hits: Signal::new(Vec::new()),
             search_task: Signal::new(None),
             closed: Signal::new(ClosedSessions::default()),
+            rename_request: Signal::new(None),
         }
     });
     use_context_provider(move || workspace);
@@ -853,7 +855,72 @@ impl Workspace {
         }
     }
 
+    // The active session's folder and sidebar entry (its title, its actions).
+    fn active_entry(&self) -> Option<(PathBuf, SidebarEntry)> {
+        let Active::Live(id) = self.active() else {
+            return None;
+        };
+        self.sidebar().into_iter().find_map(|group| {
+            let path = group.project.path.clone();
+            group.entries.into_iter().find(|entry| entry.key == EntryKey::Live(id)).map(|entry| (path, entry))
+        })
+    }
+
+    /// Forks the active session, as the row menu's Fork does.
+    pub fn fork_active(&self) {
+        if let Some((project, entry)) = self.active_entry() {
+            if let (true, Some(session)) = (entry.actions().can_fork, entry.session_id.clone()) {
+                self.fork_session(project, session, entry.title);
+            }
+        }
+    }
+
+    /// Archives the active session and closes it, or unarchives it when it is archived (see
+    /// `ArchiveKey`).
+    pub fn archive_active(&self) {
+        let (Active::Live(id), Some((project, entry))) = (self.active(), self.active_entry()) else {
+            return;
+        };
+        let running = self.live_view(id).is_some_and(|view| view.read().phase == Phase::Running);
+        match (archive_key_plan(entry.archived, entry.session_id.is_some(), running), entry.session_id) {
+            (ArchiveKey::Unarchive, Some(session)) => self.unarchive_session(project, session),
+            (ArchiveKey::ArchiveAndClose, Some(session)) => {
+                self.archive_session(project, session);
+                self.close(id);
+            }
+            (ArchiveKey::StopFirst, _) => self.report("Stop the session before archiving it.".to_string()),
+            _ => {}
+        }
+    }
+
+    /// Puts the active session's sidebar row into rename mode. Nothing when the session cannot be
+    /// renamed or its row is not in the list (its group is collapsed, or the status filter hides it).
+    pub fn rename_active(&self) {
+        let Some((_, entry)) = self.active_entry() else {
+            return;
+        };
+        let shown = self
+            .arranged_sidebar(crate::arrange::now_local())
+            .iter()
+            .any(|group| !group.collapsed && group.entries.iter().any(|item| item.entry.key == entry.key));
+        if entry.actions().can_rename && shown {
+            let mut request = self.rename_request;
+            request.set(Some(entry.key));
+        }
+    }
+
+    /// The row that is asked to start renaming, until it takes the request.
+    pub fn rename_request(&self) -> Option<EntryKey> {
+        self.rename_request.read().clone()
+    }
+
+    pub fn clear_rename_request(&self) {
+        let mut request = self.rename_request;
+        request.set(None);
+    }
+
     pub fn show_new_session(&self) {
+        self.clear_rename_request();
         self.close_lightbox();
         let mut active = self.active;
         active.set(Active::NewSession);
@@ -909,6 +976,7 @@ impl Workspace {
     }
 
     pub fn select(&self, id: LiveSessionId) {
+        self.clear_rename_request();
         self.close_lightbox();
         // A routine's session the person opens stays open: what they type or edit in it must not be
         // closed away by the routine timer.
@@ -1133,11 +1201,11 @@ impl Workspace {
             Shortcut::ToggleSidebar => return false,
             Shortcut::CloseSession => self.close_active(),
             Shortcut::ReopenClosed => self.reopen_closed(),
-            // Temporary: later tasks give each of these its action.
-            Shortcut::ShowShortcuts
-            | Shortcut::ArchiveActive
-            | Shortcut::ForkActive
-            | Shortcut::RenameActive => return false,
+            Shortcut::ArchiveActive => self.archive_active(),
+            Shortcut::ForkActive => self.fork_active(),
+            Shortcut::RenameActive => self.rename_active(),
+            // Temporary: a later task gives this its action.
+            Shortcut::ShowShortcuts => return false,
         }
         event.prevent_default();
         true

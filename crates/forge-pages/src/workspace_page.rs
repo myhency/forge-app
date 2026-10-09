@@ -59,6 +59,22 @@ pub fn WorkspacePage() -> Element {
     let layout = layout_for(window_width(), docked_sidebar, dock_width);
     let sidebar_mode = layout.sidebar;
 
+    // ⌥⌘R needs the row on screen: bring the sidebar out when it is hidden or an overlay. The mode
+    // depends on the window width only, so the dock width does not matter here.
+    use_effect(move || {
+        if workspace.rename_request().is_none() {
+            return;
+        }
+        match layout_for(window_width(), SIDEBAR_RAIL_WIDTH, 0).sidebar {
+            SidebarMode::Overlay => peek.set(true),
+            SidebarMode::Docked => {
+                if workspace.prefs().hidden {
+                    workspace.update_prefs(|prefs| prefs.hidden = false);
+                }
+            }
+        }
+    });
+
     rsx! {
         div {
             class: workspace_class(layout, dragging()),

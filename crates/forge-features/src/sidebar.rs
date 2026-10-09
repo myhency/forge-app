@@ -109,6 +109,27 @@ pub fn menu_key_action(code: &str, modified: bool, actions: RowActions) -> Optio
     }
 }
 
+/// What ⌥⌘A does to the active (open) session. The row menu only archives sessions that are not
+/// open; the key closes the session as part of archiving it, and does not close one that is
+/// still working.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchiveKey {
+    Nothing,
+    Unarchive,
+    ArchiveAndClose,
+    /// A turn is running: tell the person to stop it first.
+    StopFirst,
+}
+
+pub fn archive_key_plan(archived: bool, has_id: bool, running: bool) -> ArchiveKey {
+    match (has_id, archived, running) {
+        (false, _, _) => ArchiveKey::Nothing,
+        (true, true, _) => ArchiveKey::Unarchive,
+        (true, false, true) => ArchiveKey::StopFirst,
+        (true, false, false) => ArchiveKey::ArchiveAndClose,
+    }
+}
+
 /// Sets `archived` on every entry that `archived` names (same project and same session id).
 /// Names with no session are ignored.
 pub fn mark_archived(groups: &mut [SidebarGroup], archived: &[ArchivedRef]) {
@@ -367,6 +388,28 @@ mod tests {
     use forge_entities::SessionMarker;
 
     use super::*;
+
+    #[test]
+    fn the_archive_key_archives_and_closes_an_idle_session_with_an_id() {
+        assert_eq!(archive_key_plan(false, true, false), ArchiveKey::ArchiveAndClose);
+    }
+
+    #[test]
+    fn the_archive_key_unarchives_an_archived_session_even_while_it_runs() {
+        assert_eq!(archive_key_plan(true, true, false), ArchiveKey::Unarchive);
+        assert_eq!(archive_key_plan(true, true, true), ArchiveKey::Unarchive);
+    }
+
+    #[test]
+    fn a_running_session_is_not_closed_by_the_archive_key() {
+        assert_eq!(archive_key_plan(false, true, true), ArchiveKey::StopFirst);
+    }
+
+    #[test]
+    fn a_session_without_an_id_cannot_be_archived() {
+        assert_eq!(archive_key_plan(false, false, false), ArchiveKey::Nothing);
+        assert_eq!(archive_key_plan(true, false, false), ArchiveKey::Nothing);
+    }
 
     fn project(path: &str) -> ProjectSummary {
         ProjectSummary {
