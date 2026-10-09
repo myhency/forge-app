@@ -33,7 +33,9 @@ mod settings;
 mod settings_draft;
 mod shortcut;
 mod sign_in;
+mod sign_in_run;
 mod terminal_tabs;
+mod terminal_tap;
 mod tool_activity;
 mod sidebar;
 mod transcript_views;
@@ -45,6 +47,9 @@ pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
 pub use customize_connectors::{connection_tag, connection_text, connector_dialog_busy, connector_groups, explore_connectors, find_connector, source_label, ConnectionState, ConnectorGroups, ConnectorRow};
+pub use sign_in::{Action as SignInAction, Outcome as SignInOutcome, StopReason as SignInStop};
+pub use sign_in_run::SignInRun;
+pub use terminal_tap::{TapHandle, TerminalTap};
 pub use customize_skills::{
     body_after_front_matter, explore_skills, highlighted_code, file_depth, file_leaf, find_skill, is_markdown_file, origin_label, set_skill_enabled_in, skill_groups,
     SkillGroups, SkillPane, SkillRow, SkillText,
