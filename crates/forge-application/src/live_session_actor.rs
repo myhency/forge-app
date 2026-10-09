@@ -357,12 +357,15 @@ impl Actor {
             SessionUpdate::PermissionRequested(request) => {
                 self.view.pending_permissions.push_back(request);
             }
-            // A finished turn has no open permission request any more (Stop makes the sidecar deny
-            // it silently), and a stale card would hide the next real one.
+            // Stop makes the sidecar deny an open request and say so; a stale card would hide the
+            // next real one. A finished turn does not clear them: a workflow's agents are still
+            // asking after the turn that started it ended.
+            SessionUpdate::PermissionCancelled { id } => {
+                self.view.pending_permissions.retain(|request| request.id != id);
+            }
             SessionUpdate::TurnCompleted => {
                 self.view.phase = Phase::Idle;
                 self.view.turn_started = None;
-                self.view.pending_permissions.clear();
             }
             SessionUpdate::BackgroundTasks(tasks) => {
                 let now = std::time::SystemTime::now();

@@ -308,6 +308,9 @@ export class SidecarSession {
             if (this.pendingPermissions.has(permissionRequestId)) {
               this.pendingPermissions.delete(permissionRequestId);
               resolve({ behavior: "deny", message: "Interrupted" });
+              // The parent shows the request until told it is gone; a finished turn does not mean that,
+              // because a workflow's agents keep asking after the turn that started it.
+              this.emit({ type: "permission_cancelled", permission_request_id: permissionRequestId });
             }
           },
           { once: true },

@@ -9,6 +9,8 @@ pub enum SessionUpdate {
     ToolCallStarted { tool_call: ToolCall },
     ToolCallCompleted { tool_call_id: String },
     PermissionRequested(PermissionRequest),
+    /// The SDK withdrew a request (a stop); its card goes.
+    PermissionCancelled { id: String },
     TurnCompleted,
     ContextUsage(ContextUsage),
     CommandsAvailable(Vec<SlashCommand>),
@@ -108,6 +110,7 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
                 rules: rules.clone(),
             })
         }
+        SidecarEvent::PermissionCancelled { permission_request_id } => SessionUpdate::PermissionCancelled { id: permission_request_id.clone() },
         SidecarEvent::TurnComplete { usage } => {
             for (model, tokens) in usage {
                 session.usage.add(model, *tokens);
@@ -479,6 +482,13 @@ mod tests {
 
         assert_eq!(session.messages[0].tool_calls().nth(0).unwrap().result.as_ref().unwrap().output, "first");
         assert_eq!(session.messages[2].tool_calls().nth(0).unwrap().result.as_ref().unwrap().output, "second");
+    }
+
+    #[test]
+    fn a_cancelled_permission_request_is_surfaced_by_its_id() {
+        let mut session = empty_session();
+        let update = apply_sidecar_event(&mut session, &SidecarEvent::PermissionCancelled { permission_request_id: "perm-1".to_string() });
+        assert_eq!(update, SessionUpdate::PermissionCancelled { id: "perm-1".to_string() });
     }
 
     #[test]
