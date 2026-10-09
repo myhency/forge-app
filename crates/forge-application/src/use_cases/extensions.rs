@@ -377,6 +377,7 @@ mod tests {
         let config = AppConfig {
             output_style: Some(forge_domain::OutputStyle::Proactive),
             allow_bypass_mode: true,
+            dynamic_workflows: true,
             ..AppConfig::default()
         };
         let mut config_port = MockConfigRepositoryPort::new();
@@ -396,5 +397,6 @@ mod tests {
         assert!(active.skills.is_empty());
         assert_eq!(defaults.output_style, Some(forge_domain::OutputStyle::Proactive));
         assert!(defaults.allow_bypass);
+        assert!(defaults.dynamic_workflows);
     }
 }

@@ -262,6 +262,9 @@ pub struct AppConfig {
     /// Whether the bypass-permissions mode may be chosen at all.
     #[serde(default)]
     pub allow_bypass_mode: bool,
+    /// Whether Claude may run several agents in parallel for a complex task (the SDK's Workflow tool).
+    #[serde(default)]
+    pub dynamic_workflows: bool,
     #[serde(default)]
     pub appearance: Appearance,
     #[serde(default)]
@@ -307,6 +310,7 @@ impl Default for AppConfig {
             output_style: None,
             prompt_suggestions: true,
             allow_bypass_mode: false,
+            dynamic_workflows: false,
             appearance: Appearance::default(),
             notifications: NotificationPrefs::default(),
             attention_bounce: false,
@@ -623,6 +627,7 @@ mod tests {
         assert_eq!(config.output_style, None);
         assert!(config.prompt_suggestions, "suggestions stay on for a config written before the switch existed");
         assert!(!config.allow_bypass_mode);
+        assert!(!config.dynamic_workflows, "workflows stay off for a config written before the switch existed");
         assert!(AppConfig::default().prompt_suggestions, "the manual Default agrees with the file default");
     }
 
@@ -633,6 +638,7 @@ mod tests {
             output_style: Some(crate::OutputStyle::Concise),
             prompt_suggestions: false,
             allow_bypass_mode: true,
+            dynamic_workflows: true,
             ..AppConfig::default()
         };
         let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();

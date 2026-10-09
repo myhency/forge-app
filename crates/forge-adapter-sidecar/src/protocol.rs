@@ -24,6 +24,7 @@ pub enum SidecarCommand {
         output_style: Option<String>,
         prompt_suggestions: bool,
         allow_bypass: bool,
+        dynamic_workflows: bool,
     },
     SendMessage {
         id: String,
@@ -123,6 +124,7 @@ impl SidecarCommand {
             output_style: params.defaults.output_style.map(|style| style.name().to_string()),
             prompt_suggestions: params.defaults.prompt_suggestions,
             allow_bypass: params.defaults.allow_bypass,
+            dynamic_workflows: params.defaults.dynamic_workflows,
         }
     }
 
@@ -202,6 +204,7 @@ mod tests {
         assert!(json.get("output_style").is_none());
         assert_eq!(json["prompt_suggestions"], serde_json::json!(true));
         assert_eq!(json["allow_bypass"], serde_json::json!(false));
+        assert_eq!(json["dynamic_workflows"], serde_json::json!(false));
     }
 
     #[test]
@@ -211,11 +214,13 @@ mod tests {
             output_style: Some(forge_domain::OutputStyle::Concise),
             prompt_suggestions: false,
             allow_bypass: true,
+            dynamic_workflows: true,
         };
         let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params)).unwrap();
         assert_eq!(json["output_style"], serde_json::json!("Concise"));
         assert_eq!(json["prompt_suggestions"], serde_json::json!(false));
         assert_eq!(json["allow_bypass"], serde_json::json!(true));
+        assert_eq!(json["dynamic_workflows"], serde_json::json!(true));
     }
 
     #[test]
@@ -317,7 +322,8 @@ mod tests {
                 "plugins": [],
                 "mcp_servers": {},
                 "prompt_suggestions": true,
-                "allow_bypass": false
+                "allow_bypass": false,
+                "dynamic_workflows": false
             })
         );
     }

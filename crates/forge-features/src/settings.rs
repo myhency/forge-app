@@ -51,6 +51,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::OutputStyle(style) => config.output_style = style,
         CodeChange::PromptSuggestions(on) => config.prompt_suggestions = on,
         CodeChange::AllowBypass(on) => config.allow_bypass_mode = on,
+        CodeChange::DynamicWorkflows(on) => config.dynamic_workflows = on,
         CodeChange::Theme(value) => config.appearance.theme = value,
         CodeChange::Font(value) => config.appearance.font = value,
         CodeChange::TextSize(value) => config.appearance.text_size = value,
@@ -73,6 +74,7 @@ pub(crate) enum CodeChange {
     OutputStyle(Option<OutputStyle>),
     PromptSuggestions(bool),
     AllowBypass(bool),
+    DynamicWorkflows(bool),
     Theme(Theme),
     Font(FontChoice),
     TextSize(TextSize),
@@ -246,6 +248,10 @@ impl Settings {
         self.saved.read().allow_bypass_mode
     }
 
+    pub fn dynamic_workflows(&self) -> bool {
+        self.saved.read().dynamic_workflows
+    }
+
     pub fn set_default_transcript_view(&self, view: TranscriptView) {
         self.change_code(CodeChange::DefaultView(view));
     }
@@ -260,6 +266,10 @@ impl Settings {
 
     pub fn set_allow_bypass_mode(&self, on: bool) {
         self.change_code(CodeChange::AllowBypass(on));
+    }
+
+    pub fn set_dynamic_workflows(&self, on: bool) {
+        self.change_code(CodeChange::DynamicWorkflows(on));
     }
 
     /// The language on screen.
@@ -531,6 +541,7 @@ impl Settings {
             current.output_style = config.output_style;
             current.prompt_suggestions = config.prompt_suggestions;
             current.allow_bypass_mode = config.allow_bypass_mode;
+            current.dynamic_workflows = config.dynamic_workflows;
             current.appearance = config.appearance;
             current.notifications = config.notifications;
             current.attention_bounce = config.attention_bounce;
@@ -588,11 +599,13 @@ mod tests {
         apply_code_change(&mut config, CodeChange::OutputStyle(Some(OutputStyle::Learning)));
         apply_code_change(&mut config, CodeChange::PromptSuggestions(false));
         apply_code_change(&mut config, CodeChange::AllowBypass(true));
+        apply_code_change(&mut config, CodeChange::DynamicWorkflows(true));
 
         assert_eq!(config.default_transcript_view, TranscriptView::Thinking);
         assert_eq!(config.output_style, Some(OutputStyle::Learning));
         assert!(!config.prompt_suggestions);
         assert!(config.allow_bypass_mode);
+        assert!(config.dynamic_workflows);
         assert_eq!(config.model, None, "nothing else is touched");
     }
 

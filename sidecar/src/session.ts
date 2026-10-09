@@ -350,8 +350,16 @@ export class SidecarSession {
           strictMcpConfig: true,
           skills: skillsPlugin?.skills ?? [],
           plugins,
-          // The output style of a new session; the SDK's default style when none is set.
-          ...(command.output_style ? { settings: { outputStyle: command.output_style } } : {}),
+          // Inline settings of a new session: its output style (the SDK's default when none is set) and the
+          // Workflow tool, which the SDK leaves off unless asked (Forge reads no user settings file).
+          ...(command.output_style || command.dynamic_workflows
+            ? {
+                settings: {
+                  ...(command.output_style ? { outputStyle: command.output_style } : {}),
+                  ...(command.dynamic_workflows ? { enableWorkflows: true } : {}),
+                },
+              }
+            : {}),
           mcpServers: command.mcp_servers ?? {},
           additionalDirectories: command.additional_directories ?? [],
           allowedTools: command.allowed_tools ?? [],

@@ -207,6 +207,11 @@ fn CodeSection() -> Element {
             description: tr!("Adds Bypass permissions to the mode menu, which skips every permission check in a session. A session that is already in that mode keeps it."),
             Switch { on: settings.allow_bypass_mode(), onchange: move |on| settings.set_allow_bypass_mode(on) }
         }
+        SettingRow {
+            title: tr!("Dynamic workflows"),
+            description: tr!("Lets Claude run several agents in parallel for a complex task. Workflows can use up your usage limit quickly."),
+            Switch { on: settings.dynamic_workflows(), onchange: move |on| settings.set_dynamic_workflows(on) }
+        }
         if cfg!(target_os = "macos") {
             SettingRow {
                 title: tr!("Bounce the Dock icon"),
@@ -215,7 +220,7 @@ fn CodeSection() -> Element {
             }
         }
         div { class: "hint", style: "margin-top: 12px;",
-            {tr!("Output style, prompt suggestions and the bypass switch apply to sessions that start after the change. The default view also applies to open sessions you have not changed.")}
+            {tr!("Output style, prompt suggestions, the bypass switch and dynamic workflows apply to sessions that start after the change. The default view also applies to open sessions you have not changed.")}
         }
     }
 }
