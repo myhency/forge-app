@@ -51,7 +51,7 @@ pub use permission::{PermissionDecision, PermissionMode};
 pub use background::{BackgroundTaskInfo, RunningTask};
 pub use project::ProjectSummary;
 pub use routine::{
-    decide, delay_ms, push_run, routine_id, validate_draft, Decision, Routine, RoutineDraft, RoutineRun, RunOutcome, Schedule, SkipReason,
+    clock, decide, delay_ms, push_run, routine_id, validate_draft, Decision, Routine, RoutineDraft, RoutineRun, RunOutcome, Schedule, SkipReason,
     KEEP_RUNS, MAX_DELAY_MS, MISSED_AFTER_MS,
 };
 pub use search::{find_snippet, split_at_match, title_matches, SearchHit, Snippet};

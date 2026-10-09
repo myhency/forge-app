@@ -4,6 +4,24 @@ use forge_shared::tr;
 
 /// "just now", "5m ago", "3h ago", "2d ago", or the date for anything older than a week. An
 /// unparseable timestamp gives an empty string rather than an error: it is only a label.
+/// The short month name in the language on screen (`Oct`, `10월`).
+pub fn month_short(month: u8) -> &'static str {
+    match month {
+        1 => tr!("Jan"),
+        2 => tr!("Feb"),
+        3 => tr!("Mar"),
+        4 => tr!("Apr"),
+        5 => tr!("May"),
+        6 => tr!("Jun"),
+        7 => tr!("Jul"),
+        8 => tr!("Aug"),
+        9 => tr!("Sep"),
+        10 => tr!("Oct"),
+        11 => tr!("Nov"),
+        _ => tr!("Dec"),
+    }
+}
+
 pub fn relative_time(updated_at: &str, now: OffsetDateTime) -> String {
     let Ok(then) = OffsetDateTime::parse(updated_at, &Rfc3339) else {
         return String::new();

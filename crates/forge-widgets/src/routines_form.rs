@@ -2,17 +2,17 @@ use dioxus::prelude::*;
 use forge_entities::{model_from_value, model_options, model_value};
 use forge_features::{mode_options, mode_value, parse_mode, use_routines, use_settings, ScheduleKind};
 use forge_domain::PermissionMode;
-use forge_shared::{Button, ButtonKind, Select, TextArea, TextInput};
+use forge_shared::{msg, tr, Button, ButtonKind, Select, TextArea, TextInput};
 
 const KINDS: [(ScheduleKind, &str); 6] = [
-    (ScheduleKind::Manual, "Manual"),
-    (ScheduleKind::Hourly, "Hourly"),
-    (ScheduleKind::Daily, "Daily"),
-    (ScheduleKind::Weekdays, "Weekdays"),
-    (ScheduleKind::Weekly, "Weekly"),
-    (ScheduleKind::Custom, "Custom"),
+    (ScheduleKind::Manual, msg!("Manual")),
+    (ScheduleKind::Hourly, msg!("Hourly")),
+    (ScheduleKind::Daily, msg!("Daily")),
+    (ScheduleKind::Weekdays, msg!("Weekdays")),
+    (ScheduleKind::Weekly, msg!("Weekly")),
+    (ScheduleKind::Custom, msg!("Custom")),
 ];
-const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAYS: [&str; 7] = [msg!("Sunday"), msg!("Monday"), msg!("Tuesday"), msg!("Wednesday"), msg!("Thursday"), msg!("Friday"), msg!("Saturday")];
 
 /// The form of a new routine (`id` is `None`) or of the one being edited.
 #[component]
@@ -27,27 +27,27 @@ pub fn RoutineForm(id: Option<String>) -> Element {
     let started_typing = !form.name.is_empty() || !form.description.is_empty();
     let shows_time = matches!(form.kind, ScheduleKind::Daily | ScheduleKind::Weekdays | ScheduleKind::Weekly);
     let time_value = format!("{:02}:{:02}", form.hour, form.minute);
-    let folder_text = form.folder.as_ref().map(|folder| folder.display().to_string()).unwrap_or_else(|| "No folder chosen".to_string());
-    let day_options: Vec<(String, String)> = DAYS.iter().enumerate().map(|(number, name)| (number.to_string(), (*name).to_string())).collect();
+    let folder_text = form.folder.as_ref().map(|folder| folder.display().to_string()).unwrap_or_else(|| tr!("No folder chosen").to_string());
+    let day_options: Vec<(String, String)> = DAYS.iter().enumerate().map(|(number, name)| (number.to_string(), forge_shared::i18n::text(name).to_string())).collect();
     rsx! {
         div { class: "routine-head",
-            button { class: "link", onclick: move |_| routines.leave_form(), "Routines" }
-            span { if editing { " / Edit routine" } else { " / New routine" } }
+            button { class: "link", onclick: move |_| routines.leave_form(), {tr!("Routines")} }
+            span { if editing { {format!(" / {}", tr!("Edit routine"))} } else { {format!(" / {}", tr!("New routine"))} } }
         }
-        p { class: "routines-notice", "Routines run only while Forge is open and the computer is awake." }
+        p { class: "routines-notice", {tr!("Routines run only while Forge is open and the computer is awake.")} }
         div { class: "routine-form",
-            label { "Name *" }
+            label { {tr!("Name *")} }
             TextInput { value: form.name.clone(), placeholder: "daily-code-review", oninput: move |text: String| routines.edit_form(|f| f.name = text) }
-            label { "Description *" }
+            label { {tr!("Description *")} }
             TextInput {
                 value: form.description.clone(),
-                placeholder: "Review yesterday's commits and flag concerns",
+                placeholder: tr!("Review yesterday's commits and flag concerns"),
                 oninput: move |text: String| routines.edit_form(|f| f.description = text),
             }
-            label { "Instructions" }
+            label { {tr!("Instructions")} }
             TextArea {
                 value: form.instructions.clone(),
-                placeholder: "Look at the commits of the last 24 hours. Summarise what changed, point out risky patterns or missing tests, and note anything that needs a follow-up.",
+                placeholder: tr!("Look at the commits of the last 24 hours. Summarise what changed, point out risky patterns or missing tests, and note anything that needs a follow-up."),
                 oninput: move |text: String| routines.edit_form(|f| f.instructions = text),
             }
             div { class: "routine-form-row",
@@ -64,17 +64,17 @@ pub fn RoutineForm(id: Option<String>) -> Element {
                         routines.edit_form(|f| f.model = if chosen.is_empty() { None } else { Some(chosen) });
                     },
                 }
-                Button { label: "Choose folder…", onclick: move |_| routines.choose_folder() }
+                Button { label: tr!("Choose folder…"), onclick: move |_| routines.choose_folder() }
                 span { class: "routine-folder", "{folder_text}" }
             }
-            label { "Schedule" }
+            label { {tr!("Schedule")} }
             div { class: "customize-switch",
                 for (kind, label) in KINDS {
                     button {
                         key: "{label}",
                         class: if form.kind == kind { "active" } else { "" },
                         onclick: move |_| routines.edit_form(|f| f.kind = kind),
-                        "{label}"
+                        {forge_shared::i18n::text(label)}
                     }
                 }
             }
@@ -86,7 +86,7 @@ pub fn RoutineForm(id: Option<String>) -> Element {
                 }
             }
             if shows_time {
-                label { "Time" }
+                label { {tr!("Time")} }
                 input {
                     class: "customize-field",
                     r#type: "time",
@@ -103,11 +103,11 @@ pub fn RoutineForm(id: Option<String>) -> Element {
                 }
             }
             if form.kind == ScheduleKind::Custom {
-                label { "Cron expression" }
+                label { {tr!("Cron expression")} }
                 TextInput { value: form.cron.clone(), placeholder: "0 9 * * *", oninput: move |text: String| routines.edit_form(|f| f.cron = text) }
             }
             if form.kind != ScheduleKind::Manual {
-                p { class: "hint", "A run starts a few minutes after the set time (a fixed delay for each routine)." }
+                p { class: "hint", {tr!("A run starts a few minutes after the set time (a fixed delay for each routine).")} }
             }
             if let Some(problem) = problem.clone() {
                 if started_typing {
@@ -115,9 +115,9 @@ pub fn RoutineForm(id: Option<String>) -> Element {
                 }
             }
             div { class: "routine-form-buttons",
-                Button { label: "Cancel", onclick: move |_| routines.leave_form() }
+                Button { label: tr!("Cancel"), onclick: move |_| routines.leave_form() }
                 Button {
-                    label: if editing { "Save" } else { "Create" },
+                    label: if editing { tr!("Save") } else { tr!("Create") },
                     kind: ButtonKind::Primary,
                     disabled: problem.is_some() || routines.busy(),
                     onclick: move |_| routines.submit_form(),

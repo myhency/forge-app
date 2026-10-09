@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_features::{history_rows, local_when_label, use_routines, use_workspace, RoutineDialog};
-use forge_shared::{Button, ButtonKind, Switch};
+use forge_shared::{tr, Button, ButtonKind, Switch};
 
 /// One routine: its settings at the left, its instructions and history at the right.
 #[component]
@@ -10,8 +10,8 @@ pub fn RoutineDetail(id: String) -> Element {
     let mut expanded = use_signal(|| false);
     let Some(routine) = routines.routines().into_iter().find(|routine| routine.id == id) else {
         return rsx! {
-            p { "This routine was deleted." }
-            Button { label: "Back to routines", onclick: move |_| routines.show_list() }
+            p { {tr!("This routine was deleted.")} }
+            Button { label: tr!("Back to routines"), onclick: move |_| routines.show_list() }
         };
     };
     let state_of = |session_id: &str| workspace.run_state(session_id);
@@ -20,18 +20,18 @@ pub fn RoutineDetail(id: String) -> Element {
     let long = routine.instructions.lines().count() > 3 || routine.instructions.len() > 240;
     rsx! {
         div { class: "routine-head",
-            button { class: "link", onclick: move |_| routines.show_list(), "Routines" }
+            button { class: "link", onclick: move |_| routines.show_list(), {tr!("Routines")} }
             span { " / {routine.name}" }
             div { class: "routine-actions",
                 Button {
-                    label: "Edit",
+                    label: tr!("Edit"),
                     onclick: {
                         let id = id.clone();
                         move |_| routines.open_form(Some(id.clone()))
                     },
                 }
                 Button {
-                    label: "Delete",
+                    label: tr!("Delete"),
                     kind: ButtonKind::Danger,
                     onclick: {
                         let id = id.clone();
@@ -39,7 +39,7 @@ pub fn RoutineDetail(id: String) -> Element {
                     },
                 }
                 Button {
-                    label: "Run now",
+                    label: tr!("Run now"),
                     kind: ButtonKind::Primary,
                     disabled: routines.busy(),
                     onclick: {
@@ -50,13 +50,13 @@ pub fn RoutineDetail(id: String) -> Element {
             }
         }
         if waiting {
-            div { class: "banner error", "A session of this routine is waiting for your approval." }
+            div { class: "banner error", {tr!("A session of this routine is waiting for your approval.")} }
         }
         div { class: "routine-columns",
             div { class: "routine-left",
-                h3 { "Description" }
+                h3 { {tr!("Description")} }
                 p { "{routine.description}" }
-                h3 { "Status" }
+                h3 { {tr!("Status")} }
                 div { class: "routine-switch",
                     Switch {
                         on: routine.enabled,
@@ -66,15 +66,15 @@ pub fn RoutineDetail(id: String) -> Element {
                             move |on: bool| routines.set_enabled(id.clone(), on)
                         },
                     }
-                    span { if routine.enabled { "On" } else { "Paused" } }
+                    span { if routine.enabled { {tr!("On")} } else { {tr!("Paused")} } }
                 }
-                h3 { "Folder" }
+                h3 { {tr!("Folder")} }
                 p { class: "routine-folder", "{routine.folder.display()}" }
-                h3 { "Repeats" }
+                h3 { {tr!("Repeats")} }
                 p { "{routine.schedule.label()}" }
-                h3 { "Always allowed" }
+                h3 { {tr!("Always allowed")} }
                 if routine.always_allowed.is_empty() {
-                    p { class: "hint", "Permissions you allow while a run of this routine is working show up here." }
+                    p { class: "hint", {tr!("Permissions you allow while a run of this routine is working show up here.")} }
                 }
                 for rule in routine.always_allowed.clone() {
                     div { key: "{rule}", class: "routine-rule",
@@ -86,20 +86,20 @@ pub fn RoutineDetail(id: String) -> Element {
                                 let rule = rule.clone();
                                 move |_| routines.remove_allowed(id.clone(), rule.clone())
                             },
-                            "Remove"
+                            {tr!("Remove")}
                         }
                     }
                 }
             }
             div { class: "routine-right",
-                h3 { "Instructions" }
+                h3 { {tr!("Instructions")} }
                 div { class: if expanded() { "routine-instructions open" } else { "routine-instructions" }, "{routine.instructions}" }
                 if long {
-                    button { class: "link", onclick: move |_| expanded.set(!expanded()), if expanded() { "Show less" } else { "Show all" } }
+                    button { class: "link", onclick: move |_| expanded.set(!expanded()), if expanded() { {tr!("Show less")} } else { {tr!("Show all")} } }
                 }
-                h3 { "History" }
+                h3 { {tr!("History")} }
                 if rows.is_empty() {
-                    p { class: "hint", "Nothing has run yet." }
+                    p { class: "hint", {tr!("Nothing has run yet.")} }
                 }
                 for (index, row) in rows.into_iter().enumerate() {
                     {

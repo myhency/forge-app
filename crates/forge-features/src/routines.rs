@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use forge_application::Phase;
 use forge_domain::{PermissionMode, Routine, RoutineDraft, RoutineRun, RunOutcome, Schedule, SkipReason};
+use forge_shared::tr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RoutineSort {
@@ -45,11 +46,11 @@ impl RoutineCard {
 
 fn card_state(routine: &Routine) -> &'static str {
     if !routine.enabled {
-        "Paused"
+        tr!("Paused")
     } else if matches!(routine.schedule, Schedule::Manual) {
-        "Manual"
+        tr!("Manual")
     } else {
-        "On"
+        tr!("On")
     }
 }
 
@@ -205,10 +206,10 @@ pub struct HistoryRow {
 
 pub fn skip_text(reason: &SkipReason) -> String {
     match reason {
-        SkipReason::Missed => "Skipped: Forge was closed or the computer was asleep".to_string(),
-        SkipReason::Busy => "Skipped: a session of this routine's folder was still working".to_string(),
-        SkipReason::FolderMissing => "Skipped: the folder no longer exists".to_string(),
-        SkipReason::StartFailed(error) => format!("Skipped: could not start ({error})"),
+        SkipReason::Missed => tr!("Skipped: Forge was closed or the computer was asleep").to_string(),
+        SkipReason::Busy => tr!("Skipped: a session of this routine's folder was still working").to_string(),
+        SkipReason::FolderMissing => tr!("Skipped: the folder no longer exists").to_string(),
+        SkipReason::StartFailed(error) => tr!("Skipped: could not start ({error})", error = error),
     }
 }
 
@@ -216,9 +217,9 @@ pub fn skip_text(reason: &SkipReason) -> String {
 /// permission requests it holds, or `None` when the session is not open any more.
 pub fn run_state_text(open: Option<(Phase, usize)>) -> &'static str {
     match open {
-        Some((_, pending)) if pending > 0 => "Waiting for approval",
-        Some((Phase::Running, _)) => "Running",
-        _ => "Done",
+        Some((_, pending)) if pending > 0 => tr!("Waiting for approval"),
+        Some((Phase::Running, _)) => tr!("Running"),
+        _ => tr!("Done"),
     }
 }
 
@@ -234,7 +235,7 @@ pub fn history_rows(runs: &[RoutineRun], routine_id: &str, state_of: &dyn Fn(&st
                 due_ms: run.due_ms,
                 text: match run.session_id.as_deref() {
                     Some(id) => state_of(id).to_string(),
-                    None => "Starting…".to_string(),
+                    None => tr!("Starting…").to_string(),
                 },
                 session_id: run.session_id.clone(),
             },
@@ -253,12 +254,12 @@ pub fn notices(waiting: &[forge_application::WaitingRun], failures: &[forge_appl
 
 /// The notification for a run that could not start: `(title, body)`.
 pub fn start_failed_notice(routine_name: &str, reason: &str) -> (String, String) {
-    ("Routine could not start".to_string(), format!("{routine_name}: {reason}"))
+    (tr!("Routine could not start").to_string(), format!("{routine_name}: {reason}"))
 }
 
 /// The notification for a routine whose session waits for the person: `(title, body)`.
 pub fn waiting_notice(routine_name: &str, tool_name: &str) -> (String, String) {
-    ("Routine needs your approval".to_string(), format!("{routine_name} wants to use {tool_name}"))
+    (tr!("Routine needs your approval").to_string(), tr!("{routine} wants to use {tool}", routine = routine_name, tool = tool_name))
 }
 
 /// The UTC offset `zone` has at `ms`: summer and winter times each get their own.
@@ -275,22 +276,18 @@ pub fn local_when_label(ms: i64) -> String {
     when_label(ms, offset_at(&chrono::Local, ms))
 }
 
-const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 /// "Oct 9, 10:19 AM" in `offset`.
 pub fn when_label(ms: i64, offset: time::UtcOffset) -> String {
     let Ok(utc) = time::OffsetDateTime::from_unix_timestamp(ms.div_euclid(1000)) else {
         return String::new();
     };
     let local = utc.to_offset(offset);
-    let hour = local.hour();
-    let (twelve, suffix) = match hour {
-        0 => (12, "AM"),
-        1..=11 => (hour, "AM"),
-        12 => (12, "PM"),
-        _ => (hour - 12, "PM"),
-    };
-    format!("{} {}, {twelve}:{:02} {suffix}", MONTHS[usize::from(u8::from(local.month())) - 1], local.day(), local.minute())
+    tr!(
+        "{month} {day}, {time}",
+        month = forge_entities::month_short(u8::from(local.month())),
+        day = local.day(),
+        time = forge_domain::clock(local.hour(), local.minute())
+    )
 }
 
 #[cfg(test)]
