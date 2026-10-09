@@ -63,6 +63,30 @@ pub fn text(notice: Notice, session_title: &str) -> (String, String) {
     }
 }
 
+/// Where a click on a notification goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoticeTarget {
+    Session(LiveSessionId),
+    Routines,
+}
+
+impl NoticeTarget {
+    /// The text a notification carries.
+    pub fn encode(self) -> String {
+        match self {
+            NoticeTarget::Session(id) => format!("live:{}", id.0),
+            NoticeTarget::Routines => "routines".to_string(),
+        }
+    }
+
+    pub fn decode(text: &str) -> Option<Self> {
+        if text == "routines" {
+            return Some(NoticeTarget::Routines);
+        }
+        text.strip_prefix("live:")?.parse().ok().map(|id| NoticeTarget::Session(LiveSessionId(id)))
+    }
+}
+
 const POLL: Duration = Duration::from_millis(500);
 
 /// Watches every open session and sends the notifications the Notifications switches allow. A
@@ -70,6 +94,20 @@ const POLL: Duration = Duration::from_millis(500);
 pub fn use_session_notices(workspace: Workspace, settings: Settings) {
     use_hook(move || {
         let notify = workspace.notify_port();
+        // A click arrives on the system's thread; the page reacts on its own, so the click is handed over a channel.
+        let (clicks, mut clicked) = tokio::sync::mpsc::unbounded_channel::<String>();
+        notify.on_click(Box::new(move |target| {
+            let _ = clicks.send(target);
+        }));
+        dioxus::core::spawn_forever(async move {
+            while let Some(target) = clicked.recv().await {
+                match NoticeTarget::decode(&target) {
+                    Some(NoticeTarget::Session(id)) if workspace.live_view(id).is_some() => workspace.select(id),
+                    Some(NoticeTarget::Routines) => workspace.show_routines(),
+                    _ => {}
+                }
+            }
+        });
         dioxus::core::spawn_forever(async move {
             let mut before: HashMap<LiveSessionId, Snapshot> = HashMap::new();
             loop {
@@ -93,11 +131,12 @@ pub fn use_session_notices(workspace: Workspace, settings: Settings) {
                         continue;
                     }
                     let (heading, body) = text(notice, &title);
+                    let target = NoticeTarget::Session(id).encode();
                     let bounce = config.attention_bounce && notice.needs_attention();
                     let notify = notify.clone();
                     // A notification is a process spawn: off the UI thread. One that cannot be sent is not worth a banner.
                     tokio::task::spawn_blocking(move || {
-                        let _ = notify.notify(&heading, &body);
+                        let _ = notify.notify_target(&heading, &body, &target);
                         if bounce {
                             let _ = notify.request_attention();
                         }
@@ -159,6 +198,19 @@ mod tests {
     fn only_notices_that_need_the_person_bounce_the_dock() {
         assert!(Notice::PermissionRequest.needs_attention() && Notice::Failed.needs_attention());
         assert!(!Notice::ReplyDone.needs_attention());
+    }
+
+    #[test]
+    fn a_target_reads_back_as_written() {
+        assert_eq!(NoticeTarget::decode(&NoticeTarget::Session(LiveSessionId(7)).encode()), Some(NoticeTarget::Session(LiveSessionId(7))));
+        assert_eq!(NoticeTarget::decode(&NoticeTarget::Routines.encode()), Some(NoticeTarget::Routines));
+    }
+
+    #[test]
+    fn a_target_nobody_wrote_is_not_read() {
+        assert_eq!(NoticeTarget::decode(""), None);
+        assert_eq!(NoticeTarget::decode("live:abc"), None);
+        assert_eq!(NoticeTarget::decode("elsewhere"), None);
     }
 
     #[test]
