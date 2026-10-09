@@ -2,6 +2,7 @@
 // end goes to the last line), Escape closes; 0, a negative number and text are ignored.
 import { StateEffect, StateField } from "@codemirror/state";
 import { EditorView, keymap, showPanel } from "@codemirror/view";
+import { t } from "./i18n.js";
 
 const setGoto = StateEffect.define();
 
@@ -30,7 +31,7 @@ export function gotoTools() {
     const input = document.createElement("input");
     input.type = "text";
     input.inputMode = "numeric";
-    input.placeholder = `Go to line (1-${view.state.doc.lines})`;
+    input.placeholder = t("Go to line (1-{max})", { max: view.state.doc.lines });
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229) {
         event.preventDefault();

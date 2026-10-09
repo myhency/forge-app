@@ -5,6 +5,7 @@
 // back after a tab switch). Matching is a JS RegExp with the `u` flag.
 import { StateEffect, StateField } from "@codemirror/state";
 import { Decoration, EditorView, keymap, showPanel } from "@codemirror/view";
+import { t } from "./i18n.js";
 
 const MAX_MATCHES = 20000;
 const WORD_BEFORE = "(?<![\\p{L}\\p{N}_])";
@@ -102,9 +103,9 @@ export function findTools({ remember }) {
     dom.className = "cm-find-bar";
     const input = document.createElement("input");
     input.type = "text";
-    input.placeholder = "Find";
+    input.placeholder = t("Find");
     const toggles = [];
-    for (const [opt, label, title] of [["match_case", "Aa", "Match case"], ["whole_word", "ab", "Whole word"], ["regex", ".*", "Regex"]]) {
+    for (const [opt, label, title] of [["match_case", "Aa", t("Match case")], ["whole_word", "ab", t("Whole word")], ["regex", ".*", t("Regex")]]) {
       const button = document.createElement("button");
       button.type = "button";
       button.dataset.opt = opt;
@@ -160,7 +161,7 @@ export function findTools({ remember }) {
         button.classList.toggle("on", on);
         button.setAttribute("aria-pressed", String(on));
       }
-      countEl.textContent = f.query === "" ? "" : matches.length === 0 ? "No results" : `${Math.min(f.current, matches.length - 1) + 1} of ${matches.length}`;
+      countEl.textContent = f.query === "" ? "" : matches.length === 0 ? t("No results") : t("{n} of {m}", { n: Math.min(f.current, matches.length - 1) + 1, m: matches.length });
     }
     refresh(view.state);
     return { dom, top: true, mount: () => input.focus(), update: (update) => refresh(update.state) };

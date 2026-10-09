@@ -7,6 +7,7 @@ use forge_entities::language_of;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use forge_shared::msg;
 
 /// What the page tells Rust (see `tools/editor-bundle/src/main.js`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -59,6 +60,33 @@ pub fn flush_command(key: &str) -> Value {
 pub fn comments_command(key: &str, cards: &[forge_domain::Card]) -> Value {
     let list: Vec<Value> = cards.iter().map(|c| json!({ "id": c.id, "from": c.range.start, "to": c.range.end, "text": c.text })).collect();
     json!({ "t": "comments", "key": key, "comments": list })
+}
+
+/// The editor's own sentences (find bar, line comments, right click menu) in `language`. The page
+/// keeps the English of any sentence it is not given.
+pub fn strings_for(language: forge_domain::Language) -> Value {
+    let sentences = [
+        msg!("Find"),
+        msg!("Match case"),
+        msg!("Whole word"),
+        msg!("Regex"),
+        msg!("No results"),
+        msg!("{n} of {m}"),
+        msg!("Go to line (1-{max})"),
+        msg!("Attach as context"),
+        msg!("Add comment"),
+        msg!("Line {n}"),
+        msg!("Lines {from}-{to}"),
+        msg!("Undo"),
+        msg!("Redo"),
+        msg!("Cut"),
+        msg!("Copy"),
+        msg!("Paste"),
+        msg!("Select all"),
+        msg!("Go to line"),
+    ];
+    let map: serde_json::Map<String, Value> = sentences.iter().map(|english| (english.to_string(), json!(forge_shared::i18n::translate(language, english)))).collect();
+    json!({ "t": "strings", "map": map })
 }
 
 pub fn focus_comment_command(key: &str, id: u64) -> Value {
@@ -150,6 +178,11 @@ impl EditorHandle {
         self.send(find_command(key, query, options, line));
     }
 
+    /// Gives the page its own sentences in the language on screen.
+    pub fn strings(&self) {
+        self.send(strings_for(forge_shared::i18n::current()));
+    }
+
     pub fn settings(&self, prefs: &EditorPrefs) {
         self.send(settings_command(prefs));
     }
@@ -187,6 +220,7 @@ if (!window.ForgeEditor || !host) {
         else if (m.t === "show") editor.show(m.key);
         else if (m.t === "drop") editor.drop(m.key);
         else if (m.t === "settings") editor.settings(m.settings);
+        else if (m.t === "strings") editor.strings(m.map);
         else if (m.t === "flush") editor.flush(m.key);
         else if (m.t === "comments") editor.comments(m.key, m.comments);
         else if (m.t === "find") editor.find(m.key, { query: m.query, match_case: m.match_case, whole_word: m.whole_word, regex: m.regex, line: m.line });
@@ -327,6 +361,18 @@ mod tests {
         assert_eq!(show_command("a.py"), serde_json::json!({ "t": "show", "key": "a.py" }));
         assert_eq!(forget_command("a.py"), serde_json::json!({ "t": "drop", "key": "a.py" }));
         assert_eq!(flush_command("a.py"), serde_json::json!({ "t": "flush", "key": "a.py" }));
+    }
+
+    #[test]
+    fn the_strings_message_gives_the_page_each_of_its_sentences_in_the_language() {
+        let korean = strings_for(forge_domain::Language::Korean);
+        assert_eq!(korean["t"], "strings");
+        assert_eq!(korean["map"]["Find"], "찾기");
+        assert_eq!(korean["map"]["{n} of {m}"], "{m}개 중 {n}번째");
+        assert_eq!(korean["map"]["Go to line (1-{max})"], "줄로 이동 (1-{max})");
+        let english = strings_for(forge_domain::Language::English);
+        assert_eq!(english["map"]["Find"], "Find");
+        assert_eq!(english["map"].as_object().unwrap().len(), korean["map"].as_object().unwrap().len());
     }
 
     #[test]

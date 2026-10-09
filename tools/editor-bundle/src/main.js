@@ -6,7 +6,7 @@
 // Rust to page (methods): load(key, doc, language, readonly, ifClean, dirty), show(key), drop(key),
 //   settings({ wrap, indent_guides, whitespace, scroll_past_end, tab_indent, tab_size }),
 //   flush(key), comments(key, [{ id, from, to, text }]), focusComment(key, id),
-//   find(key, { query, match_case, whole_word, regex, line }), focus(), destroy().
+//   find(key, { query, match_case, whole_word, regex, line }), strings({ "English": "text" }), focus(), destroy().
 // Page to Rust (send): { t: "dirty", key }, { t: "change", key, s }, { t: "save", key, s },
 //   { t: "flush", key, s }, { t: "missing", key }, { t: "skipped", key },
 //   { t: "attach", key, from, to, text }, { t: "comment", key, from, to, text, id }, { t: "comment_delete", key, id }.
@@ -50,6 +50,7 @@ import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { findTools } from "./find.js";
 import { gotoTools } from "./goto.js";
 import { lineTools } from "./lines.js";
+import { setStrings } from "./i18n.js";
 
 const SAVE_DELAY_MS = 2000;
 const COMPOSING_RETRY_MS = 300;
@@ -335,6 +336,9 @@ window.ForgeEditor = {
           key = null;
           view.setState(EditorState.create({ doc: "", extensions: [theme] }));
         }
+      },
+      strings(map) {
+        setStrings(map);
       },
       settings(next) {
         settings = { ...settings, ...next };

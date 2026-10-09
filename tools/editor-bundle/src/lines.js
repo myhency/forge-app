@@ -6,6 +6,7 @@
 import { StateEffect, StateField } from "@codemirror/state";
 import { Decoration, EditorView, GutterMarker, WidgetType, gutter, lineNumbers, showTooltip } from "@codemirror/view";
 import { redo, selectAll, undo } from "@codemirror/commands";
+import { t } from "./i18n.js";
 
 const setPick = StateEffect.define();
 const setComments = StateEffect.define();
@@ -41,7 +42,7 @@ let currentView = null; // set by `lineTools`, so the bar (built from state) can
 function barDom() {
   const dom = document.createElement("div");
   dom.className = "cm-pick-bar";
-  for (const [act, label] of [["attach", "Attach as context"], ["comment", "Add comment"]]) {
+  for (const [act, label] of [["attach", t("Attach as context")], ["comment", t("Add comment")]]) {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.act = act;
@@ -91,7 +92,7 @@ function commentDecorations(state, { list, editing, draft }) {
 }
 
 function title(c) {
-  return c.from === c.to ? `Line ${c.from}` : `Lines ${c.from}-${c.to}`;
+  return c.from === c.to ? t("Line {n}", { n: c.from }) : t("Lines {from}-{to}", { from: c.from, to: c.to });
 }
 
 class CommentBox extends WidgetType {
@@ -119,7 +120,7 @@ class CommentBox extends WidgetType {
     if (this.editing) {
       const input = document.createElement("input");
       input.type = "text";
-      input.placeholder = "Add comment";
+      input.placeholder = t("Add comment");
       input.value = c.text;
       const ok = document.createElement("button");
       ok.type = "button";
@@ -242,19 +243,19 @@ export function lineTools({ send, getKey, onGoto }) {
     const menu = document.createElement("div");
     menu.className = "cm-ctx-menu";
     const items = [
-      ["Attach as context", () => attach(view)],
-      ["Add comment", () => startComment(view)],
+      [t("Attach as context"), () => attach(view)],
+      [t("Add comment"), () => startComment(view)],
       null,
-      ["Undo", () => undo(view)],
-      ["Redo", () => redo(view)],
+      [t("Undo"), () => undo(view)],
+      [t("Redo"), () => redo(view)],
       null,
-      ["Cut", () => document.execCommand("cut")],
-      ["Copy", () => document.execCommand("copy")],
-      ["Paste", async () => { try { view.dispatch(view.state.replaceSelection(await navigator.clipboard.readText())); } catch { /* no clipboard access */ } }],
+      [t("Cut"), () => document.execCommand("cut")],
+      [t("Copy"), () => document.execCommand("copy")],
+      [t("Paste"), async () => { try { view.dispatch(view.state.replaceSelection(await navigator.clipboard.readText())); } catch { /* no clipboard access */ } }],
       null,
-      ["Select all", () => selectAll(view)],
+      [t("Select all"), () => selectAll(view)],
       null,
-      ["Go to line", () => onGoto(view), "⌃G"],
+      [t("Go to line"), () => onGoto(view), "⌃G"],
     ];
     for (const item of items) {
       if (item === null) {

@@ -14,3 +14,5 @@ text two seconds later, flush, missing, drop). Commit `package-lock.json` and th
 
 The page API (`window.ForgeEditor`) is described at the top of `src/main.js`; the Rust side that
 drives it is `crates/forge-widgets/src/files_editor.rs`.
+
+The bars and menus the editor draws itself (find bar, go to line, line comments, right click menu) take their text from `src/i18n.js`: the English sentence is the key, and Rust sends the person's language with `strings({...})` (`strings_for` in `files_editor.rs`). A new sentence in the JS needs a `t("...")` there, a `msg!("...")` in `strings_for` and an entry in `crates/forge-shared/src/ko.rs`.

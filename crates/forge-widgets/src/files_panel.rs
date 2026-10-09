@@ -135,6 +135,16 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             }
         });
     }
+    // The editor's own sentences go to the page once it is ready and whenever the language changes.
+    {
+        let (handle, ready) = (handle.clone(), ctx.ready);
+        use_effect(move || {
+            let _ = forge_shared::i18n::current();
+            if ready() {
+                handle.strings();
+            }
+        });
+    }
     // A click in the chat asked for a file: show it (the request is read when the panel mounts, too).
     {
         let ctx = ctx.clone();
