@@ -1292,3 +1292,15 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
 
 Then use superpowers:finishing-a-development-branch (the base branch is master per the Plan 20 note; the git status in this session names `main` as the main branch, so confirm which one before merging).
+
+## Checked with the real SDK
+
+Asked name -> reported `output_style` in the init message; listed in `available_output_styles`: yes.
+
+- Concise -> Concise; listed in available_output_styles: yes
+- Explanatory -> Explanatory; listed in available_output_styles: yes
+- Learning -> Learning; listed in available_output_styles: yes
+- Proactive -> Proactive; listed in available_output_styles: yes
+- (none, "Default") -> default; listed in available_output_styles: yes
+
+Task 8 real-window walk-through: all steps passed. The effect of Concise on answer length was not observable with the probe prompt; the wiring is confirmed in the transcript (output_style attachments).
