@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::ConnectorKind;
 use forge_features::{
-    connection_text, connector_groups, explore_connectors, find_connector, source_label, use_customize, Busy, ConnectionState, ConnectorRow,
+    connection_text, connector_groups, explore_connectors, find_connector, shows_sign_in, source_label, use_customize, Busy, ConnectionState, ConnectorRow,
     CustomizeMode, Dialog, Job, Loaded,
 };
 use forge_shared::{Button, ButtonKind};
@@ -253,6 +253,15 @@ fn ConnectorDetail(row: ConnectorRow) -> Element {
                                 let name = name.clone();
                                 move |_| customize.check_connector(name.clone())
                             },
+                        }
+                        if shows_sign_in(&state) {
+                            Button {
+                                label: "Sign in",
+                                onclick: {
+                                    let name = name.clone();
+                                    move |_| customize.sign_in_connector(name.clone())
+                                },
+                            }
                         }
                         span { class: "connection-line customize-wrap", "{connection_text(&state)}" }
                     }

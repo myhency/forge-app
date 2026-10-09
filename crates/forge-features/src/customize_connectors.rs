@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use dioxus::prelude::*;
@@ -7,6 +8,7 @@ use forge_domain::{Connection, ConnectorDraft, ConnectorEntry, ConnectorSource};
 
 use crate::customize::{CustomizeMode, CustomizeTab, Latest};
 use crate::customize_state::{Customize, Dialog};
+use crate::{SignInAction, SignInOutcome, SignInRun, SignInStop, TapHandle};
 
 /// One connector in a list: the entry and whether it is on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,11 +93,59 @@ pub fn connection_text(state: &ConnectionState) -> String {
         ConnectionState::Idle => String::new(),
         ConnectionState::Checking => "Checking…".to_string(),
         ConnectionState::Done(Connection::Connected) => "Connected".to_string(),
-        ConnectionState::Done(Connection::NeedsSignIn) => "Needs sign-in. Run /mcp in the terminal's Claude Code to sign in.".to_string(),
+        ConnectionState::Done(Connection::NeedsSignIn) => "Needs sign-in. Use the Sign in button, or run /mcp in the terminal's Claude Code.".to_string(),
         ConnectionState::Done(Connection::Failed(issue)) => format!("Could not connect: {issue}"),
         ConnectionState::Done(Connection::Unknown(text)) => text.clone(),
         ConnectionState::Failed(message) => message.clone(),
     }
+}
+
+/// How far the sign-in dialog's run is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SignInState {
+    Idle,
+    Running,
+    /// The CLI says it is signed in; the connection is being checked (see `ConnectionState`).
+    Signed,
+    /// Forge stopped typing: the reason. The terminal is the person's now.
+    NeedsHand(String),
+    Failed,
+}
+
+/// "Sign in" is offered for a connector whose check said it needs sign-in.
+pub fn shows_sign_in(state: &ConnectionState) -> bool {
+    matches!(state, ConnectionState::Done(Connection::NeedsSignIn))
+}
+
+pub fn stop_text(reason: &SignInStop) -> String {
+    match reason {
+        SignInStop::StepTimedOut(what) => format!("Claude did not show {what}."),
+        SignInStop::NameNotFound => "The connector was not found on Claude's list.".to_string(),
+        SignInStop::NameTwice => "The name is on Claude's list twice.".to_string(),
+        SignInStop::TimedOut => "The sign-in took too long.".to_string(),
+    }
+}
+
+pub fn sign_in_status(state: &SignInState, connection: &ConnectionState) -> String {
+    match state {
+        SignInState::Idle => String::new(),
+        SignInState::Running => "Signing in… finish it in your browser when it opens.".to_string(),
+        SignInState::Signed => match connection {
+            ConnectionState::Idle | ConnectionState::Checking => "Signed in. Checking…".to_string(),
+            done => connection_text(done),
+        },
+        SignInState::NeedsHand(reason) => format!("{reason} Go on in the terminal above."),
+        SignInState::Failed => "Sign-in did not finish. See the terminal above.".to_string(),
+    }
+}
+
+/// Where the sign-in shell starts: project connectors depend on the folder, so the project's, else the home folder.
+pub fn sign_in_cwd(project: Option<&Path>, home: Option<PathBuf>) -> PathBuf {
+    project.map(Path::to_path_buf).or(home).unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn home_folder() -> Option<PathBuf> {
+    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from)
 }
 
 /// The names the Add form must not reuse. Without a list there is nothing to check against, and a name used by a
@@ -120,9 +170,9 @@ pub fn connection_tag(connection: &Connection) -> Option<&'static str> {
 }
 
 /// Whether a running connector job holds this dialog open (its backdrop and Cancel do nothing until it ends).
-/// Other dialogs are not held by it.
+/// Other dialogs are not held by it. The sign-in dialog is always held: its terminal is the person's.
 pub fn connector_dialog_busy(dialog: &Dialog, connectors_busy: bool) -> bool {
-    connectors_busy && matches!(dialog, Dialog::AddConnector | Dialog::ConfirmRemoveConnector(_))
+    matches!(dialog, Dialog::SignInConnector(_)) || (connectors_busy && matches!(dialog, Dialog::AddConnector | Dialog::ConfirmRemoveConnector(_)))
 }
 
 /// The Connectors tab's own signals. Owned by the root scope like the rest of the page state.
@@ -135,6 +185,8 @@ pub(crate) struct Connectors {
     checks: Signal<Latest>,
     /// What checks of this visit found, by name: the list shows a tag for one that is not fine.
     checked: Signal<HashMap<String, Connection>>,
+    sign_in: Signal<SignInState>,
+    sign_in_tap: Signal<Option<TapHandle>>,
 }
 
 impl Connectors {
@@ -146,6 +198,8 @@ impl Connectors {
             connection: Signal::new_in_scope(ConnectionState::Idle, ScopeId::ROOT),
             checks: Signal::new_in_scope(Latest::default(), ScopeId::ROOT),
             checked: Signal::new_in_scope(HashMap::new(), ScopeId::ROOT),
+            sign_in: Signal::new_in_scope(SignInState::Idle, ScopeId::ROOT),
+            sign_in_tap: Signal::new_in_scope(None, ScopeId::ROOT),
         }
     }
 
@@ -186,6 +240,60 @@ impl Customize {
         checks.write().issue();
         let mut connection = self.connectors.connection;
         connection.set(ConnectionState::Idle);
+    }
+
+    pub fn sign_in_state(&self) -> SignInState {
+        self.connectors.sign_in.read().clone()
+    }
+
+    pub fn sign_in_tap(&self) -> Option<TapHandle> {
+        self.connectors.sign_in_tap.read().clone()
+    }
+
+    pub fn sign_in_cwd(&self) -> PathBuf {
+        sign_in_cwd(self.project.peek().as_deref(), home_folder())
+    }
+
+    fn set_sign_in(&self, state: SignInState) {
+        let mut sign_in = self.connectors.sign_in;
+        sign_in.set(state);
+    }
+
+    /// The "Sign in" button: opens the dialog whose terminal Forge types into. A press while the dialog is open does nothing.
+    pub fn sign_in_connector(&self, name: String) {
+        if matches!(self.dialog(), Some(Dialog::SignInConnector(_))) {
+            return;
+        }
+        let launch = match self.connectors.usecase().launch_line() {
+            Ok(line) => line,
+            Err(error) => {
+                self.set_error(Some(error.to_string()));
+                return;
+            }
+        };
+        let this = *self;
+        let checked_name = name.clone();
+        let run = SignInRun::new(&name, &launch, move |verdict| match verdict {
+            SignInAction::Done(SignInOutcome::Signed) => {
+                this.set_sign_in(SignInState::Signed);
+                this.check_connector(checked_name.clone());
+            }
+            SignInAction::Done(SignInOutcome::Failed) => this.set_sign_in(SignInState::Failed),
+            SignInAction::Stop(reason) => this.set_sign_in(SignInState::NeedsHand(stop_text(&reason))),
+            SignInAction::Send(_) => {}
+        });
+        let mut tap = self.connectors.sign_in_tap;
+        tap.set(Some(TapHandle(std::rc::Rc::new(run))));
+        self.set_sign_in(SignInState::Running);
+        self.open_dialog(Dialog::SignInConnector(name));
+    }
+
+    /// Close: ends the shell (the dialog's terminal goes away with it) and forgets the run.
+    pub fn close_sign_in(&self) {
+        let mut tap = self.connectors.sign_in_tap;
+        tap.set(None);
+        self.set_sign_in(SignInState::Idle);
+        self.close_dialog();
     }
 
     pub fn open_connector(&self, id: String) {
@@ -438,5 +546,50 @@ mod tests {
         assert!(!connector_dialog_busy(&Dialog::AddConnector, false));
         assert!(!connector_dialog_busy(&Dialog::ManageMarketplaces, true));
         assert!(!connector_dialog_busy(&Dialog::ConfirmUninstall("a".into()), true));
+    }
+
+    #[test]
+    fn the_sign_in_button_shows_only_for_a_connector_whose_check_said_needs_sign_in() {
+        assert!(shows_sign_in(&ConnectionState::Done(Connection::NeedsSignIn)));
+        assert!(!shows_sign_in(&ConnectionState::Done(Connection::Connected)));
+        assert!(!shows_sign_in(&ConnectionState::Idle));
+        assert!(!shows_sign_in(&ConnectionState::Checking));
+        assert!(!shows_sign_in(&ConnectionState::Failed("x".into())));
+    }
+
+    #[test]
+    fn each_stop_reason_says_what_happened_in_a_few_words() {
+        assert_eq!(stop_text(&SignInStop::StepTimedOut("the input box")), "Claude did not show the input box.");
+        assert_eq!(stop_text(&SignInStop::NameNotFound), "The connector was not found on Claude's list.");
+        assert_eq!(stop_text(&SignInStop::NameTwice), "The name is on Claude's list twice.");
+        assert_eq!(stop_text(&SignInStop::TimedOut), "The sign-in took too long.");
+    }
+
+    #[test]
+    fn the_sign_in_status_line_follows_the_run_and_then_the_check() {
+        let idle = ConnectionState::Idle;
+        assert_eq!(sign_in_status(&SignInState::Idle, &idle), "");
+        assert!(sign_in_status(&SignInState::Running, &idle).contains("browser"));
+        assert_eq!(sign_in_status(&SignInState::Signed, &idle), "Signed in. Checking…");
+        assert_eq!(sign_in_status(&SignInState::Signed, &ConnectionState::Checking), "Signed in. Checking…");
+        assert_eq!(sign_in_status(&SignInState::Signed, &ConnectionState::Done(Connection::Connected)), "Connected");
+        assert_eq!(
+            sign_in_status(&SignInState::NeedsHand("Claude did not show the input box.".into()), &idle),
+            "Claude did not show the input box. Go on in the terminal above."
+        );
+        assert_eq!(sign_in_status(&SignInState::Failed, &idle), "Sign-in did not finish. See the terminal above.");
+    }
+
+    #[test]
+    fn the_shell_starts_in_the_project_folder_else_the_home_folder_else_here() {
+        assert_eq!(sign_in_cwd(Some(Path::new("/p")), Some(PathBuf::from("/h"))), PathBuf::from("/p"));
+        assert_eq!(sign_in_cwd(None, Some(PathBuf::from("/h"))), PathBuf::from("/h"));
+        assert_eq!(sign_in_cwd(None, None), PathBuf::from("."));
+    }
+
+    #[test]
+    fn the_sign_in_dialog_is_never_closed_by_its_backdrop() {
+        assert!(connector_dialog_busy(&Dialog::SignInConnector("web".into()), false));
+        assert!(!connector_dialog_busy(&Dialog::AddConnector, false));
     }
 }

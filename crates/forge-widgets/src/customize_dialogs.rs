@@ -3,7 +3,7 @@ use forge_domain::Marketplace;
 use forge_features::{connector_dialog_busy, use_customize, Busy, Dialog, Job, Loaded};
 use forge_shared::{Button, ButtonKind};
 
-use crate::customize_connector_dialogs::{AddConnector, ConfirmRemoveConnector};
+use crate::customize_connector_dialogs::{AddConnector, ConfirmRemoveConnector, SignInConnector};
 
 /// Whichever dialog is open, over the page. A click on the backdrop closes it.
 #[component]
@@ -13,6 +13,7 @@ pub fn CustomizeDialogs() -> Element {
         return rsx! {};
     };
     let dialog_for_click = dialog.clone();
+    let wide = matches!(dialog, Dialog::SignInConnector(_));
     rsx! {
         div {
             class: "settings-backdrop",
@@ -22,7 +23,7 @@ pub fn CustomizeDialogs() -> Element {
                     customize.close_dialog();
                 }
             },
-            div { class: "customize-dialog", onclick: move |event| event.stop_propagation(),
+            div { class: if wide { "customize-dialog sign-in" } else { "customize-dialog" }, onclick: move |event| event.stop_propagation(),
                 match dialog {
                     Dialog::AddMarketplace => rsx! { AddMarketplace {} },
                     Dialog::ManageMarketplaces => rsx! { ManageMarketplaces {} },
@@ -31,6 +32,7 @@ pub fn CustomizeDialogs() -> Element {
                     Dialog::CreateSkill => rsx! { CreateSkill {} },
                     Dialog::AddConnector => rsx! { AddConnector {} },
                     Dialog::ConfirmRemoveConnector(name) => rsx! { ConfirmRemoveConnector { name } },
+                    Dialog::SignInConnector(name) => rsx! { SignInConnector { name } },
                 }
             }
         }

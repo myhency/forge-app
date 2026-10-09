@@ -44,6 +44,7 @@ pub enum Dialog {
     CreateSkill,
     AddConnector,
     ConfirmRemoveConnector(String),
+    SignInConnector(String),
 }
 
 /// Whether a job about one plugin is running, waiting, or neither.
@@ -71,7 +72,7 @@ pub struct Customize {
     skills_usecase: Signal<Arc<SkillCatalogUseCase>>,
     folder_picker: Signal<Arc<dyn FolderPickerPort>>,
     file_picker: Signal<Arc<dyn FilePickerPort>>,
-    project: Signal<Option<PathBuf>>,
+    pub(crate) project: Signal<Option<PathBuf>>,
     skills: Signal<Option<SkillView>>,
     skills_busy: Signal<bool>,
     skill_dir: Signal<Option<PathBuf>>,
