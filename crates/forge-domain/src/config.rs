@@ -142,6 +142,76 @@ impl EditorPrefs {
     }
 }
 
+macro_rules! choice_enum {
+    ($name:ident, default $default:ident, { $($variant:ident => ($value:literal, $label:literal)),+ $(,)? }) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        pub enum $name {
+            $($variant),+
+        }
+        impl Default for $name {
+            fn default() -> Self {
+                $name::$default
+            }
+        }
+        impl $name {
+            pub const ALL: &'static [$name] = &[$($name::$variant),+];
+            /// The text used in the page's `data-*` attribute and in the config file.
+            pub fn value(self) -> &'static str {
+                match self { $($name::$variant => $value),+ }
+            }
+            pub fn label(self) -> &'static str {
+                match self { $($name::$variant => $label),+ }
+            }
+            pub fn from_value(value: &str) -> Option<Self> {
+                Self::ALL.iter().copied().find(|choice| choice.value() == value)
+            }
+        }
+    };
+}
+
+// Light, dark, or whatever the system says.
+choice_enum!(Theme, default System, { System => ("system", "System"), Light => ("light", "Light"), Dark => ("dark", "Dark") });
+// One font for the interface, the chat and code.
+choice_enum!(FontChoice, default System, { System => ("system", "System"), OpenDyslexic => ("opendyslexic", "OpenDyslexic") });
+choice_enum!(TextSize, default Normal, { Small => ("small", "Small"), Normal => ("normal", "Normal"), Large => ("large", "Large") });
+choice_enum!(ChatWidth, default Normal, { Narrow => ("narrow", "Narrow"), Normal => ("normal", "Normal"), Wide => ("wide", "Wide") });
+choice_enum!(MotionPref, default System, { System => ("system", "System"), Reduced => ("reduced", "Reduced") });
+
+/// How Forge looks. Every field falls back to its default for a missing or unknown value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Appearance {
+    #[serde(default, deserialize_with = "lenient")]
+    pub theme: Theme,
+    #[serde(default, deserialize_with = "lenient")]
+    pub font: FontChoice,
+    #[serde(default, deserialize_with = "lenient")]
+    pub text_size: TextSize,
+    #[serde(default, deserialize_with = "lenient")]
+    pub chat_width: ChatWidth,
+    #[serde(default, deserialize_with = "lenient")]
+    pub motion: MotionPref,
+}
+
+/// Which notifications Forge sends. All on until the person turns one off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotificationPrefs {
+    #[serde(default = "default_true")]
+    pub reply_done: bool,
+    #[serde(default = "default_true")]
+    pub scheduled_task: bool,
+    #[serde(default = "default_true")]
+    pub code_notice: bool,
+    #[serde(default = "default_true")]
+    pub permission_request: bool,
+}
+
+impl Default for NotificationPrefs {
+    fn default() -> Self {
+        Self { reply_done: true, scheduled_task: true, code_notice: true, permission_request: true }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub base_url: Option<String>,
@@ -177,6 +247,13 @@ pub struct AppConfig {
     /// Whether the bypass-permissions mode may be chosen at all.
     #[serde(default)]
     pub allow_bypass_mode: bool,
+    #[serde(default)]
+    pub appearance: Appearance,
+    #[serde(default)]
+    pub notifications: NotificationPrefs,
+    /// Bounce the Dock icon when a notification says Claude needs the person.
+    #[serde(default)]
+    pub attention_bounce: bool,
 }
 
 fn default_true() -> bool {
@@ -212,6 +289,9 @@ impl Default for AppConfig {
             output_style: None,
             prompt_suggestions: true,
             allow_bypass_mode: false,
+            appearance: Appearance::default(),
+            notifications: NotificationPrefs::default(),
+            attention_bounce: false,
         }
     }
 }
@@ -229,6 +309,48 @@ pub fn normalize_setting(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_old_config_loads_with_todays_look_and_all_notifications_on() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":null,"api_key":null}"#).unwrap();
+        assert_eq!(config.appearance, Appearance::default());
+        assert_eq!(config.appearance.theme, Theme::System);
+        assert_eq!(config.appearance.font, FontChoice::System);
+        assert_eq!(config.appearance.text_size, TextSize::Normal);
+        assert_eq!(config.appearance.chat_width, ChatWidth::Normal);
+        assert_eq!(config.appearance.motion, MotionPref::System);
+        assert!(config.notifications.reply_done && config.notifications.scheduled_task);
+        assert!(config.notifications.code_notice && config.notifications.permission_request);
+        assert!(!config.attention_bounce);
+    }
+
+    #[test]
+    fn an_unknown_appearance_value_reads_as_the_default_and_the_rest_still_loads() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":"https://x","appearance":{"theme":"purple","text_size":"large"}}"#).unwrap();
+        assert_eq!(config.base_url.as_deref(), Some("https://x"));
+        assert_eq!(config.appearance.theme, Theme::System);
+        assert_eq!(config.appearance.text_size, TextSize::Large);
+    }
+
+    #[test]
+    fn appearance_and_notifications_survive_a_round_trip() {
+        let mut config = AppConfig::default();
+        config.appearance = Appearance { theme: Theme::Dark, font: FontChoice::OpenDyslexic, text_size: TextSize::Small, chat_width: ChatWidth::Wide, motion: MotionPref::Reduced };
+        config.notifications.reply_done = false;
+        config.attention_bounce = true;
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(back.appearance, config.appearance);
+        assert!(!back.notifications.reply_done);
+        assert!(back.attention_bounce);
+    }
+
+    #[test]
+    fn a_choice_is_found_again_by_its_value() {
+        for theme in Theme::ALL {
+            assert_eq!(Theme::from_value(theme.value()), Some(*theme));
+        }
+        assert_eq!(Theme::from_value("nope"), None);
+    }
 
     #[test]
     fn an_old_config_without_sidebar_preferences_loads_with_the_defaults() {

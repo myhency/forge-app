@@ -27,7 +27,7 @@ pub use attachment::{Attachment, AttachmentKind};
 pub use card::{split_cards, with_cards, Card, CardKind, LineRange};
 pub use command::SlashCommand;
 pub use config::{
-    normalize_setting, AppConfig, ArchivedRef, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,
+    normalize_setting, AppConfig, Appearance, ArchivedRef, ChatWidth, FontChoice, MotionPref, NotificationPrefs, TextSize, Theme, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,
     MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
 };
 pub use effort::{AvailableModel, EffortLevel};
