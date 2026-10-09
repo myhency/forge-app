@@ -129,7 +129,7 @@ pub fn stop_text(reason: &SignInStop) -> String {
 pub fn sign_in_status(state: &SignInState, connection: &ConnectionState) -> String {
     match state {
         SignInState::Idle => String::new(),
-        SignInState::Running => "Signing in… finish it in your browser when it opens.".to_string(),
+        SignInState::Running => "Signing in… finish it in your browser. If this does not change when you are done, press Close, then Check connection.".to_string(),
         SignInState::Signed => match connection {
             ConnectionState::Idle | ConnectionState::Checking => "Signed in. Checking…".to_string(),
             done => connection_text(done),
@@ -569,7 +569,9 @@ mod tests {
     fn the_sign_in_status_line_follows_the_run_and_then_the_check() {
         let idle = ConnectionState::Idle;
         assert_eq!(sign_in_status(&SignInState::Idle, &idle), "");
-        assert!(sign_in_status(&SignInState::Running, &idle).contains("browser"));
+        let running = sign_in_status(&SignInState::Running, &idle);
+        assert!(running.contains("browser"));
+        assert!(running.contains("Check connection"), "a way out when Forge does not see the end of the sign-in");
         assert_eq!(sign_in_status(&SignInState::Signed, &idle), "Signed in. Checking…");
         assert_eq!(sign_in_status(&SignInState::Signed, &ConnectionState::Checking), "Signed in. Checking…");
         assert_eq!(sign_in_status(&SignInState::Signed, &ConnectionState::Done(Connection::Connected)), "Connected");

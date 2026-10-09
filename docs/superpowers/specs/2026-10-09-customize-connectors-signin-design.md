@@ -58,3 +58,29 @@ Sign out ("Clear authentication"); servers that ask for a client id; OAuth writt
 - State with mock ports: order button → dialog open → keys written; dialog closed first; automatic check after `Signed`; second press does nothing; no session → home folder.
 - Secrets: nothing from the output is stored or logged.
 - Not checked, to be written in "As built": Windows, a proxy, servers that need a client id.
+
+## As built (2026-10-09)
+
+Built as in the design, with these differences and findings. Plan: `docs/superpowers/plans/2026-10-09-customize-connectors-signin.md`.
+
+- **Real screens differ from what the plan guessed** (captures in `crates/forge-features/tests/fixtures/sign_in/`, notes in `NOTES.md`, Claude Code 2.1.283):
+  - The input box has no `? for shortcuts` in auto mode; it shows `(shift+tab to cycle)`. Both are marks.
+  - After a Down key the CLI draws only the rows that changed, so the driver keeps the text between Down presses and reads the last line with the pointer; it acts only after 150 ms without output, and presses nothing more until something is drawn after a Down.
+  - The CLI spaces the parts of a row with moves to a column (`CSI n G`), not spaces. `PlainText` reads `CSI n G` as a space. Found in the real window (the driver walked past the connector and handed over; fixed with a test of the exact bytes).
+- **The shell starts `claude` by its absolute path** (`McpManagerPort::launch_line`, with `CLAUDE_CONFIG_DIR` when Forge runs against another Claude home), so a person with no `claude` on PATH is served too.
+- **A throwaway `CLAUDE_CONFIG_DIR` cannot be used to observe or test the happy path**: it has no login, and `claude` shows its theme and login screens. The harness's fake Claude home has the same limit: in it the dialog hands over (the step for the input box times out). The real window check used the real Claude home with a throwaway Forge config.
+- The sign-in button shows only for connectors that "Check connection" can check (user scope). Plugin, project and local connectors have no check, so no button (30C decision).
+- The status line while running also says what to do when Forge does not see the end of the sign-in: press Close, then Check connection.
+
+### Checked in the real window
+
+Real Claude home, a temporary user connector `forge-signin-test` (`https://mcp.sentry.dev/mcp`, added and removed with `claude mcp`, nothing else touched):
+- Check connection → "Needs sign-in…" and the "Sign in" button appears: pass.
+- Sign in → the dialog opens, `claude` starts, `/mcp` opens, the pointer goes to the connector, its menu opens, Authenticate is pressed with no key typed by hand; the terminal shows "Authenticating with forge-signin-test… A browser window will open for authentication": pass.
+- The first run failed (column jumps, see above): the dialog said "The connector was not found on Claude's list. Go on in the terminal above." and left the terminal alone, which is the designed hand-over: pass; the cause was fixed.
+- Close ends the shell (no `claude` process of the dialog left) and the detail screen is usable: pass.
+
+### Not checked
+
+- **The end of a sign-in**: the browser part needs the person's account. The texts `mark::SIGNED` (`Authentication successful`) and `mark::FAILED` are what the CLI is expected to print and are **not confirmed**. If they differ, the dialog stays on "Signing in…" and the person closes it and presses Check connection (the status line says so). To confirm: sign in to a real server and read the terminal text; edit `crates/forge-features/src/sign_in.rs` `mark` and add the capture to the fixtures.
+- Folder trust prompt in a new folder (covered by a driver test, not by the real window), a double press of "Sign in" (covered by the guard in `sign_in_connector`, not pressed twice in the window), Windows, a proxy, servers that need a client id.
