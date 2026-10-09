@@ -7,6 +7,7 @@ use crate::diff::{diff_for_tool, diff_for_tool_call};
 use crate::question::{answer_pairs, AnswerPair, QUESTION_TOOL};
 use crate::tool_summary::{tool_call_status, tool_input_summary, ToolCallStatus};
 use forge_domain::TranscriptView;
+use forge_shared::{i18n, tr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolKind {
@@ -165,9 +166,9 @@ fn tool_row(call: &ToolCall) -> ToolRow {
                 .map(str::to_string)
                 .unwrap_or_else(|| summary.clone());
             let verb = match kind {
-                ToolKind::Created => "Created",
-                ToolKind::Edited => "Edited",
-                _ => "Read",
+                ToolKind::Created => tr!("Created|tool"),
+                ToolKind::Edited => tr!("Edited|tool"),
+                _ => tr!("Read|tool"),
             };
             (verb.to_string(), file_name(&path), path)
         }
@@ -202,22 +203,24 @@ fn summarize(tools: &[&ToolRow], failed: usize) -> String {
         };
         let commands = tools.iter().filter(|row| row.kind == ToolKind::Command).count();
         let others = tools.iter().filter(|row| row.kind == ToolKind::Other).count();
+        let (created, edited, read) = (distinct(ToolKind::Created), distinct(ToolKind::Edited), distinct(ToolKind::Read));
+        // One sentence per count, so a language with other plural rules can word each one.
         let parts = [
-            ("Created", distinct(ToolKind::Created), "file"),
-            ("Edited", distinct(ToolKind::Edited), "file"),
-            ("Ran", commands, "command"),
-            ("Read", distinct(ToolKind::Read), "file"),
-            ("Used", others, "other tool"),
+            (created, if created == 1 { tr!("Created {count} file") } else { tr!("Created {count} files") }),
+            (edited, if edited == 1 { tr!("Edited {count} file") } else { tr!("Edited {count} files") }),
+            (commands, if commands == 1 { tr!("Ran {count} command") } else { tr!("Ran {count} commands") }),
+            (read, if read == 1 { tr!("Read {count} file") } else { tr!("Read {count} files") }),
+            (others, if others == 1 { tr!("Used {count} other tool") } else { tr!("Used {count} other tools") }),
         ];
         parts
             .iter()
-            .filter(|(_, count, _)| *count > 0)
-            .map(|(verb, count, noun)| format!("{verb} {count} {noun}{}", if *count == 1 { "" } else { "s" }))
+            .filter(|(count, _)| *count > 0)
+            .map(|(count, template)| i18n::fill(template, &[("count", count.to_string())]))
             .collect::<Vec<_>>()
             .join(", ")
     };
     if failed > 0 {
-        text.push_str(&format!(" ({failed} failed)"));
+        text = tr!("{text} ({failed} failed)", text = text, failed = failed);
     }
     text
 }
@@ -262,12 +265,12 @@ fn build_card(tool_rows: &[Option<ToolRow>]) -> Option<FileCard> {
 
 fn live_label(row: &ToolRow) -> (String, String) {
     match row.kind {
-        ToolKind::Created => ("Creating".to_string(), row.subject.clone()),
-        ToolKind::Edited => ("Editing".to_string(), row.subject.clone()),
-        ToolKind::Read => ("Reading".to_string(), row.subject.clone()),
+        ToolKind::Created => (tr!("Creating").to_string(), row.subject.clone()),
+        ToolKind::Edited => (tr!("Editing").to_string(), row.subject.clone()),
+        ToolKind::Read => (tr!("Reading").to_string(), row.subject.clone()),
         ToolKind::Command => (row.subject.clone(), String::new()),
-        ToolKind::Other if matches!(row.call.name.as_str(), "Grep" | "Glob") => ("Searching".to_string(), row.subject.clone()),
-        ToolKind::Other => (format!("Using {}", row.call.name), row.subject.clone()),
+        ToolKind::Other if matches!(row.call.name.as_str(), "Grep" | "Glob") => (tr!("Searching").to_string(), row.subject.clone()),
+        ToolKind::Other => (tr!("Using {name}", name = row.call.name), row.subject.clone()),
     }
 }
 
@@ -278,7 +281,7 @@ fn live_line(blocks: &[Block], tool_rows: &[Option<ToolRow>], live: &LiveState) 
             Waiting::Permission { tool_name, input } => diff_for_tool(tool_name, input).map_or((0, 0), |diff| (diff.added, diff.removed)),
             Waiting::Question => (0, 0),
         };
-        return LiveLine { kind: LiveKind::NeedsInput, label: "Input needed".to_string(), subject: String::new(), added, removed, started };
+        return LiveLine { kind: LiveKind::NeedsInput, label: tr!("Input needed").to_string(), subject: String::new(), added, removed, started };
     }
     if let (Some(Block::Tool(call)), Some(Some(row))) = (blocks.last(), tool_rows.last()) {
         if call.result.is_none() {

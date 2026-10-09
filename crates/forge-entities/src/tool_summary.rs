@@ -1,5 +1,6 @@
 use forge_domain::ToolCall;
 use serde_json::Value;
+use forge_shared::tr;
 
 // The first of these keys with a string value is what a person wants to see about a tool call.
 const SUMMARY_KEYS: [&str; 7] = [
@@ -54,7 +55,7 @@ pub fn tool_detail_text(text: &str) -> String {
         return text.to_string();
     }
     let kept: String = text.chars().take(MAX_DETAIL_CHARS).collect();
-    format!("{kept}\n… {} more characters", total - MAX_DETAIL_CHARS)
+    format!("{kept}\n{}", tr!("… {count} more characters", count = total - MAX_DETAIL_CHARS))
 }
 
 pub fn tool_call_status(tool_call: &ToolCall) -> ToolCallStatus {

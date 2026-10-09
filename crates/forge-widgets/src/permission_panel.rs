@@ -3,6 +3,7 @@ use forge_application::LiveSessionId;
 use forge_domain::{PermissionDecision, PermissionMode, PermissionRequest};
 use forge_entities::{card_takes_focus, diff_for_tool, permission_key, permission_view, DiffView, PermissionKey};
 use forge_features::use_workspace;
+use forge_shared::tr;
 
 // Asks the page whether a text field holds typed text; the card takes focus only when it does not.
 const FOCUSED_TEXT_LEN: &str = "const a = document.activeElement; dioxus.send(a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') ? a.value.length : -1);";
@@ -81,7 +82,7 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                     class: "perm-button",
                     r#type: "button",
                     onclick: move |_| deny(PermissionDecision::Deny),
-                    "Deny"
+                    {tr!("Deny")}
                     span { class: "perm-key", "1" }
                     span { class: "perm-key", "Esc" }
                 }
@@ -90,7 +91,7 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                     class: "perm-button",
                     r#type: "button",
                     onclick: move |_| always(PermissionDecision::AllowAlways),
-                    "Always allow"
+                    {tr!("Always allow")}
                     span { class: "perm-key", "2" }
                     span { class: "perm-key", "{forge_domain::KEY_ALLOW_ALWAYS}" }
                 }
@@ -99,14 +100,14 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                         class: "perm-button primary",
                         r#type: "button",
                         onclick: move |_| once(PermissionDecision::AllowOnce),
-                        "Allow once"
+                        {tr!("Allow once")}
                         span { class: "perm-key", "3" }
                         span { class: "perm-key", "{forge_domain::KEY_ANSWER}" }
                     }
                     button {
                         class: "perm-button primary perm-more",
                         r#type: "button",
-                        "aria-label": "More choices",
+                        "aria-label": tr!("More choices"),
                         "aria-expanded": "{menu_open()}",
                         onclick: move |_| menu_open.set(!menu_open()),
                         "⌄"
@@ -114,8 +115,8 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                     if menu_open() {
                         div { class: "perm-menu",
                             button { class: "perm-menu-item", r#type: "button", onclick: switch_to_auto,
-                                div { class: "perm-menu-title", "Allow and switch to Auto mode" }
-                                div { class: "perm-menu-note", "The rest of this session is checked automatically." }
+                                div { class: "perm-menu-title", {tr!("Allow and switch to Auto mode")} }
+                                div { class: "perm-menu-note", {tr!("The rest of this session is checked automatically.")} }
                             }
                         }
                     }

@@ -1,4 +1,5 @@
 use forge_domain::{ContextUsage, Cost, PriceTable, SessionUsage, TokenUsage};
+use forge_shared::tr;
 
 /// `999`, `1.2k`, `76.2k`, `3.4M`, `2.4B`. Rounds to one decimal and moves up a unit instead of printing
 /// `1000.0k`.
@@ -116,7 +117,7 @@ impl UsageView {
         let cost_note = if summary.unpriced_models.is_empty() {
             None
         } else {
-            Some(format!("excludes {}", summary.unpriced_models.join(", ")))
+            Some(tr!("excludes {models}", models = summary.unpriced_models.join(", ")))
         };
         UsageView {
             context: context.map(|context| {
@@ -124,10 +125,11 @@ impl UsageView {
                 ContextView {
                     percent,
                     level: ring_level(percent),
-                    label: format!(
-                        "{percent}% · {} / {} tokens",
-                        format_tokens(context.total_tokens),
-                        format_tokens(context.max_tokens)
+                    label: tr!(
+                        "{percent}% · {used} / {max} tokens",
+                        percent = percent,
+                        used = format_tokens(context.total_tokens),
+                        max = format_tokens(context.max_tokens)
                     ),
                 }
             }),

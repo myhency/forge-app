@@ -14,6 +14,7 @@ use crate::relative_time::relative_time;
 use crate::tool_summary::elapsed_label;
 use forge_domain::TranscriptView;
 use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolRow};
+use forge_shared::tr;
 
 fn counts(added: usize, removed: usize) -> Option<(String, String)> {
     (added > 0 || removed > 0).then(|| (format!("+{added}"), format!("−{removed}")))
@@ -175,7 +176,7 @@ fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>
 
 #[component]
 fn FileCardView(card: FileCard, on_open_file: EventHandler<String>) -> Element {
-    let heading = if card.files.len() == 1 { None } else { Some(format!("{} files edited", card.files.len())) };
+    let heading = if card.files.len() == 1 { None } else { Some(tr!("{count} files edited", count = card.files.len())) };
     rsx! {
         div { class: "file-card",
             if let Some(heading) = heading {
@@ -189,7 +190,7 @@ fn FileCardView(card: FileCard, on_open_file: EventHandler<String>) -> Element {
                     button {
                         class: "file-name file-name-link",
                         r#type: "button",
-                        title: "Open {file.path}",
+                        title: tr!("Open {path}", path = file.path),
                         onclick: {
                             let path = file.path.clone();
                             move |_| on_open_file.call(path.clone())
@@ -212,7 +213,7 @@ fn FooterView(footer: Footer) -> Element {
             button {
                 class: "icon-button",
                 r#type: "button",
-                title: "Copy",
+                title: tr!("Copy"),
                 onclick: move |_| crate::clipboard::copy_text(&text),
                 "⧉"
             }

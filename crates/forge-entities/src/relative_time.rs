@@ -1,5 +1,6 @@
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
+use forge_shared::tr;
 
 /// "just now", "5m ago", "3h ago", "2d ago", or the date for anything older than a week. An
 /// unparseable timestamp gives an empty string rather than an error: it is only a label.
@@ -9,10 +10,10 @@ pub fn relative_time(updated_at: &str, now: OffsetDateTime) -> String {
     };
     let seconds = (now - then).whole_seconds();
     match seconds {
-        s if s < 60 => "just now".to_string(),
-        s if s < 3_600 => format!("{}m ago", s / 60),
-        s if s < 86_400 => format!("{}h ago", s / 3_600),
-        s if s < 7 * 86_400 => format!("{}d ago", s / 86_400),
+        s if s < 60 => tr!("just now").to_string(),
+        s if s < 3_600 => tr!("{n}m ago", n = s / 60),
+        s if s < 86_400 => tr!("{n}h ago", n = s / 3_600),
+        s if s < 7 * 86_400 => tr!("{n}d ago", n = s / 86_400),
         _ => format!("{:04}-{:02}-{:02}", then.year(), u8::from(then.month()), then.day()),
     }
 }

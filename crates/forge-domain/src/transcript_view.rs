@@ -16,9 +16,9 @@ impl TranscriptView {
 
     pub fn label(self) -> &'static str {
         match self {
-            TranscriptView::Normal => "Normal",
-            TranscriptView::Thinking => "Thinking",
-            TranscriptView::Detailed => "Detailed",
+            TranscriptView::Normal => crate::msg!("Normal"),
+            TranscriptView::Thinking => crate::msg!("Thinking"),
+            TranscriptView::Detailed => crate::msg!("Detailed"),
         }
     }
 

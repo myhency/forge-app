@@ -10,14 +10,16 @@ use forge_domain::Language;
 use crate::ko::KO;
 
 /// The Korean text for `english`, or `english` itself when the language is English or the table
-/// has no entry for it.
+/// has no entry for it. A key may carry a context after a bar (`"Created|tool"`): the context only
+/// tells two meanings of one English word apart in the table, and is never shown.
 pub fn translate(language: Language, english: &'static str) -> &'static str {
+    let shown = english.split('|').next().unwrap_or(english);
     match language {
-        Language::English => english,
+        Language::English => shown,
         Language::Korean => KO
             .binary_search_by(|(key, _)| (*key).cmp(english))
             .map(|index| KO[index].1)
-            .unwrap_or(english),
+            .unwrap_or(shown),
     }
 }
 
@@ -140,6 +142,15 @@ mod tests {
     fn a_value_that_looks_like_a_placeholder_is_not_filled_again() {
         let args = [("a", "{b}".to_string()), ("b", "x".to_string())];
         assert_eq!(fill("{a}", &args), "{b}");
+    }
+
+    #[test]
+    fn a_context_after_a_bar_tells_two_meanings_of_one_word_apart() {
+        assert_eq!(translate(Language::English, "Sample|context"), "Sample");
+        assert_eq!(translate(Language::Korean, "Sample|context"), "Sample", "no table entry: the English word, without the context");
+        assert_eq!(translate(Language::English, "Plain"), "Plain");
+        assert_eq!(translate(Language::Korean, "Created|tool"), "생성");
+        assert_eq!(translate(Language::Korean, "Created"), "생성 날짜");
     }
 
     #[test]

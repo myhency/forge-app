@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::diff::{DiffLineKind, FileDiff};
+use forge_shared::tr;
 
 pub(crate) fn diff_line_class(kind: DiffLineKind) -> &'static str {
     match kind {
@@ -32,7 +33,7 @@ pub fn DiffView(diff: FileDiff) -> Element {
             div { class: "diff-header",
                 span { class: "diff-path", "{diff.path}" }
                 if diff.new_content {
-                    span { class: "diff-note", "new content" }
+                    span { class: "diff-note", {tr!("new content")} }
                 }
                 span { class: "diff-counts", "{counts}" }
             }
@@ -47,7 +48,7 @@ pub fn DiffView(diff: FileDiff) -> Element {
                 }
             }
             if diff.hidden_lines > 0 {
-                div { class: "diff-more", "… {diff.hidden_lines} more lines" }
+                div { class: "diff-more", {tr!("… {count} more lines", count = diff.hidden_lines)} }
             }
         }
     }

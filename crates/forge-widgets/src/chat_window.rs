@@ -11,6 +11,7 @@ use crate::question_panel::QuestionPanel;
 use crate::session_tools::SessionTools;
 use crate::sidebar::project_label;
 use crate::usage_ring::UsageRing;
+use forge_shared::tr;
 
 // A click on a file name in an answer: the page sends the path to Rust. The handler is replaced each
 // time (`dioxus.send` belongs to the eval that created it).
@@ -28,8 +29,8 @@ fn ScrollToEnd() -> Element {
         button {
             class: "scroll-end",
             r#type: "button",
-            title: "Scroll to end",
-            "aria-label": "Scroll to end",
+            title: tr!("Scroll to end"),
+            "aria-label": tr!("Scroll to end"),
             onclick: |_| {
                 document::eval("const list = document.querySelector('.messages'); list?.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });");
             },
@@ -50,7 +51,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
         }
     });
     let Some(view_signal) = workspace.live_view(id) else {
-        return rsx! { div { class: "empty-state", "This session is no longer open." } };
+        return rsx! { div { class: "empty-state", {tr!("This session is no longer open.")} } };
     };
     let view = view_signal.read();
     let mode = workspace.transcript_view(id, settings.default_transcript_view());
@@ -62,14 +63,14 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
     let heading = format!(
         "{} · {}",
         project_label(&view.project_path),
-        view.session.title.as_deref().unwrap_or("Session")
+        view.session.title.as_deref().unwrap_or(tr!("Session"))
     );
 
     rsx! {
         div { class: if dock_expanded { "main-pane dock-expanded" } else { "main-pane" },
             div { class: "pane-header",
                 span { class: "pane-title", "{heading}" }
-                div { class: "view-switch", role: "radiogroup", "aria-label": "Transcript view",
+                div { class: "view-switch", role: "radiogroup", "aria-label": tr!("Transcript view"),
                     for option in TranscriptView::ALL {
                         button {
                             key: "{option.label()}",
@@ -77,7 +78,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                             role: "radio",
                             "aria-checked": "{option == mode}",
                             onclick: move |_| workspace.set_transcript_view(id, option),
-                            "{option.label()}"
+                            {forge_shared::i18n::text(option.label())}
                         }
                     }
                 }
@@ -118,7 +119,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
             }
             if archived {
                 div { class: "banner info archived-bar",
-                    span { "This session is archived." }
+                    span { {tr!("This session is archived.")} }
                     button {
                         class: "archived-bar-button",
                         onclick: {
@@ -130,7 +131,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                                 }
                             }
                         },
-                        "Unarchive"
+                        {tr!("Unarchive")}
                     }
                 }
             } else if view.can_send {
@@ -143,7 +144,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 }
             } else {
                 div { class: "banner info",
-                    "The project folder no longer exists, so this session can only be viewed."
+                    {tr!("The project folder no longer exists, so this session can only be viewed.")}
                 }
             }
         }

@@ -75,8 +75,8 @@ pub struct Card {
 impl Card {
     pub fn badge(&self) -> &'static str {
         match self.kind {
-            CardKind::Excerpt => "Excerpt",
-            CardKind::Comment => "Comment",
+            CardKind::Excerpt => crate::msg!("Excerpt"),
+            CardKind::Comment => crate::msg!("Comment"),
         }
     }
 
