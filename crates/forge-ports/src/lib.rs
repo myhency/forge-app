@@ -22,7 +22,7 @@ pub use browser_port::BrowserPort;
 pub use config_port::{ConfigError, ConfigRepositoryPort};
 pub use connector_catalog_port::{ConnectorCatalogError, ConnectorCatalogPort};
 pub use mcp_manager_port::{McpManagerError, McpManagerPort};
-pub use notify_port::NotifyPort;
+pub use notify_port::{ClickHandler, NotifyPort};
 pub use files_port::{ContentHit, SearchOptions, DirEntry, FileContent, FileVersion, FilesError, FilesPort, WriteError, READ_LIMIT};
 pub use git_port::{ChangeStatus, ChangedFile, GitError, GitPort};
 pub use extension_ports::{

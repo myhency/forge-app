@@ -349,7 +349,7 @@ impl Routines {
                     // banner: the page, the sidebar and the history line show it.
                     let notify = services.notify.clone();
                     tokio::task::spawn_blocking(move || {
-                        let _ = notify.notify(&title, &body);
+                        let _ = notify.notify_target(&title, &body, &crate::session_notices::NoticeTarget::Routines.encode());
                     });
                 }
                 this.reload();

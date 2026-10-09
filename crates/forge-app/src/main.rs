@@ -14,7 +14,7 @@ use forge_adapter_dialog::RfdFolderPicker;
 #[cfg(not(target_os = "macos"))]
 use forge_adapter_notify::NoNotify;
 #[cfg(target_os = "macos")]
-use forge_adapter_notify::{AttentionSlot, OsascriptNotify};
+use forge_adapter_notify::{AttentionSlot, MacNotify};
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
 use forge_adapter_browser::SystemBrowser;
@@ -241,7 +241,7 @@ static ATTENTION: std::sync::LazyLock<AttentionSlot> = std::sync::LazyLock::new(
 
 fn notifier() -> Arc<dyn forge_ports::NotifyPort> {
     #[cfg(target_os = "macos")]
-    return Arc::new(OsascriptNotify::with_attention(ATTENTION.clone()));
+    return Arc::new(MacNotify::new(ATTENTION.clone()));
     #[cfg(not(target_os = "macos"))]
     return Arc::new(NoNotify);
 }

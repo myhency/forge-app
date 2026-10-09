@@ -1,3 +1,7 @@
+mod channel;
+#[cfg(target_os = "macos")]
+mod center;
+
 use forge_ports::NotifyPort;
 
 /// What `osascript` is given: a fixed script that reads its title and body from the arguments.
@@ -56,6 +60,52 @@ impl NotifyPort for OsascriptNotify {
             }
             None => Err("the window is not ready to bounce the Dock icon".to_string()),
         }
+    }
+}
+
+/// macOS: the notification center when Forge runs as an app bundle (a click opens the session the notification
+/// is about), `osascript` otherwise. The Dock bounce is the same either way.
+#[cfg(target_os = "macos")]
+pub struct MacNotify {
+    fallback: OsascriptNotify,
+    center: Option<center::NotificationCenter>,
+}
+
+#[cfg(target_os = "macos")]
+impl MacNotify {
+    pub fn new(attention: AttentionSlot) -> Self {
+        let center = match channel::channel_for(center::bundle_identifier().as_deref()) {
+            channel::Channel::NotificationCenter => Some(center::NotificationCenter::start()),
+            channel::Channel::Osascript => None,
+        };
+        Self { fallback: OsascriptNotify::with_attention(attention), center }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl NotifyPort for MacNotify {
+    fn notify(&self, title: &str, body: &str) -> Result<(), String> {
+        match &self.center {
+            Some(center) => center.send(title, body, None),
+            None => self.fallback.notify(title, body),
+        }
+    }
+
+    fn notify_target(&self, title: &str, body: &str, target: &str) -> Result<(), String> {
+        match &self.center {
+            Some(center) => center.send(title, body, Some(target)),
+            None => self.fallback.notify(title, body),
+        }
+    }
+
+    fn on_click(&self, handler: forge_ports::ClickHandler) {
+        if let Some(center) = &self.center {
+            center.set_click_handler(handler);
+        }
+    }
+
+    fn request_attention(&self) -> Result<(), String> {
+        self.fallback.request_attention()
     }
 }
 
