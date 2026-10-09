@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+memchr = "2"
 forge-domain = { path = "../forge-domain" }
 forge-ports = { path = "../forge-ports" }
 async-trait = "0.1"

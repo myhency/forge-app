@@ -131,9 +131,19 @@ impl TitleTracker {
     }
 }
 
+/// Whether a raw line can hold a title record. Most lines are messages: checking the bytes first spares
+/// them the text check and the parse.
+fn may_hold_title(line: &[u8]) -> bool {
+    memchr::memmem::find(line, b"-title\"").is_some()
+}
+
+const READ_BUFFER: usize = 1 << 20;
+
 async fn read_title(path: &Path) -> Option<String> {
     let file = tokio::fs::File::open(path).await.ok()?;
-    let mut reader = BufReader::new(file);
+    // A transcript can be many megabytes and every read of an async file is a trip to another thread:
+    // read big pieces, not the default 8 KB.
+    let mut reader = BufReader::with_capacity(READ_BUFFER, file);
     let mut buffer = Vec::new();
     let mut titles = TitleTracker::default();
     loop {
@@ -142,6 +152,9 @@ async fn read_title(path: &Path) -> Option<String> {
         match reader.read_until(b'\n', &mut buffer).await {
             Ok(0) | Err(_) => break,
             Ok(_) => {}
+        }
+        if !may_hold_title(&buffer) {
+            continue;
         }
         if let Some((kind, found)) = std::str::from_utf8(&buffer).ok().and_then(title_from_line) {
             titles.see(kind, found);
@@ -1333,6 +1346,14 @@ mod tests {
         write_session(home.path(), &project(), "s1", &[user_in("/Users/test/project", "needle")]);
         assert!(adapter.search_sessions("   ", 50).await.unwrap().is_empty());
         assert!(adapter.search_sessions("needle", 0).await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn only_a_line_that_names_a_title_is_worth_parsing() {
+        assert!(may_hold_title(br#"{"type":"custom-title","customTitle":"x"}"#));
+        assert!(may_hold_title(br#"{"type":"ai-title","aiTitle":"x"}"#));
+        assert!(!may_hold_title(br#"{"type":"user","message":{"content":"hello"}}"#));
+        assert!(!may_hold_title(b"\xff\xfe not text"), "an invalid line holds no title");
     }
 
     #[tokio::test]
