@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, layout_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
 use forge_features::{refocus_workspace, use_customize_provider, use_routines_provider, use_settings_provider, use_window_width, use_workspace_provider, Active};
-use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, NewSessionPanel, SearchPalette, SettingsOverlay, Sidebar};
+use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, NewSessionPanel, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
 /// the active session. The root also catches the session shortcuts.
@@ -17,7 +17,7 @@ pub fn WorkspacePage() -> Element {
     // and focus falls to <body>, which silences every shortcut until the next click. Give focus
     // back to the root — but only if nothing has it, so a composer the person is typing in keeps it.
     use_effect(move || {
-        let _ = (settings.is_open(), workspace.search_open(), workspace.active(), workspace.lightbox().is_some());
+        let _ = (settings.is_open(), workspace.search_open(), workspace.shortcuts_open(), workspace.active(), workspace.lightbox().is_some());
         refocus_workspace();
     });
 
@@ -35,7 +35,7 @@ pub fn WorkspacePage() -> Element {
     });
     // Growing past the overlay width, or opening Settings or the search palette, puts it away too.
     use_effect(move || {
-        let overlay_open = settings.is_open() || workspace.search_open();
+        let overlay_open = settings.is_open() || workspace.search_open() || workspace.shortcuts_open();
         if *peek.peek() && !keep_peek(true, window_width(), overlay_open) {
             peek.set(false);
         }
@@ -85,12 +85,12 @@ pub fn WorkspacePage() -> Element {
             },
             onkeydown: move |event| {
                 // Escape puts the overlay sidebar away, unless an overlay of the app is on top of it.
-                if peek() && event.key() == Key::Escape && !settings.is_open() && !workspace.search_open() {
+                if peek() && event.key() == Key::Escape && !settings.is_open() && !workspace.search_open() && !workspace.shortcuts_open() {
                     peek.set(false);
                     return;
                 }
                 // The palette is an overlay too: the session shortcuts wait while it is open.
-                if !workspace.on_key(&event, settings.is_open() || workspace.search_open()) {
+                if !workspace.on_key(&event, settings.is_open() || workspace.search_open() || workspace.shortcuts_open()) {
                     if forge_features::shortcut_from_event(&event) == Some(forge_features::Shortcut::ToggleSidebar) {
                         // An overlay swallowed the key before this point (`shortcut_allowed`).
                         match sidebar_mode {
@@ -162,6 +162,7 @@ pub fn WorkspacePage() -> Element {
             }
             SettingsOverlay {}
             SearchPalette {}
+            ShortcutsDialog {}
             Lightbox {}
         }
     }

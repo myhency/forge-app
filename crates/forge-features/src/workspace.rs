@@ -113,6 +113,7 @@ pub struct Workspace {
     comment_focus: Signal<HashMap<LiveSessionId, u64>>,
     sleeping: Signal<HashSet<LiveSessionId>>,
     search_open: Signal<bool>,
+    shortcuts_open: Signal<bool>,
     search_query: Signal<String>,
     search_hits: Signal<Vec<SearchHit>>,
     search_task: Signal<Option<dioxus::core::Task>>,
@@ -157,6 +158,7 @@ pub fn use_workspace_provider() -> Workspace {
             comment_focus: Signal::new(HashMap::new()),
             sleeping: Signal::new(HashSet::new()),
             search_open: Signal::new(false),
+            shortcuts_open: Signal::new(false),
             search_query: Signal::new(String::new()),
             search_hits: Signal::new(Vec::new()),
             search_task: Signal::new(None),
@@ -275,6 +277,28 @@ impl Workspace {
             Active::NewSession | Active::Customize | Active::Routines => None,
         };
         arrange(&self.sidebar(), &self.prefs.read(), now, active)
+    }
+
+    pub fn shortcuts_open(&self) -> bool {
+        *self.shortcuts_open.read()
+    }
+
+    pub fn open_shortcuts(&self) {
+        let mut open = self.shortcuts_open;
+        open.set(true);
+    }
+
+    pub fn close_shortcuts(&self) {
+        let mut open = self.shortcuts_open;
+        open.set(false);
+    }
+
+    pub fn toggle_shortcuts(&self) {
+        if self.shortcuts_open() {
+            self.close_shortcuts();
+        } else {
+            self.open_shortcuts();
+        }
     }
 
     pub fn search_open(&self) -> bool {
@@ -1173,6 +1197,12 @@ impl Workspace {
     /// Handles the session shortcuts; returns whether the key press was one of them. While the
     /// settings overlay is open they are swallowed (spec §17.5).
     pub fn on_key(&self, event: &KeyboardEvent, overlay_open: bool) -> bool {
+        // Escape puts the shortcut list away.
+        if self.shortcuts_open() && event.key() == Key::Escape {
+            self.close_shortcuts();
+            event.prevent_default();
+            return true;
+        }
         let Some(shortcut) = shortcut_from_event(event) else {
             return false;
         };
@@ -1205,8 +1235,7 @@ impl Workspace {
             Shortcut::ArchiveActive => self.archive_active(),
             Shortcut::ForkActive => self.fork_active(),
             Shortcut::RenameActive => self.rename_active(),
-            // Temporary: a later task gives this its action.
-            Shortcut::ShowShortcuts => return false,
+            Shortcut::ShowShortcuts => self.toggle_shortcuts(),
         }
         event.prevent_default();
         true
