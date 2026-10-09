@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use forge_domain::{ChatWidth, FontChoice, MotionPref, OutputStyle, TextSize, Theme, TranscriptView};
 use forge_entities::{model_from_value, model_options, model_value};
 use forge_features::{filter_pages, nav_groups, use_settings, use_workspace, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
-use forge_shared::{Button, ButtonKind, Segmented, Select, SettingRow, Switch, TextInput};
+use forge_shared::{tr, Button, ButtonKind, Segmented, Select, SettingRow, Switch, TextInput};
 
 /// The settings overlay (spec §16): a left navigation and rows on the right. Renders nothing while
 /// closed. Esc and ⌘, are handled by the page's key handler.
@@ -23,19 +23,19 @@ pub fn SettingsOverlay() -> Element {
                 class: "settings-panel",
                 // A click inside the panel must not reach the backdrop and close it.
                 onclick: move |event| event.stop_propagation(),
-                button { class: "settings-close", title: "Close (Esc)", onclick: move |_| settings.close(), "✕" }
+                button { class: "settings-close", title: tr!("Close (Esc)"), onclick: move |_| settings.close(), "✕" }
                 div { class: "settings-nav",
                     input {
                         class: "settings-search",
                         r#type: "text",
-                        placeholder: "Search",
+                        placeholder: tr!("Search"),
                         value: "{settings.search()}",
                         oninput: move |event| settings.set_search(event.value()),
                     }
                     {
                         let matches = filter_pages(&settings.search());
                         if matches.is_empty() {
-                            rsx! { div { class: "hint settings-empty", "No settings match." } }
+                            rsx! { div { class: "hint settings-empty", {tr!("No settings match.")} } }
                         } else {
                             rsx! {
                                 for group in nav_groups() {
@@ -63,7 +63,7 @@ pub fn SettingsOverlay() -> Element {
                             settings.close();
                             workspace.open_shortcuts();
                         },
-                        "Keyboard shortcuts"
+                        {tr!("Keyboard shortcuts")}
                     }
                 }
                 div { class: "settings-content",
@@ -90,13 +90,13 @@ fn GeneralSection() -> Element {
     let look = settings.appearance();
     let notes = settings.notifications();
     rsx! {
-        h2 { "General" }
-        h3 { class: "settings-group", "Appearance" }
-        SettingRow { title: "Theme", description: "System follows the computer's light or dark mode.",
+        h2 { {tr!("General")} }
+        h3 { class: "settings-group", {tr!("Appearance")} }
+        SettingRow { title: tr!("Theme"), description: tr!("System follows the computer's light or dark mode."),
             Segmented {
-                label: "Theme",
+                label: tr!("Theme"),
                 value: look.theme.value().to_string(),
-                options: Theme::ALL.iter().map(|choice| (choice.value().to_string(), choice.label().to_string())).collect::<Vec<_>>(),
+                options: Theme::ALL.iter().map(|choice| (choice.value().to_string(), forge_shared::i18n::text(choice.label()).to_string())).collect::<Vec<_>>(),
                 onchange: move |value: String| {
                     if let Some(choice) = Theme::from_value(&value) {
                         settings.set_theme(choice);
@@ -105,11 +105,11 @@ fn GeneralSection() -> Element {
             }
         }
         SettingRow {
-            title: "Font",
-            description: "Used for the whole interface, the chat and code. OpenDyslexic must be installed on the computer.",
+            title: tr!("Font"),
+            description: tr!("Used for the whole interface, the chat and code. OpenDyslexic must be installed on the computer."),
             Select {
                 value: look.font.value().to_string(),
-                options: FontChoice::ALL.iter().map(|choice| (choice.value().to_string(), choice.label().to_string())).collect::<Vec<_>>(),
+                options: FontChoice::ALL.iter().map(|choice| (choice.value().to_string(), forge_shared::i18n::text(choice.label()).to_string())).collect::<Vec<_>>(),
                 onchange: move |value: String| {
                     if let Some(choice) = FontChoice::from_value(&value) {
                         settings.set_font(choice);
@@ -117,11 +117,11 @@ fn GeneralSection() -> Element {
                 },
             }
         }
-        SettingRow { title: "Text size", description: "The size of the conversation text.",
+        SettingRow { title: tr!("Text size"), description: tr!("The size of the conversation text."),
             Segmented {
-                label: "Text size",
+                label: tr!("Text size"),
                 value: look.text_size.value().to_string(),
-                options: TextSize::ALL.iter().map(|choice| (choice.value().to_string(), choice.label().to_string())).collect::<Vec<_>>(),
+                options: TextSize::ALL.iter().map(|choice| (choice.value().to_string(), forge_shared::i18n::text(choice.label()).to_string())).collect::<Vec<_>>(),
                 onchange: move |value: String| {
                     if let Some(choice) = TextSize::from_value(&value) {
                         settings.set_text_size(choice);
@@ -129,11 +129,11 @@ fn GeneralSection() -> Element {
                 },
             }
         }
-        SettingRow { title: "Chat width", description: "How wide the conversation column is.",
+        SettingRow { title: tr!("Chat width"), description: tr!("How wide the conversation column is."),
             Segmented {
-                label: "Chat width",
+                label: tr!("Chat width"),
                 value: look.chat_width.value().to_string(),
-                options: ChatWidth::ALL.iter().map(|choice| (choice.value().to_string(), choice.label().to_string())).collect::<Vec<_>>(),
+                options: ChatWidth::ALL.iter().map(|choice| (choice.value().to_string(), forge_shared::i18n::text(choice.label()).to_string())).collect::<Vec<_>>(),
                 onchange: move |value: String| {
                     if let Some(choice) = ChatWidth::from_value(&value) {
                         settings.set_chat_width(choice);
@@ -141,23 +141,23 @@ fn GeneralSection() -> Element {
                 },
             }
         }
-        SettingRow { title: "Reduce motion", description: "Turns off animation of streaming replies and other interface elements.",
+        SettingRow { title: tr!("Reduce motion"), description: tr!("Turns off animation of streaming replies and other interface elements."),
             Switch {
                 on: look.motion == MotionPref::Reduced,
                 onchange: move |on| settings.set_motion(if on { MotionPref::Reduced } else { MotionPref::System }),
             }
         }
-        h3 { class: "settings-group", "Notifications" }
-        SettingRow { title: "Reply done", description: "When a session you are not looking at finishes a reply.",
+        h3 { class: "settings-group", {tr!("Notifications")} }
+        SettingRow { title: tr!("Reply done"), description: tr!("When a session you are not looking at finishes a reply."),
             Switch { on: notes.reply_done, onchange: move |on| settings.set_notification(NotificationKind::ReplyDone, on) }
         }
-        SettingRow { title: "Scheduled task", description: "When a routine needs you or cannot start.",
+        SettingRow { title: tr!("Scheduled task"), description: tr!("When a routine needs you or cannot start."),
             Switch { on: notes.scheduled_task, onchange: move |on| settings.set_notification(NotificationKind::ScheduledTask, on) }
         }
-        SettingRow { title: "Code notice", description: "When a session fails or cannot continue.",
+        SettingRow { title: tr!("Code notice"), description: tr!("When a session fails or cannot continue."),
             Switch { on: notes.code_notice, onchange: move |on| settings.set_notification(NotificationKind::CodeNotice, on) }
         }
-        SettingRow { title: "Permission request", description: "When a session you are not looking at asks for approval.",
+        SettingRow { title: tr!("Permission request"), description: tr!("When a session you are not looking at asks for approval."),
             Switch { on: notes.permission_request, onchange: move |on| settings.set_notification(NotificationKind::PermissionRequest, on) }
         }
     }
@@ -170,17 +170,17 @@ fn CodeSection() -> Element {
     let settings = use_settings();
     let view = settings.default_transcript_view();
     let style_value = settings.output_style().map_or(DEFAULT_STYLE_VALUE, OutputStyle::name).to_string();
-    let mut style_options = vec![(DEFAULT_STYLE_VALUE.to_string(), "Default".to_string())];
-    style_options.extend(OutputStyle::ALL.iter().map(|style| (style.name().to_string(), style.name().to_string())));
+    let mut style_options = vec![(DEFAULT_STYLE_VALUE.to_string(), tr!("Default").to_string())];
+    style_options.extend(OutputStyle::ALL.iter().map(|style| (style.name().to_string(), forge_shared::i18n::text(style.label()).to_string())));
     rsx! {
-        h2 { "Code" }
+        h2 { {tr!("Code")} }
         SettingRow {
-            title: "Default transcript view",
-            description: "The view sessions open in. The view menu of a session changes that session only.",
+            title: tr!("Default transcript view"),
+            description: tr!("The view sessions open in. The view menu of a session changes that session only."),
             Segmented {
-                label: "Default transcript view",
+                label: tr!("Default transcript view"),
                 value: view.label().to_string(),
-                options: TranscriptView::ALL.iter().map(|option| (option.label().to_string(), option.label().to_string())).collect::<Vec<_>>(),
+                options: TranscriptView::ALL.iter().map(|option| (option.label().to_string(), forge_shared::i18n::text(option.label()).to_string())).collect::<Vec<_>>(),
                 onchange: move |value: String| {
                     if let Some(option) = TranscriptView::ALL.iter().copied().find(|option| option.label() == value) {
                         settings.set_default_transcript_view(option);
@@ -188,7 +188,7 @@ fn CodeSection() -> Element {
                 },
             }
         }
-        SettingRow { title: "Output style", description: "Applies to new sessions.",
+        SettingRow { title: tr!("Output style"), description: tr!("Applies to new sessions."),
             Select {
                 value: style_value,
                 options: style_options,
@@ -196,24 +196,24 @@ fn CodeSection() -> Element {
             }
         }
         SettingRow {
-            title: "Prompt suggestions",
-            description: "Show a suggested next prompt in the message box after Claude answers. Suggestions use a little more of your usage.",
+            title: tr!("Prompt suggestions"),
+            description: tr!("Show a suggested next prompt in the message box after Claude answers. Suggestions use a little more of your usage."),
             Switch { on: settings.prompt_suggestions(), onchange: move |on| settings.set_prompt_suggestions(on) }
         }
         SettingRow {
-            title: "Allow bypass permissions mode",
-            description: "Adds Bypass permissions to the mode menu, which skips every permission check in a session. A session that is already in that mode keeps it.",
+            title: tr!("Allow bypass permissions mode"),
+            description: tr!("Adds Bypass permissions to the mode menu, which skips every permission check in a session. A session that is already in that mode keeps it."),
             Switch { on: settings.allow_bypass_mode(), onchange: move |on| settings.set_allow_bypass_mode(on) }
         }
         if cfg!(target_os = "macos") {
             SettingRow {
-                title: "Bounce the Dock icon",
-                description: "When a session needs your approval or stops, the Dock icon bounces until you come back.",
+                title: tr!("Bounce the Dock icon"),
+                description: tr!("When a session needs your approval or stops, the Dock icon bounces until you come back."),
                 Switch { on: settings.attention_bounce(), onchange: move |on| settings.set_attention_bounce(on) }
             }
         }
         div { class: "hint", style: "margin-top: 12px;",
-            "Output style, prompt suggestions and the bypass switch apply to sessions that start after the change. The default view also applies to open sessions you have not changed."
+            {tr!("Output style, prompt suggestions and the bypass switch apply to sessions that start after the change. The default view also applies to open sessions you have not changed.")}
         }
     }
 }
@@ -221,17 +221,17 @@ fn CodeSection() -> Element {
 #[component]
 fn ConnectionSection() -> Element {
     let settings = use_settings();
-    let key_label = if settings.key_visible() { "Hide" } else { "Show" };
+    let key_label = if settings.key_visible() { tr!("Hide") } else { tr!("Show") };
     rsx! {
-        h2 { "Connection" }
-        SettingRow { title: "Base URL", description: "Leave empty for https://api.anthropic.com.",
+        h2 { {tr!("Connection")} }
+        SettingRow { title: tr!("Base URL"), description: tr!("Leave empty for https://api.anthropic.com."),
             TextInput {
                 value: settings.base_url(),
                 placeholder: "https://api.anthropic.com",
                 oninput: move |value| settings.set_base_url(value),
             }
         }
-        SettingRow { title: "API key", description: "Stored in Forge's own config file, never in ~/.claude.",
+        SettingRow { title: tr!("API key"), description: tr!("Stored in Forge's own config file, never in ~/.claude."),
             TextInput {
                 value: settings.api_key(),
                 placeholder: "sk-ant-…",
@@ -241,11 +241,11 @@ fn ConnectionSection() -> Element {
             Button { label: key_label, onclick: move |_| settings.toggle_key_visible() }
         }
         div { class: "hint", style: "margin-top: 12px;",
-            "Sessions that are already open keep the old values until they are started again."
+            {tr!("Sessions that are already open keep the old values until they are started again.")}
         }
         div { style: "margin-top: 16px;",
             Button {
-                label: "Save",
+                label: tr!("Save"),
                 kind: ButtonKind::Primary,
                 disabled: !settings.connection_dirty(),
                 onclick: move |_| settings.save_connection(),
@@ -263,22 +263,22 @@ fn ModelSection() -> Element {
     let selected = model_value(saved.as_deref());
     let custom_empty = custom.read().trim().is_empty();
     rsx! {
-        h2 { "Model" }
-        SettingRow { title: "Default model", description: "New sessions start with this model. A choice is saved at once.",
+        h2 { {tr!("Model")} }
+        SettingRow { title: tr!("Default model"), description: tr!("New sessions start with this model. A choice is saved at once."),
             Select {
                 value: selected,
                 options,
                 onchange: move |value: String| settings.choose_model(model_from_value(&value)),
             }
         }
-        SettingRow { title: "Other model ID", description: "Use an ID that is not in the list.",
+        SettingRow { title: tr!("Other model ID"), description: tr!("Use an ID that is not in the list."),
             TextInput {
                 value: custom(),
                 placeholder: "model-id",
                 oninput: move |value| custom.set(value),
             }
             Button {
-                label: "Use",
+                label: tr!("Use"),
                 disabled: custom_empty,
                 onclick: move |_| {
                     settings.choose_model(custom.read().clone());
@@ -287,7 +287,7 @@ fn ModelSection() -> Element {
             }
         }
         div { class: "hint", style: "margin-top: 12px;",
-            "Sessions that are already open keep their model; a change applies to the next new session."
+            {tr!("Sessions that are already open keep their model; a change applies to the next new session.")}
         }
     }
 }
@@ -296,7 +296,7 @@ fn ModelSection() -> Element {
 fn StatusLine() -> Element {
     let settings = use_settings();
     match settings.status() {
-        Some(SettingsStatus::Saved) => rsx! { div { class: "status-line", "Saved." } },
+        Some(SettingsStatus::Saved) => rsx! { div { class: "status-line", {tr!("Saved.")} } },
         Some(SettingsStatus::Error(message)) => rsx! { div { class: "status-line error", "{message}" } },
         None => rsx! { div { class: "status-line" } },
     }
@@ -307,13 +307,13 @@ fn StatusLine() -> Element {
 fn ExtensionSection(kind: ExtensionKind) -> Element {
     let settings = use_settings();
     let (heading, tab, scoped) = match kind {
-        ExtensionKind::Skill => ("Skills", settings.skill_tab(), true),
-        ExtensionKind::Plugin => ("Plugins", settings.plugin_tab(), false),
-        ExtensionKind::McpServer => ("MCP servers", settings.mcp_tab(), true),
+        ExtensionKind::Skill => (tr!("Skills"), settings.skill_tab(), true),
+        ExtensionKind::Plugin => (tr!("Plugins"), settings.plugin_tab(), false),
+        ExtensionKind::McpServer => (tr!("MCP servers"), settings.mcp_tab(), true),
     };
     let body = match tab {
         Err(message) => rsx! { div { class: "status-line error", "{message}" } },
-        Ok(rows) if rows.is_empty() => rsx! { div { class: "hint", "Nothing found." } },
+        Ok(rows) if rows.is_empty() => rsx! { div { class: "hint", {tr!("Nothing found.")} } },
         Ok(rows) => rsx! {
             for row in rows {
                 SettingRow { key: "{row.key}", title: row.title.clone(), description: row.detail.clone(),
@@ -331,14 +331,14 @@ fn ExtensionSection(kind: ExtensionKind) -> Element {
     rsx! {
         h2 { "{heading}" }
         if scoped {
-            div { class: "hint", "Showing what is available for {settings.project_label()}." }
+            div { class: "hint", {tr!("Showing what is available for {project}.", project = settings.project_label())} }
         }
         {body}
         div { class: "hint", style: "margin-top: 12px;",
-            "Sessions that are already open keep what they started with; a change applies to the next new session."
+            {tr!("Sessions that are already open keep what they started with; a change applies to the next new session.")}
         }
         div { class: "hint",
-            "Forge sessions do not use the hooks or permission rules from ~/.claude/settings.json; project settings still apply."
+            {tr!("Forge sessions do not use the hooks or permission rules from ~/.claude/settings.json; project settings still apply.")}
         }
     }
 }

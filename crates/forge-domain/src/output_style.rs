@@ -24,6 +24,16 @@ impl OutputStyle {
         }
     }
 
+    /// The name as the menu shows it (translated by the caller with `i18n::text`).
+    pub fn label(self) -> &'static str {
+        match self {
+            OutputStyle::Concise => crate::msg!("Concise"),
+            OutputStyle::Explanatory => crate::msg!("Explanatory"),
+            OutputStyle::Learning => crate::msg!("Learning"),
+            OutputStyle::Proactive => crate::msg!("Proactive"),
+        }
+    }
+
     pub fn from_name(name: &str) -> Option<OutputStyle> {
         OutputStyle::ALL.into_iter().find(|style| style.name() == name)
     }

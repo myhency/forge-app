@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use forge_features::{refocus_workspace, shortcut_sections, use_workspace};
+use forge_shared::tr;
 
 /// The list of keyboard shortcuts (⌘/): every key Forge binds, from the same table the key handler
 /// reads. Renders nothing while closed; Escape or the close button puts it away.
@@ -20,19 +21,19 @@ pub fn ShortcutsDialog() -> Element {
             div {
                 class: "shortcuts-panel",
                 role: "dialog",
-                "aria-label": "Keyboard shortcuts",
+                "aria-label": tr!("Keyboard shortcuts"),
                 // A click inside the panel must not reach the backdrop and close it.
                 onclick: move |event| event.stop_propagation(),
                 button {
                     class: "settings-close",
-                    title: "Close (Esc)",
+                    title: tr!("Close (Esc)"),
                     onclick: move |_| {
                         workspace.close_shortcuts();
                         refocus_workspace();
                     },
                     "✕"
                 }
-                h2 { "Keyboard shortcuts" }
+                h2 { {tr!("Keyboard shortcuts")} }
                 for section in sections {
                     div { key: "{section.title}",
                         h3 { "{section.title}" }

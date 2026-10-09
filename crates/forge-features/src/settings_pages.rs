@@ -1,4 +1,5 @@
 use crate::settings::SettingsSection;
+use forge_shared::tr;
 
 pub struct NavGroup {
     pub title: &'static str,
@@ -7,25 +8,26 @@ pub struct NavGroup {
 
 pub fn nav_groups() -> Vec<NavGroup> {
     vec![
-        NavGroup { title: "Settings", pages: vec![(SettingsSection::General, "General"), (SettingsSection::Code, "Claude Code")] },
-        NavGroup { title: "This computer", pages: vec![(SettingsSection::Connection, "Connection"), (SettingsSection::Model, "Model")] },
+        NavGroup { title: tr!("Settings"), pages: vec![(SettingsSection::General, tr!("General")), (SettingsSection::Code, tr!("Claude Code"))] },
+        NavGroup { title: tr!("This computer"), pages: vec![(SettingsSection::Connection, tr!("Connection")), (SettingsSection::Model, tr!("Model"))] },
         NavGroup {
-            title: "Customize",
-            pages: vec![(SettingsSection::Skills, "Skills"), (SettingsSection::Plugins, "Plugins"), (SettingsSection::McpServers, "MCP servers")],
+            title: tr!("Customize"),
+            pages: vec![(SettingsSection::Skills, tr!("Skills")), (SettingsSection::Plugins, tr!("Plugins")), (SettingsSection::McpServers, tr!("MCP servers"))],
         },
     ]
 }
 
 // The titles of the rows on each page, so a search finds a setting by its name.
-fn row_titles(section: SettingsSection) -> &'static [&'static str] {
+fn row_titles(section: SettingsSection) -> Vec<&'static str> {
     match section {
-        SettingsSection::General => &[
-            "Appearance", "Theme", "Font", "Text size", "Chat width", "Reduce motion", "Notifications", "Reply done", "Scheduled task", "Code notice", "Permission request",
+        SettingsSection::General => vec![
+            tr!("Appearance"), tr!("Theme"), tr!("Font"), tr!("Text size"), tr!("Chat width"), tr!("Reduce motion"), tr!("Notifications"), tr!("Reply done"),
+            tr!("Scheduled task"), tr!("Code notice"), tr!("Permission request"),
         ],
-        SettingsSection::Code => &["Default transcript view", "Output style", "Prompt suggestions", "Allow bypass permissions mode", "Bounce the Dock icon"],
-        SettingsSection::Connection => &["Base URL", "API key"],
-        SettingsSection::Model => &["Default model", "Other model ID"],
-        SettingsSection::Skills | SettingsSection::Plugins | SettingsSection::McpServers => &[],
+        SettingsSection::Code => vec![tr!("Default transcript view"), tr!("Output style"), tr!("Prompt suggestions"), tr!("Allow bypass permissions mode"), tr!("Bounce the Dock icon")],
+        SettingsSection::Connection => vec![tr!("Base URL"), tr!("API key")],
+        SettingsSection::Model => vec![tr!("Default model"), tr!("Other model ID")],
+        SettingsSection::Skills | SettingsSection::Plugins | SettingsSection::McpServers => vec![],
     }
 }
 
