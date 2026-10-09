@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::connector::{mask_url, ConnectorKind};
+use crate::tr;
 
 /// What the Add dialog holds. Values (headers, env) live here only until the CLI is called.
 #[derive(Clone, PartialEq, Eq)]
@@ -117,10 +118,10 @@ fn clean_headers(rows: &[(String, String)]) -> Result<Vec<(String, String)>, Str
     for row in rows.iter().filter(|row| !blank(row)) {
         let name = row.0.trim();
         if !valid_header_name(name) {
-            return Err(format!("\"{name}\" is not a header name: no spaces or colons, and it cannot be empty."));
+            return Err(tr!("“{name}” is not a header name: no spaces or colons, and it cannot be empty.", name = name));
         }
         if row.1.contains(['\n', '\r', '\0']) {
-            return Err(format!("The value of {name} cannot have a line break."));
+            return Err(tr!("The value of {name} cannot have a line break.", name = name));
         }
         out.push((name.to_string(), row.1.trim().to_string()));
     }
@@ -132,10 +133,10 @@ fn clean_env(rows: &[(String, String)]) -> Result<Vec<(String, String)>, String>
     for row in rows.iter().filter(|row| !blank(row)) {
         let key = row.0.trim();
         if !valid_env_key(key) {
-            return Err(format!("\"{key}\" is not a variable name: use letters, digits and _, not starting with a digit."));
+            return Err(tr!("“{key}” is not a variable name: use letters, digits and _, not starting with a digit.", key = key));
         }
         if row.1.contains('\0') {
-            return Err(format!("The value of {key} has a character that cannot be used."));
+            return Err(tr!("The value of {key} has a character that cannot be used.", key = key));
         }
         out.push((key.to_string(), row.1.clone()));
     }
@@ -166,7 +167,7 @@ pub fn split_args(text: &str) -> Result<Vec<String>, String> {
         }
     }
     if quote.is_some() {
-        return Err("Close the quote in the arguments.".to_string());
+        return Err(tr!("Close the quote in the arguments.").to_string());
     }
     if started || !current.is_empty() {
         out.push(current);
@@ -178,19 +179,19 @@ pub fn split_args(text: &str) -> Result<Vec<String>, String> {
 pub fn validate_new(draft: &ConnectorDraft, taken: &[String]) -> Result<NewConnector, String> {
     let name = draft.name.trim().to_string();
     if name.is_empty() {
-        return Err("Give the connector a name.".to_string());
+        return Err(tr!("Give the connector a name.").to_string());
     }
     if !valid_name(&name) {
-        return Err("A name can use letters, numbers, - and _ only (up to 64), and cannot start with -.".to_string());
+        return Err(tr!("A name can use letters, numbers, - and _ only (up to 64), and cannot start with -.").to_string());
     }
     if taken.iter().any(|existing| *existing == name) {
-        return Err(format!("A connector named {name} already exists."));
+        return Err(tr!("A connector named {name} already exists.", name = name));
     }
     let transport = match draft.kind {
         ConnectorKind::Http | ConnectorKind::Sse => {
             let url = draft.url.trim().to_string();
             if !valid_url(&url) {
-                return Err("The address must start with https:// or http:// and have no spaces.".to_string());
+                return Err(tr!("The address must start with https:// or http:// and have no spaces.").to_string());
             }
             let headers = clean_headers(&draft.headers)?;
             if draft.kind == ConnectorKind::Http {
@@ -202,11 +203,11 @@ pub fn validate_new(draft: &ConnectorDraft, taken: &[String]) -> Result<NewConne
         ConnectorKind::Stdio => {
             let command = draft.command.trim().to_string();
             if command.is_empty() {
-                return Err("Enter the command to run.".to_string());
+                return Err(tr!("Enter the command to run.").to_string());
             }
             NewTransport::Stdio { command, args: split_args(&draft.args)?, env: clean_env(&draft.env)? }
         }
-        ConnectorKind::Unknown => return Err("Choose a type.".to_string()),
+        ConnectorKind::Unknown => return Err(tr!("Choose a type.").to_string()),
     };
     Ok(NewConnector { name, transport })
 }

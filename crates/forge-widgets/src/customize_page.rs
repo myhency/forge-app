@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_features::{use_customize, use_workspace, CustomizeMode, CustomizeTab, Dialog};
-use forge_shared::{Button, ButtonKind};
+use forge_shared::{msg, tr, Button, ButtonKind};
 
 use crate::customize_connectors::{ConnectorNotes, ConnectorsTab};
 use crate::customize_dialogs::CustomizeDialogs;
@@ -8,7 +8,7 @@ use crate::customize_plugins::PluginsTab;
 use crate::customize_skills::SkillsTab;
 
 const TABS: [(CustomizeTab, &str); 3] =
-    [(CustomizeTab::Skills, "Skills"), (CustomizeTab::Connectors, "Connectors"), (CustomizeTab::Plugins, "Plugins")];
+    [(CustomizeTab::Skills, msg!("Skills")), (CustomizeTab::Connectors, msg!("Connectors")), (CustomizeTab::Plugins, msg!("Plugins"))];
 
 /// The Customize page (spec 2026-10-08): tabs, the Mine / Explore switch, search and the Add menu.
 /// Plugins, Skills and Connectors are built.
@@ -36,7 +36,7 @@ pub fn CustomizePage() -> Element {
 
     rsx! {
         div { class: "customize",
-            h1 { class: "customize-title", "Customize" }
+            h1 { class: "customize-title", {tr!("Customize")} }
             div { class: "customize-bar",
                 div { class: "customize-tabs",
                     for (value, label) in TABS {
@@ -44,7 +44,7 @@ pub fn CustomizePage() -> Element {
                             key: "{label}",
                             class: if tab == value { "customize-tab active" } else { "customize-tab" },
                             onclick: move |_| customize.set_tab(value),
-                            "{label}"
+                            {forge_shared::i18n::text(label)}
                         }
                     }
                 }
@@ -52,23 +52,23 @@ pub fn CustomizePage() -> Element {
                     button {
                         class: if mode == CustomizeMode::Mine { "active" } else { "" },
                         onclick: move |_| customize.set_mode(CustomizeMode::Mine),
-                        "Mine"
+                        {tr!("Mine")}
                     }
                     button {
                         class: if mode == CustomizeMode::Explore { "active" } else { "" },
                         onclick: move |_| customize.set_mode(CustomizeMode::Explore),
-                        "Explore"
+                        {tr!("Explore")}
                     }
                 }
                 input {
                     class: "customize-search",
                     r#type: "text",
-                    placeholder: "Search",
+                    placeholder: tr!("Search"),
                     value: "{customize.query()}",
                     oninput: move |event| customize.set_query(event.value()),
                 }
                 div { class: "customize-add",
-                    Button { label: "+ Add", kind: ButtonKind::Primary, disabled: customize.skills_busy() || customize.connectors_busy(), onclick: move |_| add_menu.set(!add_menu()) }
+                    Button { label: tr!("+ Add"), kind: ButtonKind::Primary, disabled: customize.skills_busy() || customize.connectors_busy(), onclick: move |_| add_menu.set(!add_menu()) }
                     if add_menu() {
                         div { class: "menu-backdrop", onclick: move |_| add_menu.set(false) }
                         div { class: "customize-menu",
@@ -78,7 +78,7 @@ pub fn CustomizePage() -> Element {
                                         add_menu.set(false);
                                         customize.open_dialog(Dialog::AddConnector);
                                     },
-                                    "Add connector"
+                                    {tr!("Add connector")}
                                 }
                             } else if tab == CustomizeTab::Skills {
                                 button {
@@ -86,21 +86,21 @@ pub fn CustomizePage() -> Element {
                                         add_menu.set(false);
                                         customize.upload_skill_folder();
                                     },
-                                    "Upload skill folder"
+                                    {tr!("Upload skill folder")}
                                 }
                                 button {
                                     onclick: move |_| {
                                         add_menu.set(false);
                                         customize.upload_skill_zip();
                                     },
-                                    "Upload skill zip"
+                                    {tr!("Upload skill zip")}
                                 }
                                 button {
                                     onclick: move |_| {
                                         add_menu.set(false);
                                         customize.open_dialog(Dialog::CreateSkill);
                                     },
-                                    "Create skill"
+                                    {tr!("Create skill")}
                                 }
                             } else {
                                 button {
@@ -108,14 +108,14 @@ pub fn CustomizePage() -> Element {
                                         add_menu.set(false);
                                         customize.open_dialog(Dialog::AddMarketplace);
                                     },
-                                    "Add marketplace"
+                                    {tr!("Add marketplace")}
                                 }
                                 button {
                                     onclick: move |_| {
                                         add_menu.set(false);
                                         customize.open_dialog(Dialog::ManageMarketplaces);
                                     },
-                                    "Manage marketplaces"
+                                    {tr!("Manage marketplaces")}
                                 }
                             }
                         }
@@ -125,7 +125,7 @@ pub fn CustomizePage() -> Element {
             if let Some(message) = customize.error() {
                 div { class: "banner error",
                     "{message} "
-                    Button { label: "Dismiss", onclick: move |_| customize.dismiss_error() }
+                    Button { label: tr!("Dismiss"), onclick: move |_| customize.dismiss_error() }
                 }
             }
             if tab == CustomizeTab::Connectors {

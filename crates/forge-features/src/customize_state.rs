@@ -10,6 +10,7 @@ use crate::customize_connectors::{refreshes_on_tab, Connectors};
 use crate::customize_skills::{set_skill_enabled_in, SkillPane, SkillText};
 use crate::customize::{check_source, closes_detail, error_in_dialog, CustomizeMode, CustomizeTab, Job, JobQueue, Latest};
 use crate::workspace::WorkspaceServices;
+use forge_shared::tr;
 
 /// What the last read of the catalogue gave.
 #[derive(Debug, Clone, PartialEq)]
@@ -205,7 +206,7 @@ impl Customize {
                         let mut list = this.skills;
                         list.set(None);
                         let mut slot = this.error;
-                        slot.set(Some(format!("Could not read the skills: {error}")));
+                        slot.set(Some(tr!("Could not read the skills: {error}", error = error)));
                     }
                 }
                 match connectors {
@@ -217,7 +218,7 @@ impl Customize {
                         // The old list would pass for current: show the failure instead.
                         let mut slot = this.connectors.view;
                         slot.set(None);
-                        this.set_error(Some(format!("Could not read the connectors: {error}")));
+                        this.set_error(Some(tr!("Could not read the connectors: {error}", error = error)));
                     }
                 }
             }
@@ -597,7 +598,7 @@ impl Customize {
                 match file_picker.pick_files().await.into_iter().next() {
                     None => None,
                     Some(path) if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("zip")) => Some(usecase.add_zip(&path).await),
-                    Some(_) => Some(Err(SkillsError::Catalog(forge_ports::SkillCatalogError::Invalid("Choose a .zip file.".to_string())))),
+                    Some(_) => Some(Err(SkillsError::Catalog(forge_ports::SkillCatalogError::Invalid(tr!("Choose a .zip file.").to_string())))),
                 }
             } else {
                 match folder_picker.pick_folder().await {

@@ -9,6 +9,7 @@ use forge_domain::{Connection, ConnectorDraft, ConnectorEntry, ConnectorSource};
 use crate::customize::{CustomizeMode, CustomizeTab, Latest};
 use crate::customize_state::{plugins_for_skills, Customize, Dialog};
 use crate::{SignInAction, SignInOutcome, SignInRun, SignInStop, TapHandle};
+use forge_shared::tr;
 
 /// One connector in a list: the entry and whether it is on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,10 +72,10 @@ pub fn find_connector(view: &ConnectorView, id: &str) -> Option<ConnectorRow> {
 
 pub fn source_label(source: &ConnectorSource) -> String {
     match source {
-        ConnectorSource::User => "Added by you".to_string(),
-        ConnectorSource::Project => "This project (.mcp.json)".to_string(),
-        ConnectorSource::Local => "This project, only for you".to_string(),
-        ConnectorSource::Plugin { plugin_id } => format!("Plugin {plugin_id}"),
+        ConnectorSource::User => tr!("Added by you").to_string(),
+        ConnectorSource::Project => tr!("This project (.mcp.json)").to_string(),
+        ConnectorSource::Local => tr!("This project, only for you").to_string(),
+        ConnectorSource::Plugin { plugin_id } => tr!("Plugin {plugin}", plugin = plugin_id),
     }
 }
 
@@ -91,10 +92,10 @@ pub enum ConnectionState {
 pub fn connection_text(state: &ConnectionState) -> String {
     match state {
         ConnectionState::Idle => String::new(),
-        ConnectionState::Checking => "Checking…".to_string(),
-        ConnectionState::Done(Connection::Connected) => "Connected".to_string(),
-        ConnectionState::Done(Connection::NeedsSignIn) => "Needs sign-in. Use the Sign in button, or run /mcp in the terminal's Claude Code.".to_string(),
-        ConnectionState::Done(Connection::Failed(issue)) => format!("Could not connect: {issue}"),
+        ConnectionState::Checking => tr!("Checking…").to_string(),
+        ConnectionState::Done(Connection::Connected) => tr!("Connected").to_string(),
+        ConnectionState::Done(Connection::NeedsSignIn) => tr!("Needs sign-in. Use the Sign in button, or run /mcp in the terminal's Claude Code.").to_string(),
+        ConnectionState::Done(Connection::Failed(issue)) => tr!("Could not connect: {issue}", issue = issue),
         ConnectionState::Done(Connection::Unknown(text)) => text.clone(),
         ConnectionState::Failed(message) => message.clone(),
     }
@@ -125,23 +126,23 @@ pub fn shows_sign_in(state: &ConnectionState) -> bool {
 
 pub fn stop_text(reason: &SignInStop) -> String {
     match reason {
-        SignInStop::StepTimedOut(what) => format!("Claude did not show {what}."),
-        SignInStop::NameNotFound => "The connector was not found on Claude's list.".to_string(),
-        SignInStop::NameTwice => "The name is on Claude's list twice.".to_string(),
-        SignInStop::TimedOut => "The sign-in took too long.".to_string(),
+        SignInStop::StepTimedOut(what) => tr!("Claude did not show {what}.", what = what),
+        SignInStop::NameNotFound => tr!("The connector was not found on Claude's list.").to_string(),
+        SignInStop::NameTwice => tr!("The name is on Claude's list twice.").to_string(),
+        SignInStop::TimedOut => tr!("The sign-in took too long.").to_string(),
     }
 }
 
 pub fn sign_in_status(state: &SignInState, connection: &ConnectionState) -> String {
     match state {
         SignInState::Idle => String::new(),
-        SignInState::Running => "Signing in… finish it in your browser. If this does not change when you are done, press Close, then Check connection.".to_string(),
+        SignInState::Running => tr!("Signing in… finish it in your browser. If this does not change when you are done, press Close, then Check connection.").to_string(),
         SignInState::Signed => match connection {
-            ConnectionState::Idle | ConnectionState::Checking => "Signed in. Checking…".to_string(),
+            ConnectionState::Idle | ConnectionState::Checking => tr!("Signed in. Checking…").to_string(),
             done => connection_text(done),
         },
-        SignInState::NeedsHand(reason) => format!("{reason} Go on in the terminal above."),
-        SignInState::Failed => "Sign-in did not finish. See the terminal above.".to_string(),
+        SignInState::NeedsHand(reason) => tr!("{reason} Go on in the terminal above.", reason = reason),
+        SignInState::Failed => tr!("Sign-in did not finish. See the terminal above.").to_string(),
     }
 }
 
@@ -157,7 +158,7 @@ fn home_folder() -> Option<PathBuf> {
 /// The names the Add form must not reuse. Without a list there is nothing to check against, and a name used by a
 /// project or local connector would slip through: the add waits for the list.
 fn taken_names_for_add(view: Option<&ConnectorView>) -> Result<Vec<String>, String> {
-    view.map(ConnectorView::taken_names).ok_or_else(|| "The connectors are still loading. Try again in a moment.".to_string())
+    view.map(ConnectorView::taken_names).ok_or_else(|| tr!("The connectors are still loading. Try again in a moment.").to_string())
 }
 
 /// Whether a connector that was just added is brought to the person: not when they have gone to another tab,
@@ -169,8 +170,8 @@ fn opens_new_connector(tab: CustomizeTab, then: u64, now: u64) -> bool {
 /// The tag a list row carries for a connector that was checked earlier in this visit and is not fine.
 pub fn connection_tag(connection: &Connection) -> Option<&'static str> {
     match connection {
-        Connection::NeedsSignIn => Some("needs sign-in"),
-        Connection::Failed(_) => Some("not connected"),
+        Connection::NeedsSignIn => Some(tr!("needs sign-in")),
+        Connection::Failed(_) => Some(tr!("not connected")),
         Connection::Connected | Connection::Unknown(_) => None,
     }
 }
@@ -425,7 +426,7 @@ impl Customize {
     /// The Remove dialog's button.
     pub fn remove_connector(&self, name: String) {
         if self.connectors_busy() {
-            self.set_dialog_error(Some("Another change to the connectors is still running. Try again in a moment.".to_string()));
+            self.set_dialog_error(Some(tr!("Another change to the connectors is still running. Try again in a moment.").to_string()));
             return;
         }
         let mut busy = self.connectors.busy;
@@ -565,8 +566,8 @@ mod tests {
 
     #[test]
     fn a_connector_checked_earlier_shows_a_tag_in_the_list_only_when_it_is_not_fine() {
-        assert_eq!(connection_tag(&Connection::NeedsSignIn), Some("needs sign-in"));
-        assert_eq!(connection_tag(&Connection::Failed("x".into())), Some("not connected"));
+        assert_eq!(connection_tag(&Connection::NeedsSignIn), Some(tr!("needs sign-in")));
+        assert_eq!(connection_tag(&Connection::Failed("x".into())), Some(tr!("not connected")));
         assert_eq!(connection_tag(&Connection::Connected), None);
         assert_eq!(connection_tag(&Connection::Unknown("x".into())), None);
     }

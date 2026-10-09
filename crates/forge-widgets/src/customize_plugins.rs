@@ -3,17 +3,17 @@ use forge_domain::PluginEntry;
 use forge_features::{
     explore_groups, group_title, mine_groups, use_customize, Busy, CustomizeMode, Dialog, Job, Loaded, PluginGroup,
 };
-use forge_shared::{Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind};
 
 #[component]
 pub fn PluginsTab() -> Element {
     let customize = use_customize();
     let view = match customize.view() {
-        Loaded::Loading => return rsx! { div { class: "hint", "Loading…" } },
+        Loaded::Loading => return rsx! { div { class: "hint", {tr!("Loading…")} } },
         Loaded::Failed(message) => {
             return rsx! {
                 div { class: "status-line error", "{message}" }
-                Button { label: "Try again", onclick: move |_| customize.reload() }
+                Button { label: tr!("Try again"), onclick: move |_| customize.reload() }
             }
         }
         Loaded::Ready(view) => view,
@@ -22,7 +22,7 @@ pub fn PluginsTab() -> Element {
         return match view.snapshot.plugins.iter().find(|plugin| plugin.id == id) {
             Some(plugin) => rsx! { PluginDetail { plugin: plugin.clone() } },
             // The plugin is gone (uninstalled elsewhere): back to the list.
-            None => rsx! { div { class: "hint", "That plugin is no longer there." Button { label: "Back", onclick: move |_| customize.close_detail() } } },
+            None => rsx! { div { class: "hint", {tr!("That plugin is no longer there.")} Button { label: tr!("Back"), onclick: move |_| customize.close_detail() } } },
         };
     }
     let query = customize.query();
@@ -30,7 +30,7 @@ pub fn PluginsTab() -> Element {
         CustomizeMode::Mine => {
             let groups = mine_groups(&view.snapshot.plugins, &view.enabled, &query);
             if groups.is_empty() {
-                return rsx! { div { class: "hint", "No plugins installed. Use Explore to find some." } };
+                return rsx! { div { class: "hint", {tr!("No plugins installed. Use Explore to find some.")} } };
             }
             rsx! { MineList { groups } }
         }
@@ -39,13 +39,13 @@ pub fn PluginsTab() -> Element {
             if view.snapshot.marketplaces.is_empty() {
                 return rsx! {
                     div { class: "customize-note",
-                        p { "Add a marketplace to find plugins." }
-                        Button { label: "Add marketplace", kind: ButtonKind::Primary, onclick: move |_| customize.open_dialog(Dialog::AddMarketplace) }
+                        p { {tr!("Add a marketplace to find plugins.")} }
+                        Button { label: tr!("Add marketplace"), kind: ButtonKind::Primary, onclick: move |_| customize.open_dialog(Dialog::AddMarketplace) }
                     }
                 };
             }
             if groups.is_empty() {
-                return rsx! { div { class: "hint", "Nothing matches." } };
+                return rsx! { div { class: "hint", {tr!("Nothing matches.")} } };
             }
             rsx! { ExploreGrid { groups } }
         }
@@ -77,15 +77,15 @@ fn MineList(groups: Vec<PluginGroup>) -> Element {
                                     div { class: "customize-name",
                                         "{row.entry.name}"
                                         span { class: "tag", "{row.entry.marketplace}" }
-                                        if !row.enabled { span { class: "tag off", "Off" } }
+                                        if !row.enabled { span { class: "tag off", {tr!("Off")} } }
                                     }
                                     div { class: "customize-desc", "{row.entry.description}" }
                                 }
                                 if let Some(version) = row.entry.version.clone() { div { class: "customize-meta", "{forge_features::version_label(&version)}" } }
-                                if busy != Busy::No { span { class: "spinner", title: if busy == Busy::Waiting { "Waiting…" } else { "Working…" } } }
+                                if busy != Busy::No { span { class: "spinner", title: if busy == Busy::Waiting { tr!("Waiting…") } else { tr!("Working…") } } }
                                 button {
                                     class: "icon-button",
-                                    title: "More",
+                                    title: tr!("More"),
                                     // Its label and action came from the list as it was; wait for the list to be read again.
                                     disabled: busy != Busy::No,
                                     onclick: {
@@ -110,7 +110,7 @@ fn MineList(groups: Vec<PluginGroup>) -> Element {
                                                     customize.run(Job::SetEnabled(id.clone(), on));
                                                 }
                                             },
-                                            if row.enabled { "Turn off" } else { "Turn on" }
+                                            if row.enabled { {tr!("Turn off")} } else { {tr!("Turn on")} }
                                         }
                                         if row.entry.can_uninstall() {
                                         button {
@@ -123,7 +123,7 @@ fn MineList(groups: Vec<PluginGroup>) -> Element {
                                                     customize.open_dialog(Dialog::ConfirmUninstall(id.clone()));
                                                 }
                                             },
-                                            "Uninstall"
+                                            {tr!("Uninstall")}
                                         }
                                         }
                                     }
@@ -165,13 +165,13 @@ fn ExploreGrid(groups: Vec<PluginGroup>) -> Element {
                                         div { class: "customize-source", "{group_title(&row.entry.marketplace)}" }
                                     }
                                     if busy != Busy::No {
-                                        span { class: "spinner", title: if busy == Busy::Waiting { "Waiting…" } else { "Working…" } }
+                                        span { class: "spinner", title: if busy == Busy::Waiting { tr!("Waiting…") } else { tr!("Working…") } }
                                     } else if installed {
-                                        span { class: "customize-check", title: "Installed", "✓" }
+                                        span { class: "customize-check", title: tr!("Installed"), "✓" }
                                     } else {
                                         button {
                                             class: "customize-plus",
-                                            title: "Install",
+                                            title: tr!("Install"),
                                             onclick: {
                                                 let id = id.clone();
                                                 move |event| {
@@ -199,7 +199,7 @@ fn PluginDetail(plugin: PluginEntry) -> Element {
     let id = plugin.id.clone();
     rsx! {
         div { class: "customize-detail",
-            button { class: "customize-back", onclick: move |_| customize.close_detail(), "← Plugins" }
+            button { class: "customize-back", onclick: move |_| customize.close_detail(), {tr!("← Plugins")} }
             div { class: "customize-detail-head",
                 div { class: "customize-icon big", "⌬" }
                 div {
@@ -211,12 +211,12 @@ fn PluginDetail(plugin: PluginEntry) -> Element {
                 }
                 div { class: "customize-detail-action",
                     if busy != Busy::No {
-                        span { class: "spinner", title: "Working…" }
+                        span { class: "spinner", title: tr!("Working…") }
                     } else if plugin.installed && !plugin.can_uninstall() {
-                        span { class: "hint", "Installed in the {plugin.scope.clone().unwrap_or_default()} scope. Remove it there." }
+                        span { class: "hint", {tr!("Installed in the {scope} scope. Remove it there.", scope = plugin.scope.clone().unwrap_or_default())} }
                     } else if plugin.installed {
                         Button {
-                            label: "Uninstall",
+                            label: tr!("Uninstall"),
                             kind: ButtonKind::Danger,
                             onclick: {
                                 let id = id.clone();
@@ -225,7 +225,7 @@ fn PluginDetail(plugin: PluginEntry) -> Element {
                         }
                     } else {
                         Button {
-                            label: "Install",
+                            label: tr!("Install"),
                             kind: ButtonKind::Primary,
                             onclick: {
                                 let id = id.clone();
@@ -236,10 +236,10 @@ fn PluginDetail(plugin: PluginEntry) -> Element {
                 }
             }
             if !plugin.description.is_empty() {
-                div { class: "customize-section", div { class: "label", "Description" } p { "{plugin.description}" } }
+                div { class: "customize-section", div { class: "label", {tr!("Description")} } p { "{plugin.description}" } }
             }
             if let Some(path) = plugin.install_path.clone() {
-                div { class: "customize-section", div { class: "label", "Installed at" } p { class: "mono", "{path.display()}" } }
+                div { class: "customize-section", div { class: "label", {tr!("Installed at")} } p { class: "mono", "{path.display()}" } }
             }
         }
     }
