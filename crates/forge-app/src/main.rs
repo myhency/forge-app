@@ -40,6 +40,10 @@ fn main() {
     if let Ok(offset) = time::UtcOffset::current_local_offset() {
         forge_features::set_local_offset(offset);
     }
+    // The first start follows the system language; a language the person chose is read later from the config.
+    if let Some(tag) = sys_locale::get_locale() {
+        forge_shared::i18n::set_system_language(forge_domain::Language::from_locale(&tag));
+    }
     dioxus::LaunchBuilder::desktop()
         .with_cfg(window_config())
         .with_context(build_services())
