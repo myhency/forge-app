@@ -73,6 +73,32 @@ pub fn project_labels(paths: &[PathBuf]) -> Vec<String> {
         .collect()
 }
 
+/// The back and forward buttons. They are dim and do nothing when there is no screen to go to.
+#[component]
+pub fn NavButtons() -> Element {
+    let workspace = use_workspace();
+    rsx! {
+        button {
+            class: "icon-button nav-button",
+            r#type: "button",
+            title: tr!("Go back"),
+            "aria-label": "Back",
+            disabled: !workspace.can_go_back(),
+            onclick: move |_| workspace.go_back(),
+            "←"
+        }
+        button {
+            class: "icon-button nav-button",
+            r#type: "button",
+            title: tr!("Go forward"),
+            "aria-label": "Forward",
+            disabled: !workspace.can_go_forward(),
+            onclick: move |_| workspace.go_forward(),
+            "→"
+        }
+    }
+}
+
 /// Search and filter on top, then the sessions grouped as the preferences say, then Settings.
 #[component]
 pub fn Sidebar() -> Element {
@@ -95,6 +121,7 @@ pub fn Sidebar() -> Element {
     rsx! {
         div { class: "sidebar", style: "width: {prefs.clamped_width()}px",
             div { class: "sidebar-top",
+                NavButtons {}
                 button {
                     class: "sidebar-search",
                     title: tr!("Search sessions ({key})", key = forge_domain::KEY_SEARCH),

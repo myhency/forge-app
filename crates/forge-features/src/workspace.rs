@@ -16,6 +16,7 @@ use crate::editor_tabs::EditorTabs;
 use crate::files_store::{FilesStore, Restore};
 use crate::dock::{DockState, DockStates, Panel};
 use crate::folder_choice::{choose_folder, FolderChoice};
+use crate::nav_history::NavHistory;
 use crate::new_session::ModelChoice;
 use crate::shortcut::{match_code, shortcut_allowed, shortcut_for, swallowed_behind_overlay, types_text, KeyPress, Shortcut};
 use crate::tool_activity::finished_tool_calls;
@@ -94,6 +95,7 @@ pub struct Workspace {
     past: Signal<Vec<(ProjectSummary, Vec<SessionSummary>)>>,
     live: Signal<Vec<LiveEntry>>,
     active: Signal<Active>,
+    history: Signal<NavHistory<Active>>,
     notice: Signal<Option<String>>,
     new_folder: Signal<Option<PathBuf>>,
     extra_folders: Signal<Vec<PathBuf>>,
@@ -138,6 +140,7 @@ pub fn use_workspace_provider() -> Workspace {
             past: Signal::new(Vec::new()),
             live: Signal::new(Vec::new()),
             active: Signal::new(Active::NewSession),
+            history: Signal::new(NavHistory::new(Active::NewSession)),
             notice: Signal::new(None),
             new_folder: Signal::new(None),
             extra_folders: Signal::new(Vec::new()),
@@ -820,16 +823,12 @@ impl Workspace {
 
     /// Shows the Customize page in the main pane.
     pub fn show_customize(&self) {
-        self.close_lightbox();
-        let mut active = self.active;
-        active.set(Active::Customize);
+        self.navigate(Active::Customize);
     }
 
     /// Shows the Routines page in the main pane.
     pub fn show_routines(&self) {
-        self.close_lightbox();
-        let mut active = self.active;
-        active.set(Active::Routines);
+        self.navigate(Active::Routines);
     }
 
     /// Shows a session that something other than the person started (a routine). It is not selected:
@@ -937,9 +936,7 @@ impl Workspace {
 
     pub fn show_new_session(&self) {
         self.clear_rename_request();
-        self.close_lightbox();
-        let mut active = self.active;
-        active.set(Active::NewSession);
+        self.navigate(Active::NewSession);
     }
 
     /// The folder chosen in the new-session panel (`None`: the first one offered).
@@ -993,12 +990,62 @@ impl Workspace {
 
     pub fn select(&self, id: LiveSessionId) {
         self.clear_rename_request();
+        self.navigate(Active::Live(id));
+    }
+
+    // Shows `to` and records it in the history the back and forward buttons walk.
+    fn navigate(&self, to: Active) {
+        self.display(to);
+        let mut history = self.history;
+        history.write().visit(to);
+    }
+
+    // Shows `to` without touching the history.
+    fn display(&self, to: Active) {
         self.close_lightbox();
-        // A routine's session the person opens stays open: what they type or edit in it must not be
-        // closed away by the routine timer.
-        self.services.peek().routines.host.keep_open(id);
+        if let Active::Live(id) = to {
+            // A routine's session the person opens stays open: what they type or edit in it must not be
+            // closed away by the routine timer.
+            self.services.peek().routines.host.keep_open(id);
+        }
         let mut active = self.active;
-        active.set(Active::Live(id));
+        active.set(to);
+    }
+
+    // A screen the history can return to: every page, and a session that is still open.
+    fn reachable(&self, screen: Active) -> bool {
+        match screen {
+            Active::Live(id) => self.handle(id).is_some(),
+            Active::NewSession | Active::Customize | Active::Routines => true,
+        }
+    }
+
+    pub fn can_go_back(&self) -> bool {
+        self.history.read().can_back(|screen| self.reachable(screen))
+    }
+
+    pub fn can_go_forward(&self) -> bool {
+        self.history.read().can_forward(|screen| self.reachable(screen))
+    }
+
+    /// The back button: the screen the person was on before this one.
+    pub fn go_back(&self) {
+        let mut history = self.history;
+        let target = history.write().back(|screen| self.reachable(screen));
+        if let Some(target) = target {
+            self.clear_rename_request();
+            self.display(target);
+        }
+    }
+
+    /// The forward button.
+    pub fn go_forward(&self) {
+        let mut history = self.history;
+        let target = history.write().forward(|screen| self.reachable(screen));
+        if let Some(target) = target {
+            self.clear_rename_request();
+            self.display(target);
+        }
     }
 
     pub fn answer_permission(&self, id: LiveSessionId, request_id: String, decision: PermissionDecision) {
