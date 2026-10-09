@@ -491,3 +491,40 @@ Same rules. The list opens from the account menu: `더 알아보기` (click the 
 ## Round: dynamic workflows (SET-12), 2026-10-09
 
 Opened Settings > Claude Code > `세션` in the installed app and turned `동적 워크플로우` on and off once (left off). Text: "Claude가 복잡한 작업을 위해 여러 에이전트를 병렬로 실행하도록 합니다. 워크플로우는 사용량 한도를 빠르게 많이 소모할 수 있습니다." Off by default, right under `권한 우회 모드 허용`, no sub-option, no dialog. On wrote `"enableWorkflows": true` to `~/.claude/settings.json`; off removed the key (not `false`). A running Claude Code session got the `Workflow` tool at once and lost it again. With the real SDK, `settings: { enableWorkflows: true }` alone puts `Workflow` in the init tool list; `false` or nothing leaves it out.
+
+## Round: a bigger workflow in the desktop app, 2026-10-09
+
+Switched `동적 워크플로우` on, started a session in `forge-observe` (title came by itself: "Parallel agent file analysis workflow") and asked for three parallel agents over three folders and a fourth that merges them. About 2 minutes. Switched the setting off again afterwards. A test session "Parallel agent file analysis workflow" stays in the real app's `forge-observe` group; it can be archived by hand.
+
+What the window showed, in order:
+
+- Right after sending: a line `실행 중 명령어 5초 ›` with three moving dots; the title bar then shows the session title, the folder badge `forge-observe` and, at the right, five icons (terminal, changes, browser, folder, `⋮`).
+- Before the workflow starts: a card in the chat, `sample-risk-review`, `워크플로우 시작 중`, and the reply card of a tool group `실행된 명령 1개, 사용함 도구 1개 ›` (inside: `Skill 실행됨 /workflow-authoring` and one `ls` command: Claude read the authoring skill first).
+- The permission card for the workflow itself is its own kind: title `Claude가 워크플로우 실행 sample-risk-review하도록 허용하시겠습니까?`, the workflow's description line ("Three parallel agents review ..."), a grey note `동적 워크플로우는 여러 하위 에이전트를 병렬로 실행하며 사용량 한도를 많이 소모할 수 있습니다. 작업 패널에서 언제든지 중단할 수 있습니다.` (with `작업 패널` as a link) and two buttons only: `거부` (1, Esc) and `한 번만 허용` (2, ⌘↵). There is no `항상 허용` here (the ordinary tool card has it). The sidebar row of the session got an orange dot.
+- While it runs: the card shows `워크플로우  3개 에이전트  20초` with three small progress dots, then `1분 27초` (a clock that counts up), with a `›` at the right edge. Under the reply text: `실행 중인 작업 1개`.
+- Permission requests of the agents inside the workflow come to the same place as any other: a card `Claude가 run하도록 허용하시겠습니까?` (the tool name is shown as `run`), a one-line command preview, the reason it could not be auto-allowed (`find with '-exec' executes commands ... cannot be auto-allowed by a Bash(find:*) prefix rule`; `A variable in this command can't be checked before it runs`), the full command in a code box, and `거부` / `한 번만 허용` (no `항상 허용`). Several came one after the other (one per agent command).
+- A usage banner sat above the composer the whole time: `현재 속도라면 주간 한도에 예상보다 일찍 도달합니다  67% 사용됨 · 재설정: 10월 14일 (수) 오후 6:00` with an `×`.
+- When it finished: the card shrinks to one grey line `워크플로 실행됨 sample-risk-review` (plain text; clicking it does nothing). The follow-up turn starts in a new paragraph (`The workflow finished: all four agents completed with no errors. Here is the merged summary.`), then headings, bullet lists and a numbered `Ranked risks` list, and a last line `Each agent's raw report is in the workflow's journal.jsonl.` with `journal.jsonl` as a link. The sidebar dot goes back to the plain circle.
+
+Typing note for the harness: `osascript` ⌘V and `keystroke` do not reach this window reliably; posting key events with a Unicode string through Quartz (`CGEventKeyboardSetUnicodeString`) typed a whole sentence without a lost letter.
+
+### The background tasks panel (seen on the user's own running workflow, 2026-10-09)
+
+The user ran a second workflow ("sample-folder-risk-report") and left the panel open. Only looked and opened folds; no permission was answered.
+
+- The panel opens at the right of the chat, headed `백그라운드 작업`, with three icons: a trash can (clear finished tasks), expand (the panel takes the whole chat area, with a collapse icon in the same place) and `×`. The chat shows a blue-highlighted chip `실행 중인 작업 1개` under the reply while the panel is for that task.
+- Section `실행 중`, then one card per task: the workflow name, a stop button (a small square, top right), `워크플로우  <elapsed>` (the clock counts up), `3개 에이전트  157.9k 토큰` (the token count), the workflow's description in grey, then `단계` (steps).
+- Each step is a fold with its name, a count `0/3` and a row of dots (one per agent; filled blue while running). Open: a table `모델 / 시간` (narrow panel) or `에이전트 / 모델 / 토큰 / 시간` (expanded panel; agent names `domain`, `features`, `widgets`), one row per agent, every row counting the same elapsed time. A step that has not started shows `아직 시작된 에이전트 없음`. Clicking an agent row does nothing.
+- A workflow whose agent waits for permission keeps counting time and stays at `0/3`; the permission card is in the chat, not in the panel. Seen for about 2 minutes. The panel's token count did not change while it waited.
+
+### After the permission was answered (same workflow, 2026-10-09)
+
+I allowed the three read-only agent commands (`find ... wc -l`, `head`/`grep` over the sample files) one by one; the user had asked for the part after approval to be watched.
+
+- The dots show state by colour: blue = running, amber = waiting for permission, grey = done. The step name turns amber while an agent in it waits. The first agent to be allowed went blue and finished in about 13 s (a check mark appears before its row and its time stops); the others stayed amber until their cards were answered. The step count went `0/3`, `1/3`, `2/3`; the token count grew only while agents ran (157.9k, 162.2k, 169.9k, 175.5k).
+- The chat card (`워크플로우  3개 에이전트  <time>` with the dots) mirrors the panel and is shortened to the one grey line `워크플로 실행됨 <name>` when the workflow ends.
+- The reply's status line below the text changed too: while the task ran `··· 30초 · 17.7k 토큰 · 실행 중인 작업 1개` (the chip is blue); at the end `··· 42초 · 75.1k 토큰 · 작업 1개 완료`. These are the time and tokens of the main turn, not of the workflow.
+- The Merge step started and ended between two captures (under 5 s): the whole run took 3 min 43 s, most of it waiting for permission.
+- When it ended, the panel lost its `실행 중` section. It shows a fold `완료 1 ›`; the trash icon turns dark (there is now something to clear). Opened, the card reads: name and total time at the right (`3분 43초`), `워크플로우  완료됨`, `4개 에이전트  234k 토큰`, the description in grey, `단계` with `Analyze 3/3 ›` and `Merge 1/1 ›` (folded, grey dots), and no stop button.
+- The usage banner above the composer changed during the run: `세션 사용량 한도 초과 임박  오후 11:50에 재설정  [업그레이드]  ×` in place of the weekly one.
+- The final summary came without a second approval; the follow-up text is a long reply with headings, a numbered `Ranked risks` list and file names as links.
