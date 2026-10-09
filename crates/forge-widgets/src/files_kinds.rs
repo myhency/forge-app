@@ -2,6 +2,7 @@ use base64::Engine;
 use dioxus::prelude::*;
 use forge_entities::{parse_csv, preview_kind, render_markdown, CsvTable, PreviewKind, CSV_ROW_LIMIT};
 use forge_ports::FileContent;
+use forge_shared::tr;
 
 /// What an open tab shows.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,8 +31,8 @@ impl TabKind {
     /// A line above the editor when the text cannot be edited.
     pub fn notice(&self) -> Option<&'static str> {
         match self {
-            TabKind::Text { lossy: true, .. } => Some("This file is not valid UTF-8, so it is shown read only."),
-            TabKind::Text { anyway: true, .. } => Some("Shown as text. This file cannot be edited."),
+            TabKind::Text { lossy: true, .. } => Some(tr!("This file is not valid UTF-8, so it is shown read only.")),
+            TabKind::Text { anyway: true, .. } => Some(tr!("Shown as text. This file cannot be edited.")),
             _ => None,
         }
     }
@@ -114,7 +115,7 @@ fn CsvView(table: CsvTable, path: String) -> Element {
     rsx! {
         div { class: "changes-diff",
             if table.truncated {
-                p { class: "files-csv-note", "Only the first {CSV_ROW_LIMIT} rows are shown. Switch to the source to see the rest." }
+                p { class: "files-csv-note", {tr!("Only the first {count} rows are shown. Switch to the source to see the rest.", count = CSV_ROW_LIMIT)} }
             }
             div { class: "file-viewer file-markdown markdown files-csv", "aria-label": "{path}",
                 table {
@@ -152,7 +153,7 @@ fn SvgView(data_url: String, path: String) -> Element {
                 button {
                     class: "icon-button",
                     r#type: "button",
-                    title: "Zoom out",
+                    title: tr!("Zoom out"),
                     "aria-label": "Zoom out",
                     onclick: move |_| scale.set(zoom_step(scale(), -1)),
                     "−"
@@ -160,12 +161,12 @@ fn SvgView(data_url: String, path: String) -> Element {
                 button {
                     class: "icon-button",
                     r#type: "button",
-                    title: "Zoom in",
+                    title: tr!("Zoom in"),
                     "aria-label": "Zoom in",
                     onclick: move |_| scale.set(zoom_step(scale(), 1)),
                     "+"
                 }
-                button { class: "icon-button", r#type: "button", title: "Fit", "aria-label": "Fit", onclick: move |_| scale.set(1.0), "⤢" }
+                button { class: "icon-button", r#type: "button", title: tr!("Fit"), "aria-label": tr!("Fit"), onclick: move |_| scale.set(1.0), "⤢" }
             }
         }
     }
@@ -185,17 +186,17 @@ pub fn FileKindView(kind: TabKind, path: String, on_anyway: EventHandler<()>, on
         },
         TabKind::Binary => rsx! {
             div { class: "files-kind",
-                p { "This file looks like binary data and cannot be previewed as text." }
+                p { {tr!("This file looks like binary data and cannot be previewed as text.")} }
                 div { class: "files-kind-buttons",
                     button { class: "files-kind-button", r#type: "button", onclick: move |_| on_reveal.call(()), "{forge_domain::SHOW_IN_FILE_MANAGER}" }
-                    button { class: "files-kind-button", r#type: "button", onclick: move |_| on_anyway.call(()), "Show as text anyway" }
+                    button { class: "files-kind-button", r#type: "button", onclick: move |_| on_anyway.call(()), {tr!("Show as text anyway")} }
                 }
             }
         },
         TabKind::TooLarge => rsx! {
             div { class: "files-kind",
-                p { class: "files-kind-title", "This file cannot be previewed" }
-                p { class: "files-kind-sub", "It is too large to preview here." }
+                p { class: "files-kind-title", {tr!("This file cannot be previewed")} }
+                p { class: "files-kind-sub", {tr!("It is too large to preview here.")} }
                 p { class: "files-kind-sub", "{path}" }
                 div { class: "files-kind-buttons",
                     button { class: "files-kind-button", r#type: "button", onclick: move |_| on_reveal.call(()), "{forge_domain::SHOW_IN_FILE_MANAGER}" }
@@ -274,11 +275,11 @@ mod tests {
 
         let lossy = kind_of(FileContent::Text { text: "a\u{fffd}".to_string(), version: version(), lossy: true });
         assert!(lossy.read_only(), "a file that is not valid UTF-8 must never be written back");
-        assert_eq!(lossy.notice(), Some("This file is not valid UTF-8, so it is shown read only."));
+        assert_eq!(lossy.notice(), Some(tr!("This file is not valid UTF-8, so it is shown read only.")));
 
         let forced = TabKind::Text { lossy: false, anyway: true };
         assert!(forced.read_only(), "a binary file shown as text must never be written back");
-        assert_eq!(forced.notice(), Some("Shown as text. This file cannot be edited."));
+        assert_eq!(forced.notice(), Some(tr!("Shown as text. This file cannot be edited.")));
     }
 
     #[test]

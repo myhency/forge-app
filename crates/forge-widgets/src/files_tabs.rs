@@ -1,5 +1,6 @@
 use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
+use forge_shared::tr;
 
 /// One tab as the strip draws it.
 #[derive(Debug, Clone, PartialEq)]
@@ -77,7 +78,7 @@ pub fn FilesTabs(
                             button {
                                 class: "files-tab-close",
                                 r#type: "button",
-                                title: "Close",
+                                title: tr!("Close"),
                                 "aria-label": "Close {file_name(&path)}",
                                 onmousedown: move |event: MouseEvent| event.stop_propagation(),
                                 onmouseup: move |event: MouseEvent| event.stop_propagation(),

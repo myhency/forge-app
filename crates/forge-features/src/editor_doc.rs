@@ -2,6 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use forge_ports::{FileVersion, WriteError};
+use forge_shared::tr;
 
 /// A hash of a text, to tell whether the editor holds what is on disk without keeping a second copy.
 pub fn text_hash(text: &str) -> u64 {
@@ -26,8 +27,8 @@ pub enum Banner {
 impl Banner {
     pub fn message(&self) -> String {
         match self {
-            Banner::Conflict => "This file has changed on disk since you started editing.".to_string(),
-            Banner::SaveFailed(reason) => format!("Could not save: {reason}"),
+            Banner::Conflict => tr!("This file has changed on disk since you started editing.").to_string(),
+            Banner::SaveFailed(reason) => tr!("Could not save: {reason}", reason = reason),
         }
     }
 }

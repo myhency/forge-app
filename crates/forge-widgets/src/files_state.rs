@@ -12,6 +12,7 @@ use forge_ports::{FileContent, FilesError, FilesPort, WriteError};
 
 use crate::files_editor::{editor_language, EditorHandle, FromPage};
 use crate::files_kinds::{kind_of, render_for, Rendered, TabKind};
+use forge_shared::tr;
 
 // Highlighting a file larger than this would keep the UI busy, so the fallback shows plain text.
 const HIGHLIGHT_LIMIT: usize = 200_000;
@@ -71,8 +72,8 @@ pub fn copy_text_for(action: FileAction, cwd: &std::path::Path, path: &str) -> O
 pub fn contents_to_copy(content: &FileContent) -> Result<String, String> {
     match content {
         FileContent::Text { text, .. } => Ok(text.clone()),
-        FileContent::TooLarge => Err("The file is too large to copy".to_string()),
-        FileContent::Binary | FileContent::Image { .. } | FileContent::Pdf { .. } => Err("Only a text file can be copied".to_string()),
+        FileContent::TooLarge => Err(tr!("The file is too large to copy").to_string()),
+        FileContent::Binary | FileContent::Image { .. } | FileContent::Pdf { .. } => Err(tr!("Only a text file can be copied").to_string()),
     }
 }
 
