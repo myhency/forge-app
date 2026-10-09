@@ -23,6 +23,7 @@ use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, open_session_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
 use crate::sidebar::{archive_key_plan, cycle_target, ArchiveKey, SidebarEntry, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
+use forge_shared::tr;
 
 // Typing waits this long before the transcripts are scanned.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -229,7 +230,7 @@ impl Workspace {
         // Root scope: the save must finish even if the control that asked for it unmounts.
         dioxus::core::spawn_forever(async move {
             if let Err(error) = services.settings.save_sidebar(&prefs).await {
-                this.report(format!("failed to save the sidebar settings: {error}"));
+                this.report(tr!("failed to save the sidebar settings: {error}", error = error));
             }
         });
     }
@@ -249,7 +250,7 @@ impl Workspace {
         // Root scope: the save must finish even if the menu that asked for it unmounts.
         dioxus::core::spawn_forever(async move {
             if let Err(error) = services.settings.save_editor(&prefs).await {
-                this.report(format!("failed to save the editor settings: {error}"));
+                this.report(tr!("failed to save the editor settings: {error}", error = error));
             }
         });
     }
@@ -474,7 +475,7 @@ impl Workspace {
         // Root scope: the save must finish even if the row that asked for it unmounts.
         dioxus::core::spawn_forever(async move {
             if let Err(error) = services.settings.save_archived(&list).await {
-                this.report(format!("failed to save the archived sessions: {error}"));
+                this.report(tr!("failed to save the archived sessions: {error}", error = error));
             }
         });
     }
@@ -558,7 +559,7 @@ impl Workspace {
         let folder = view.read().project_path.clone();
         let Some(relative) = forge_entities::relative_to_folder(&folder, &absolute_path) else {
             let mut notice = self.notice;
-            notice.set(Some("Only files inside the session folder can be opened here.".to_string()));
+            notice.set(Some(tr!("Only files inside the session folder can be opened here.").to_string()));
             return;
         };
         // A picture opens in the lightbox over the window, not in the Files panel.
@@ -890,7 +891,7 @@ impl Workspace {
             .map(|(project, _)| project.clone());
         match found {
             Some(project) => self.open_past(project, SessionId(claude_session_id.to_string())),
-            None => self.report("That session is not in the sidebar any more.".to_string()),
+            None => self.report(tr!("That session is not in the sidebar any more.").to_string()),
         }
     }
 
@@ -927,7 +928,7 @@ impl Workspace {
                 self.archive_session(project, session);
                 self.close_remembering(id);
             }
-            (ArchiveKey::StopFirst, _) => self.report("Stop the session before archiving it.".to_string()),
+            (ArchiveKey::StopFirst, _) => self.report(tr!("Stop the session before archiving it.").to_string()),
             _ => {}
         }
     }
@@ -1095,7 +1096,7 @@ impl Workspace {
                 None => match services.settings.saved_model().await {
                     Ok(model) => model,
                     Err(error) => {
-                        this.report(format!("failed to load the Forge config: {error}"));
+                        this.report(tr!("failed to load the Forge config: {error}", error = error));
                         return;
                     }
                 },

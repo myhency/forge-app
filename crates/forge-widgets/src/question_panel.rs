@@ -3,6 +3,7 @@ use forge_application::LiveSessionId;
 use forge_domain::{PermissionDecision, PermissionRequest};
 use forge_entities::{answers_map, questions_of, Picks};
 use forge_features::{menu_digit_row, use_workspace};
+use forge_shared::tr;
 
 /// A question from Claude above the message box: one question at a time, the options as rows
 /// (number keys pick on a single-select question), an "Other" field, and Back / Skip / Next.
@@ -27,10 +28,10 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
         let skip = skip.clone();
         return rsx! {
             div { class: "question-panel",
-                div { class: "perm-title", "Claude asked a question that Forge cannot show." }
+                div { class: "perm-title", {tr!("Claude asked a question that Forge cannot show.")} }
                 div { class: "question-footer",
                     span { class: "spacer" }
-                    button { class: "perm-button", r#type: "button", onclick: move |_| skip(), "Skip" }
+                    button { class: "perm-button", r#type: "button", onclick: move |_| skip(), {tr!("Skip")} }
                 }
             }
         };
@@ -106,12 +107,12 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
                 button {
                     class: "icon-button",
                     r#type: "button",
-                    title: if collapsed() { "Expand" } else { "Collapse" },
+                    title: if collapsed() { tr!("Expand") } else { tr!("Collapse") },
                     "aria-expanded": "{!collapsed()}",
                     onclick: move |_| collapsed.set(!collapsed()),
                     if collapsed() { "›" } else { "⌄" }
                 }
-                button { class: "icon-button", r#type: "button", title: "Skip", onclick: move |_| skip_button(), "×" }
+                button { class: "icon-button", r#type: "button", title: tr!("Skip"), onclick: move |_| skip_button(), "×" }
             }
             if !collapsed() {
                 div { class: "question-options",
@@ -138,11 +139,11 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
                         }
                     }
                     div { class: "question-option other",
-                        span { class: "option-label", "Other" }
+                        span { class: "option-label", {tr!("Other")} }
                         input {
                             class: "question-other",
                             r#type: "text",
-                            placeholder: "Type your answer here",
+                            placeholder: tr!("Type your answer here"),
                             value: "{current.other}",
                             // The panel's number keys must not fire while the person types.
                             onkeydown: move |event: KeyboardEvent| {
@@ -160,16 +161,16 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
                 }
                 div { class: "question-footer",
                     if position > 0 {
-                        button { class: "perm-button", r#type: "button", onclick: move |_| index.set(position - 1), "Back" }
+                        button { class: "perm-button", r#type: "button", onclick: move |_| index.set(position - 1), {tr!("Back")} }
                     }
                     span { class: "spacer" }
-                    button { class: "perm-button", r#type: "button", onclick: move |_| skip(), "Skip" }
+                    button { class: "perm-button", r#type: "button", onclick: move |_| skip(), {tr!("Skip")} }
                     button {
                         class: if ready { "perm-button primary" } else { "perm-button primary disabled" },
                         r#type: "button",
                         disabled: !ready,
                         onclick: move |_| advance_button(),
-                        if last { "Submit" } else { "Next" }
+                        if last { {tr!("Submit")} } else { {tr!("Next")} }
                         span { class: "perm-key", "{forge_domain::KEY_ANSWER}" }
                     }
                 }

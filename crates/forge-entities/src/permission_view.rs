@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::tool_summary::tool_input_summary;
 use crate::turn_view::{file_name, tool_kind, ToolKind};
+use forge_shared::tr;
 
 /// What a permission card says about a request.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,23 +22,25 @@ pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
     let kind = tool_kind(tool_name);
     let (verb, subject, path, command) = match kind {
         ToolKind::Created | ToolKind::Edited | ToolKind::Read => {
-            let verb = match kind {
-                ToolKind::Created => "create",
-                ToolKind::Edited => "edit",
-                _ => "read",
-            };
             let path = text("file_path").or_else(|| text("notebook_path"));
-            let subject = path.as_deref().map(file_name).unwrap_or_else(|| "a file".to_string());
-            (verb, subject, path, None)
+            let subject = path.as_deref().map(file_name).unwrap_or_else(|| tr!("a file").to_string());
+            (kind, subject, path, None)
         }
         ToolKind::Command => {
             let command = text("command");
             let subject = text("description").or_else(|| command.clone()).unwrap_or_else(|| tool_input_summary(input));
-            ("run", subject, None, command)
+            (kind, subject, None, command)
         }
-        ToolKind::Other => ("use", tool_name.to_string(), None, None),
+        ToolKind::Other => (kind, tool_name.to_string(), None, None),
     };
-    PermissionView { title: format!("Claude wants to {verb} {subject}?"), subject, path, command }
+    let title = match verb {
+        ToolKind::Created => tr!("Claude wants to create {subject}?", subject = subject),
+        ToolKind::Edited => tr!("Claude wants to edit {subject}?", subject = subject),
+        ToolKind::Read => tr!("Claude wants to read {subject}?", subject = subject),
+        ToolKind::Command => tr!("Claude wants to run {subject}?", subject = subject),
+        ToolKind::Other => tr!("Claude wants to use {subject}?", subject = subject),
+    };
+    PermissionView { title, subject, path, command }
 }
 
 /// Whether a card that just appeared may take keyboard focus: not while the person is typing.

@@ -8,6 +8,7 @@ use forge_domain::NotificationPrefs;
 use crate::sidebar::LiveSummary;
 use crate::workspace::{Active, Workspace};
 use crate::settings::Settings;
+use forge_shared::tr;
 
 /// What one look at a session found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,9 +58,9 @@ pub fn should_send(notice: Notice, prefs: &NotificationPrefs, in_view: bool) -> 
 
 pub fn text(notice: Notice, session_title: &str) -> (String, String) {
     match notice {
-        Notice::ReplyDone => ("Reply done".to_string(), format!("{session_title} finished its reply")),
-        Notice::PermissionRequest => ("Approval needed".to_string(), format!("{session_title} is waiting for your approval")),
-        Notice::Failed => ("Session stopped".to_string(), format!("{session_title} could not continue")),
+        Notice::ReplyDone => (tr!("Reply done").to_string(), tr!("{title} finished its reply", title = session_title)),
+        Notice::PermissionRequest => (tr!("Approval needed").to_string(), tr!("{title} is waiting for your approval", title = session_title)),
+        Notice::Failed => (tr!("Session stopped").to_string(), tr!("{title} could not continue", title = session_title)),
     }
 }
 

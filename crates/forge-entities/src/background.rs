@@ -1,6 +1,7 @@
 use std::time::SystemTime;
 
 use forge_domain::{Message, RunningTask};
+use forge_shared::tr;
 
 /// How much of a task's output the panel shows: the last 20000 bytes.
 pub const TASK_OUTPUT_TAIL: usize = 20_000;
@@ -92,7 +93,7 @@ pub fn card_key(card: &TaskCard) -> String {
 
 /// The pill under the chat: `1 background task`, `2 background tasks`.
 pub fn pill_label(count: usize) -> String {
-    format!("{count} background task{}", if count == 1 { "" } else { "s" })
+    if count == 1 { tr!("{count} background task", count = count) } else { tr!("{count} background tasks", count = count) }
 }
 
 #[cfg(test)]
