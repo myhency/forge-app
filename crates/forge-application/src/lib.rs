@@ -21,3 +21,4 @@ pub use use_cases::{
 };
 pub use use_cases::{AddedConnector, ConnectorCatalogUseCase, ConnectorView, ConnectorsError};
 pub use use_cases::{AddedSkill, CatalogView, ConfigLock, PluginCatalogError, PluginCatalogUseCase, SkillCatalogUseCase, SkillView, SkillsError};
+pub use use_cases::{RoutineError, RoutinesUseCase};

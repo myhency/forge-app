@@ -161,6 +161,10 @@ pub struct AppConfig {
     pub editor: EditorPrefs,
     #[serde(default)]
     pub archived: Vec<ArchivedRef>,
+    #[serde(default)]
+    pub routines: Vec<crate::Routine>,
+    #[serde(default)]
+    pub routine_runs: Vec<crate::RoutineRun>,
 }
 
 /// What a settings text field is stored as: trimmed, and `None` when nothing is left.
@@ -187,6 +191,13 @@ mod tests {
         assert!(!config.sidebar.show_empty);
         assert!(!config.sidebar.hidden);
         assert_eq!(config.sidebar.width, DEFAULT_SIDEBAR_WIDTH);
+    }
+
+    #[test]
+    fn an_old_config_without_routines_loads_with_none() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":null,"api_key":null}"#).unwrap();
+        assert!(config.routines.is_empty());
+        assert!(config.routine_runs.is_empty());
     }
 
     #[test]
