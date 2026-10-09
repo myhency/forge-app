@@ -443,6 +443,7 @@ impl Settings {
         let mut saved = self.saved;
         let mut base_url = self.base_url;
         let mut api_key = self.api_key;
+        crate::appearance::apply_appearance(&config.appearance);
         saved.set(config);
         base_url.set(draft.base_url);
         api_key.set(draft.api_key);
@@ -484,6 +485,7 @@ impl Settings {
             current.notifications = config.notifications;
             current.attention_bounce = config.attention_bounce;
         }
+        crate::appearance::apply_appearance(&config.appearance);
         status.set(Some((SettingsSection::Code, SettingsStatus::Saved)));
     }
 
