@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use forge_shared::tr;
 use forge_application::LiveSessionId;
 use forge_features::{use_workspace, Panel};
 
@@ -19,8 +20,8 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                 button {
                     class: if terminal_open { "icon-button active" } else { "icon-button" },
                     r#type: "button",
-                    title: "Terminal",
-                    "aria-label": "Terminal",
+                    title: tr!("Terminal"),
+                    "aria-label": tr!("Terminal"),
                     "aria-pressed": "{terminal_open}",
                     onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Terminal)),
                     ">_"
@@ -30,8 +31,8 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                 button {
                     class: if changes_open { "icon-button active" } else { "icon-button" },
                     r#type: "button",
-                    title: "Changes",
-                    "aria-label": "Changes",
+                    title: tr!("Changes"),
+                    "aria-label": tr!("Changes"),
                     "aria-pressed": "{changes_open}",
                     onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Changes)),
                     "±"
@@ -41,8 +42,8 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                 button {
                     class: if preview_open { "icon-button active" } else { "icon-button" },
                     r#type: "button",
-                    title: "Preview",
-                    "aria-label": "Preview",
+                    title: tr!("Preview"),
+                    "aria-label": tr!("Preview"),
                     "aria-pressed": "{preview_open}",
                     onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Preview)),
                     "◎"
@@ -52,8 +53,8 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                 button {
                     class: if open() { "picker-button open" } else { "picker-button" },
                     r#type: "button",
-                    title: "More",
-                    "aria-label": "More",
+                    title: tr!("More"),
+                    "aria-label": tr!("More"),
                     "aria-haspopup": "menu",
                     "aria-expanded": "{open()}",
                     onclick: move |_| open.set(!open()),
@@ -84,7 +85,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                     workspace.change_dock(id, |dock| dock.toggle(Panel::Terminal));
                                     open.set(false);
                                 },
-                                span { "Terminal" }
+                                span { {tr!("Terminal")} }
                             }
                             button {
                                 class: "picker-item menu-narrow",
@@ -95,7 +96,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                     workspace.change_dock(id, |dock| dock.toggle(Panel::Changes));
                                     open.set(false);
                                 },
-                                span { "Changes" }
+                                span { {tr!("Changes")} }
                             }
                             button {
                                 class: "picker-item menu-narrow",
@@ -106,7 +107,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                     workspace.change_dock(id, |dock| dock.toggle(Panel::Preview));
                                     open.set(false);
                                 },
-                                span { "Preview" }
+                                span { {tr!("Preview")} }
                             }
                         }
                         if terminal {
@@ -119,7 +120,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                     workspace.change_dock(id, |dock| dock.toggle(Panel::Files));
                                     open.set(false);
                                 },
-                                span { "Files" }
+                                span { {tr!("Files")} }
                             }
                         }
                         button {
@@ -128,7 +129,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                             role: "menuitemcheckbox",
                             "aria-checked": "{sleeping}",
                             onclick: move |_| workspace.set_prevent_sleep(id, !sleeping),
-                            span { "Prevent sleep" }
+                            span { {tr!("Prevent sleep")} }
                             span { class: "menu-key", if sleeping { "On · This session only" } else { "Off · This session only" } }
                         }
                     }

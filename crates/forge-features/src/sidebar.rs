@@ -4,9 +4,8 @@ use std::path::PathBuf;
 use forge_application::{LiveSessionId, LiveSessionView, Phase};
 use forge_domain::{ArchivedRef, MessageRole, ProjectSummary, SessionId, SessionSummary};
 use forge_entities::SessionMarker;
+use forge_shared::tr;
 
-const UNTITLED: &str = "Untitled session";
-const NEW_SESSION: &str = "New session";
 const MAX_TITLE_CHARS: usize = 40;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -214,7 +213,7 @@ impl LiveSummary {
         self.title
             .clone()
             .or_else(|| self.first_user_message.clone().filter(|text| !text.trim().is_empty()))
-            .unwrap_or_else(|| NEW_SESSION.to_string())
+            .unwrap_or_else(|| tr!("New session").to_string())
     }
 }
 
@@ -266,7 +265,7 @@ pub fn merge_sidebar(
                         .title
                         .clone()
                         .or_else(|| summary.title.clone())
-                        .unwrap_or_else(|| UNTITLED.to_string()),
+                        .unwrap_or_else(|| tr!("Untitled session").to_string()),
                     updated_at: Some(summary.updated_at.clone()),
                     created_at: Some(summary.created_at.clone()),
                     marker: open.marker,
@@ -275,7 +274,7 @@ pub fn merge_sidebar(
                 None => SidebarEntry {
                     key: EntryKey::Past { project: project.path.clone(), session: summary.id.clone() },
                     session_id: Some(summary.id.clone()),
-                    title: summary.title.clone().unwrap_or_else(|| UNTITLED.to_string()),
+                    title: summary.title.clone().unwrap_or_else(|| tr!("Untitled session").to_string()),
                     updated_at: Some(summary.updated_at.clone()),
                     created_at: Some(summary.created_at.clone()),
                     marker: SessionMarker::Idle,

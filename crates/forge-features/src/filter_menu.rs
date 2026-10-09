@@ -1,4 +1,5 @@
 use forge_domain::{GroupBy, SidebarPrefs, SortBy, StatusFilter};
+use forge_shared::tr;
 
 pub const STATUS_ITEMS: [StatusFilter; 3] = [StatusFilter::Active, StatusFilter::Archived, StatusFilter::All];
 pub const SORT_ITEMS: [SortBy; 3] = [SortBy::Name, SortBy::Created, SortBy::Activity];
@@ -6,25 +7,25 @@ pub const GROUP_ITEMS: [GroupBy; 3] = [GroupBy::Folder, GroupBy::Date, GroupBy::
 
 pub fn status_label(status: StatusFilter) -> &'static str {
     match status {
-        StatusFilter::Active => "Active",
-        StatusFilter::Archived => "Archived",
-        StatusFilter::All => "All",
+        StatusFilter::Active => tr!("Active"),
+        StatusFilter::Archived => tr!("Archived"),
+        StatusFilter::All => tr!("All"),
     }
 }
 
 pub fn sort_label(sort_by: SortBy) -> &'static str {
     match sort_by {
-        SortBy::Name => "Name",
-        SortBy::Created => "Created",
-        SortBy::Activity => "Activity",
+        SortBy::Name => tr!("Name"),
+        SortBy::Created => tr!("Created"),
+        SortBy::Activity => tr!("Activity"),
     }
 }
 
 pub fn group_label(group_by: GroupBy) -> &'static str {
     match group_by {
-        GroupBy::Folder => "Folder",
-        GroupBy::Date => "Date",
-        GroupBy::Flat => "None",
+        GroupBy::Folder => tr!("Folder"),
+        GroupBy::Date => tr!("Date"),
+        GroupBy::Flat => tr!("None"),
     }
 }
 

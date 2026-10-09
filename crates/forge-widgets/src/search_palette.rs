@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use forge_shared::tr;
 use forge_domain::split_at_match;
 use forge_entities::relative_time;
 use forge_features::use_workspace;
@@ -37,7 +38,7 @@ fn PaletteBody() -> Element {
                         class: "palette-input",
                         r#type: "text",
                         value: "{query}",
-                        placeholder: "Search sessions",
+                        placeholder: tr!("Search sessions"),
                         spellcheck: "false",
                         onmounted: move |mounted| async move {
                             let _ = mounted.set_focus(true).await;
@@ -77,7 +78,7 @@ fn PaletteBody() -> Element {
                     }
                     button {
                         class: "palette-close",
-                        title: "Close",
+                        title: tr!("Close"),
                         onclick: move |_| workspace.close_search(),
                         "×"
                     }

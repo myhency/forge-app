@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use dioxus::prelude::*;
 use forge_entities::{relative_time, SidebarItem};
 use forge_features::{menu_key_action, refocus_workspace, use_workspace, ArchiveAction, DeleteAction, MenuKeyAction, SidebarEntry};
-use forge_shared::{Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind};
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,18 +100,19 @@ pub fn SessionRow(
         RowMode::ConfirmingDelete => {
             let project = project.clone();
             let session_id = session_id.clone();
+            let delete_question = tr!("Delete “{title}”? Moves the session to the trash.", title = entry.title);
             rsx! {
                 div { class: "confirm-row",
-                    span { class: "confirm-text", "Delete “{entry.title}”? Moves the session to the trash." }
+                    span { class: "confirm-text", "{delete_question}" }
                     Button {
-                        label: "Cancel",
+                        label: tr!("Cancel"),
                         onclick: move |_| {
                             mode.set(RowMode::Normal);
                             refocus_workspace();
                         },
                     }
                     Button {
-                        label: "Delete",
+                        label: tr!("Delete"),
                         kind: ButtonKind::Danger,
                         onclick: move |_| {
                             if let Some(id) = session_id.clone() {
@@ -147,7 +148,7 @@ pub fn SessionRow(
                         if has_menu {
                             button {
                                 class: if menu_open { "row-menu-button open" } else { "row-menu-button" },
-                                title: "Rename, fork, archive or delete",
+                                title: tr!("Rename, fork, archive or delete"),
                                 onclick: move |event| {
                                     event.stop_propagation();
                                     mode.set(if menu_open { RowMode::Normal } else { RowMode::MenuOpen });
@@ -220,7 +221,7 @@ pub fn SessionRow(
                                         let title = entry.title.clone();
                                         move |_| mode.set(RowMode::Renaming(title.clone()))
                                     },
-                                    span { "Rename" }
+                                    span { {tr!("Rename")} }
                                     span { class: "menu-key", "R" }
                                 }
                             }
@@ -239,7 +240,7 @@ pub fn SessionRow(
                                             refocus_workspace();
                                         }
                                     },
-                                    span { "Fork" }
+                                    span { {tr!("Fork")} }
                                     span { class: "menu-key", "F" }
                                 }
                             }
@@ -260,7 +261,7 @@ pub fn SessionRow(
                                             refocus_workspace();
                                         }
                                     },
-                                    span { if actions.archive == ArchiveAction::Archive { "Archive" } else { "Unarchive" } }
+                                    span { if actions.archive == ArchiveAction::Archive { {tr!("Archive")} } else { {tr!("Unarchive")} } }
                                     span { class: "menu-key", "A" }
                                 }
                             }
@@ -268,7 +269,7 @@ pub fn SessionRow(
                                 class: "row-menu-item danger",
                                 disabled: actions.delete != DeleteAction::Allowed,
                                 onclick: move |_| mode.set(RowMode::ConfirmingDelete),
-                                span { "Delete" }
+                                span { {tr!("Delete")} }
                                 span { class: "menu-key", "D" }
                             }
                             if actions.delete == DeleteAction::WhileOpen {

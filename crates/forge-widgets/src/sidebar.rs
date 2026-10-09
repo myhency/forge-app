@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_features::{use_workspace, Active, EntryKey, Heading};
-use forge_shared::{Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind};
 
 use crate::account_menu::AccountMenu;
 use crate::filter_menu::SidebarFilterMenu;
@@ -97,22 +97,22 @@ pub fn Sidebar() -> Element {
             div { class: "sidebar-top",
                 button {
                     class: "sidebar-search",
-                    title: "Search sessions ({forge_domain::KEY_SEARCH})",
+                    title: tr!("Search sessions ({key})", key = forge_domain::KEY_SEARCH),
                     onclick: move |_| workspace.open_search(),
                     span { "⌕" }
-                    span { "Search" }
+                    span { {tr!("Search")} }
                     span { class: "keys", "{forge_domain::KEY_SEARCH}" }
                 }
                 button {
                     class: "icon-button sidebar-hide",
-                    title: "Hide the sidebar",
+                    title: tr!("Hide the sidebar"),
                     onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = true),
                     "‹"
                 }
             }
             div { class: "sidebar-new",
                 Button {
-                    label: "+ New session",
+                    label: tr!("+ New session"),
                     kind: ButtonKind::Primary,
                     onclick: move |_| workspace.show_new_session(),
                 }
@@ -122,19 +122,19 @@ pub fn Sidebar() -> Element {
                 class: if active == Active::Customize { "sidebar-link active" } else { "sidebar-link" },
                 onclick: move |_| workspace.show_customize(),
                 span { "✦" }
-                span { "Customize" }
+                span { {tr!("Customize")} }
             }
             button {
                 class: if active == Active::Routines { "sidebar-link active" } else { "sidebar-link" },
                 onclick: move |_| workspace.show_routines(),
                 span { "◷" }
-                span { "Routines" }
+                span { {tr!("Routines")} }
             }
             div { class: "sidebar-scroll",
             if let Some(message) = notice {
                 div { class: "banner error",
                     "{message} "
-                    Button { label: "Dismiss", onclick: move |_| workspace.dismiss_notice() }
+                    Button { label: tr!("Dismiss"), onclick: move |_| workspace.dismiss_notice() }
                 }
             }
             for group in groups {
@@ -159,7 +159,7 @@ pub fn Sidebar() -> Element {
                                 if project.exists {
                                     button {
                                         class: "group-add",
-                                        title: "New session in this folder",
+                                        title: tr!("New session in this folder"),
                                         onclick: {
                                             let path = project.path.clone();
                                             move |_| workspace.show_new_session_in(path.clone())
@@ -218,7 +218,7 @@ fn group_toggle(
     rsx! {
         button {
             class: "group-toggle",
-            title: if collapsed { "Expand" } else { "Collapse" },
+            title: if collapsed { tr!("Expand") } else { tr!("Collapse") },
             onclick: move |_| workspace.update_prefs(|prefs| prefs.toggle_collapsed(&id)),
             span { class: "chevron", if collapsed { "▸" } else { "▾" } }
             span {
