@@ -255,12 +255,12 @@ mod tests {
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
-    use forge_domain::{ActiveExtensions, AppConfig, ContextUsage, MessageRole, PermissionMode, SkillDefinition, TokenUsage};
+    use forge_domain::{ActiveExtensions, AppConfig, ContextUsage, MessageRole, OutputStyle, PermissionMode, SessionDefaults, SkillDefinition, TokenUsage};
     use forge_ports::{SidecarError, SidecarEvent, StartSessionParams};
 
     use super::*;
     use crate::test_support::{
-        counting_extensions, extensions_with, factory_returning, failing_extensions, fake_sidecar, no_extensions, wait_closed, wait_for, Call,
+        counting_extensions, extensions_changing_config, extensions_with, factory_returning, failing_extensions, fake_sidecar, no_extensions, wait_closed, wait_for, Call,
     };
 
     fn empty_session() -> Session {
@@ -309,8 +309,93 @@ mod tests {
             extensions: ActiveExtensions::default(),
             additional_directories: Vec::new(),
             allowed_tools: Vec::new(),
-            defaults: forge_domain::SessionDefaults::default(),
+            defaults: SessionDefaults::default(),
         }
+    }
+
+    fn code_tab_config() -> AppConfig {
+        AppConfig {
+            output_style: Some(OutputStyle::Concise),
+            prompt_suggestions: false,
+            allow_bypass_mode: true,
+            ..AppConfig::default()
+        }
+    }
+
+    fn started_defaults(calls: Vec<Call>) -> SessionDefaults {
+        match calls.into_iter().next() {
+            Some(Call::Start(params)) => params.defaults,
+            other => panic!("expected a start, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn the_first_start_carries_the_code_tab_defaults_from_the_config() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let mut init = new_init(factory);
+        init.extensions = extensions_with(code_tab_config(), Vec::new());
+        let handle = spawn_live_session(init);
+        let mut view = handle.subscribe();
+
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(
+            started_defaults(control.calls()),
+            SessionDefaults { output_style: Some(OutputStyle::Concise), prompt_suggestions: false, allow_bypass: true }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_restarted_session_keeps_the_defaults_it_first_started_with() {
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let mut init = new_init(factory);
+        // The person turns everything back to the stock values while the session is open.
+        init.extensions = extensions_changing_config(code_tab_config(), AppConfig::default());
+        let handle = spawn_live_session(init);
+        let mut view = handle.subscribe();
+        handle.send("one".to_string());
+        first_control.push(SidecarEvent::Error { message: "boom".to_string() });
+        wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second turn", |v| v.phase == Phase::Running).await;
+
+        let first_defaults = started_defaults(first_control.calls());
+        assert_eq!(first_defaults.output_style, Some(OutputStyle::Concise));
+        assert_eq!(started_defaults(second_control.calls()), first_defaults);
+    }
+
+    #[tokio::test]
+    async fn a_session_already_in_bypass_mode_may_start_with_the_switch_off() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let mut init = resumed_init(factory);
+        init.session.permission_mode = PermissionMode::BypassPermissions;
+        // The default config: the switch is off.
+        let handle = spawn_live_session(init);
+        let mut view = handle.subscribe();
+
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert!(started_defaults(control.calls()).allow_bypass, "the SDK refuses the mode unless it is allowed up front");
+    }
+
+    #[tokio::test]
+    async fn a_session_in_another_mode_does_not_get_bypass_when_the_switch_is_off() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert!(!started_defaults(control.calls()).allow_bypass);
     }
 
     fn permission_request(id: &str) -> SidecarEvent {

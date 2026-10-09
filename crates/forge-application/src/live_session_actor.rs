@@ -1,7 +1,7 @@
 use std::future::pending;
 use std::sync::Arc;
 
-use forge_domain::{ActiveExtensions, Attachment, EffortLevel, PermissionDecision, PermissionMode};
+use forge_domain::{ActiveExtensions, Attachment, EffortLevel, PermissionDecision, PermissionMode, SessionDefaults};
 use forge_ports::{SidecarEvent, SidecarFactoryPort, SidecarPort, StartSessionParams};
 use tokio::sync::{mpsc, watch};
 
@@ -24,6 +24,9 @@ pub(crate) struct Actor {
     /// What the first successful start resolved. An open session keeps it across restarts (spec
     /// §17.4); a failed resolution is not stored, so the next start resolves again.
     active: Option<ActiveExtensions>,
+    /// What Settings decided at the first successful start; kept across restarts like `active`
+    /// (a change in Settings applies to the next new session).
+    defaults: Option<SessionDefaults>,
     sidecar: Option<Arc<dyn SidecarPort>>,
     /// Extra folders for the next start (the SDK reads them once, at start).
     additional_directories: Vec<String>,
@@ -57,6 +60,7 @@ impl Actor {
             effort: None,
             extensions,
             active: None,
+            defaults: None,
             sidecar: None,
             additional_directories: Vec::new(),
             allowed_tools: Vec::new(),
@@ -224,14 +228,14 @@ impl Actor {
     // Resolving comes first so a failing reader spawns no process. The sidecar is only kept once
     // both steps succeed; otherwise it is dropped, which ends its process.
     async fn start_sidecar(&mut self) -> Result<(), String> {
-        let extensions = match &self.active {
-            Some(active) => active.clone(),
-            None => self
-                .extensions
-                .resolve_active(&self.view.project_path)
-                .await
-                .map_err(|e| e.to_string())?,
+        let (extensions, configured) = match (&self.active, self.defaults) {
+            (Some(active), Some(defaults)) => (active.clone(), defaults),
+            _ => self.extensions.resolve_start(&self.view.project_path).await.map_err(|e| e.to_string())?,
         };
+        // A session already in bypass mode (resumed, or switched before the switch went off) must
+        // still start: the SDK refuses that mode unless it is allowed up front.
+        let mut defaults = configured;
+        defaults.allow_bypass |= self.view.session.permission_mode == PermissionMode::BypassPermissions;
         let sidecar = self.factory.spawn().await.map_err(|e| e.to_string())?;
         sidecar
             .start_session(StartSessionParams {
@@ -243,11 +247,12 @@ impl Actor {
                 extensions: extensions.clone(),
                 additional_directories: self.additional_directories.clone(),
                 allowed_tools: self.allowed_tools.clone(),
-                defaults: forge_domain::SessionDefaults::default(),
+                defaults,
             })
             .await
             .map_err(|e| e.to_string())?;
         self.active = Some(extensions);
+        self.defaults = Some(configured);
         self.sidecar = Some(sidecar);
         Ok(())
     }
