@@ -39,7 +39,7 @@ pub use layout::{
     keep_peek, layout_for, workspace_class, DockMode, Layout, SidebarMode, MIN_CHAT_WIDTH, MIN_WINDOW_WIDTH, NARROW_CHAT_BELOW, SIDEBAR_OVERLAY_UP_TO,
     SIDEBAR_RAIL_WIDTH,
 };
-pub use extension::{ActiveExtensions, McpServerDefinition, PluginDefinition, SkillDefinition};
+pub use extension::{local_mcp_servers, ActiveExtensions, LocalMcpServer, McpServerDefinition, PluginDefinition, SkillDefinition};
 pub use connector::{connector_id, entry_from_config, mask_args, mask_url, Connection, ConnectorEntry, ConnectorKind, ConnectorSnapshot, ConnectorSource};
 pub use connector_form::{split_args, validate_new, ConnectorDraft, NewConnector, NewTransport};
 pub use plugin_catalog::{plugin_id, split_plugin_id, Marketplace, PluginEntry, PluginSnapshot};

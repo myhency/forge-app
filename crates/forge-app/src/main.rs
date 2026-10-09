@@ -6,7 +6,7 @@ use dioxus::desktop::muda::{Menu, PredefinedMenuItem, Submenu};
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
 use forge_adapter_claude_fs::{
-    default_claude_home, default_claude_json_path, ClaudeConnectorCatalogAdapter, ClaudeMcpAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
+    default_claude_home, default_claude_json_path, default_cli_cache_dir, ClaudeConnectorCatalogAdapter, ClaudeMcpAdapter, ClaudeMcpLogAdapter, ClaudePluginAdapter, ClaudeProjectAdapter,
     ClaudeSessionAdapter, ClaudeSkillAdapter, ClaudeSkillCatalogAdapter, ClaudeUsageStatsAdapter,
 };
 use forge_adapter_claude_plugins::{claude_binary_for, ClaudeMcpCli, ClaudePluginCli};
@@ -183,7 +183,7 @@ fn build_services() -> WorkspaceServices {
         config.clone(),
         Arc::new(ClaudeSkillAdapter::new(claude_home.clone())),
         Arc::new(ClaudePluginAdapter::new(claude_home.clone())),
-        Arc::new(ClaudeMcpAdapter::new(claude_json)),
+        Arc::new(ClaudeMcpAdapter::new(claude_json.clone())),
         home,
     ).with_config_lock(config_lock.clone()));
     let sessions = Arc::new(ClaudeSessionAdapter::new(claude_home.clone()));
@@ -211,6 +211,7 @@ fn build_services() -> WorkspaceServices {
         files: Arc::new(LocalFiles::new()),
         browser: Arc::new(SystemBrowser::new()),
         usage_stats: Arc::new(ClaudeUsageStatsAdapter::new(claude_home.clone())),
+        mcp_logs: Arc::new(ClaudeMcpLogAdapter::new(default_cli_cache_dir(), claude_json)),
         routines: RoutineServices { routines, runner, host, starts: Arc::new(std::sync::Mutex::new(starts)), notify: notifier() },
     }
 }

@@ -7,6 +7,7 @@ mod skill_catalog;
 mod skills;
 mod plugins;
 mod mcp;
+mod mcp_logs;
 mod projects;
 mod transcript_cwd;
 mod trash;
@@ -19,6 +20,7 @@ pub use skill_catalog::ClaudeSkillCatalogAdapter;
 pub use skills::ClaudeSkillAdapter;
 pub use plugins::ClaudePluginAdapter;
 pub use mcp::ClaudeMcpAdapter;
+pub use mcp_logs::ClaudeMcpLogAdapter;
 pub use projects::ClaudeProjectAdapter;
 pub use trash::{SystemTrash, TrashBin};
 pub use usage_stats::ClaudeUsageStatsAdapter;
@@ -29,6 +31,12 @@ pub fn default_claude_home() -> Option<PathBuf> {
 
 pub fn default_claude_json_path() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".claude.json"))
+}
+
+/// Where Claude Code keeps its caches and MCP logs (`env-paths` with the suffix `nodejs`).
+pub fn default_cli_cache_dir() -> Option<PathBuf> {
+    let base = directories::BaseDirs::new()?.cache_dir().join("claude-cli-nodejs");
+    Some(if cfg!(windows) { base.join("Cache") } else { base })
 }
 
 #[cfg(test)]

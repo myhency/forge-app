@@ -184,3 +184,53 @@ mod tests {
         assert_eq!(active, ActiveExtensions::default());
     }
 }
+
+/// A server that runs on this computer, as the Developer page shows it: the command and its arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalMcpServer {
+    pub name: String,
+    pub command: String,
+    /// With what looks secret taken out (`mask_args`).
+    pub args: Vec<String>,
+}
+
+/// The servers that start a program (a `command`), in the order given. An address-based server is not one.
+pub fn local_mcp_servers(definitions: &[McpServerDefinition]) -> Vec<LocalMcpServer> {
+    definitions
+        .iter()
+        .filter_map(|definition| {
+            let command = definition.config.get("command")?.as_str()?.to_string();
+            let args: Vec<&str> = definition.config.get("args").and_then(|args| args.as_array()).map(|args| args.iter().filter_map(|arg| arg.as_str()).collect()).unwrap_or_default();
+            Some(LocalMcpServer { name: definition.name.clone(), command, args: crate::mask_args(&args) })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod local_server_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn definition(name: &str, config: serde_json::Value) -> McpServerDefinition {
+        McpServerDefinition { name: name.to_string(), config }
+    }
+
+    #[test]
+    fn a_server_with_a_command_is_local_and_shows_its_arguments() {
+        let servers = local_mcp_servers(&[definition("fs", json!({"command": "npx", "args": ["-y", "server-filesystem", "/tmp"]}))]);
+        assert_eq!(servers, [LocalMcpServer { name: "fs".into(), command: "npx".into(), args: vec!["-y".into(), "server-filesystem".into(), "/tmp".into()] }]);
+    }
+
+    #[test]
+    fn a_server_with_an_address_is_not_local() {
+        assert!(local_mcp_servers(&[definition("web", json!({"type": "http", "url": "https://x.dev/mcp"}))]).is_empty());
+    }
+
+    #[test]
+    fn a_missing_args_list_is_empty_and_a_secret_argument_is_hidden() {
+        let servers = local_mcp_servers(&[definition("a", json!({"command": "run"})), definition("b", json!({"command": "run", "args": ["--api-key", "abc"]}))]);
+        assert!(servers[0].args.is_empty());
+        assert_eq!(servers[1].args[0], "--api-key");
+        assert_ne!(servers[1].args[1], "abc");
+    }
+}

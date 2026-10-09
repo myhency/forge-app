@@ -1,5 +1,6 @@
 mod appearance;
 mod session_notices;
+mod developer;
 mod settings_pages;
 mod window_width;
 mod blocking;

@@ -20,6 +20,7 @@ pub enum SettingsSection {
     Plugins,
     McpServers,
     Code,
+    Developer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,6 +114,8 @@ pub struct Settings {
     extensions: Signal<Arc<ExtensionsUseCase>>,
     project: Signal<Option<PathBuf>>,
     catalog: Signal<Catalog>,
+    /// The local MCP server the Developer page shows in detail.
+    server: Signal<Option<String>>,
 }
 
 /// Creates the settings state, provides it to every descendant and loads the saved config once.
@@ -132,6 +135,7 @@ pub fn use_settings_provider() -> Settings {
         extensions: Signal::new(services.extensions.clone()),
         project: Signal::new(None),
         catalog: Signal::new(Catalog::default()),
+        server: Signal::new(None),
     });
     use_context_provider(move || settings);
     use_hook(move || settings.reload());
@@ -375,6 +379,23 @@ impl Settings {
 
     pub fn project_label(&self) -> String {
         project_label(self.project.read().as_deref())
+    }
+
+    /// The servers that run on this computer, for the Developer page.
+    pub fn local_servers(&self) -> Result<Vec<forge_domain::LocalMcpServer>, String> {
+        self.catalog.read().mcp.clone().map(|definitions| forge_domain::local_mcp_servers(&definitions))
+    }
+
+    /// The server shown in the Developer page's detail: the chosen one while it is still listed, else the first.
+    pub fn selected_server(&self) -> Option<forge_domain::LocalMcpServer> {
+        let servers = self.local_servers().ok()?;
+        let chosen = self.server.read().clone();
+        chosen.and_then(|name| servers.iter().find(|server| server.name == name).cloned()).or_else(|| servers.into_iter().next())
+    }
+
+    pub fn select_server(&self, name: String) {
+        let mut server = self.server;
+        server.set(Some(name));
     }
 
     pub fn skill_tab(&self) -> Result<Vec<ExtensionRow>, String> {

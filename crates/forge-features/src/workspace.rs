@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use forge_application::{Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort};
+use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort};
 use time::OffsetDateTime;
 
 use crate::cards::{clamp_cards, Cards};
@@ -60,6 +60,7 @@ pub struct WorkspaceServices {
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
     pub usage_stats: Arc<dyn UsageStatsPort>,
+    pub mcp_logs: Arc<dyn McpLogPort>,
     pub routines: RoutineServices,
 }
 
@@ -748,6 +749,19 @@ impl Workspace {
         if let Err(message) = self.browser().reveal(path) {
             self.report(message);
         }
+    }
+
+    /// Shows the file that defines the person's own MCP servers in Finder.
+    pub fn reveal_mcp_config(&self) {
+        let path = self.services.peek().mcp_logs.config_file();
+        self.reveal(&path);
+    }
+
+    /// Opens the newest log of a local MCP server with the default app. With none, the message says so: the
+    /// page that asked shows it, because a notice would sit behind the Settings window.
+    pub fn open_mcp_log(&self, server: &str) -> Result<(), String> {
+        let path = crate::developer::log_to_open(self.services.peek().mcp_logs.as_ref(), server)?;
+        crate::developer::open_log(self.browser().as_ref(), &path)
     }
 
     /// Opens a file with the default app or a named one; a failure becomes a notice.

@@ -9,7 +9,7 @@ pub struct NavGroup {
 pub fn nav_groups() -> Vec<NavGroup> {
     vec![
         NavGroup { title: tr!("Settings"), pages: vec![(SettingsSection::General, tr!("General")), (SettingsSection::Code, tr!("Claude Code"))] },
-        NavGroup { title: tr!("This computer"), pages: vec![(SettingsSection::Connection, tr!("Connection")), (SettingsSection::Model, tr!("Model"))] },
+        NavGroup { title: tr!("This computer"), pages: vec![(SettingsSection::Connection, tr!("Connection")), (SettingsSection::Model, tr!("Model")), (SettingsSection::Developer, tr!("Developer"))] },
         NavGroup {
             title: tr!("Customize"),
             pages: vec![(SettingsSection::Skills, tr!("Skills")), (SettingsSection::Plugins, tr!("Plugins")), (SettingsSection::McpServers, tr!("MCP servers"))],
@@ -27,6 +27,7 @@ fn row_titles(section: SettingsSection) -> Vec<&'static str> {
         SettingsSection::Code => vec![tr!("Default transcript view"), tr!("Output style"), tr!("Prompt suggestions"), tr!("Allow bypass permissions mode"), tr!("Bounce the Dock icon")],
         SettingsSection::Connection => vec![tr!("Base URL"), tr!("API key")],
         SettingsSection::Model => vec![tr!("Default model"), tr!("Other model ID")],
+        SettingsSection::Developer => vec![tr!("Local MCP servers"), tr!("Edit config"), tr!("View logs")],
         SettingsSection::Skills | SettingsSection::Plugins | SettingsSection::McpServers => vec![],
     }
 }
@@ -52,13 +53,13 @@ mod tests {
         let titles: Vec<_> = groups.iter().map(|group| group.title).collect();
         assert_eq!(titles, ["Settings", "This computer", "Customize"]);
         assert_eq!(groups[0].pages.iter().map(|page| page.1).collect::<Vec<_>>(), ["General", "Claude Code"]);
-        assert_eq!(groups[1].pages.iter().map(|page| page.1).collect::<Vec<_>>(), ["Connection", "Model"]);
+        assert_eq!(groups[1].pages.iter().map(|page| page.1).collect::<Vec<_>>(), ["Connection", "Model", "Developer"]);
         assert_eq!(groups[2].pages.iter().map(|page| page.1).collect::<Vec<_>>(), ["Skills", "Plugins", "MCP servers"]);
     }
 
     #[test]
     fn an_empty_search_keeps_every_page() {
-        assert_eq!(filter_pages("  ").len(), 7);
+        assert_eq!(filter_pages("  ").len(), 8);
     }
 
     #[test]
@@ -67,6 +68,7 @@ mod tests {
         assert_eq!(filter_pages("dock"), [SettingsSection::Code]);
         assert_eq!(filter_pages("theme"), [SettingsSection::General]);
         assert_eq!(filter_pages("notif"), [SettingsSection::General]);
+        assert_eq!(filter_pages("logs"), [SettingsSection::Developer]);
     }
 
     #[test]
