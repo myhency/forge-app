@@ -1,4 +1,5 @@
 """Finding and activating the Forge window (macOS, needs the Quartz module)."""
+import os
 import subprocess
 from pathlib import Path
 
@@ -8,7 +9,8 @@ from geometry import select_window
 
 SHOT_PATH = "/private/tmp/forge-harness-shot.png"
 PID_FILE = "/private/tmp/forge-harness.pid"
-OWNER = "forge-app"
+# The packaged app (dist/Forge.app) names itself ForgeApp: FORGE_HARNESS_OWNER=ForgeApp finds it.
+OWNER = os.environ.get("FORGE_HARNESS_OWNER", "forge-app")
 TITLE = "Forge"
 
 
