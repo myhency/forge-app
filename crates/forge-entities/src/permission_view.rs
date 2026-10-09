@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::tool_summary::tool_input_summary;
 use crate::turn_view::{file_name, tool_kind, ToolKind};
+use crate::workflow_script::workflow_meta;
 use forge_shared::tr;
 
 /// What a permission card says about a request.
@@ -28,57 +29,17 @@ pub struct WorkflowAsk {
 /// The tool Claude calls to run a workflow.
 const WORKFLOW_TOOL: &str = "Workflow";
 
-/// The string literal after `key:` in the script's text, the first time `key` stands alone as a
-/// word. Reads `'...'`, `"..."` and backtick strings with backslash escapes; `None` when the key is
-/// absent or its value is not a plain string. A script is JavaScript, so this reads only what the
-/// `meta` block needs, never runs or parses the rest.
-fn script_literal(script: &str, key: &str) -> Option<String> {
-    let mut from = 0;
-    while let Some(found) = script[from..].find(key) {
-        let start = from + found;
-        let end = start + key.len();
-        from = end;
-        let before_ok = script[..start].chars().next_back().is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
-        let rest = script[end..].trim_start();
-        let Some(rest) = rest.strip_prefix(':') else { continue };
-        let mut chars = rest.trim_start().chars();
-        let Some(quote) = chars.next().filter(|c| matches!(c, '\'' | '"' | '`')) else { continue };
-        if !before_ok {
-            continue;
-        }
-        let mut value = String::new();
-        while let Some(c) = chars.next() {
-            match c {
-                '\\' => match chars.next() {
-                    Some('n') => value.push('\n'),
-                    Some('t') => value.push('\t'),
-                    Some(other) => value.push(other),
-                    None => return None,
-                },
-                c if c == quote => return Some(value).filter(|value| !value.is_empty()),
-                c => value.push(c),
-            }
-        }
-        return None;
-    }
-    None
-}
-
 pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
     let text = |key: &str| input.get(key).and_then(Value::as_str).filter(|text| !text.is_empty()).map(str::to_string);
     if tool_name == WORKFLOW_TOOL {
-        // The meta block comes first in a script; stop before the body so a string in a later
-        // agent prompt is never taken for the workflow's name.
         let script = input.get("script").and_then(Value::as_str).unwrap_or("");
-        let meta = script.split("\n}").next().unwrap_or(script);
-        if let Some(name) = script_literal(meta, "name") {
-            let description = script_literal(meta, "description");
+        if let Some(meta) = workflow_meta(script) {
             return PermissionView {
-                title: tr!("Allow Claude to run the workflow {name}?", name = name),
-                subject: name,
+                title: tr!("Allow Claude to run the workflow {name}?", name = meta.name),
+                subject: meta.name,
                 path: None,
                 command: None,
-                workflow: Some(WorkflowAsk { description }),
+                workflow: Some(WorkflowAsk { description: meta.description }),
             };
         }
     }
