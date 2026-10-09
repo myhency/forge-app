@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, layout_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
-use forge_features::{refocus_workspace, use_customize_provider, use_routines_provider, use_settings_provider, use_window_width, use_workspace_provider, Active};
+use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_settings_provider, use_window_width, use_workspace_provider, Active};
 use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, NewSessionPanel, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
@@ -16,6 +16,7 @@ pub fn WorkspacePage() -> Element {
     // closes or the main pane switches view, the focused input or button may have been removed
     // and focus falls to <body>, which silences every shortcut until the next click. Give focus
     // back to the root — but only if nothing has it, so a composer the person is typing in keeps it.
+    use_hook(watch_focus);
     use_effect(move || {
         let _ = (settings.is_open(), workspace.search_open(), workspace.shortcuts_open(), workspace.active(), workspace.lightbox().is_some());
         refocus_workspace();
