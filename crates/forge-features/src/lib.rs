@@ -32,6 +32,7 @@ mod section_status;
 mod settings;
 mod settings_draft;
 mod shortcut;
+mod sign_in;
 mod terminal_tabs;
 mod tool_activity;
 mod sidebar;
