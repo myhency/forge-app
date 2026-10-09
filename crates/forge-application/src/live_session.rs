@@ -117,13 +117,13 @@ impl LiveSessionHandle {
         let _ = self.commands.send(LiveCommand::AddDirectories(directories));
     }
 
-    /// Starts the session's sidecar now instead of at the first send, so its slash commands are known
-    /// before the person types. A failure is not shown: the first send starts the sidecar again.
     /// Permission rules the next start allows without asking (the SDK reads them once, at start).
     pub fn allow_tools(&self, tools: Vec<String>) {
         let _ = self.commands.send(LiveCommand::AllowTools(tools));
     }
 
+    /// Starts the session's sidecar now instead of at the first send, so its slash commands are known
+    /// before the person types. A failure is not shown: the first send starts the sidecar again.
     pub fn warm_up(&self) {
         let _ = self.commands.send(LiveCommand::WarmUp);
     }
@@ -178,6 +178,12 @@ impl LiveSessionHandle {
     /// A receiver that wakes on every published change and reports `Err` once the session is closed.
     pub fn subscribe(&self) -> watch::Receiver<LiveSessionView> {
         self.view.clone()
+    }
+
+    /// Reads the current state in place, without copying the whole transcript the way `snapshot` does. Keep
+    /// `read` short: the session's task cannot publish while it runs.
+    pub fn with_view<R>(&self, read: impl FnOnce(&LiveSessionView) -> R) -> R {
+        read(&self.view.borrow())
     }
 
     pub fn snapshot(&self) -> LiveSessionView {
@@ -389,6 +395,16 @@ mod tests {
         let mut expected = start_params(None);
         expected.additional_directories = vec!["/extra".to_string()];
         assert_eq!(control.calls(), vec![Call::Start(expected), Call::Send("hi".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn with_view_reads_the_current_state_without_copying_it() {
+        let (sidecar, _control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let (phase, messages) = handle.with_view(|view| (view.phase, view.session.messages.len()));
+        assert_eq!((phase, messages), (Phase::Idle, 0));
+        assert_eq!(handle.with_view(|view| view.project_path.clone()), handle.snapshot().project_path);
     }
 
     #[tokio::test]

@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 
 use crate::live_session::{LiveSessionHandle, LiveSessionId, LiveSessionView, Phase};
 use crate::registry::SessionRegistry;
-use crate::routine_runner::{RoutineHost, RunRequest};
+use crate::routine_runner::{RoutineHost, RunRequest, StartFailure};
 use crate::use_cases::RoutinesUseCase;
 
 /// How long and how often `watch` retries a write that needs the history line to exist.
@@ -54,6 +54,7 @@ pub struct RegistryHost {
     registry: Arc<SessionRegistry>,
     routines: Arc<RoutinesUseCase>,
     started: mpsc::UnboundedSender<LiveSessionHandle>,
+    failures: Arc<Mutex<Vec<StartFailure>>>,
     // Never held across an `.await`.
     tracked: Mutex<HashMap<LiveSessionId, Tracked>>,
 }
@@ -62,7 +63,7 @@ impl RegistryHost {
     /// The receiver gets every session this host starts, so the UI can show it.
     pub fn new(registry: Arc<SessionRegistry>, routines: Arc<RoutinesUseCase>) -> (Self, mpsc::UnboundedReceiver<LiveSessionHandle>) {
         let (started, receiver) = mpsc::unbounded_channel();
-        (Self { registry, routines, started, tracked: Mutex::new(HashMap::new()) }, receiver)
+        (Self { registry, routines, started, failures: Arc::new(Mutex::new(Vec::new())), tracked: Mutex::new(HashMap::new()) }, receiver)
     }
 
     /// Sessions that can be closed: finished, see `is_finished`, and not opened by the person.
@@ -77,7 +78,7 @@ impl RegistryHost {
         tracked.retain(|_, tracked| !tracked.handle.is_closed());
         tracked
             .iter()
-            .filter(|(_, tracked)| !tracked.kept && is_finished(&tracked.handle.snapshot(), tracked.started.elapsed() + extra))
+            .filter(|(_, tracked)| !tracked.kept && tracked.handle.with_view(|view| is_finished(view, tracked.started.elapsed() + extra)))
             .map(|(id, _)| *id)
             .collect()
     }
@@ -88,6 +89,11 @@ impl RegistryHost {
         if let Some(tracked) = self.tracked.lock().unwrap().get_mut(&id) {
             tracked.kept = true;
         }
+    }
+
+    /// The sessions that never got going since the last call, so the person can be told.
+    pub fn take_failures(&self) -> Vec<StartFailure> {
+        std::mem::take(&mut *self.failures.lock().unwrap())
     }
 
     /// Stops tracking a session (it was closed).
@@ -102,7 +108,7 @@ impl RegistryHost {
             .lock()
             .unwrap()
             .values()
-            .filter(|tracked| !tracked.handle.is_closed() && !tracked.handle.snapshot().pending_permissions.is_empty())
+            .filter(|tracked| !tracked.handle.is_closed() && tracked.handle.with_view(|view| !view.pending_permissions.is_empty()))
             .map(|tracked| tracked.routine_id.clone())
             .collect();
         ids.sort();
@@ -117,11 +123,11 @@ impl RegistryHost {
             if tracked.handle.is_closed() {
                 continue;
             }
-            let view = tracked.handle.snapshot();
-            if let Some(request) = view.pending_permissions.front() {
+            let first_waiting = tracked.handle.with_view(|view| view.pending_permissions.front().map(|request| request.tool_name.clone()));
+            if let Some(tool_name) = first_waiting {
                 if !tracked.notified {
                     tracked.notified = true;
-                    found.push(WaitingRun { routine_id: tracked.routine_id.clone(), tool_name: request.tool_name.clone() });
+                    found.push(WaitingRun { routine_id: tracked.routine_id.clone(), tool_name });
                 }
             } else {
                 tracked.notified = false;
@@ -136,6 +142,7 @@ impl RegistryHost {
     /// returns, so what is seen first is retried for a few seconds.
     fn watch(&self, request: &RunRequest, handle: &LiveSessionHandle) {
         let routines = self.routines.clone();
+        let failures = self.failures.clone();
         let (routine_id, created, due_ms) = (request.routine_id.clone(), request.routine_created, request.due_ms);
         let mut updates = handle.subscribe();
         // Runs on the app's tokio runtime. Ends when the session closes (the channel ends).
@@ -173,6 +180,9 @@ impl RegistryHost {
                 }
                 if let (Some(message), false) = (&failure, failure_stored) {
                     failure_stored = routines.fail_run(&routine_id, due_ms, message.clone()).await.unwrap_or(false);
+                    if failure_stored {
+                        failures.lock().unwrap().push(StartFailure { routine_id: routine_id.clone(), reason: message.clone() });
+                    }
                 }
                 if rules != known_rules {
                     let new: Vec<String> = rules.iter().filter(|rule| !known_rules.contains(rule)).cloned().collect();
@@ -192,7 +202,7 @@ impl RoutineHost for RegistryHost {
 
     fn busy_in(&self, folder: &Path) -> bool {
         self.tracked.lock().unwrap().values().any(|tracked| {
-            tracked.folder == folder && !tracked.handle.is_closed() && is_busy(&tracked.handle.snapshot(), tracked.started.elapsed())
+            tracked.folder == folder && !tracked.handle.is_closed() && tracked.handle.with_view(|view| is_busy(view, tracked.started.elapsed()))
         })
     }
 
@@ -513,6 +523,11 @@ mod tests {
             forge_domain::RunOutcome::Skipped(forge_domain::SkipReason::StartFailed(message)) => assert!(message.contains("no node"), "{message}"),
             other => panic!("expected a failed start, got {other:?}"),
         }
+        let failures = host.take_failures();
+        assert_eq!(failures.len(), 1, "the failure is kept for a notification");
+        assert_eq!(failures[0].routine_id, "a");
+        assert!(failures[0].reason.contains("no node"), "{}", failures[0].reason);
+        assert!(host.take_failures().is_empty());
     }
 
     #[tokio::test]

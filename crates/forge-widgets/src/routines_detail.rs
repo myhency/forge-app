@@ -101,14 +101,14 @@ pub fn RoutineDetail(id: String) -> Element {
                 if rows.is_empty() {
                     p { class: "hint", "Nothing has run yet." }
                 }
-                for row in rows {
+                for (index, row) in rows.into_iter().enumerate() {
                     {
                         let when = local_when_label(row.due_ms);
                         let session = row.session_id.clone();
                         let text = row.text.clone();
                         rsx! {
                             button {
-                                key: "{row.due_ms}",
+                                key: "{index}-{row.due_ms}",
                                 class: if session.is_some() { "routine-run clickable" } else { "routine-run" },
                                 onclick: move |_| {
                                     if let Some(session) = session.clone() {

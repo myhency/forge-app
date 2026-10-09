@@ -87,7 +87,7 @@ pub use sidebar::{
     LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,
 };
 pub use terminal_tabs::{TabId, TerminalTabs};
-pub use routines::{cards, history_rows, run_state_text, local_when_label, offset_at, skip_text, waiting_notice, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};
+pub use routines::{cards, history_rows, run_state_text, local_when_label, notices, offset_at, skip_text, start_failed_notice, waiting_notice, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};
 pub use routines_state::{use_routines, use_routines_provider, RoutineDialog, RoutineScreen, Routines};
 pub use workspace::{use_workspace, use_workspace_provider, Active, Picture, RoutineServices, Workspace, WorkspaceServices};
 pub use blocking::run_blocking;

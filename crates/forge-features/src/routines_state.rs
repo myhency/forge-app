@@ -339,11 +339,16 @@ impl Routines {
                 this.adopt_started(workspace);
                 let mut waiting = this.waiting;
                 waiting.set(services.host.waiting_now());
-                for run in services.host.waiting() {
-                    let name = this.routines.peek().iter().find(|routine| routine.id == run.routine_id).map(|routine| routine.name.clone()).unwrap_or(run.routine_id.clone());
-                    let (title, body) = crate::routines::waiting_notice(&name, &run.tool_name);
-                    // A notification that cannot be sent is not worth a banner: the page and the sidebar show the wait.
-                    let _ = services.notify.notify(&title, &body);
+                let mut failures = services.runner.take_failures();
+                failures.extend(services.host.take_failures());
+                let name_of = |id: &str| this.routines.peek().iter().find(|routine| routine.id == id).map(|routine| routine.name.clone()).unwrap_or_else(|| id.to_string());
+                for (title, body) in crate::routines::notices(&services.host.waiting(), &failures, &name_of) {
+                    // Off the UI thread (a notification is a process spawn). One that cannot be sent is not worth a
+                    // banner: the page, the sidebar and the history line show it.
+                    let notify = services.notify.clone();
+                    tokio::task::spawn_blocking(move || {
+                        let _ = notify.notify(&title, &body);
+                    });
                 }
                 this.reload();
                 tokio::time::sleep(TICK).await;

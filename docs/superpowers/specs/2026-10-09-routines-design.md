@@ -113,8 +113,8 @@ Plan `docs/superpowers/plans/2026-10-09-routines.md`, branch `plan-31`.
 5. **Finished routine sessions are closed by Forge** (idle for over 60 s, nothing waiting, not on screen), so an hourly routine does not leave a process per run. The transcript stays and the session is a past session in the sidebar.
 6. **"Always allowed" needed a sidecar change.** The sidecar reports the rules an "always allow" would add (`permission_request.rules`, from the SDK's `addRules` suggestions) and takes `allowed_tools` at start. The session view keeps `allowed_rules`; the registry host copies them to the routine.
 7. A routine card for a manual routine says "Manual" once (found in the real window).
-8. **No notification when a start fails** (spec §5 asked for one): the failure is a `Skipped: could not start (...)` line in the history. Only a session that waits for approval notifies.
-9. **Fixed after the whole-branch review:** the timer no longer closes a routine session the person has opened (`keep_open` on select); a session the person closed no longer keeps the "waiting" marker or its folder busy, and a failed session does not hold its folder; a config save that fails after a start no longer starts the routine again on every tick, and one routine's failed save no longer stops the others (the runner remembers the due time it handled).
+8. A run that cannot start also notifies (a failed spawn, or a session that never got going): the history line says `Skipped: could not start (...)` and the notification names the routine and the reason.
+9. **Fixed after the whole-branch review (the three important findings):** the timer no longer closes a routine session the person has opened (`keep_open` on select); a session the person closed no longer keeps the "waiting" marker or its folder busy, and a failed session does not hold its folder; a config save that fails after a start no longer starts the routine again on every tick, and one routine's failed save no longer stops the others (the runner remembers the due time it handled).
 
 ### Checked in the real window (harness fixture, real SDK, throwaway folder)
 
@@ -124,6 +124,16 @@ Plan `docs/superpowers/plans/2026-10-09-routines.md`, branch `plan-31`.
 - **Always allow** on a Bash request puts `Bash(touch /private/tmp/forge-routines/x2.txt)` under "Always allowed", and the next run of the routine does not ask.
 - **Timer**: a once-a-minute routine started a session at the minute (the Claude session id was written to its history line); a daily routine whose time passed hours ago was not run and left one `Skipped: Forge was closed or the computer was asleep` line.
 - The sessions the checks made were removed from `~/.claude/projects/-private-tmp-forge-routines/` by hand.
+
+### Follow-up: the thirteen minors of the review (all fixed, each with a test)
+
+- **Daylight saving**: the engine counts in calendar time and places each result in the zone, so a time inside the skipped hour (a daily 02:30 when the clocks go forward) runs when the gap ends, and a repeated hour (clocks back) runs once. History times use the offset of their own date. Tests cover New York in both directions, a negative offset and a half-hour offset.
+- **The latest missed time is the real latest**: `decide` looks back from now in growing steps (an hour, a day, 8 days, 40 days, 400 days) instead of walking from the baseline, and parses the expression once. Closed for days under a once-a-minute schedule now means "the latest minute runs" (it is within 30 minutes), not a stale skip.
+- **A stale tick cannot overwrite an edit or a pause** (the count moves only if the routine is still as the tick saw it).
+- **A late line or rule of a deleted routine cannot reach a new routine of the same name**: history lines carry the routine's creation time, and `always allow` is stored only against the routine it came from. A line of a routine that is gone is not kept.
+- **A run reads "Starting…" until its session id arrives**, the id is stored even when it arrives before the runner has written the line (retried for a few seconds), and a session that never started turns its line into a failed start.
+- The notification no longer runs on the UI thread; history rows are keyed by position and time; the checks read the session state in place (`with_view`) instead of copying the transcript; `warm_up`'s doc comment is back.
+- Checked again in the real window after these changes: a once-a-minute routine started its session at the minute and stored the session id, and a daily routine whose time passed hours ago left one `Skipped (Missed)` line.
 
 ### Not checked
 
@@ -137,5 +147,5 @@ Plan `docs/superpowers/plans/2026-10-09-routines.md`, branch `plan-31`.
 - **"Always allow" on a file write** (Write, Edit) leaves "Always allowed" empty: the SDK suggests a mode change for those, not a rule, so the next run asks again.
 - Opening the Routines page again while it is shown does not re-read the list; the 30 second timer does.
 - The card shows no warning icon (its meaning was not seen); no Templates tab; no cloud routines.
-- Deferred after the review (all minor): cron edge cases (weekday ranges ending in 7, a numeric start with a step, day-of-month and weekday combined with AND, Feb 31 accepted, raw crate error text in the form); the "Missed" line of a very frequent schedule carries an old due time and the schedule is parsed again on every step; a time inside the spring-forward gap does not run and leaves no line, history labels use the offset read at startup, and no daylight-saving or half-hour-offset tests; the tick's snapshot is read outside the config lock, so an edit made during the tick can lose its baseline; ids of deleted routines are reused; a just-started run reads "Done" until its session id arrives and an asynchronous sidecar failure is recorded as started; the macOS notification runs on the UI thread; history rows are keyed by due time only; every check clones whole session views.
+- **Cron rules** (follow-up of the review): weekday ranges and steps in the usual numbers are accepted (`1-7`, `5-7`, `0,6`; `1/2` runs Monday, Wednesday, Friday: a start with a step runs to Saturday). A day of the month together with a weekday is **refused** ("Use either a day of the month or a weekday, not both"): standard cron would run on either, the engine on both, and guessing is worse than saying so. Each field is named in words when it is wrong ("Minute must be 0 to 59"), and an expression that never runs (`0 0 31 2 *`) is refused.
 - `forge-adapter-claude-plugins` has two timing tests (`a_command_that_times_out_takes_the_processes_it_started_with_it`, `a_process_left_behind_holding_the_pipe_does_not_hang_the_command`) that fail now and then when the whole workspace runs at once and pass alone. Not touched by this plan.

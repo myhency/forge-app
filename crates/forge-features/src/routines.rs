@@ -243,6 +243,19 @@ pub fn history_rows(runs: &[RoutineRun], routine_id: &str, state_of: &dyn Fn(&st
         .collect()
 }
 
+/// Every notification a tick owes the person: sessions that began waiting, then runs that could not start.
+/// `name_of` gives a routine's name from its id.
+pub fn notices(waiting: &[forge_application::WaitingRun], failures: &[forge_application::StartFailure], name_of: &dyn Fn(&str) -> String) -> Vec<(String, String)> {
+    let waits = waiting.iter().map(|run| waiting_notice(&name_of(&run.routine_id), &run.tool_name));
+    let fails = failures.iter().map(|failure| start_failed_notice(&name_of(&failure.routine_id), &failure.reason));
+    waits.chain(fails).collect()
+}
+
+/// The notification for a run that could not start: `(title, body)`.
+pub fn start_failed_notice(routine_name: &str, reason: &str) -> (String, String) {
+    ("Routine could not start".to_string(), format!("{routine_name}: {reason}"))
+}
+
 /// The notification for a routine whose session waits for the person: `(title, body)`.
 pub fn waiting_notice(routine_name: &str, tool_name: &str) -> (String, String) {
     ("Routine needs your approval".to_string(), format!("{routine_name} wants to use {tool_name}"))
@@ -473,6 +486,30 @@ mod tests {
         assert_eq!(when_label(summer, offset_at(&New_York, summer)), "Jul 15, 1:00 PM");
         let india = chrono::FixedOffset::east_opt(5 * 3600 + 1800).unwrap();
         assert_eq!(offset_at(&india, winter), time::UtcOffset::from_hms(5, 30, 0).unwrap());
+    }
+
+    #[test]
+    fn the_failed_start_notice_names_the_routine_and_the_reason() {
+        assert_eq!(
+            start_failed_notice("Daily review", "failed to spawn sidecar process: no node"),
+            ("Routine could not start".to_string(), "Daily review: failed to spawn sidecar process: no node".to_string())
+        );
+    }
+
+    #[test]
+    fn the_notices_for_a_tick_name_routines_by_name_and_fall_back_to_the_id() {
+        use forge_application::{StartFailure, WaitingRun};
+        let name = |id: &str| if id == "a" { "Daily review".to_string() } else { id.to_string() };
+        let waiting = vec![WaitingRun { routine_id: "a".to_string(), tool_name: "Bash".to_string() }];
+        let failures = vec![StartFailure { routine_id: "gone".to_string(), reason: "no node".to_string() }];
+        assert_eq!(
+            notices(&waiting, &failures, &name),
+            vec![
+                ("Routine needs your approval".to_string(), "Daily review wants to use Bash".to_string()),
+                ("Routine could not start".to_string(), "gone: no node".to_string()),
+            ]
+        );
+        assert!(notices(&[], &[], &name).is_empty());
     }
 
     #[test]

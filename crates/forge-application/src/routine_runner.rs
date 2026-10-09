@@ -26,6 +26,13 @@ pub struct RunRequest {
     pub allowed_tools: Vec<String>,
 }
 
+/// A run that could not start, kept so the person can be told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartFailure {
+    pub routine_id: String,
+    pub reason: String,
+}
+
 /// What the runner needs from the outside world: whether a folder exists, whether a routine's
 /// session is still working in it, and a way to start a session.
 #[async_trait]
@@ -43,11 +50,17 @@ pub struct RoutineRunner {
     /// The latest due time each routine was handled for. The config's baseline says the same, but a
     /// save can fail; without this a routine would start again on every tick until the save worked.
     handled: Mutex<HashMap<String, i64>>,
+    failures: Mutex<Vec<StartFailure>>,
 }
 
 impl RoutineRunner {
     pub fn new(routines: Arc<RoutinesUseCase>, host: Arc<dyn RoutineHost>) -> Self {
-        Self { routines, host, handled: Mutex::new(HashMap::new()) }
+        Self { routines, host, handled: Mutex::new(HashMap::new()), failures: Mutex::new(Vec::new()) }
+    }
+
+    /// The runs that could not start since the last call (a missing folder or a busy one is not a failure).
+    pub fn take_failures(&self) -> Vec<StartFailure> {
+        std::mem::take(&mut *self.failures.lock().unwrap())
     }
 
     fn already_handled(&self, routine_id: &str, due_ms: i64) -> bool {
@@ -89,7 +102,12 @@ impl RoutineRunner {
                     self.mark_handled(&routine.id, due_ms);
                     let outcome = match self.try_start(&routine, due_ms, now_ms, zone).await {
                         Ok(()) => RunOutcome::Started,
-                        Err(reason) => RunOutcome::Skipped(reason),
+                        Err(reason) => {
+                            if let SkipReason::StartFailed(text) = &reason {
+                                self.failures.lock().unwrap().push(StartFailure { routine_id: routine.id.clone(), reason: text.clone() });
+                            }
+                            RunOutcome::Skipped(reason)
+                        }
                     };
                     let run = RoutineRun { routine_id: routine.id.clone(), due_ms, started_ms: now_ms, outcome, session_id: None, routine_created: routine.created_at };
                     if let Err(error) = self.routines.record_run(run, Some(BaselineMove { to: due_ms, seen: routine.clone() })).await {
@@ -345,6 +363,24 @@ mod tests {
         setup.runner.tick(at(9, 10, 12), &zone()).await.unwrap();
         let last = runs(&setup).pop().unwrap();
         assert_eq!(last.outcome, RunOutcome::Skipped(SkipReason::StartFailed("no sidecar".to_string())));
+    }
+
+    #[tokio::test]
+    async fn a_failed_start_is_kept_for_a_notification_once_and_a_skip_for_another_reason_is_not() {
+        let setup = setup();
+        setup.routines.create(draft("Gone", "/gone", Schedule::Hourly), at(9, 6, 0)).await.unwrap();
+        setup.routines.create(draft("Broken", "/ok", Schedule::Hourly), at(9, 6, 0)).await.unwrap();
+        setup.host.missing.lock().unwrap().push("/gone".into());
+        *setup.host.fail_with.lock().unwrap() = Some("no sidecar".to_string());
+
+        setup.runner.tick(at(9, 10, 10), &zone()).await.unwrap();
+
+        assert_eq!(
+            setup.runner.take_failures(),
+            vec![StartFailure { routine_id: "broken".to_string(), reason: "no sidecar".to_string() }],
+            "a missing folder is not a failed start"
+        );
+        assert!(setup.runner.take_failures().is_empty(), "taken once");
     }
 
     #[tokio::test]
