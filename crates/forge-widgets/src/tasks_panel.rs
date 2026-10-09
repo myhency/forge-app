@@ -7,6 +7,7 @@ use forge_entities::{card_key, task_cards, Clock, TaskCard, TASK_OUTPUT_TAIL};
 use forge_features::{run_blocking, use_workspace, Panel};
 
 use crate::panel_frame::PanelFrame;
+use forge_shared::tr;
 
 /// The background tasks of a session: a card each with its command, a clock, the tail of its output
 /// and a stop button.
@@ -21,14 +22,14 @@ pub fn TasksPanel(id: LiveSessionId) -> Element {
     rsx! {
         PanelFrame { id, panel: Panel::Tasks, tools: rsx! {},
             div { class: "tasks-body",
-                div { class: "tasks-heading", "Running" }
+                div { class: "tasks-heading", {tr!("Running")} }
                 if cards.is_empty() {
-                    div { class: "dock-note", "No running tasks" }
+                    div { class: "dock-note", {tr!("No running tasks")} }
                 }
                 for card in cards {
                     TaskCardView { key: "{card_key(&card)}", id, card }
                 }
-                div { class: "dock-note", "Tasks end when Forge closes the session." }
+                div { class: "dock-note", {tr!("Tasks end when Forge closes the session.")} }
             }
         }
     }
@@ -70,8 +71,8 @@ fn TaskCardView(id: LiveSessionId, card: TaskCard) -> Element {
                 button {
                     class: "task-stop",
                     r#type: "button",
-                    title: "Stop task",
-                    "aria-label": "Stop task",
+                    title: tr!("Stop task"),
+                    "aria-label": tr!("Stop task"),
                     onclick: move |_| workspace.stop_task(id, task_id.clone()),
                     span { class: "task-stop-square" }
                 }
@@ -81,7 +82,7 @@ fn TaskCardView(id: LiveSessionId, card: TaskCard) -> Element {
             }
             if card.output_path.is_some() {
                 if text.trim().is_empty() {
-                    div { class: "task-output empty", "No output yet" }
+                    div { class: "task-output empty", {tr!("No output yet")} }
                 } else {
                     pre { class: "task-output", "{text}" }
                 }

@@ -3,6 +3,7 @@ use forge_application::LiveSessionId;
 use forge_features::{normalize_url, use_workspace, Panel, PreviewTabs, Workspace};
 
 use crate::panel_frame::PanelFrame;
+use forge_shared::tr;
 
 // Hands the address to the system browser; the panel shows the reason when it cannot.
 fn open_url(workspace: Workspace, mut notice: Signal<Option<String>>, url: &str) {
@@ -28,7 +29,7 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
 
     let mut submit = move || {
         let Some(url) = normalize_url(&input()) else {
-            notice.set(Some("Enter a web address, such as localhost:3000".to_string()));
+            notice.set(Some(tr!("Enter a web address, such as localhost:3000").to_string()));
             return;
         };
         let active = tabs.read().active();
@@ -72,7 +73,7 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                 button {
                     class: "terminal-tab-close",
                     r#type: "button",
-                    title: "Close tab",
+                    title: tr!("Close tab"),
                     "aria-label": "Close tab",
                     onclick: move |_| {
                         tabs.write().close(tab);
@@ -90,7 +91,7 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
         button {
             class: "icon-button",
             r#type: "button",
-            title: "New tab",
+            title: tr!("New tab"),
             "aria-label": "New tab",
             onclick: move |_| {
                 tabs.write().open();
@@ -104,12 +105,12 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
     rsx! {
         PanelFrame { id, panel: Panel::Preview, tools,
             div { class: "preview-bar",
-                button { class: "icon-button", r#type: "button", title: "Back", "aria-label": "Back", disabled: !can_back, onclick: move |_| step(false), "‹" }
-                button { class: "icon-button", r#type: "button", title: "Forward", "aria-label": "Forward", disabled: !can_forward, onclick: move |_| step(true), "›" }
+                button { class: "icon-button", r#type: "button", title: tr!("Back|browser"), "aria-label": tr!("Back|browser"), disabled: !can_back, onclick: move |_| step(false), "‹" }
+                button { class: "icon-button", r#type: "button", title: tr!("Forward"), "aria-label": tr!("Forward"), disabled: !can_forward, onclick: move |_| step(true), "›" }
                 button {
                     class: "icon-button",
                     r#type: "button",
-                    title: "Reload",
+                    title: tr!("Reload"),
                     "aria-label": "Reload",
                     disabled: current.is_none(),
                     onclick: {
@@ -125,7 +126,7 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                 input {
                     class: "preview-url",
                     r#type: "text",
-                    placeholder: "Enter a URL",
+                    placeholder: tr!("Enter a URL"),
                     value: "{input}",
                     oninput: move |event| input.set(event.value()),
                     onkeydown: move |event: KeyboardEvent| {
@@ -134,7 +135,7 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                         }
                     },
                 }
-                button { class: "preview-open", r#type: "button", onclick: move |_| submit(), "Open in browser" }
+                button { class: "preview-open", r#type: "button", onclick: move |_| submit(), {tr!("Open in browser")} }
             }
             div { class: "dock-note",
                 if let Some(message) = notice() {
@@ -142,9 +143,9 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                 } else if let Some(url) = current.clone() {
                     span { "{url}" }
                     br {}
-                    span { "This page is open in your browser." }
+                    span { {tr!("This page is open in your browser.")} }
                 } else {
-                    span { "Enter an address above. The page opens in your browser." }
+                    span { {tr!("Enter an address above. The page opens in your browser.")} }
                 }
             }
         }

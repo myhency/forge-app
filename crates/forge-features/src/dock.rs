@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use forge_application::LiveSessionId;
+use forge_shared::tr;
 
 pub const DEFAULT_COLUMN_WIDTH: f32 = 480.0;
 pub const MIN_COLUMN_WIDTH: f32 = 280.0;
@@ -19,11 +20,11 @@ pub enum Panel {
 impl Panel {
     pub fn title(self) -> &'static str {
         match self {
-            Panel::Terminal => "Terminal",
-            Panel::Changes => "Changes",
-            Panel::Preview => "Preview",
-            Panel::Files => "Files",
-            Panel::Tasks => "Background tasks",
+            Panel::Terminal => tr!("Terminal"),
+            Panel::Changes => tr!("Changes"),
+            Panel::Preview => tr!("Preview"),
+            Panel::Files => tr!("Files"),
+            Panel::Tasks => tr!("Background tasks"),
         }
     }
 

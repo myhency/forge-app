@@ -1,3 +1,4 @@
+use forge_shared::tr;
 /// A web address from what was typed in the address bar: an address with an `http` or `https`
 /// scheme is kept; `localhost`, `127.0.0.1` and `[::1]` get `http://`, any other bare host
 /// `https://`. Anything else (another scheme, spaces, nothing) gives `None`.
@@ -137,7 +138,7 @@ impl PreviewTabs {
 
     /// The host (and port) of the current address, or "New tab".
     pub fn label(&self, id: PreviewTabId) -> String {
-        let Some(url) = self.current(id) else { return "New tab".to_string() };
+        let Some(url) = self.current(id) else { return tr!("New tab").to_string() };
         let rest = url.split_once("://").map_or(url.as_str(), |(_, rest)| rest);
         rest.split(['/', '?', '#']).next().unwrap_or(rest).to_string()
     }
