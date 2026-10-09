@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{PermissionDecision, PermissionMode, PermissionRequest};
-use forge_entities::{card_takes_focus, diff_for_tool, permission_key, permission_view, DiffView, PermissionKey};
+use forge_entities::{card_takes_focus, diff_for_tool, permission_key, permission_view, workflow_permission_key, DiffView, PermissionKey};
 use forge_features::use_workspace;
 use forge_shared::tr;
 
@@ -18,13 +18,15 @@ pub(crate) async fn take_focus_unless_typing(mounted: std::rc::Rc<MountedData>) 
 }
 
 /// A permission request above the message box: what Claude wants to do, the change it would make,
-/// and the choice. `1` / Esc deny, `2` / ⇧⌘↩ allow always, `3` / ⌘↩ allow once.
+/// and the choice. `1` / Esc deny, `2` / ⇧⌘↩ allow always, `3` / ⌘↩ allow once. A workflow's card has
+/// two choices only: `1` / Esc deny and `2` / ⌘↩ allow once.
 #[component]
 pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
     let workspace = use_workspace();
     let mut menu_open = use_signal(|| false);
     let view = permission_view(&request.tool_name, &request.input);
     let diff = diff_for_tool(&request.tool_name, &request.input);
+    let is_workflow = view.workflow.is_some();
     let request_id = request.id.clone();
 
     let decide = {
@@ -53,7 +55,13 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                 let command = forge_features::command_held(modifiers);
                 // The command key is Ctrl off the Mac. Alt rules a key out, and so does the other of Ctrl and Meta (the Windows key).
                 let other = modifiers.alt() || ((modifiers.ctrl() || modifiers.meta()) && !command);
-                if let Some(key) = permission_key(&event.code().to_string(), modifiers.shift(), command, other) {
+                let code = event.code().to_string();
+                let key = if is_workflow {
+                    workflow_permission_key(&code, modifiers.shift(), command, other)
+                } else {
+                    permission_key(&code, modifiers.shift(), command, other)
+                };
+                if let Some(key) = key {
                     event.stop_propagation();
                     event.prevent_default();
                     decide_key(match key {
@@ -77,6 +85,14 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
             if let Some(diff) = diff {
                 DiffView { diff }
             }
+            if let Some(workflow) = view.workflow.clone() {
+                if let Some(description) = workflow.description {
+                    div { class: "perm-description", "{description}" }
+                }
+                div { class: "perm-note",
+                    {tr!("A dynamic workflow runs several sub-agents in parallel and can use up your usage limit quickly. You can stop it any time in the Background tasks panel.")}
+                }
+            }
             div { class: "perm-buttons",
                 button {
                     class: "perm-button",
@@ -87,13 +103,15 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                     span { class: "perm-key", "Esc" }
                 }
                 span { class: "spacer" }
-                button {
-                    class: "perm-button",
-                    r#type: "button",
-                    onclick: move |_| always(PermissionDecision::AllowAlways),
-                    {tr!("Always allow")}
-                    span { class: "perm-key", "2" }
-                    span { class: "perm-key", "{forge_domain::KEY_ALLOW_ALWAYS}" }
+                if !is_workflow {
+                    button {
+                        class: "perm-button",
+                        r#type: "button",
+                        onclick: move |_| always(PermissionDecision::AllowAlways),
+                        {tr!("Always allow")}
+                        span { class: "perm-key", "2" }
+                        span { class: "perm-key", "{forge_domain::KEY_ALLOW_ALWAYS}" }
+                    }
                 }
                 div { class: "perm-primary",
                     button {
@@ -101,9 +119,10 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                         r#type: "button",
                         onclick: move |_| once(PermissionDecision::AllowOnce),
                         {tr!("Allow once")}
-                        span { class: "perm-key", "3" }
+                        span { class: "perm-key", if is_workflow { "2" } else { "3" } }
                         span { class: "perm-key", "{forge_domain::KEY_ANSWER}" }
                     }
+                    if !is_workflow {
                     button {
                         class: "perm-button primary perm-more",
                         r#type: "button",
@@ -119,6 +138,7 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                                 div { class: "perm-menu-note", {tr!("The rest of this session is checked automatically.")} }
                             }
                         }
+                    }
                     }
                 }
             }

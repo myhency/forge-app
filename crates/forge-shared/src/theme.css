@@ -651,6 +651,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .permission-panel { display: flex; flex-direction: column; gap: 10px; width: calc(100% - 56px); max-width: var(--chat-column); max-height: 60vh; box-sizing: border-box; margin: 0 auto 8px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); outline: none; }
 .perm-title { font-weight: 700; }
 .perm-subject { color: var(--fg); }
+.perm-description { color: var(--fg); }
+.perm-note { padding: 10px 12px; background: var(--code-bg); border-radius: 8px; color: var(--fg-muted); font-size: 13px; }
 .perm-box { padding: 10px 12px; background: var(--code-bg); border-radius: 8px; font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .perm-path { color: var(--fg-muted); font-size: 13px; overflow-wrap: anywhere; }
 .permission-panel > * { flex: none; }
