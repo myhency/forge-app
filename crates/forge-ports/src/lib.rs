@@ -14,7 +14,6 @@ mod session_port;
 mod sidecar_factory_port;
 mod skill_catalog_port;
 mod sidecar_port;
-mod sleep_port;
 mod terminal_port;
 mod usage_stats_port;
 
@@ -36,7 +35,6 @@ pub use project_port::{ProjectRepositoryError, ProjectRepositoryPort};
 pub use session_port::{SessionRepositoryError, SessionRepositoryPort};
 pub use sidecar_factory_port::SidecarFactoryPort;
 pub use skill_catalog_port::{SkillCatalogError, SkillCatalogPort};
-pub use sleep_port::SleepPort;
 pub use terminal_port::{TerminalError, TerminalEvent, TerminalId, TerminalPort, TerminalSession, TerminalSize, OUTPUT_BATCH_LIMIT};
 pub use usage_stats_port::{UsageStatsError, UsageStatsPort};
 pub use sidecar_port::{
@@ -50,7 +48,6 @@ pub use files_port::MockFilesPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use git_port::MockGitPort;
 #[cfg(any(test, feature = "mocks"))]
-pub use sleep_port::MockSleepPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use notify_port::MockNotifyPort;
 #[cfg(any(test, feature = "mocks"))]

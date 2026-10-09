@@ -38,7 +38,6 @@ back to the `node` on the PATH when running from the source tree. `FORGE_NODE` a
 | Paths in the chat, the file links, background task output | `C:\x\y`, `C:/x/y` and `/x/y` are all read as absolute |
 | Command key | Ctrl (Meta is the Windows key); labels read `Ctrl+K` |
 | Terminal | PowerShell (`powershell.exe`) |
-| Keep the PC awake while a session runs | `SetThreadExecutionState` |
 | Open a link, show a file, open with the default app | `rundll32 url.dll,FileProtocolHandler`, `explorer /select,` |
 | Open in VS Code | `code.cmd` (VS Code's installer puts it on the PATH) |
 | Skill folders for a session | junctions instead of symlinks (no administrator rights needed) |

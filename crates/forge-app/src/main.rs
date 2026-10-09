@@ -20,10 +20,6 @@ use forge_adapter_sidecar::SidecarProcessFactory;
 use forge_adapter_browser::SystemBrowser;
 use forge_adapter_files::LocalFiles;
 use forge_adapter_git::GitCli;
-#[cfg(not(windows))]
-use forge_adapter_sleep::CaffeinateSleep;
-#[cfg(windows)]
-use forge_adapter_sleep::WindowsSleep;
 use forge_adapter_terminal::PtyTerminal;
 use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, RegistryHost, RoutineRunner, RoutinesUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase};
 use forge_features::{RoutineServices, WorkspaceServices};
@@ -211,7 +207,6 @@ fn build_services() -> WorkspaceServices {
         folder_picker: picker.clone(),
         file_picker: picker,
         terminal: Arc::new(PtyTerminal::new(shell)),
-        sleep: keep_awake(),
         git: Arc::new(GitCli::new()),
         files: Arc::new(LocalFiles::new()),
         browser: Arc::new(SystemBrowser::new()),
@@ -248,13 +243,6 @@ fn notifier() -> Arc<dyn forge_ports::NotifyPort> {
     return Arc::new(MacNotify::new(ATTENTION.clone()));
     #[cfg(not(target_os = "macos"))]
     return Arc::new(NoNotify);
-}
-
-fn keep_awake() -> Arc<dyn forge_ports::SleepPort> {
-    #[cfg(windows)]
-    return Arc::new(WindowsSleep::new());
-    #[cfg(not(windows))]
-    return Arc::new(CaffeinateSleep::new());
 }
 
 #[component]

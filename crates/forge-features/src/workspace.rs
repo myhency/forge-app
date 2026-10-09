@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use forge_application::{Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
+use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort};
 use time::OffsetDateTime;
 
 use crate::cards::{clamp_cards, Cards};
@@ -55,7 +55,6 @@ pub struct WorkspaceServices {
     pub folder_picker: Arc<dyn FolderPickerPort>,
     pub file_picker: Arc<dyn FilePickerPort>,
     pub terminal: Arc<dyn TerminalPort>,
-    pub sleep: Arc<dyn SleepPort>,
     pub git: Arc<dyn GitPort>,
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
@@ -112,7 +111,6 @@ pub struct Workspace {
     files_stores: Signal<HashMap<LiveSessionId, FilesStore>>,
     queued_files: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
     comment_focus: Signal<HashMap<LiveSessionId, u64>>,
-    sleeping: Signal<HashSet<LiveSessionId>>,
     search_open: Signal<bool>,
     shortcuts_open: Signal<bool>,
     search_query: Signal<String>,
@@ -157,7 +155,6 @@ pub fn use_workspace_provider() -> Workspace {
             files_stores: Signal::new(HashMap::new()),
             queued_files: Signal::new(HashMap::new()),
             comment_focus: Signal::new(HashMap::new()),
-            sleeping: Signal::new(HashSet::new()),
             search_open: Signal::new(false),
             shortcuts_open: Signal::new(false),
             search_query: Signal::new(String::new()),
@@ -764,28 +761,6 @@ impl Workspace {
         self.live_view(id).map(|view| finished_tool_calls(&view.read().session)).unwrap_or(0)
     }
 
-    pub fn prevents_sleep(&self, id: LiveSessionId) -> bool {
-        self.sleeping.read().contains(&id)
-    }
-
-    /// Turns "Prevent sleep" on or off for one session. If the computer cannot be held awake the
-    /// switch stays off and the person is told why.
-    pub fn set_prevent_sleep(&self, id: LiveSessionId, on: bool) {
-        let services = (*self.services.peek()).clone();
-        let mut sleeping = self.sleeping;
-        if on {
-            match services.sleep.hold(id.0) {
-                Ok(()) => {
-                    sleeping.write().insert(id);
-                }
-                Err(message) => self.report(message),
-            }
-        } else {
-            services.sleep.release(id.0);
-            sleeping.write().remove(&id);
-        }
-    }
-
     pub fn set_transcript_view(&self, id: LiveSessionId, view: TranscriptView) {
         let mut views = self.transcript_views;
         views.write().set(id, view);
@@ -1145,7 +1120,6 @@ impl Workspace {
         stores.write().remove(&id);
         let mut cards = self.cards;
         cards.write().take(id);
-        self.set_prevent_sleep(id, false);
         if self.active() == Active::Live(id) {
             let next = self.live.peek().last().map(|entry| entry.handle.id());
             match next {
