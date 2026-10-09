@@ -470,3 +470,20 @@ Same rules as part 1: pages scrolled and drop-down lists opened and closed (by c
 - **시스템, end of the page:** `컴퓨터 사용 (beta)` continues with `거부된 앱` ("Claude가 이러한 앱에 액세스하기 위해 요청하는 모든 요청은 자동으로 거부됩니다", a menu `앱 추가`, empty text), `접근성` with a state `승인됨` and `화면 녹화` with `승인됨` (macOS permissions). The page ends there.
 - **Not seen:** the submenu `더 알아보기` of the account menu; what `관리` shows on `신뢰할 수 있는 폴더`, `허용된 사이트`, `공유된 채팅`; `사용자 설정…` of the worktree menu; the dark theme list and the rest of the light list; the `음성` menus (`스타일`, `속도`); `채팅 글꼴`, `기본 브라우저`, `도구 액세스 모드`, `도메인 허용 목록` choices; the search field of the window.
 - **A slip in this part, put right:** a shell loop that passed the click point as one string failed and sent three Escape keys; the first closed the Settings window. Nothing else changed. Lesson: close a drop-down by clicking its button again, and close the window with its `×`; do not send Escape while a window is open unless closing is the goal.
+
+### Round 15, part 3: the shortcut list and the last menus (2026-10-09)
+
+Same rules. The list opens from the account menu: `더 알아보기` (click the row; hovering did not open it the first time) then `단축키` (⌘/). A modal titled `단축키` with a `×`, groups and rows (name at the left, keys at the right, `또는` between alternatives). Nothing was pressed except opening and closing.
+
+- **The account menu's `더 알아보기` submenu:** `Anthropic에 대하여` (external), `Claude Academy`, `이용 정책` (external), `개인정보 처리방침` (external), `이용약관` (external), `개인정보 보호 선택`, a divider, `단축키 ⌘/`.
+- **일반 (General):** 세션 검색 또는 시작 ⌘K; 검색 ⇧⌘K; 최근 항목 간 전환 ⌃Q; 사이드바 표시/숨기기 ⌘B; 단축키 ⌘/; 설정 ⌘,; 새 세션 ⌘N; 현재 설정으로 새 세션 시작 ⇧⌘N; 탭, 패널 또는 세션 닫기 ⌘W; 닫힌 세션 다시 열기 ⇧⌘T; 다음 세션 ⇧⌘] or ⌃Tab or ⌥↓; 이전 세션 ⇧⌘[ or ⌃⇧Tab or ⌥↑; 세션으로 이동 ⌘1…9; 다음 / 이전 사이드바 탭 ⌥⌘→ / ⌥⌘←; 세션을 분할 보기로 열기 ⌥+Click; 오른쪽에 새 세션 ⌃⌘\; 아래 새 세션 ⌃⌘-; 다음 / 이전 분할 보기로 포커스 이동 ⌃] / ⌃[; 분할 보기 닫기 ⌃⌘W; 세션 고정 / 고정 해제 ⌥⌘P; 세션 이름 변경 ⌥⌘R; 세션 보관 ⌥⌘A; 세션을 읽음/읽지 않음으로 표시 ⌥⌘U; 세션 링크 복사 ⌘L or ⌥⌘L; 세션 PR 열기 ⌥⌘G; 세션 포크 ⌥⌘O; 트랜스크립트 보기 ⌃O; Claude의 응답 중지 Esc; 세션을 이전 메시지로 되돌리기 Esc, then Esc.
+- **패널:** 변경 사항 전환 ⇧⌘D; 변경 사항 또는 파일에서 파일 목록 전환 ⇧⌘Y; 변경 사항 중 다음 / 이전 변경 ⌥F5 or F7 / ⌥⇧F5 or ⇧F7; 변경 사항 또는 파일에서 파일로 이동 ⌘P; 브라우저 전환 ⇧⌘B; 브라우저에서 요소 선택 ⇧⌘S; 브라우저에서 페이지에 주석 달기 ⇧⌘X; 새 브라우저 탭 ⌘T; 닫힌 브라우저 탭 다시 열기 ⇧⌘T; 다음 / 이전 브라우저 탭 ⌃Tab / ⌃⇧Tab; 브라우저 탭으로 이동 ⌘1…9; 브라우저에서 주소 표시줄에 포커스 ⌘L; 브라우저에서 페이지 새로고침 ⌘R; 파일 토글 ⇧⌘F; 선택 항목을 컨텍스트로 첨부 ⇧⌘L; 터미널 전환 ⌘J or ⌃`; 창 닫기 ⌘\; 패널 펼치기/접기 ⇧⌘\; 사이드 채팅 전환 ⌘;.
+- **작성기 (composer):** 모드 메뉴 열기 ⇧⌘M; 모델 메뉴 열기 ⇧⌘I; 노력 선택기 열기 ⇧⌘E; 빠른 모드 전환 ⌥⌘F; 메뉴 항목 선택 1…9; 파일 또는 사진 추가 ⌘U; 음성 입력 전환 ⌘D; 나중에 보내도록 대기열에 추가 (Claude가 작업 중일 때) ⌘Enter; 보내고 새 세션 페이지에 머무르기 ⌘Enter (the same keys, the list shows both); 포크된 세션에서 전송 (로컬 세션) ⌥⌘Enter.
+- **iOS 시뮬레이터:** 화면 키보드 ⌘K or ⌥⌘K; 홈 ⇧⌘H; 잠금 ⌘L; 볼륨 ⌘↑ / ⌘↓; 회전 ⌘← / ⌘→; 흔들기 ⌃⌘Z; 라이트 또는 다크 모드 전환 ⇧⌘A; 스크린샷 저장 ⌘S; 녹화 시작 또는 중지 ⌘R; 시뮬레이터 연결 해제 ⌘Q. The list ends there.
+- **Settings `일반`, the menus that were open:** `신뢰할 수 있는 폴더` `관리` opens a dialog with the same text, one row per folder (a folder icon, the path, a `×` to remove it), `+ 폴더 추가` and a black `완료`; `기본 브라우저` has two choices: `내장 브라우저` and `Chrome (Claude in Chrome)`; the three `음성` rows (`언어` 한국어, `스타일` empty, `속도` 보통) are for voice input in chat; they were not opened.
+- **Notes for Forge:**
+  - The app's own shortcuts overlap Forge's: ⌘K search, ⌘N new session, ⌘B sidebar, ⌘W, ⌘, settings; to check against `crates/forge-features/src/shortcut.rs` before planning.
+  - Single keys of the session menu (R, F, A, D; SES-06) are the menu's own; the global ones use ⌥⌘ (rename ⌥⌘R, archive ⌥⌘A, fork ⌥⌘O, pin ⌥⌘P, unread ⌥⌘U).
+  - Split panes and a `사이드 채팅` exist (OBS-06): `⌥+Click`, `⌃⌘\`, `⌃⌘-` open or split; a side chat toggles with ⌘;.
+  - The composer keys (⇧⌘M mode, ⇧⌘I model, ⇧⌘E effort) match Forge's pickers (CMP-03..05); queueing a message while Claude works (⌘Enter) is not in Forge's backlog.
+- **Not seen:** the dark theme list; what `사이드 채팅` looks like; what `빠른 모드` is (⌥⌘F); the window search; the three voice menus.

@@ -85,7 +85,7 @@ Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Mode
 | SET-12 | Dynamic workflows (several agents in parallel) | seen | none | S | - | Unknown what it changes in the SDK; look before planning. |
 | SET-13 | Browser tool, keep cookies (menu: 종료 시까지, 공유됨, 세션별), allowed sites; Claude in Chrome switch and a default site policy | seen | none | L | - | Tied to PNL-03 (the Preview panel is not a full browser yet). Claude in Chrome is a separate extension; out of scope. |
 | SET-14 | Pull requests: branch prefix, auto create, auto fix, auto archive | seen | none | M | - | Auto create and auto fix apply to cloud sessions only in the real app; only the branch prefix could apply to Forge. |
-| SET-15 | Trusted folders (`관리`) and default browser | seen | none | M | - | The list screen behind `관리` was not opened. |
+| SET-15 | Trusted folders (`관리`: a dialog with a list of paths, `×` to remove, `+ 폴더 추가`, `완료`) and default browser (`내장 브라우저` or `Chrome (Claude in Chrome)`) | seen | none | M | - | "폴더를 신뢰해도 새 세션에 추가되지는 않습니다. 세션에 폴더를 추가할 때 다시 허용하라는 요청을 받을 수 있습니다." Forge has no trust list; the CLI asks per folder. |
 | SET-16 | System: start at login, menu bar icon, global quick-access shortcut (⇧⌘Space), voice shortcuts, storage use and storage folder | seen | none | L | - | Start at login and the menu bar icon need macOS and Windows code (Plan 29). Voice is CMP-02 (left out). |
 | SET-17 | Developer page: local MCP servers with a detail (command, arguments), a `로그 보기` button and `구성 편집` | seen | partial | S | - | Forge's Connectors tab (Plan 30C) has a detail and a connection check, not logs. |
 | SET-18 | Memory page: chat memory switches and a list | seen | none | L | won't? | Chat memory of claude.ai, not Claude Code's CLAUDE.md; the user decides. |
@@ -95,6 +95,7 @@ Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Mode
 | SET-22 | Extensions page (`.mcpb` / `.dxt` desktop extensions: installed list, `구성`, `⋯`, `고급 설정`, drag a file to install, `확장 프로그램 찾아보기`) | seen | none | L | won't? | Desktop extensions of the chat app (the Filesystem row is the one the Developer page lists). Forge has MCP servers (Plan 30C); the `⋯` and `구성` menus were not opened. |
 | SET-23 | Design systems page (a list of brand colours, type and components for design and slides) | seen | none | L | won't? | Chat side; empty on this account. |
 | SET-24 | Settings groups `사용자 지정` (Skills, 커넥터, 플러그인) and `플랫폼` (API 키): the Customize screens shown inside Settings | seen | has | S | Plan 30 (built) | The same screens as PG-02. Forge has them on the Customize page; Settings only keeps its older tabs (spec §17), which now repeat them. Decide in SET-01 whether Settings keeps Skills, Plugins and MCP tabs. |
+| SET-25 | The shortcut list (`단축키` ⌘/, from the account menu's `더 알아보기`): a modal with groups General, Panels, Composer and iOS simulator, about 90 rows | seen | partial | M | - | Round 15 part 3 lists every key. Forge has some of them (`forge-features/src/shortcut.rs`); compare before planning. New ideas: switch session ⌥↓/⌥↑ and ⌘1..9, recently used ⌃Q, reopen a closed session ⇧⌘T, global session keys with ⌥⌘, queue a message while Claude works (⌘Enter), side chat (⌘;), `빠른 모드` (⌥⌘F; unknown). |
 
 ## OBS: observation tasks (do before planning the entries they unlock)
 
@@ -104,7 +105,7 @@ Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Mode
 | OBS-02 | Submenus of the session menu (open in, transcript, output style) | SES-03..05 |
 | OBS-03 | Model "더 많은 모델" submenu, effort options, the composer circle on hover, the "로컬" chip menu | CMP-04..07 |
 | OBS-04 | Changes, files and preview panels, with a real folder | PNL-02..04 |
-| OBS-05 | (settings window done in round 15, parts 1 and 2; not seen: the account menu submenu `더 알아보기`, what `관리` opens, the voice menus, the window search, the keyboard shortcut list) Settings window and the keyboard shortcut list | SET-01..24, shortcuts |
+| OBS-05 | (done in round 15, parts 1 to 3; not seen: the window search, the voice menus, the dark code themes, `사이드 채팅`) Settings window and the keyboard shortcut list | SET-01..25 |
 | OBS-06 | Split panes or several sessions at once (the docs describe them; not seen in this window) | spec §7 "multiple sessions" |
 | OBS-07 | (partly done in Plan 17: filter menu and search results seen) Sidebar filter menu, "사이드바 편집…" contents, sidebar search results | SES-07, SES-08, SES-10 |
 | OBS-08 | The search palette: what Enter and `...` do on a row, the "작성" mode, the shortcut that opens it, the empty and no-match views, and "사이드바 편집…" | SES-07, SES-10 |
