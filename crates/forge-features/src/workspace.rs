@@ -811,6 +811,21 @@ impl Workspace {
         }
     }
 
+    /// Every open session with its view.
+    pub fn live_views(&self) -> Vec<(LiveSessionId, Signal<LiveSessionView>)> {
+        self.live.read().iter().map(|entry| (entry.handle.id(), entry.view)).collect()
+    }
+
+    /// Whether a routine run started this session (the routines timer tells about those).
+    pub fn is_routine_session(&self, id: LiveSessionId) -> bool {
+        self.services.peek().routines.host.is_routine_session(id)
+    }
+
+    /// Where notifications go.
+    pub fn notify_port(&self) -> Arc<dyn forge_ports::NotifyPort> {
+        self.services.peek().routines.notify.clone()
+    }
+
     pub fn live_view(&self, id: LiveSessionId) -> Option<Signal<LiveSessionView>> {
         self.live
             .read()

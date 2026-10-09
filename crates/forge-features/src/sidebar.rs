@@ -210,7 +210,7 @@ impl LiveSummary {
         }
     }
 
-    fn display_title(&self) -> String {
+    pub(crate) fn display_title(&self) -> String {
         self.title
             .clone()
             .or_else(|| self.first_user_message.clone().filter(|text| !text.trim().is_empty()))

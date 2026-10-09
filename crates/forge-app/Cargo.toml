@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+tokio = { version = "1", features = ["sync"] }
 forge-adapter-browser = { path = "../forge-adapter-browser" }
 forge-adapter-claude-fs = { path = "../forge-adapter-claude-fs" }
 forge-adapter-claude-plugins = { path = "../forge-adapter-claude-plugins" }

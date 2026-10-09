@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, layout_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
-use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_settings_provider, use_window_width, use_workspace_provider, Active};
+use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_width, use_workspace_provider, Active};
 use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, NewSessionPanel, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
@@ -10,7 +10,8 @@ pub fn WorkspacePage() -> Element {
     let settings = use_settings_provider();
     use_customize_provider();
     let workspace = use_workspace_provider();
-    use_routines_provider(workspace);
+    use_routines_provider(workspace, settings);
+    use_session_notices(workspace, settings);
     let mut dragging = use_signal(|| false);
     // Key events only reach the root while something inside it has focus. Whenever the overlay
     // closes or the main pane switches view, the focused input or button may have been removed

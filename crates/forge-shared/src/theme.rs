@@ -5,6 +5,28 @@ pub const THEME_CSS: &str = include_str!("theme.css");
 mod tests {
     use super::*;
 
+    #[test]
+    fn every_dark_block_has_a_forced_dark_twin_and_light_stays_light_under_a_dark_system() {
+        let media = THEME_CSS.matches("@media (prefers-color-scheme: dark)").count();
+        assert!(media >= 3);
+        assert_eq!(THEME_CSS.matches(":root[data-theme=\"dark\"] {").count(), media, "one forced-dark rule per media block");
+        assert_eq!(THEME_CSS.matches(":root:not([data-theme=\"light\"]) {").count(), media, "the media version must not apply when the person chose light");
+    }
+
+    #[test]
+    fn the_stylesheet_has_a_rule_for_every_attribute_value() {
+        for rule in [
+            "[data-text-size=\"small\"]",
+            "[data-text-size=\"large\"]",
+            "[data-width=\"narrow\"]",
+            "[data-width=\"wide\"]",
+            "[data-font=\"opendyslexic\"]",
+            "[data-motion=\"reduced\"]",
+        ] {
+            assert!(THEME_CSS.contains(rule), "missing {rule}");
+        }
+    }
+
     // The one line of the stylesheet that starts with this selector.
     fn rule(selector: &str) -> &'static str {
         let css: &'static str = THEME_CSS;

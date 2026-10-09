@@ -15,11 +15,20 @@ pub(crate) fn osascript_arguments(title: &str, body: &str) -> Vec<String> {
 }
 
 /// macOS: a notification through `osascript`. The text goes in as arguments, never inside the script.
-pub struct OsascriptNotify;
+pub struct OsascriptNotify {
+    attention: AttentionSlot,
+}
+
+/// Where the window puts the function that bounces its Dock icon, once it exists.
+pub type AttentionSlot = std::sync::Arc<std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>>;
 
 impl OsascriptNotify {
     pub fn new() -> Self {
-        Self
+        Self::with_attention(AttentionSlot::default())
+    }
+
+    pub fn with_attention(attention: AttentionSlot) -> Self {
+        Self { attention }
     }
 }
 
@@ -38,6 +47,16 @@ impl NotifyPort for OsascriptNotify {
             Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
         }
     }
+
+    fn request_attention(&self) -> Result<(), String> {
+        match self.attention.get() {
+            Some(bounce) => {
+                bounce();
+                Ok(())
+            }
+            None => Err("the window is not ready to bounce the Dock icon".to_string()),
+        }
+    }
 }
 
 /// Where there is no adapter (Windows in this plan): says so, so the caller can ignore it.
@@ -52,6 +71,22 @@ impl NotifyPort for NoNotify {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_request_for_attention_without_a_window_is_an_error_not_a_panic() {
+        assert!(OsascriptNotify::new().request_attention().is_err());
+    }
+
+    #[test]
+    fn a_request_for_attention_calls_the_hook_the_window_gave() {
+        let slot = AttentionSlot::default();
+        let notify = OsascriptNotify::with_attention(slot.clone());
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = calls.clone();
+        assert!(slot.set(Box::new(move || { counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst); })).is_ok());
+        assert_eq!(notify.request_attention(), Ok(()));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn the_text_is_passed_as_arguments_and_never_as_script() {
