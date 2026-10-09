@@ -35,7 +35,7 @@ Success: each control changes the screen or the next notification at once, the c
 
 - The app root carries `data-theme`, `data-font`, `data-text-size`, `data-width`, `data-motion`. `theme.css` keys its variables on them: the dark variables apply for `data-theme="dark"` and, for `system`, under `prefers-color-scheme: dark`; `--chat-column` is 560 / 720 / 880px; chat text is 13 / 14 / 16px; `--font` and `--mono` follow the font choice (OpenDyslexic falls back to System when missing); `reduced` sets animation and transition durations to zero.
 - Syntax highlighting (syntect, `forge-entities`) renders with a light and a dark theme; the dark one applies when the effective theme is dark. Highlight colours are classes or two class sets switched by the root attribute so no re-render is needed on a theme change.
-- The attributes are set before the first paint from the loaded config, and updated by `Settings` methods that also save the config.
+- The attributes are set as soon as the config loads (a moment after the first paint), and updated by the `Settings` methods that also save the config.
 
 ## SET-03: Notifications
 
