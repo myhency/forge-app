@@ -1,4 +1,5 @@
 mod appearance;
+mod session_notices;
 mod settings_pages;
 mod window_width;
 mod blocking;
@@ -99,5 +100,6 @@ pub use preview_tabs::{normalize_url, PreviewTabId, PreviewTabs};
 pub use suggestion::{composer_placeholder, suggestion_to_accept};
 pub use tool_activity::finished_tool_calls;
 pub use settings_pages::{filter_pages, nav_groups, NavGroup};
+pub use session_notices::{notice_between, should_send, use_session_notices, Notice, Snapshot};
 pub use appearance::{apply_appearance, apply_appearance_script};
 pub use window_width::use_window_width;

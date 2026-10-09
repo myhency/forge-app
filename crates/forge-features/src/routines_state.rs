@@ -46,7 +46,7 @@ pub struct Routines {
 
 /// Creates the Routines state, starts the timer and provides the state to every descendant. Call it
 /// in the page at the top of the tree, after the workspace provider.
-pub fn use_routines_provider(workspace: Workspace) -> Routines {
+pub fn use_routines_provider(workspace: Workspace, settings: crate::settings::Settings) -> Routines {
     let services = use_context::<WorkspaceServices>();
     let routines = use_hook(move || {
         let routines = Routines {
@@ -64,7 +64,7 @@ pub fn use_routines_provider(workspace: Workspace) -> Routines {
             busy: Signal::new_in_scope(false, ScopeId::ROOT),
             waiting: Signal::new_in_scope(Vec::new(), ScopeId::ROOT),
         };
-        routines.start_timer(workspace);
+        routines.start_timer(workspace, settings);
         routines
     });
     use_context_provider(move || routines);
@@ -328,7 +328,7 @@ impl Routines {
         }
     }
 
-    fn start_timer(&self, workspace: Workspace) {
+    fn start_timer(&self, workspace: Workspace, settings: crate::settings::Settings) {
         let this = *self;
         dioxus::core::spawn_forever(async move {
             loop {
@@ -342,7 +342,9 @@ impl Routines {
                 let mut failures = services.runner.take_failures();
                 failures.extend(services.host.take_failures());
                 let name_of = |id: &str| this.routines.peek().iter().find(|routine| routine.id == id).map(|routine| routine.name.clone()).unwrap_or_else(|| id.to_string());
-                for (title, body) in crate::routines::notices(&services.host.waiting(), &failures, &name_of) {
+                // The notices are drained either way, so turning the switch back on does not replay old ones.
+                let allowed = settings.saved_config().notifications.scheduled_task;
+                for (title, body) in crate::routines::notices(&services.host.waiting(), &failures, &name_of).into_iter().filter(|_| allowed) {
                     // Off the UI thread (a notification is a process spawn). One that cannot be sent is not worth a
                     // banner: the page, the sidebar and the history line show it.
                     let notify = services.notify.clone();

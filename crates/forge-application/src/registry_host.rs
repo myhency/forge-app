@@ -96,6 +96,11 @@ impl RegistryHost {
         std::mem::take(&mut *self.failures.lock().unwrap())
     }
 
+    /// Whether this host started the session for a routine run.
+    pub fn is_routine_session(&self, id: LiveSessionId) -> bool {
+        self.tracked.lock().unwrap().contains_key(&id)
+    }
+
     /// Stops tracking a session (it was closed).
     pub fn forget(&self, id: LiveSessionId) {
         self.tracked.lock().unwrap().remove(&id);
@@ -388,6 +393,8 @@ mod tests {
         let (host, mut started) = RegistryHost::new(registry, routines);
         host.start(request(vec![])).await.unwrap();
         let handle = started.try_recv().unwrap();
+        assert!(host.is_routine_session(handle.id()), "the host knows the sessions it started");
+        assert!(!host.is_routine_session(LiveSessionId(u64::MAX)), "and no others");
         let mut view = handle.subscribe();
         wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
 
