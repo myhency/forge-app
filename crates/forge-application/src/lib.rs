@@ -4,6 +4,7 @@ mod live_session;
 mod live_session_actor;
 mod probe_slot;
 mod registry;
+mod routine_runner;
 mod use_cases;
 
 #[cfg(test)]
@@ -13,6 +14,7 @@ pub use command_probe::CommandProbe;
 pub use event::{apply_sidecar_event, push_user_message, SessionUpdate};
 pub use live_session::{LiveCommand, LiveSessionHandle, LiveSessionId, LiveSessionView, Phase};
 pub use probe_slot::ProbeSlot;
+pub use routine_runner::{RoutineHost, RoutineRunner, RunRequest};
 pub use registry::{fork_title, normalize_title, ManageSessionError, OpenError, OpenOutcome, SessionRegistry};
 pub use use_cases::{
     AnswerQuestionUseCase, ApprovePermissionUseCase, StopTaskUseCase, ExtensionsError, ExtensionsUseCase, InterruptTurnUseCase,
