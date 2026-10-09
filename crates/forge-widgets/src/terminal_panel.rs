@@ -6,7 +6,7 @@ use std::sync::Arc;
 use base64::Engine;
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{use_workspace, Panel, TabId, TerminalTabs};
+use forge_features::{use_workspace, Panel, TabId, TapHandle, TerminalTabs};
 use forge_ports::{TerminalEvent, TerminalId, TerminalPort, TerminalSize};
 use serde::Deserialize;
 
@@ -84,6 +84,7 @@ async fn drive(
     cwd: PathBuf,
     mut phase: Signal<Phase>,
     running: Rc<Cell<Option<TerminalId>>>,
+    tap: Option<TapHandle>,
 ) {
     let mut page = document::eval(&bridge_js(&host_id));
     // The page reports its size first; the shell is started at that size.
@@ -104,6 +105,7 @@ async fn drive(
     };
     running.set(Some(session.id));
     phase.set(Phase::Running);
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(250));
     loop {
         tokio::select! {
             from_page = page.recv::<FromPage>() => match from_page {
@@ -113,6 +115,12 @@ async fn drive(
             },
             event = session.recv_batch() => match event {
                 Some(TerminalEvent::Output(bytes)) => {
+                    if let Some(tap) = &tap {
+                        let keys = tap.0.output(&bytes);
+                        if !keys.is_empty() {
+                            let _ = terminal.write(session.id, &keys);
+                        }
+                    }
                     let b = base64::engine::general_purpose::STANDARD.encode(bytes);
                     let _ = page.send(serde_json::json!({ "t": "out", "b": b }));
                 }
@@ -128,12 +136,20 @@ async fn drive(
                 }
                 None => return,
             },
+            _ = ticker.tick(), if tap.is_some() => {
+                if let Some(tap) = &tap {
+                    let keys = tap.0.tick();
+                    if !keys.is_empty() {
+                        let _ = terminal.write(session.id, &keys);
+                    }
+                }
+            },
         }
     }
 }
 
 #[component]
-fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<TabId>) -> Element {
+fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<TabId>, #[props(default)] tap: Option<TapHandle>) -> Element {
     let workspace = use_workspace();
     let host_id = format!("forge-terminal-{}", tab.0);
     let phase = use_signal(|| Phase::Starting);
@@ -144,8 +160,8 @@ fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<
         let host_id = host_id.clone();
         let running = running.clone();
         use_future(move || {
-            let (host_id, cwd, running) = (host_id.clone(), cwd.clone(), running.clone());
-            async move { drive(workspace.terminal(), host_id, cwd, phase, running).await }
+            let (host_id, cwd, running, tap) = (host_id.clone(), cwd.clone(), running.clone(), tap.clone());
+            async move { drive(workspace.terminal(), host_id, cwd, phase, running, tap).await }
         });
     }
     {
@@ -235,6 +251,20 @@ pub fn TerminalPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                     },
                 }
             }
+        }
+    }
+}
+
+/// A tab id no dock terminal uses, so the page element ids do not meet.
+const SIGN_IN_TAB: TabId = TabId(u64::MAX);
+
+/// One terminal for the sign-in dialog: the same view as a dock tab, started in `cwd`, with a tap that types.
+/// Taking the view away (closing the dialog) ends the shell, as closing a dock tab does.
+#[component]
+pub fn SignInTerminal(cwd: PathBuf, tap: TapHandle) -> Element {
+    rsx! {
+        div { class: "sign-in-terminal",
+            TerminalTab { tab: SIGN_IN_TAB, cwd, active: true, on_restart: move |_| {}, tap: Some(tap) }
         }
     }
 }
