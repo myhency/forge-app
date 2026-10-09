@@ -1,4 +1,5 @@
 use forge_domain::PermissionMode;
+use forge_shared::tr;
 
 const MODES: [(PermissionMode, &str, &str); 5] = [
     (PermissionMode::Default, "default", "Ask before edits"),
@@ -52,13 +53,13 @@ pub struct ModeRow {
 pub fn mode_rows(include_bypass: bool) -> Vec<ModeRow> {
     let row = |mode, label, description, key, divider_before| ModeRow { mode, label, description, key, divider_before };
     let mut rows = vec![
-        row(PermissionMode::Auto, "Auto", "Claude handles permission decisions", Some(1), false),
-        row(PermissionMode::Default, "Ask before edits", "Always ask before making changes", Some(2), false),
-        row(PermissionMode::AcceptEdits, "Accept edits", "Automatically accept all file edits", Some(3), false),
-        row(PermissionMode::Plan, "Plan mode", "Make a plan before changing anything", Some(4), false),
+        row(PermissionMode::Auto, tr!("Auto"), tr!("Claude handles permission decisions"), Some(1), false),
+        row(PermissionMode::Default, tr!("Ask before edits"), tr!("Always ask before making changes"), Some(2), false),
+        row(PermissionMode::AcceptEdits, tr!("Accept edits"), tr!("Automatically accept all file edits"), Some(3), false),
+        row(PermissionMode::Plan, tr!("Plan mode"), tr!("Make a plan before changing anything"), Some(4), false),
     ];
     if include_bypass {
-        rows.push(row(PermissionMode::BypassPermissions, "Bypass permissions", "Skip every permission check", None, true));
+        rows.push(row(PermissionMode::BypassPermissions, tr!("Bypass permissions"), tr!("Skip every permission check"), None, true));
     }
     rows
 }

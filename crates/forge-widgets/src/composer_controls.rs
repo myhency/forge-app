@@ -4,9 +4,9 @@ use forge_domain::PermissionMode;
 use forge_entities::model_menu_rows;
 use forge_features::{
     confirmation_still_valid, effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_settings, use_workspace, ModeChoice,
-    EFFORT_HELP, SLIDER_FASTER, SLIDER_SMARTER,
+    effort_help, slider_faster, slider_smarter,
 };
-use forge_shared::{Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind};
 
 /// One row of a picker's list, whatever it picks.
 #[derive(Debug, Clone, PartialEq)]
@@ -131,11 +131,11 @@ pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<Per
             divider_before: row.divider_before,
         })
         .collect();
-    let label = rows.iter().find(|row| row.mode == current).map_or("Mode", |row| row.label).to_string();
+    let label = rows.iter().find(|row| row.mode == current).map_or(tr!("Mode"), |row| row.label).to_string();
     let rows_for_pick = rows.clone();
     rsx! {
         Picker {
-            title: "Mode",
+            title: tr!("Mode"),
             current: label,
             items,
             onpick: move |index: usize| {
@@ -151,16 +151,16 @@ pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<Per
         }
         if let Some(pending) = confirming().filter(|mode| confirmation_still_valid(&rows, *mode)) {
             div { class: "picker-confirm", role: "alertdialog",
-                span { "Bypass permissions skips every permission check in this session." }
+                span { {tr!("Bypass permissions skips every permission check in this session.")} }
                 Button {
-                    label: "Cancel",
+                    label: tr!("Cancel"),
                     onclick: move |_| {
                         confirming.set(None);
                         refocus_composer();
                     },
                 }
                 Button {
-                    label: "Enable",
+                    label: tr!("Enable"),
                     kind: ButtonKind::Danger,
                     onclick: move |_| {
                         confirming.set(None);
@@ -197,11 +197,11 @@ pub(crate) fn ModelPickerView(current: Option<String>, onchange: EventHandler<Op
             divider_before: row.divider_before,
         })
         .collect();
-    let label = rows.iter().find(|row| row.value == current).map_or_else(|| "Model".to_string(), |row| row.label.clone());
+    let label = rows.iter().find(|row| row.value == current).map_or_else(|| tr!("Model").to_string(), |row| row.label.clone());
     let values: Vec<Option<String>> = rows.iter().map(|row| row.value.clone()).collect();
     rsx! {
         Picker {
-            title: "Model",
+            title: tr!("Model"),
             current: label,
             items,
             onpick: move |index: usize| {
@@ -244,7 +244,7 @@ pub fn EffortPicker(id: LiveSessionId) -> Element {
             button {
                 class: if open() { "picker-button open" } else { "picker-button" },
                 r#type: "button",
-                title: "Effort",
+                title: tr!("Effort"),
                 "aria-haspopup": "dialog",
                 "aria-expanded": "{open()}",
                 onclick: move |_| open.set(!open()),
@@ -274,13 +274,13 @@ pub fn EffortPicker(id: LiveSessionId) -> Element {
                         }
                     },
                     div { class: "effort-head",
-                        span { class: "picker-title", "Effort" }
+                        span { class: "picker-title", {tr!("Effort")} }
                         span { class: "effort-current", "{label}" }
-                        span { class: "effort-help", title: "{EFFORT_HELP}", "?" }
+                        span { class: "effort-help", title: "{effort_help()}", "?" }
                     }
                     div { class: "effort-ends",
-                        span { "{SLIDER_FASTER}" }
-                        span { "{SLIDER_SMARTER}" }
+                        span { {slider_faster()} }
+                        span { {slider_smarter()} }
                     }
                     input {
                         class: "effort-slider",
@@ -289,7 +289,7 @@ pub fn EffortPicker(id: LiveSessionId) -> Element {
                         max: "{last_stop}",
                         step: "1",
                         value: "{position}",
-                        "aria-label": "Effort",
+                        "aria-label": tr!("Effort"),
                         // `onchange`, not `oninput`: it fires when the thumb is released (and once per arrow
                         // key), so a drag sends one change and the SDK's answers cannot arrive out of order.
                         onchange: {
@@ -305,7 +305,7 @@ pub fn EffortPicker(id: LiveSessionId) -> Element {
                         class: "picker-item",
                         r#type: "button",
                         onclick: move |_| workspace.set_effort(id, None),
-                        span { class: "picker-text", span { class: "picker-label", "Use the default" } }
+                        span { class: "picker-text", span { class: "picker-label", {tr!("Use the default")} } }
                     }
                 }
             }

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use dioxus::prelude::*;
 use forge_entities::ExtensionRow;
 use forge_features::{menu_digit_row, refocus_composer, use_composer_state, use_settings, ExtensionKind};
+use forge_shared::tr;
 
 /// What a row of the `+` menu does when picked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,11 +25,11 @@ pub struct PlusRow {
 
 pub fn plus_rows() -> [PlusRow; 5] {
     [
-        PlusRow { label: "Add file or photo", action: PlusAction::AddFiles, shortcut: Some(forge_domain::KEY_ADD_FILES), submenu: false },
-        PlusRow { label: "Add folder", action: PlusAction::AddFolder, shortcut: None, submenu: false },
-        PlusRow { label: "Slash commands", action: PlusAction::SlashCommands, shortcut: None, submenu: false },
-        PlusRow { label: "Connectors", action: PlusAction::Connectors, shortcut: None, submenu: true },
-        PlusRow { label: "Plugins", action: PlusAction::Plugins, shortcut: None, submenu: true },
+        PlusRow { label: tr!("Add file or photo"), action: PlusAction::AddFiles, shortcut: Some(forge_domain::KEY_ADD_FILES), submenu: false },
+        PlusRow { label: tr!("Add folder"), action: PlusAction::AddFolder, shortcut: None, submenu: false },
+        PlusRow { label: tr!("Slash commands"), action: PlusAction::SlashCommands, shortcut: None, submenu: false },
+        PlusRow { label: tr!("Connectors"), action: PlusAction::Connectors, shortcut: None, submenu: true },
+        PlusRow { label: tr!("Plugins"), action: PlusAction::Plugins, shortcut: None, submenu: true },
     ]
 }
 
@@ -78,7 +79,7 @@ pub fn PlusMenu(project: Option<PathBuf>, add_folder_enabled: bool) -> Element {
             button {
                 class: if open() { "picker-button open" } else { "picker-button" },
                 r#type: "button",
-                title: "Add",
+                title: tr!("Add"),
                 "aria-label": "Add",
                 "aria-haspopup": "menu",
                 "aria-expanded": "{open()}",
@@ -140,7 +141,7 @@ pub fn PlusMenu(project: Option<PathBuf>, add_folder_enabled: bool) -> Element {
                                     class: if disabled { "picker-item disabled" } else { "picker-item" },
                                     role: "menuitem",
                                     disabled,
-                                    title: if disabled { "Choose folders before the first message" } else { "" },
+                                    title: if disabled { tr!("Choose folders before the first message") } else { "" },
                                     onclick: move |_| pick(action),
                                     span { class: "picker-text",
                                         span { class: "picker-label", "{row.label}" }
@@ -170,15 +171,15 @@ pub fn PlusMenu(project: Option<PathBuf>, add_folder_enabled: bool) -> Element {
 fn PlusSubmenu(kind: PlusAction) -> Element {
     let settings = use_settings();
     let (title, extension, listing): (&str, ExtensionKind, Result<Vec<ExtensionRow>, String>) = match kind {
-        PlusAction::Plugins => ("Plugins", ExtensionKind::Plugin, settings.plugin_tab()),
-        _ => ("Connectors", ExtensionKind::McpServer, settings.connector_rows()),
+        PlusAction::Plugins => (tr!("Plugins"), ExtensionKind::Plugin, settings.plugin_tab()),
+        _ => (tr!("Connectors"), ExtensionKind::McpServer, settings.connector_rows()),
     };
     rsx! {
         div { class: "picker-menu picker-submenu", role: "menu",
             div { class: "picker-title", "{title}" }
             match listing {
                 Err(message) => rsx! { div { class: "picker-item disabled", "{message}" } },
-                Ok(rows) if rows.is_empty() => rsx! { div { class: "picker-item disabled", "None installed" } },
+                Ok(rows) if rows.is_empty() => rsx! { div { class: "picker-item disabled", {tr!("None installed")} } },
                 Ok(rows) => rsx! {
                     for row in rows {
                         button {
@@ -201,7 +202,7 @@ fn PlusSubmenu(kind: PlusAction) -> Element {
                     }
                 },
             }
-            div { class: "picker-title", "Applies to the next new session." }
+            div { class: "picker-title", {tr!("Applies to the next new session.")} }
         }
     }
 }

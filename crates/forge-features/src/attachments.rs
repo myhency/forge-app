@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use forge_domain::{Attachment, AttachmentKind};
+use forge_shared::tr;
 
 /// The API's limit for one image, counted on the base64 data the sidecar sends.
 pub const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
@@ -39,13 +40,10 @@ pub fn add_attachments(list: &mut Vec<Attachment>, picked: Vec<PathBuf>) {
 pub fn check_attachments(list: &[Attachment], size_of: impl Fn(&Path) -> Option<u64>) -> Result<(), String> {
     for attachment in list {
         let Some(size) = size_of(&attachment.path) else {
-            return Err(format!("{} cannot be read.", attachment.file_name()));
+            return Err(tr!("{name} cannot be read.", name = attachment.file_name()));
         };
         if attachment.kind == AttachmentKind::Image && size > MAX_IMAGE_FILE_BYTES {
-            return Err(format!(
-                "{} is too large to send as an image: the limit is 5 MB once encoded, about 3.7 MB of file.",
-                attachment.file_name()
-            ));
+            return Err(tr!("{name} is too large to send as an image: the limit is 5 MB once encoded, about 3.7 MB of file.", name = attachment.file_name()));
         }
     }
     Ok(())

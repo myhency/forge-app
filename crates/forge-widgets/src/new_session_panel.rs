@@ -4,6 +4,7 @@ use forge_features::{use_workspace, NewSessionComposer};
 use crate::new_session_controls::{AddFolderButton, FolderChip, NewModePicker, NewModelPicker};
 use crate::plus_menu::PlusMenu;
 use crate::usage_card::UsageCard;
+use forge_shared::tr;
 
 #[component]
 pub fn NewSessionPanel() -> Element {
@@ -11,12 +12,12 @@ pub fn NewSessionPanel() -> Element {
     rsx! {
         div { class: "main-pane",
             div { class: "home-top",
-                h1 { class: "greeting", "What's next?" }
+                h1 { class: "greeting", {tr!("What's next?")} }
                 UsageCard {}
             }
             NewSessionComposer {
                 chips: rsx! {
-                    span { class: "chip", "Local" }
+                    span { class: "chip", {tr!("Local")} }
                     FolderChip {}
                     AddFolderButton {}
                 },

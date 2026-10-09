@@ -1,8 +1,17 @@
 use forge_domain::{AvailableModel, EffortLevel};
+use forge_shared::tr;
 
-pub const EFFORT_HELP: &str = "Higher effort means a more thorough answer, but it takes longer and uses your limit faster.";
-pub const SLIDER_FASTER: &str = "Faster";
-pub const SLIDER_SMARTER: &str = "Smarter";
+pub fn effort_help() -> &'static str {
+    tr!("Higher effort means a more thorough answer, but it takes longer and uses your limit faster.")
+}
+
+pub fn slider_faster() -> &'static str {
+    tr!("Faster")
+}
+
+pub fn slider_smarter() -> &'static str {
+    tr!("Smarter")
+}
 
 /// The effort levels the session's model takes, lowest first; empty when the model is not listed or
 /// takes none. A model is found by its listed name or by the full id that name stands for. A session
@@ -28,7 +37,7 @@ pub fn slider_position(levels: &[EffortLevel], current: Option<EffortLevel>) -> 
 
 /// The text of the composer's effort button.
 pub fn effort_button_label(current: Option<EffortLevel>) -> String {
-    current.map_or("Default", EffortLevel::label).to_string()
+    current.map_or(tr!("Default"), |level| forge_shared::i18n::text(level.label())).to_string()
 }
 
 #[cfg(test)]

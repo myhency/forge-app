@@ -1,3 +1,4 @@
+use crate::msg;
 use serde::{Deserialize, Serialize};
 
 /// How much thinking the model does for a turn (the SDK's `EffortLevel`).
@@ -17,11 +18,11 @@ impl EffortLevel {
 
     pub fn label(self) -> &'static str {
         match self {
-            EffortLevel::Low => "Low",
-            EffortLevel::Medium => "Medium",
-            EffortLevel::High => "High",
-            EffortLevel::XHigh => "Extra high",
-            EffortLevel::Max => "Max",
+            EffortLevel::Low => msg!("Low"),
+            EffortLevel::Medium => msg!("Medium"),
+            EffortLevel::High => msg!("High"),
+            EffortLevel::XHigh => msg!("Extra high"),
+            EffortLevel::Max => msg!("Max"),
         }
     }
 }
