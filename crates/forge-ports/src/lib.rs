@@ -6,6 +6,7 @@ mod file_picker_port;
 mod files_port;
 mod folder_picker_port;
 mod git_port;
+mod mcp_log_port;
 mod mcp_manager_port;
 mod notify_port;
 mod plugin_manager_port;
@@ -20,6 +21,7 @@ mod usage_stats_port;
 pub use browser_port::BrowserPort;
 pub use config_port::{ConfigError, ConfigRepositoryPort};
 pub use connector_catalog_port::{ConnectorCatalogError, ConnectorCatalogPort};
+pub use mcp_log_port::McpLogPort;
 pub use mcp_manager_port::{McpManagerError, McpManagerPort};
 pub use notify_port::{ClickHandler, NotifyPort};
 pub use files_port::{ContentHit, SearchOptions, DirEntry, FileContent, FileVersion, FilesError, FilesPort, WriteError, READ_LIMIT};
@@ -58,6 +60,8 @@ pub use terminal_port::MockTerminalPort;
 pub use config_port::MockConfigRepositoryPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use connector_catalog_port::MockConnectorCatalogPort;
+#[cfg(any(test, feature = "mocks"))]
+pub use mcp_log_port::MockMcpLogPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use mcp_manager_port::MockMcpManagerPort;
 #[cfg(any(test, feature = "mocks"))]

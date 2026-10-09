@@ -32,6 +32,7 @@ mod routines_page;
 mod search_palette;
 mod session_row;
 mod session_tools;
+mod developer_section;
 mod settings_overlay;
 mod shortcuts_dialog;
 mod sidebar;

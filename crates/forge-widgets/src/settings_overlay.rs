@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use forge_domain::{ChatWidth, FontChoice, MotionPref, OutputStyle, TextSize, Theme, TranscriptView};
 use forge_entities::{model_from_value, model_options, model_value};
 use forge_features::{filter_pages, nav_groups, use_settings, use_workspace, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
+use crate::developer_section::DeveloperSection;
 use forge_shared::{tr, Button, ButtonKind, Segmented, Select, SettingRow, Switch, TextInput};
 
 /// The settings overlay (spec §16): a left navigation and rows on the right. Renders nothing while
@@ -76,6 +77,7 @@ pub fn SettingsOverlay() -> Element {
                         SettingsSection::Plugins => rsx! { ExtensionSection { kind: ExtensionKind::Plugin } },
                         SettingsSection::McpServers => rsx! { ExtensionSection { kind: ExtensionKind::McpServer } },
                         SettingsSection::Code => rsx! { CodeSection {} },
+                        SettingsSection::Developer => rsx! { DeveloperSection {} },
                     }
                     StatusLine {}
                 }
