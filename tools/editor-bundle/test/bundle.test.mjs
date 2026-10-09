@@ -501,3 +501,37 @@ test("a key the editor handled does not reach the page, a key it does not handle
   assert.equal(close.reached, true, "an unhandled key still reaches the workspace shortcuts");
   editor.destroy();
 });
+
+test("strings translate the find bar, and a sentence the table lacks stays English", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "buzz\nbuzz\n", "python", false);
+  editor.show("a.py");
+  editor.strings({ Find: "찾기", "{n} of {m}": "{m}개 중 {n}번째", "No results": "결과 없음" });
+  editor.find("a.py", { query: "buzz", ...ALL, line: 1 });
+  assert.equal(w.document.querySelector(".cm-find-bar input").placeholder, "찾기");
+  assert.equal(count(w), "2개 중 1번째");
+  assert.equal(w.document.querySelector('.cm-find-bar button[data-opt="regex"]').title, "Regex");
+  editor.destroy();
+});
+
+test("strings translate the title of a line comment", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "one\ntwo\n", "python", false);
+  editor.show("a.py");
+  editor.strings({ "Add comment": "코멘트 추가", "Attach as context": "컨텍스트로 첨부", "Line {n}": "{n}번째 줄", Undo: "실행 취소" });
+  editor.comments("a.py", [{ id: 1, from: 2, to: 2, text: "why" }]);
+  assert.equal(w.document.querySelector(".cm-comment-title").textContent, "2번째 줄");
+  editor.destroy();
+});
+
+test("strings given as something else than an object are ignored", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "buzz\n", "python", false);
+  editor.show("a.py");
+  editor.strings(null);
+  editor.strings("nope");
+  editor.strings({ Find: 7 });
+  editor.find("a.py", { query: "buzz", ...ALL, line: 1 });
+  assert.equal(w.document.querySelector(".cm-find-bar input").placeholder, "Find");
+  editor.destroy();
+});
