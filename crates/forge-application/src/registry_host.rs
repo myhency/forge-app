@@ -21,6 +21,12 @@ pub fn is_finished(view: &LiveSessionView, age: Duration) -> bool {
     age > GRACE && view.phase == Phase::Idle && view.pending_permissions.is_empty() && view.claude_session_id.is_some()
 }
 
+/// Whether a routine's session may still be doing something in its folder: running, waiting for an
+/// answer, or too young to tell. A failed session runs nothing, and an idle old one is done.
+pub fn is_busy(view: &LiveSessionView, age: Duration) -> bool {
+    view.phase != Phase::Failed && (view.phase == Phase::Running || !view.pending_permissions.is_empty() || age <= GRACE)
+}
+
 /// A routine's session that is waiting for the person to answer a permission.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WaitingRun {
@@ -34,6 +40,8 @@ struct Tracked {
     folder: PathBuf,
     started: Instant,
     notified: bool,
+    /// The person has opened this session: Forge no longer closes it for them.
+    kept: bool,
 }
 
 /// Starts routine sessions in the session registry and keeps track of them: which folders they
@@ -53,15 +61,29 @@ impl RegistryHost {
         (Self { registry, routines, started, tracked: Mutex::new(HashMap::new()) }, receiver)
     }
 
-    /// Sessions that can be closed: finished, see `is_finished`.
+    /// Sessions that can be closed: finished, see `is_finished`, and not opened by the person.
     pub fn finished(&self) -> Vec<LiveSessionId> {
-        self.tracked
-            .lock()
-            .unwrap()
+        self.finished_with_age(Duration::ZERO)
+    }
+
+    /// `finished` as if every session were `extra` older (for tests, which cannot wait a minute).
+    fn finished_with_age(&self, extra: Duration) -> Vec<LiveSessionId> {
+        let mut tracked = self.tracked.lock().unwrap();
+        // A session the person closed is gone: its last published state may still say "waiting".
+        tracked.retain(|_, tracked| !tracked.handle.is_closed());
+        tracked
             .iter()
-            .filter(|(_, tracked)| is_finished(&tracked.handle.snapshot(), tracked.started.elapsed()))
+            .filter(|(_, tracked)| !tracked.kept && is_finished(&tracked.handle.snapshot(), tracked.started.elapsed() + extra))
             .map(|(id, _)| *id)
             .collect()
+    }
+
+    /// The person has opened this session: from now on Forge leaves it open (a reply or an edit in it
+    /// would be lost with it). It still counts for the busy check and the waiting marker.
+    pub fn keep_open(&self, id: LiveSessionId) {
+        if let Some(tracked) = self.tracked.lock().unwrap().get_mut(&id) {
+            tracked.kept = true;
+        }
     }
 
     /// Stops tracking a session (it was closed).
@@ -76,7 +98,7 @@ impl RegistryHost {
             .lock()
             .unwrap()
             .values()
-            .filter(|tracked| !tracked.handle.snapshot().pending_permissions.is_empty())
+            .filter(|tracked| !tracked.handle.is_closed() && !tracked.handle.snapshot().pending_permissions.is_empty())
             .map(|tracked| tracked.routine_id.clone())
             .collect();
         ids.sort();
@@ -88,6 +110,9 @@ impl RegistryHost {
     pub fn waiting(&self) -> Vec<WaitingRun> {
         let mut found = Vec::new();
         for tracked in self.tracked.lock().unwrap().values_mut() {
+            if tracked.handle.is_closed() {
+                continue;
+            }
             let view = tracked.handle.snapshot();
             if let Some(request) = view.pending_permissions.front() {
                 if !tracked.notified {
@@ -138,7 +163,7 @@ impl RoutineHost for RegistryHost {
 
     fn busy_in(&self, folder: &Path) -> bool {
         self.tracked.lock().unwrap().values().any(|tracked| {
-            tracked.folder == folder && !tracked.handle.is_closed() && !is_finished(&tracked.handle.snapshot(), tracked.started.elapsed())
+            tracked.folder == folder && !tracked.handle.is_closed() && is_busy(&tracked.handle.snapshot(), tracked.started.elapsed())
         })
     }
 
@@ -156,7 +181,7 @@ impl RoutineHost for RegistryHost {
         // Counted as busy from here on, before anything is sent.
         self.tracked.lock().unwrap().insert(
             handle.id(),
-            Tracked { routine_id: request.routine_id.clone(), handle: handle.clone(), folder: request.folder.clone(), started: Instant::now(), notified: false },
+            Tracked { routine_id: request.routine_id.clone(), handle: handle.clone(), folder: request.folder.clone(), started: Instant::now(), notified: false, kept: false },
         );
         handle.send(request.prompt);
         let _ = self.started.send(handle);
@@ -216,6 +241,16 @@ mod tests {
     fn a_young_session_is_not_finished_whatever_its_phase_says() {
         // Right after the send the phase may still read Idle.
         assert!(!is_finished(&view(Phase::Idle, 0, Some("s")), Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn a_session_is_busy_while_running_waiting_or_young_and_not_when_failed_or_idle_and_old() {
+        assert!(is_busy(&view(Phase::Running, 0, Some("s")), OLD));
+        assert!(is_busy(&view(Phase::Idle, 1, Some("s")), OLD), "waiting for approval");
+        assert!(is_busy(&view(Phase::Idle, 0, None), Duration::from_secs(5)), "just started");
+        assert!(!is_busy(&view(Phase::Failed, 0, Some("s")), OLD), "a failed session runs nothing");
+        assert!(!is_busy(&view(Phase::Idle, 0, None), OLD), "nothing is running in it");
+        assert!(!is_busy(&view(Phase::Idle, 0, Some("s")), OLD));
     }
 
     #[test]
@@ -335,5 +370,62 @@ mod tests {
         }
         assert_eq!(store.lock().unwrap().routines[0].always_allowed, vec!["Bash(ls:*)".to_string()]);
         assert!(host.waiting_now().is_empty());
+    }
+
+    #[tokio::test]
+    async fn closing_a_waiting_session_clears_its_marker_and_frees_its_folder() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let registry = Arc::new(SessionRegistry::new(factory, Arc::new(MockSessionRepositoryPort::new()), no_extensions()));
+        let (routines, _) = memory_routines();
+        let (host, mut started) = RegistryHost::new(registry, routines);
+        host.start(request(vec![])).await.unwrap();
+        let handle = started.try_recv().unwrap();
+        let mut view = handle.subscribe();
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        control.push(SidecarEvent::PermissionRequest {
+            permission_request_id: "p1".to_string(),
+            tool_name: "Bash".to_string(),
+            input: serde_json::json!({}),
+            rules: Vec::new(),
+        });
+        wait_for(&mut view, "the request", |v| v.pending_permissions.len() == 1).await;
+        assert_eq!(host.waiting_now(), vec!["a".to_string()]);
+
+        // The person closes the session instead of answering.
+        handle.close();
+        for _ in 0..200 {
+            if handle.is_closed() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(handle.is_closed());
+        assert!(host.waiting_now().is_empty(), "no marker for a closed session");
+        assert!(host.waiting().is_empty());
+        assert!(!host.busy_in(Path::new("/work/a")), "its folder is free again");
+        assert!(host.finished().is_empty(), "and it is forgotten, not offered for closing");
+    }
+
+    #[tokio::test]
+    async fn a_session_the_person_has_taken_over_is_never_offered_for_closing() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let registry = Arc::new(SessionRegistry::new(factory, Arc::new(MockSessionRepositoryPort::new()), no_extensions()));
+        let (routines, _) = memory_routines();
+        let (host, mut started) = RegistryHost::new(registry, routines);
+        host.start(request(vec![])).await.unwrap();
+        let handle = started.try_recv().unwrap();
+        let mut view = handle.subscribe();
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        control.push(SidecarEvent::SessionStarted { session_id: "s-1".to_string() });
+        control.push(SidecarEvent::TurnComplete { usage: Default::default() });
+        wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle && v.claude_session_id.is_some()).await;
+
+        // Old enough, idle, nothing waiting: Forge may close it ...
+        assert_eq!(host.finished_with_age(OLD), vec![handle.id()]);
+        // ... until the person has looked at it: a draft in it must not be thrown away.
+        host.keep_open(handle.id());
+        assert!(host.finished_with_age(OLD).is_empty());
     }
 }

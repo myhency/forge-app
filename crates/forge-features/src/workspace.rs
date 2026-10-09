@@ -907,6 +907,9 @@ impl Workspace {
 
     pub fn select(&self, id: LiveSessionId) {
         self.close_lightbox();
+        // A routine's session the person opens stays open: what they type or edit in it must not be
+        // closed away by the routine timer.
+        self.services.peek().routines.host.keep_open(id);
         let mut active = self.active;
         active.set(Active::Live(id));
     }

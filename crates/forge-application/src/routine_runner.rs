@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use chrono::TimeZone;
@@ -36,11 +37,22 @@ pub trait RoutineHost: Send + Sync {
 pub struct RoutineRunner {
     routines: Arc<RoutinesUseCase>,
     host: Arc<dyn RoutineHost>,
+    /// The latest due time each routine was handled for. The config's baseline says the same, but a
+    /// save can fail; without this a routine would start again on every tick until the save worked.
+    handled: Mutex<HashMap<String, i64>>,
 }
 
 impl RoutineRunner {
     pub fn new(routines: Arc<RoutinesUseCase>, host: Arc<dyn RoutineHost>) -> Self {
-        Self { routines, host }
+        Self { routines, host, handled: Mutex::new(HashMap::new()) }
+    }
+
+    fn already_handled(&self, routine_id: &str, due_ms: i64) -> bool {
+        self.handled.lock().unwrap().get(routine_id).is_some_and(|handled| *handled >= due_ms)
+    }
+
+    fn mark_handled(&self, routine_id: &str, due_ms: i64) {
+        self.handled.lock().unwrap().insert(routine_id.to_string(), due_ms);
     }
 
     /// One look at every routine. Called every 30 seconds, and once at start so the time Forge was
@@ -50,10 +62,14 @@ impl RoutineRunner {
         Tz::Offset: Display,
     {
         let (routines, _) = self.routines.snapshot().await?;
+        // A save that fails for one routine must not stop the others; the first failure is reported at the end.
+        let mut first_error = None;
         for routine in routines {
             match decide(&routine, now_ms, zone) {
                 Decision::Wait => {}
+                Decision::Missed { due_ms } | Decision::Run { due_ms } if self.already_handled(&routine.id, due_ms) => {}
                 Decision::Missed { due_ms } => {
+                    self.mark_handled(&routine.id, due_ms);
                     let run = RoutineRun {
                         routine_id: routine.id.clone(),
                         due_ms,
@@ -61,19 +77,24 @@ impl RoutineRunner {
                         outcome: RunOutcome::Skipped(SkipReason::Missed),
                         session_id: None,
                     };
-                    self.routines.record_run(run, Some(now_ms)).await?;
+                    if let Err(error) = self.routines.record_run(run, Some(now_ms)).await {
+                        first_error.get_or_insert(error);
+                    }
                 }
                 Decision::Run { due_ms } => {
+                    self.mark_handled(&routine.id, due_ms);
                     let outcome = match self.try_start(&routine, due_ms, now_ms, zone).await {
                         Ok(()) => RunOutcome::Started,
                         Err(reason) => RunOutcome::Skipped(reason),
                     };
                     let run = RoutineRun { routine_id: routine.id.clone(), due_ms, started_ms: now_ms, outcome, session_id: None };
-                    self.routines.record_run(run, Some(due_ms)).await?;
+                    if let Err(error) = self.routines.record_run(run, Some(due_ms)).await {
+                        first_error.get_or_insert(error);
+                    }
                 }
             }
         }
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
 
     /// Starts a routine at once. It does not move the count and adds no line when it is refused:
@@ -354,6 +375,39 @@ mod tests {
         let error = setup.runner.run_now("a", at(9, 7, 6), &zone()).await.unwrap_err();
         assert!(matches!(error, RoutineError::Refused(ref text) if text.contains("no longer exists")), "{error}");
         assert!(matches!(setup.runner.run_now("nope", 0, &zone()).await, Err(RoutineError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn a_save_that_fails_after_a_start_does_not_start_the_routine_again_and_the_others_still_run() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let store = Arc::new(Mutex::new(AppConfig::default()));
+        let fail_saves = Arc::new(AtomicBool::new(false));
+        let mut mock = MockConfigRepositoryPort::new();
+        let loading = store.clone();
+        mock.expect_load().returning(move || Ok(loading.lock().unwrap().clone()));
+        let (saving, failing) = (store.clone(), fail_saves.clone());
+        mock.expect_save().returning(move |config: &AppConfig| {
+            if failing.load(Ordering::SeqCst) {
+                return Err(ConfigError::WriteFailed("read-only".to_string()));
+            }
+            *saving.lock().unwrap() = config.clone();
+            Ok(())
+        });
+        let routines = Arc::new(RoutinesUseCase::new(Arc::new(mock)));
+        let host = Arc::new(FakeHost::default());
+        let runner = RoutineRunner::new(routines.clone(), host.clone());
+        routines.create(draft("First", "/a", Schedule::Hourly), at(9, 6, 0)).await.unwrap();
+        routines.create(draft("Second", "/b", Schedule::Hourly), at(9, 6, 0)).await.unwrap();
+
+        fail_saves.store(true, Ordering::SeqCst);
+        let result = runner.tick(at(9, 10, 10), &zone()).await;
+        assert!(matches!(result, Err(RoutineError::Config(_))), "the failure is reported");
+        assert_eq!(host.started.lock().unwrap().len(), 2, "the second routine was still looked at");
+
+        // The baseline never moved on disk, but the runner remembers what it handled.
+        host.busy.lock().unwrap().clear();
+        let _ = runner.tick(at(9, 10, 11), &zone()).await;
+        assert_eq!(host.started.lock().unwrap().len(), 2, "not started again");
     }
 
     #[tokio::test]
