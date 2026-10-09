@@ -1,6 +1,6 @@
 mod components;
 mod editor;
-pub use forge_domain::msg;
+pub use forge_domain::{msg, tr};
 pub mod i18n;
 mod ko;
 mod theme;
