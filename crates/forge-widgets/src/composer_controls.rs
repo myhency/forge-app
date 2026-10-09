@@ -3,7 +3,7 @@ use forge_application::LiveSessionId;
 use forge_domain::PermissionMode;
 use forge_entities::model_menu_rows;
 use forge_features::{
-    effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_settings, use_workspace, ModeChoice,
+    confirmation_still_valid, effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_settings, use_workspace, ModeChoice,
     EFFORT_HELP, SLIDER_FASTER, SLIDER_SMARTER,
 };
 use forge_shared::{Button, ButtonKind};
@@ -116,8 +116,8 @@ pub(crate) fn Picker(
 /// The permission mode picker. Bypass asks first. `onchange` gets the mode once it is confirmed.
 #[component]
 pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<PermissionMode>) -> Element {
-    // The row waiting for its confirmation.
-    let mut confirming = use_signal(|| None::<usize>);
+    // The mode waiting for its confirmation.
+    let mut confirming = use_signal(|| None::<PermissionMode>);
     let settings = use_settings();
     // A session already in bypass mode keeps its row, selected, even when the switch is off.
     let rows = mode_rows(settings.allow_bypass_mode() || current == PermissionMode::BypassPermissions);
@@ -133,7 +133,6 @@ pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<Per
         .collect();
     let label = rows.iter().find(|row| row.mode == current).map_or("Mode", |row| row.label).to_string();
     let rows_for_pick = rows.clone();
-    let rows_for_enable = rows.clone();
     rsx! {
         Picker {
             title: "Mode",
@@ -146,11 +145,11 @@ pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<Per
                         onchange.call(mode);
                         refocus_composer();
                     }
-                    ModeChoice::AskFirst => confirming.set(Some(index)),
+                    ModeChoice::AskFirst => confirming.set(Some(mode)),
                 }
             },
         }
-        if let Some(index) = confirming() {
+        if let Some(pending) = confirming().filter(|mode| confirmation_still_valid(&rows, *mode)) {
             div { class: "picker-confirm", role: "alertdialog",
                 span { "Bypass permissions skips every permission check in this session." }
                 Button {
@@ -165,7 +164,7 @@ pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<Per
                     kind: ButtonKind::Danger,
                     onclick: move |_| {
                         confirming.set(None);
-                        onchange.call(rows_for_enable[index].mode);
+                        onchange.call(pending);
                         refocus_composer();
                     },
                 }

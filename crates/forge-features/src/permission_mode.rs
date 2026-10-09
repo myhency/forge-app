@@ -8,10 +8,11 @@ const MODES: [(PermissionMode, &str, &str); 5] = [
     (PermissionMode::Auto, "auto", "Auto"),
 ];
 
-/// `(value, label)` pairs for the mode selector.
-pub fn mode_options() -> Vec<(String, String)> {
+/// `(value, label)` pairs for the mode selector. Bypass is left out unless `include_bypass`.
+pub fn mode_options(include_bypass: bool) -> Vec<(String, String)> {
     MODES
         .iter()
+        .filter(|(mode, _, _)| include_bypass || *mode != PermissionMode::BypassPermissions)
         .map(|(_, value, label)| (value.to_string(), label.to_string()))
         .collect()
 }
@@ -60,6 +61,12 @@ pub fn mode_rows(include_bypass: bool) -> Vec<ModeRow> {
         rows.push(row(PermissionMode::BypassPermissions, "Bypass permissions", "Skip every permission check", None, true));
     }
     rows
+}
+
+/// A confirmation that was asked for stays valid only while the picker still has the row (the
+/// Settings switch may have been turned off in between).
+pub fn confirmation_still_valid(rows: &[ModeRow], mode: PermissionMode) -> bool {
+    rows.iter().any(|row| row.mode == mode)
 }
 
 /// What choosing a mode does. Bypass turns every check off, so it is not applied by one click: the
@@ -186,12 +193,28 @@ mod tests {
 
     #[test]
     fn the_selector_offers_all_five_modes_with_distinct_values() {
-        let options = mode_options();
+        let options = mode_options(true);
         assert_eq!(options.len(), 5);
         let mut values: Vec<&String> = options.iter().map(|(value, _)| value).collect();
         values.sort();
         values.dedup();
         assert_eq!(values.len(), 5);
         assert_eq!(options[0].0, "default", "the safest mode is listed first");
+    }
+
+    #[test]
+    fn the_selector_leaves_out_bypass_when_not_allowed() {
+        let options = mode_options(false);
+        assert!(options.iter().all(|(value, _)| value != "bypass_permissions"));
+        let with: Vec<_> = mode_options(true).into_iter().filter(|(value, _)| value != "bypass_permissions").collect();
+        assert_eq!(options, with, "the other options keep their order");
+        assert!(mode_options(true).iter().any(|(value, _)| value == "bypass_permissions"));
+    }
+
+    #[test]
+    fn a_pending_confirmation_is_valid_only_while_its_row_exists() {
+        assert!(confirmation_still_valid(&mode_rows(true), PermissionMode::BypassPermissions));
+        assert!(!confirmation_still_valid(&mode_rows(false), PermissionMode::BypassPermissions));
+        assert!(confirmation_still_valid(&mode_rows(false), PermissionMode::Plan));
     }
 }

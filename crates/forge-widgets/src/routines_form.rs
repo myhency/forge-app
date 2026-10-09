@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use forge_entities::{model_from_value, model_options, model_value};
-use forge_features::{mode_options, mode_value, parse_mode, use_routines, ScheduleKind};
+use forge_features::{mode_options, mode_value, parse_mode, use_routines, use_settings, ScheduleKind};
+use forge_domain::PermissionMode;
 use forge_shared::{Button, ButtonKind, Select, TextArea, TextInput};
 
 const KINDS: [(ScheduleKind, &str); 6] = [
@@ -17,8 +18,11 @@ const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",
 #[component]
 pub fn RoutineForm(id: Option<String>) -> Element {
     let routines = use_routines();
+    let settings = use_settings();
     let form = routines.form();
     let editing = id.is_some();
+    // A routine already in bypass keeps its mode selected even when the switch is off.
+    let allow_bypass = settings.allow_bypass_mode() || form.mode == PermissionMode::BypassPermissions;
     let problem = form.error();
     let started_typing = !form.name.is_empty() || !form.description.is_empty();
     let shows_time = matches!(form.kind, ScheduleKind::Daily | ScheduleKind::Weekdays | ScheduleKind::Weekly);
@@ -49,7 +53,7 @@ pub fn RoutineForm(id: Option<String>) -> Element {
             div { class: "routine-form-row",
                 Select {
                     value: mode_value(form.mode).to_string(),
-                    options: mode_options(),
+                    options: mode_options(allow_bypass),
                     onchange: move |value: String| routines.edit_form(|f| f.mode = parse_mode(&value)),
                 }
                 Select {
