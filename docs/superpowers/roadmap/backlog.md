@@ -56,7 +56,7 @@ Forge status was read from `crates/` on 2026-10-03.
 | PG-05 | Home dashboard: sessions, messages, total tokens, active days, peak hour, favourite model, a day heatmap; tabs overview and models; ranges all, 30 days, 7 days | seen | partial | M | Plan 24 (built) | Forge has a usage ring per session (spec §20). The dashboard sums over all transcripts. The "Little Prince" comparison line is a joke; skip unless asked. Built in Plan 24: card with Overview and Models tabs, All / 30d / 7d, six tiles, heatmap, per-model chart; messages and tokens are counted per transcript line, as the app does (round 6; see the spec "As built"). Left: the book caption, hover tooltips. |
 | PG-06 | Greeting and examples on the new-session screen ("다음 일정은 무엇인가요?") | seen | partial | S | - | Compare with Forge's new-session panel. |
 | PG-07 | "새로운 기능" (what's new) link, top right of the home screen | seen | none | S | - | Where it leads was not seen. |
-| PG-08 | Account menu at the bottom of the sidebar (name, plan, chevron) and an icon beside it | partly | none | S | - | Not opened. |
+| PG-08 | Account menu at the bottom of the sidebar (name, plan, chevron) and an icon beside it | seen | none | S | - | Round 15: opens a menu with the email, `설정` (⌘,), `사용량`, `언어`, `도움 받기`, `플랜 업그레이드`, `앱 및 확장 프로그램 다운로드`, `게스트 패스 공유`, `변경 로그 보기`, `더 알아보기` (submenu), `API 키 받기`, `로그아웃`. The icon beside it (a sparkle) was not opened. This is how the Settings window opens (SET-01). |
 | PG-09 | Chat mode (the left icon of the title-bar toggle; a different product surface with Projects and pinned chats) | seen | none | L | won't | Forge is the Code side only (spec §2). |
 
 ## UI: window behaviour
@@ -64,6 +64,37 @@ Forge status was read from `crates/` on 2026-10-03.
 | Id | Feature | Seen | Forge | Size | Plan | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | UI-01 | Responsive layout: sidebar folds into an overlay at 700 pt and below, the dock pushes the chat and then floats over it, a compact chat header, a minimum window of 600 pt | seen | has | M | Plan 26 (built) | Round 10 of observations; spec `2026-10-07-responsive-layout-design.md`. Not done: Settings and the Files panel at narrow widths, window height, the usage card with real data. |
+
+## SET: the Settings window
+
+Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Model, Skills, Plugins and MCP servers (spec §16, §17); Skills, plugins and MCP also live in the Customize page (PG-02). Forge status for the rows below was read from `crates/forge-features/src/settings.rs` and `crates/forge-widgets/src/settings_overlay.rs` on 2026-10-09.
+
+| Id | Feature | Seen | Forge | Size | Plan | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| SET-01 | The window itself: opened from the account menu (PG-08) or ⌘,, a modal with a search field and three groups (설정, 이 컴퓨터, 사용자 지정) | seen | partial | M | - | Forge has an overlay with five tabs and no search. The page list of the real app is the plan for the groups. |
+| SET-02 | Appearance: theme (system, light, dark), chat font, chat text size, chat width, reduce motion, interface font, code font, light and dark code themes | seen | none | M | - | Real app 일반 and Claude Code pages. Forge has a theme in `forge-shared/src/theme.rs` but no choice. Menu choices of the fonts and code themes were not opened. |
+| SET-03 | Notifications as switches: reply done, scheduled task, Code notice, Code permission request; bounce the Dock icon when attention is needed | seen | partial | S | - | Forge notifies for routines (Plan 31) and has no switches. The email and phone switches (cloud sessions, Dispatch, artifacts) are out of scope. |
+| SET-04 | Default transcript view (Normal, Thinking, Detailed) for new sessions | seen | partial | S | - | Forge has the per-session control (SES-03), not a default. |
+| SET-05 | Default output style (menu: 기본값, Concise, Explanatory, Learning, Proactive) | seen | none | S | - | Same menu as SES-04 ("won't?"); the five names are Claude Code's own output styles, so the CLI lists them. Decide both together. |
+| SET-06 | Prompt suggestions switch ("Claude가 응답한 후 메시지 입력란에 다음 프롬프트 제안을 표시합니다. 제안은 사용량을 조금 더 사용합니다") | seen | partial | S | - | Forge shows the suggested next prompt (Plan 23C) and cannot turn it off. |
+| SET-07 | Auto archive of inactive sessions (menu: 없음, 1일, 2일, 7일, 14일, 30일) and auto archive after a PR is merged or closed | seen | none | M | - | Needs SES-02 (built) and, for the PR switch, PR state (SES-08, not built). A session that is running or has background work is not archived; a worktree with uncommitted changes stays on disk. |
+| SET-08 | Worktree location (menu: `프로젝트 내부` = `.claude/worktrees`, `사용자 설정…`) | seen | none | M | - | Forge has no isolated worktree sessions; this needs that first. The folder choice behind `사용자 설정…` was not opened. |
+| SET-09 | Allow bypass-permissions mode (off by default) | seen | partial | S | - | Forge asks in the composer before bypass (CMP-03). The real app keeps the mode hidden until this switch is on. |
+| SET-10 | Prevent sleep while Claude works (and not on battery) | seen | partial | S | - | Forge has it per session (PNL-06), as a menu item; the real app also has a global switch in 시스템 and Claude Code pages. |
+| SET-11 | Local sandbox and strict sandbox mode | seen | none | M | - | Needs the SDK's sandbox options checked first. |
+| SET-12 | Dynamic workflows (several agents in parallel) | seen | none | S | - | Unknown what it changes in the SDK; look before planning. |
+| SET-13 | Browser tool, keep cookies (menu: 종료 시까지, 공유됨, 세션별), allowed sites; Claude in Chrome switch and a default site policy | seen | none | L | - | Tied to PNL-03 (the Preview panel is not a full browser yet). Claude in Chrome is a separate extension; out of scope. |
+| SET-14 | Pull requests: branch prefix, auto create, auto fix, auto archive | seen | none | M | - | Auto create and auto fix apply to cloud sessions only in the real app; only the branch prefix could apply to Forge. |
+| SET-15 | Trusted folders (`관리`) and default browser | seen | none | M | - | The list screen behind `관리` was not opened. |
+| SET-16 | System: start at login, menu bar icon, global quick-access shortcut (⇧⌘Space), voice shortcuts, storage use and storage folder | seen | none | L | - | Start at login and the menu bar icon need macOS and Windows code (Plan 29). Voice is CMP-02 (left out). |
+| SET-17 | Developer page: local MCP servers with a detail (command, arguments), a `로그 보기` button and `구성 편집` | seen | partial | S | - | Forge's Connectors tab (Plan 30C) has a detail and a connection check, not logs. |
+| SET-18 | Memory page: chat memory switches and a list | seen | none | L | won't? | Chat memory of claude.ai, not Claude Code's CLAUDE.md; the user decides. |
+| SET-19 | Features page (tool access mode, connector search, artifacts, inline visuals, cloud code execution, network access and a domain allow list) | seen | none | L | won't? | Chat features; the user decides. |
+| SET-20 | Account pages: 계정 (profile, logout everywhere, delete account), 개인정보보호 (location metadata, model-training switch, export, shared chats, artifacts, uploaded files), 결제 (plan, card, invoices), 사용량 (session and weekly bars, forecast, credit), auth tokens (a table of logins), delete sessions stored at Anthropic, sharing settings, Remote Control | seen | none | L | won't? | Needs the account; Forge uses an API key or the CLI login. Forge already shows context, tokens and cost per session (CMP-07 is "won't"). The weekly forecast line of 사용량 is the only new idea, and it needs plan data Forge cannot read. |
+| SET-21 | Computer use (beta): switch, unhide apps, background or full control, denied apps, accessibility and screen recording state | seen | none | L | won't? | OS level control. The page ends with the two macOS permissions as `승인됨` chips. |
+| SET-22 | Extensions page (`.mcpb` / `.dxt` desktop extensions: installed list, `구성`, `⋯`, `고급 설정`, drag a file to install, `확장 프로그램 찾아보기`) | seen | none | L | won't? | Desktop extensions of the chat app (the Filesystem row is the one the Developer page lists). Forge has MCP servers (Plan 30C); the `⋯` and `구성` menus were not opened. |
+| SET-23 | Design systems page (a list of brand colours, type and components for design and slides) | seen | none | L | won't? | Chat side; empty on this account. |
+| SET-24 | Settings groups `사용자 지정` (Skills, 커넥터, 플러그인) and `플랫폼` (API 키): the Customize screens shown inside Settings | seen | has | S | Plan 30 (built) | The same screens as PG-02. Forge has them on the Customize page; Settings only keeps its older tabs (spec §17), which now repeat them. Decide in SET-01 whether Settings keeps Skills, Plugins and MCP tabs. |
 
 ## OBS: observation tasks (do before planning the entries they unlock)
 
@@ -73,7 +104,7 @@ Forge status was read from `crates/` on 2026-10-03.
 | OBS-02 | Submenus of the session menu (open in, transcript, output style) | SES-03..05 |
 | OBS-03 | Model "더 많은 모델" submenu, effort options, the composer circle on hover, the "로컬" chip menu | CMP-04..07 |
 | OBS-04 | Changes, files and preview panels, with a real folder | PNL-02..04 |
-| OBS-05 | Settings window and the keyboard shortcut list | shortcuts, settings parity |
+| OBS-05 | (settings window done in round 15, parts 1 and 2; not seen: the account menu submenu `더 알아보기`, what `관리` opens, the voice menus, the window search, the keyboard shortcut list) Settings window and the keyboard shortcut list | SET-01..24, shortcuts |
 | OBS-06 | Split panes or several sessions at once (the docs describe them; not seen in this window) | spec §7 "multiple sessions" |
 | OBS-07 | (partly done in Plan 17: filter menu and search results seen) Sidebar filter menu, "사이드바 편집…" contents, sidebar search results | SES-07, SES-08, SES-10 |
 | OBS-08 | The search palette: what Enter and `...` do on a row, the "작성" mode, the shortcut that opens it, the empty and no-match views, and "사이드바 편집…" | SES-07, SES-10 |
