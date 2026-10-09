@@ -109,6 +109,27 @@ pub fn menu_key_action(code: &str, modified: bool, actions: RowActions) -> Optio
     }
 }
 
+/// What ⌥⌘A does to the active (open) session. The row menu only archives sessions that are not
+/// open; the key closes the session as part of archiving it, and does not close one that is
+/// still working.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchiveKey {
+    Nothing,
+    Unarchive,
+    ArchiveAndClose,
+    /// A turn is running: tell the person to stop it first.
+    StopFirst,
+}
+
+pub fn archive_key_plan(archived: bool, has_id: bool, running: bool) -> ArchiveKey {
+    match (has_id, archived, running) {
+        (false, _, _) => ArchiveKey::Nothing,
+        (true, true, _) => ArchiveKey::Unarchive,
+        (true, false, true) => ArchiveKey::StopFirst,
+        (true, false, false) => ArchiveKey::ArchiveAndClose,
+    }
+}
+
 /// Sets `archived` on every entry that `archived` names (same project and same session id).
 /// Names with no session are ignored.
 pub fn mark_archived(groups: &mut [SidebarGroup], archived: &[ArchivedRef]) {
@@ -338,6 +359,11 @@ pub fn cycle_target(
     Some(order[index])
 }
 
+/// The open session at `index` (from 0) in the order the sidebar draws them; none when fewer are open.
+pub fn nth_session(order: &[LiveSessionId], index: usize) -> Option<LiveSessionId> {
+    order.get(index).copied()
+}
+
 // Counts characters, not bytes, so multi-byte text is never cut inside a character.
 fn truncate_chars(text: &str, max: usize) -> String {
     let flattened = text.replace('\n', " ");
@@ -362,6 +388,28 @@ mod tests {
     use forge_entities::SessionMarker;
 
     use super::*;
+
+    #[test]
+    fn the_archive_key_archives_and_closes_an_idle_session_with_an_id() {
+        assert_eq!(archive_key_plan(false, true, false), ArchiveKey::ArchiveAndClose);
+    }
+
+    #[test]
+    fn the_archive_key_unarchives_an_archived_session_even_while_it_runs() {
+        assert_eq!(archive_key_plan(true, true, false), ArchiveKey::Unarchive);
+        assert_eq!(archive_key_plan(true, true, true), ArchiveKey::Unarchive);
+    }
+
+    #[test]
+    fn a_running_session_is_not_closed_by_the_archive_key() {
+        assert_eq!(archive_key_plan(false, true, true), ArchiveKey::StopFirst);
+    }
+
+    #[test]
+    fn a_session_without_an_id_cannot_be_archived() {
+        assert_eq!(archive_key_plan(false, false, false), ArchiveKey::Nothing);
+        assert_eq!(archive_key_plan(true, false, false), ArchiveKey::Nothing);
+    }
 
     fn project(path: &str) -> ProjectSummary {
         ProjectSummary {
@@ -844,5 +892,14 @@ mod tests {
         assert_eq!(menu_key_action("KeyA", false, all), None);
         all.archive = ArchiveAction::Archive;
         assert_eq!(menu_key_action("KeyA", true, all), None, "⌘A is select all, not archive");
+    }
+
+    #[test]
+    fn nth_session_counts_from_zero_and_gives_nothing_past_the_end() {
+        let order = [LiveSessionId(7), LiveSessionId(3), LiveSessionId(9)];
+        assert_eq!(nth_session(&order, 0), Some(LiveSessionId(7)));
+        assert_eq!(nth_session(&order, 2), Some(LiveSessionId(9)));
+        assert_eq!(nth_session(&order, 3), None);
+        assert_eq!(nth_session(&[], 0), None);
     }
 }

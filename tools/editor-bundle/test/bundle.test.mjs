@@ -480,3 +480,24 @@ test("a read only tab loaded as edited does not say dirty", () => {
   assert.deepEqual(plain(sent).filter((m) => m.t === "dirty"), []);
   editor.destroy();
 });
+
+function press(w, init) {
+  const content = w.document.querySelector(".cm-content");
+  const event = new w.KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  let reached = false;
+  w.document.body.addEventListener("keydown", () => (reached = true), { once: true });
+  content.dispatchEvent(event);
+  return { reached, prevented: event.defaultPrevented };
+}
+
+test("a key the editor handled does not reach the page, a key it does not handle does", () => {
+  const { w, editor } = boot();
+  editor.load("a.py", "a\nb\nc\n", "python", false);
+  const moved = press(w, { key: "ArrowDown", code: "ArrowDown", altKey: true });
+  assert.ok(moved.prevented, "the editor moves the line");
+  assert.equal(moved.reached, false, "so the workspace must not also switch session");
+  const close = press(w, { key: "w", code: "KeyW", ctrlKey: true });
+  assert.equal(close.prevented, false);
+  assert.equal(close.reached, true, "an unhandled key still reaches the workspace shortcuts");
+  editor.destroy();
+});

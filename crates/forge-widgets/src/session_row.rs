@@ -32,6 +32,18 @@ pub fn SessionRow(
     let now = OffsetDateTime::now_utc();
     let session_id = entry.session_id.clone();
 
+    // ⌥⌘R asks the active session's row to start renaming.
+    let own_key = entry.key.clone();
+    let own_title = entry.title.clone();
+    // Follows the props: the title changes while the row lives (the first message titles a new
+    // session), and the draft must start from the current one.
+    use_effect(use_reactive!(|own_key, own_title| {
+        if workspace.rename_request().as_ref() == Some(&own_key) {
+            workspace.clear_rename_request();
+            mode.set(RowMode::Renaming(own_title));
+        }
+    }));
+
     match mode() {
         RowMode::Renaming(draft) => {
             let original = entry.title.clone();

@@ -227,6 +227,12 @@ window.ForgeEditor = {
     }
 
     const view = new EditorView({ parent: host, state: EditorState.create({ doc: "", extensions: [theme] }) });
+    // A key CodeMirror handled (it called preventDefault) stays in the editor: the workspace's own
+    // shortcuts listen above this host, so Alt+Up would move the line and switch the session.
+    const keepHandledKeys = (event) => {
+      if (event.defaultPrevented) event.stopPropagation();
+    };
+    host.addEventListener("keydown", keepHandledKeys);
     view.dom.style.setProperty("--forge-tab", String(settings.tab_size));
     tools.bind(view);
 
@@ -373,6 +379,7 @@ window.ForgeEditor = {
       },
       destroy() {
         clearTimeout(timer);
+        host.removeEventListener("keydown", keepHandledKeys);
         view.destroy();
       },
     };

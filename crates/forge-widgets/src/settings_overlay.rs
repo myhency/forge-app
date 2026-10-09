@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::{OutputStyle, TranscriptView};
 use forge_entities::{model_from_value, model_options, model_value};
-use forge_features::{use_settings, ExtensionKind, SettingsSection, SettingsStatus};
+use forge_features::{use_settings, use_workspace, ExtensionKind, SettingsSection, SettingsStatus};
 use forge_shared::{Button, ButtonKind, Select, SettingRow, Switch, TextInput};
 
 /// The settings overlay (spec §16): a left navigation and rows on the right. Renders nothing while
@@ -9,6 +9,7 @@ use forge_shared::{Button, ButtonKind, Select, SettingRow, Switch, TextInput};
 #[component]
 pub fn SettingsOverlay() -> Element {
     let settings = use_settings();
+    let workspace = use_workspace();
     if !settings.is_open() {
         return rsx! {};
     }
@@ -54,6 +55,15 @@ pub fn SettingsOverlay() -> Element {
                         class: if section == SettingsSection::McpServers { "settings-nav-item active" } else { "settings-nav-item" },
                         onclick: move |_| settings.set_section(SettingsSection::McpServers),
                         "MCP servers"
+                    }
+                    button {
+                        class: "settings-nav-item",
+                        style: "margin-top: 16px;",
+                        onclick: move |_| {
+                            settings.close();
+                            workspace.open_shortcuts();
+                        },
+                        "Keyboard shortcuts"
                     }
                 }
                 div { class: "settings-content",

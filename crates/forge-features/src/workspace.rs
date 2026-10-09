@@ -4,24 +4,25 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
-use forge_application::{ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
+use forge_application::{Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, ProjectRepositoryPort, SessionRepositoryPort, SleepPort, TerminalPort, UsageStatsPort};
 use time::OffsetDateTime;
 
 use crate::cards::{clamp_cards, Cards};
+use crate::closed_sessions::ClosedSessions;
 use crate::editor_tabs::EditorTabs;
 use crate::files_store::{FilesStore, Restore};
 use crate::dock::{DockState, DockStates, Panel};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::new_session::ModelChoice;
-use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
+use crate::shortcut::{match_code, shortcut_allowed, shortcut_for, swallowed_behind_overlay, types_text, KeyPress, Shortcut};
 use crate::tool_activity::finished_tool_calls;
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, open_session_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
-use crate::sidebar::{cycle_target, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
+use crate::sidebar::{archive_key_plan, cycle_target, ArchiveKey, SidebarEntry, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
 
 // Typing waits this long before the transcripts are scanned.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -112,9 +113,12 @@ pub struct Workspace {
     comment_focus: Signal<HashMap<LiveSessionId, u64>>,
     sleeping: Signal<HashSet<LiveSessionId>>,
     search_open: Signal<bool>,
+    shortcuts_open: Signal<bool>,
     search_query: Signal<String>,
     search_hits: Signal<Vec<SearchHit>>,
     search_task: Signal<Option<dioxus::core::Task>>,
+    closed: Signal<ClosedSessions>,
+    rename_request: Signal<Option<EntryKey>>,
 }
 
 /// Creates the workspace, provides it to every descendant and loads the sidebar once. Call it in
@@ -154,9 +158,12 @@ pub fn use_workspace_provider() -> Workspace {
             comment_focus: Signal::new(HashMap::new()),
             sleeping: Signal::new(HashSet::new()),
             search_open: Signal::new(false),
+            shortcuts_open: Signal::new(false),
             search_query: Signal::new(String::new()),
             search_hits: Signal::new(Vec::new()),
             search_task: Signal::new(None),
+            closed: Signal::new(ClosedSessions::default()),
+            rename_request: Signal::new(None),
         }
     });
     use_context_provider(move || workspace);
@@ -270,6 +277,28 @@ impl Workspace {
             Active::NewSession | Active::Customize | Active::Routines => None,
         };
         arrange(&self.sidebar(), &self.prefs.read(), now, active)
+    }
+
+    pub fn shortcuts_open(&self) -> bool {
+        *self.shortcuts_open.read()
+    }
+
+    pub fn open_shortcuts(&self) {
+        let mut open = self.shortcuts_open;
+        open.set(true);
+    }
+
+    pub fn close_shortcuts(&self) {
+        let mut open = self.shortcuts_open;
+        open.set(false);
+    }
+
+    pub fn toggle_shortcuts(&self) {
+        if self.shortcuts_open() {
+            self.close_shortcuts();
+        } else {
+            self.open_shortcuts();
+        }
     }
 
     pub fn search_open(&self) -> bool {
@@ -850,7 +879,73 @@ impl Workspace {
         }
     }
 
+    // The active session's folder and sidebar entry (its title, its actions).
+    fn active_entry(&self) -> Option<(PathBuf, SidebarEntry)> {
+        let Active::Live(id) = self.active() else {
+            return None;
+        };
+        self.sidebar().into_iter().find_map(|group| {
+            let path = group.project.path.clone();
+            group.entries.into_iter().find(|entry| entry.key == EntryKey::Live(id)).map(|entry| (path, entry))
+        })
+    }
+
+    /// Forks the active session, as the row menu's Fork does.
+    pub fn fork_active(&self) {
+        if let Some((project, entry)) = self.active_entry() {
+            if let (true, Some(session)) = (entry.actions().can_fork, entry.session_id.clone()) {
+                self.fork_session(project, session, entry.title);
+            }
+        }
+    }
+
+    /// Archives the active session and closes it, or unarchives it when it is archived (see
+    /// `ArchiveKey`).
+    pub fn archive_active(&self) {
+        let (Active::Live(id), Some((project, entry))) = (self.active(), self.active_entry()) else {
+            return;
+        };
+        let running = self.live_view(id).is_some_and(|view| view.read().phase == Phase::Running);
+        match (archive_key_plan(entry.archived, entry.session_id.is_some(), running), entry.session_id) {
+            (ArchiveKey::Unarchive, Some(session)) => self.unarchive_session(project, session),
+            (ArchiveKey::ArchiveAndClose, Some(session)) => {
+                self.archive_session(project, session);
+                self.close_remembering(id);
+            }
+            (ArchiveKey::StopFirst, _) => self.report("Stop the session before archiving it.".to_string()),
+            _ => {}
+        }
+    }
+
+    /// Puts the active session's sidebar row into rename mode. Nothing when the session cannot be
+    /// renamed or its row is not in the list (the status filter hides it). A collapsed group still
+    /// lists the active session's row, so only membership counts, not `collapsed`.
+    pub fn rename_active(&self) {
+        let Some((_, entry)) = self.active_entry() else {
+            return;
+        };
+        let shown = self
+            .arranged_sidebar(crate::arrange::now_local())
+            .iter()
+            .any(|group| group.entries.iter().any(|item| item.entry.key == entry.key));
+        if entry.actions().can_rename && shown {
+            let mut request = self.rename_request;
+            request.set(Some(entry.key));
+        }
+    }
+
+    /// The row that is asked to start renaming, until it takes the request.
+    pub fn rename_request(&self) -> Option<EntryKey> {
+        self.rename_request.read().clone()
+    }
+
+    pub fn clear_rename_request(&self) {
+        let mut request = self.rename_request;
+        request.set(None);
+    }
+
     pub fn show_new_session(&self) {
+        self.clear_rename_request();
         self.close_lightbox();
         let mut active = self.active;
         active.set(Active::NewSession);
@@ -906,6 +1001,7 @@ impl Workspace {
     }
 
     pub fn select(&self, id: LiveSessionId) {
+        self.clear_rename_request();
         self.close_lightbox();
         // A routine's session the person opens stays open: what they type or edit in it must not be
         // closed away by the routine timer.
@@ -1004,6 +1100,21 @@ impl Workspace {
         });
     }
 
+    /// Opens the session closed last again (or focuses it when it is open once more). Does
+    /// nothing when none was closed; a failed open shows as a notice, like any open.
+    pub fn reopen_closed(&self) {
+        let mut closed = self.closed;
+        let Some((project, session)) = closed.write().pop() else {
+            return;
+        };
+        // Archiving closed it; the default list hides archived rows, so bring it back to the list too.
+        if self.is_archived(&project, &session) {
+            self.unarchive_session(project.clone(), session.clone());
+        }
+        let summary = project_for_open(&self.past.peek(), &project);
+        self.open_past(summary, session);
+    }
+
     pub fn close(&self, id: LiveSessionId) {
         let services = (*self.services.peek()).clone();
         services.registry.close(id);
@@ -1031,29 +1142,86 @@ impl Workspace {
 
     pub fn close_active(&self) {
         if let Active::Live(id) = self.active() {
-            self.close(id);
+            self.close_remembering(id);
         }
     }
 
-    /// Focuses the next (or previous) open session in the order the sidebar draws them.
-    pub fn cycle(&self, forward: bool) {
+    /// Closes a session the person asked to close (Cmd+W, the archive key) and remembers it for
+    /// "reopen the last closed session". Closes the app makes itself (a finished routine) use `close`.
+    pub fn close_remembering(&self, id: LiveSessionId) {
+        // A session that never got an id has no transcript to come back to.
+        if let Some(handle) = self.handle(id) {
+            let view = handle.snapshot();
+            if let Some(session) = view.claude_session_id {
+                let mut closed = self.closed;
+                closed.write().push(view.project_path, session);
+            }
+        }
+        self.close(id);
+    }
+
+    /// Focuses the next (or previous) open session in the order the sidebar draws them; `false` when
+    /// no session is open, so the key press can be left to the page.
+    pub fn cycle(&self, forward: bool) -> bool {
         let order = open_session_order(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local());
         let current = match self.active() {
             Active::Live(id) => Some(id),
             Active::NewSession | Active::Customize | Active::Routines => None,
         };
-        if let Some(target) = cycle_target(&order, current, forward) {
-            self.select(target);
+        match cycle_target(&order, current, forward) {
+            // The only open session: nothing to switch to, so the key stays the caret's.
+            Some(target) if Some(target) == current => false,
+            Some(target) => {
+                self.select(target);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Focuses the n-th open session (from 0), in the order the sidebar draws them. Nothing when
+    /// fewer are open.
+    pub fn go_to_session(&self, index: usize) {
+        let order = open_session_order(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local());
+        if let Some(id) = nth_session(&order, index) {
+            self.select(id);
+        }
+    }
+
+    /// The new-session page with the active session's folder chosen (just the page when no session is active).
+    pub fn new_session_here(&self) {
+        if let Active::Live(id) = self.active() {
+            if let Some(view) = self.live_view(id) {
+                let folder = view.read().project_path.clone();
+                return self.show_new_session_in(folder);
+            }
+        }
+        self.show_new_session();
+    }
+
+    /// Opens or closes `panel` in the active session's dock; nothing on the other pages.
+    pub fn toggle_panel(&self, panel: Panel) {
+        if let Active::Live(id) = self.active() {
+            self.change_dock(id, |dock| dock.toggle(panel));
         }
     }
 
     /// Handles the session shortcuts; returns whether the key press was one of them. While the
     /// settings overlay is open they are swallowed (spec §17.5).
     pub fn on_key(&self, event: &KeyboardEvent, overlay_open: bool) -> bool {
+        // Escape puts the shortcut list away.
+        if self.shortcuts_open() && event.key() == Key::Escape {
+            self.close_shortcuts();
+            event.prevent_default();
+            return true;
+        }
         let Some(shortcut) = shortcut_from_event(event) else {
             return false;
         };
         if !shortcut_allowed(shortcut, overlay_open) {
+            if !swallowed_behind_overlay(shortcut) {
+                return false;
+            }
             event.prevent_default();
             return true;
         }
@@ -1062,9 +1230,27 @@ impl Workspace {
             Shortcut::OpenSettings => return false,
             Shortcut::NewSession => self.show_new_session(),
             Shortcut::OpenSearch => self.open_search(),
-            Shortcut::NextSession => self.cycle(true),
-            Shortcut::PreviousSession => self.cycle(false),
+            Shortcut::NextSession => {
+                if !self.cycle(true) {
+                    return false;
+                }
+            }
+            Shortcut::PreviousSession => {
+                if !self.cycle(false) {
+                    return false;
+                }
+            }
+            Shortcut::NewSessionHere => self.new_session_here(),
+            Shortcut::GoToSession(index) => self.go_to_session(index),
+            Shortcut::TogglePanel(panel) => self.toggle_panel(panel),
+            // The sidebar belongs to the page (it knows the layout); it offers the event next.
+            Shortcut::ToggleSidebar => return false,
             Shortcut::CloseSession => self.close_active(),
+            Shortcut::ReopenClosed => self.reopen_closed(),
+            Shortcut::ArchiveActive => self.archive_active(),
+            Shortcut::ForkActive => self.fork_active(),
+            Shortcut::RenameActive => self.rename_active(),
+            Shortcut::ShowShortcuts => self.toggle_shortcuts(),
         }
         event.prevent_default();
         true
@@ -1112,14 +1298,18 @@ impl Workspace {
 }
 
 /// The shortcut a key press is, if any (platform-aware: Cmd on macOS, Ctrl elsewhere).
-pub(crate) fn shortcut_from_event(event: &KeyboardEvent) -> Option<Shortcut> {
-    let key = match event.key() {
-        Key::Tab => "Tab".to_string(),
-        Key::Character(text) => text,
-        _ => return None,
-    };
+pub fn shortcut_from_event(event: &KeyboardEvent) -> Option<Shortcut> {
     let modifiers = event.modifiers();
-    shortcut_for(&key, modifiers.ctrl(), modifiers.meta(), modifiers.shift(), cfg!(target_os = "macos"))
+    let mac = cfg!(target_os = "macos");
+    let key = event.key().to_string();
+    if types_text(&key, modifiers.ctrl(), modifiers.alt(), mac) {
+        return None;
+    }
+    let code = match_code(&key, &event.code().to_string(), modifiers.alt());
+    shortcut_for(
+        &KeyPress { code: &code, ctrl: modifiers.ctrl(), meta: modifiers.meta(), alt: modifiers.alt(), shift: modifiers.shift() },
+        mac,
+    )
 }
 
 // Every known project with its sessions. A project whose listing fails is kept (empty) and the
