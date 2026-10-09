@@ -74,7 +74,8 @@ impl PlainText {
             Esc::Csi => {
                 if ('@'..='~').contains(&ch) {
                     match ch {
-                        'C' => self.text.push(' '),
+                        // The CLI spaces the parts of a row with moves to a column (`CSI n G`) or forward.
+                        'C' | 'G' => self.text.push(' '),
                         'B' | 'E' => self.text.push('\n'),
                         _ => {}
                     }
@@ -583,5 +584,19 @@ mod tests {
         assert_eq!(sends(&downs), vec![b"\r".to_vec()], "the pointer reached context7");
         let item = driver.feed(include_bytes!("../tests/fixtures/sign_in/03_item.bin"), secs(5));
         assert_eq!(sends(&item), vec![b"\r".to_vec()]);
+    }
+
+    #[test]
+    fn a_jump_to_a_column_reads_as_a_space_so_words_drawn_that_way_do_not_run_together() {
+        assert_eq!(plain(&[b"\xe2\x9d\xaf\x1b[6G\x1b[38;2;255;193;7m\xe2\x9a\xa0\x1b[8Gname\x1b[28Gneeds"]), "\u{276f} \u{26a0} name needs");
+    }
+
+    #[test]
+    fn a_row_drawn_with_column_jumps_is_found_by_its_name_and_opened() {
+        // As the CLI draws a list row: the pointer, the status sign, the name and the note, each at a column.
+        let row = "\u{276f}\x1b[6G\x1b[38;2;255;193;7m\u{26a0}\x1b[8G\x1b[38;2;177;185;249mforge-signin-test\x1b[28G\x1b[38;2;153;153;153mneeds authentication\r\n";
+        let mut driver = at_list("forge-signin-test");
+        let screen = format!("{}\r\n{row}", mark::LIST);
+        assert_eq!(sends(&settled(&mut driver, screen.as_bytes(), secs(3))), vec![b"\r".to_vec()]);
     }
 }
