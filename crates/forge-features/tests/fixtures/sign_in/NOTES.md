@@ -20,6 +20,6 @@ A throwaway `CLAUDE_CONFIG_DIR` does not work: it has no login, so `claude` show
   `authenticated` is on the screen too, so the mark is the capital `Authenticate`. A server that is signed in shows
   `Re-authenticate` instead (not captured).
 - After Authenticate (waiting for the browser): `Authenticating with <name>…`, `A browser window will open for authentication`, the URL, `If the redirect page shows a connection error, paste the URL…`, `URL >`, and `Return here after authenticating in your browser. Press Esc to go back.`
-- After a successful browser sign-in (Figma): the screen returns to the input box and shows `/mcp` with the line `Authentication successful. Connected to figma.` under it. The failure text is **not** captured.
+- After a successful browser sign-in (Figma): the screen returns to the input box and shows `/mcp` with the line `Authentication successful. Connected to figma.` under it. After a refused consent or a server without dynamic client registration the item screen comes back with one more line: `OAuth error: access_denied - User denied`, or `SDK auth failed: Incompatible auth server: does not support dynamic client registration`. There is no `Authentication failed` text.
 - Output is cut anywhere, and Ink draws a frame in several writes: act on the screen only after it has been quiet
   for a moment (150 ms), or a half-drawn frame can make Forge press Down twice.
