@@ -370,6 +370,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_restart_after_leaving_bypass_caches_the_configured_switch_not_the_or_ed_one() {
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let mut init = resumed_init(factory);
+        init.session.permission_mode = PermissionMode::BypassPermissions;
+        // The default config: the switch is off.
+        let handle = spawn_live_session(init);
+        let mut view = handle.subscribe();
+        handle.send("one".to_string());
+        wait_for(&mut view, "the first turn", |v| v.phase == Phase::Running).await;
+        assert!(started_defaults(first_control.calls()).allow_bypass, "bypass is allowed while the session is in it");
+
+        handle.set_permission_mode(PermissionMode::AcceptEdits);
+        first_control.push(SidecarEvent::PermissionModeSet { mode: PermissionMode::AcceptEdits });
+        wait_for(&mut view, "the mode change", |v| v.session.permission_mode == PermissionMode::AcceptEdits).await;
+        first_control.push(SidecarEvent::Error { message: "boom".to_string() });
+        wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second turn", |v| v.phase == Phase::Running).await;
+
+        assert!(!started_defaults(second_control.calls()).allow_bypass, "the cached value is the configured one");
+    }
+
+    #[tokio::test]
+    async fn a_failed_start_caches_nothing_so_the_next_start_reads_the_config_again() {
+        let (first, first_control) = fake_sidecar();
+        first_control.fail_start();
+        let (second, second_control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let mut init = new_init(factory);
+        init.extensions = extensions_changing_config(code_tab_config(), AppConfig::default());
+        let handle = spawn_live_session(init);
+        let mut view = handle.subscribe();
+        handle.send("one".to_string());
+        wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
+
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second turn", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(started_defaults(first_control.calls()).output_style, Some(OutputStyle::Concise));
+        assert_eq!(started_defaults(second_control.calls()), SessionDefaults::default(), "the second config, not the first");
+    }
+
+    #[tokio::test]
     async fn a_session_already_in_bypass_mode_may_start_with_the_switch_off() {
         let (sidecar, control) = fake_sidecar();
         let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
