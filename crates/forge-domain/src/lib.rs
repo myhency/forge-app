@@ -25,6 +25,7 @@ mod usage_stats;
 
 pub use attachment::{Attachment, AttachmentKind};
 pub use card::{split_cards, with_cards, Card, CardKind, LineRange};
+mod msg;
 pub use command::SlashCommand;
 pub use config::{
     normalize_setting, AppConfig, Appearance, ArchivedRef, ChatWidth, FontChoice, Language, MotionPref, NotificationPrefs, TextSize, Theme, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,

@@ -1,7 +1,9 @@
 //! Text in the person's language. The English sentence is the key; the Korean table lives in `ko.rs`.
 
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::OnceLock;
 
+use dioxus::core::Runtime;
 use dioxus::prelude::*;
 use forge_domain::Language;
 
@@ -64,13 +66,25 @@ pub fn effective_language(chosen: Option<Language>) -> Language {
 
 static LANGUAGE: GlobalSignal<Language> = Signal::global(system_language);
 
+// The language as a plain value too, for code that runs outside a Dioxus runtime (the unit tests of
+// the state machines). 0 is English, 1 is Korean. It follows `set_current`.
+static MIRROR: AtomicU8 = AtomicU8::new(0);
+
 /// The language on screen. Reading it in a component redraws that component when it changes.
+/// Outside a Dioxus runtime it is the last language set (English until one is set).
 pub fn current() -> Language {
-    *LANGUAGE.read()
+    if Runtime::try_current().is_some() {
+        *LANGUAGE.read()
+    } else if MIRROR.load(Ordering::Relaxed) == 1 {
+        Language::Korean
+    } else {
+        Language::English
+    }
 }
 
 pub fn set_current(language: Language) {
-    if *LANGUAGE.peek() != language {
+    MIRROR.store(u8::from(language == Language::Korean), Ordering::Relaxed);
+    if Runtime::try_current().is_some() && *LANGUAGE.peek() != language {
         *LANGUAGE.write() = language;
     }
 }
@@ -89,15 +103,6 @@ macro_rules! tr {
     };
     ($text:literal, $($name:ident = $value:expr),+ $(,)?) => {
         $crate::i18n::fill($crate::i18n::text($text), &[$((stringify!($name), ($value).to_string())),+])
-    };
-}
-
-/// Marks a sentence that is translated later, where it is drawn (`i18n::text(label)`). It is the
-/// sentence itself; the scan test counts it like `tr!`.
-#[macro_export]
-macro_rules! msg {
-    ($text:literal) => {
-        $text
     };
 }
 
@@ -143,6 +148,16 @@ mod tests {
         assert_eq!(effective_language(Some(Language::Korean)), Language::Korean);
         // Nothing sets the system language in this test binary, so it is English.
         assert_eq!(effective_language(None), Language::English);
+    }
+
+    #[test]
+    fn outside_a_runtime_the_text_follows_the_last_language_set() {
+        assert_eq!(text("Settings"), "Settings");
+        set_current(Language::Korean);
+        assert_eq!(text("Settings"), "설정");
+        assert_eq!(crate::tr!("Settings"), "설정");
+        set_current(Language::English);
+        assert_eq!(text("Settings"), "Settings");
     }
 
     #[test]
