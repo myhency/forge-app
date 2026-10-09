@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use forge_shared::tr;
 use forge_features::{
     current_index, filter_key, group_label, refocus_workspace, sort_label, status_label, use_workspace, FilterChoice, FilterMenu,
     FilterOutcome, FilterRow, FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
@@ -35,7 +36,7 @@ pub fn SidebarFilterMenu() -> Element {
         div { class: "filter-wrap",
             button {
                 class: if open() { "icon-button open" } else { "icon-button" },
-                title: "Filter, sort and group sessions",
+                title: tr!("Filter, sort and group sessions"),
                 onclick: move |_| {
                     menu.set(FilterMenu::default());
                     open.set(!open());
@@ -100,19 +101,19 @@ pub fn SidebarFilterMenu() -> Element {
                             },
                             match row {
                                 FilterRow::Status => rsx! {
-                                    span { "Status" }
+                                    span { {tr!("Status")} }
                                     span { class: "value", "{status_label(prefs.status)} ›" }
                                 },
                                 FilterRow::Sort => rsx! {
-                                    span { "Sort by" }
+                                    span { {tr!("Sort by")} }
                                     span { class: "value", "{sort_label(prefs.sort_by)} ›" }
                                 },
                                 FilterRow::Group => rsx! {
-                                    span { "Group by" }
+                                    span { {tr!("Group by")} }
                                     span { class: "value", "{group_label(prefs.group_by)} ›" }
                                 },
                                 FilterRow::ShowEmpty => rsx! {
-                                    span { "Show empty groups" }
+                                    span { {tr!("Show empty groups")} }
                                     span { class: "value", if prefs.show_empty { "✓" } }
                                 },
                             }

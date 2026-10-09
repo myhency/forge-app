@@ -9,6 +9,7 @@ use std::sync::OnceLock;
 use time::{OffsetDateTime, UtcOffset};
 
 use crate::sidebar::{EntryKey, SidebarEntry, SidebarGroup};
+use forge_shared::tr;
 
 /// The age buckets of date grouping, newest first (the derived order is the drawing order).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -23,11 +24,11 @@ pub enum DateBucket {
 impl DateBucket {
     pub fn label(self) -> &'static str {
         match self {
-            DateBucket::Today => "Today",
-            DateBucket::Yesterday => "Yesterday",
-            DateBucket::Previous7Days => "Previous 7 days",
-            DateBucket::Previous30Days => "Previous 30 days",
-            DateBucket::Older => "Older",
+            DateBucket::Today => tr!("Today"),
+            DateBucket::Yesterday => tr!("Yesterday"),
+            DateBucket::Previous7Days => tr!("Previous 7 days"),
+            DateBucket::Previous30Days => tr!("Previous 30 days"),
+            DateBucket::Older => tr!("Older"),
         }
     }
 
