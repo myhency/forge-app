@@ -894,7 +894,8 @@ impl Workspace {
     }
 
     /// Puts the active session's sidebar row into rename mode. Nothing when the session cannot be
-    /// renamed or its row is not in the list (its group is collapsed, or the status filter hides it).
+    /// renamed or its row is not in the list (the status filter hides it). A collapsed group still
+    /// lists the active session's row, so only membership counts, not `collapsed`.
     pub fn rename_active(&self) {
         let Some((_, entry)) = self.active_entry() else {
             return;
@@ -902,7 +903,7 @@ impl Workspace {
         let shown = self
             .arranged_sidebar(crate::arrange::now_local())
             .iter()
-            .any(|group| !group.collapsed && group.entries.iter().any(|item| item.entry.key == entry.key));
+            .any(|group| group.entries.iter().any(|item| item.entry.key == entry.key));
         if entry.actions().can_rename && shown {
             let mut request = self.rename_request;
             request.set(Some(entry.key));
