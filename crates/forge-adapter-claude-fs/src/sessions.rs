@@ -137,9 +137,13 @@ fn may_hold_title(line: &[u8]) -> bool {
     memchr::memmem::find(line, b"-title\"").is_some()
 }
 
+const READ_BUFFER: usize = 1 << 20;
+
 async fn read_title(path: &Path) -> Option<String> {
     let file = tokio::fs::File::open(path).await.ok()?;
-    let mut reader = BufReader::new(file);
+    // A transcript can be many megabytes and every read of an async file is a trip to another thread:
+    // read big pieces, not the default 8 KB.
+    let mut reader = BufReader::with_capacity(READ_BUFFER, file);
     let mut buffer = Vec::new();
     let mut titles = TitleTracker::default();
     loop {

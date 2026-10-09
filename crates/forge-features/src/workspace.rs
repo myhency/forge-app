@@ -1344,19 +1344,46 @@ fn toggle_archived(list: &mut Vec<ArchivedRef>, project: &Path, session: &str, a
 async fn load_past(
     services: &WorkspaceServices,
 ) -> (Vec<(ProjectSummary, Vec<SessionSummary>)>, Option<String>) {
-    let projects = match services.projects.list_projects().await {
-        Ok(projects) => projects,
-        Err(error) => return (Vec::new(), Some(error.to_string())),
-    };
-    let mut loaded = Vec::with_capacity(projects.len());
+    match services.projects.list_projects().await {
+        Ok(projects) => list_all(projects, services.sessions.clone()).await,
+        Err(error) => (Vec::new(), Some(error.to_string())),
+    }
+}
+
+// How many projects are read at the same time: reading a transcript is mostly waiting for the disk.
+const PROJECTS_AT_ONCE: usize = 8;
+
+/// The sessions of every project, read a few projects at a time. The projects keep their order; one that
+/// cannot be read shows no sessions and the first such problem is returned for a notice.
+async fn list_all(
+    projects: Vec<ProjectSummary>,
+    sessions: Arc<dyn SessionRepositoryPort>,
+) -> (Vec<(ProjectSummary, Vec<SessionSummary>)>, Option<String>) {
+    let permits = Arc::new(tokio::sync::Semaphore::new(PROJECTS_AT_ONCE));
+    let mut tasks = tokio::task::JoinSet::new();
+    for (index, project) in projects.iter().enumerate() {
+        let (path, sessions, permits) = (project.path.clone(), sessions.clone(), permits.clone());
+        tasks.spawn(async move {
+            let _permit = permits.acquire_owned().await;
+            (index, sessions.list_sessions(&path).await)
+        });
+    }
+    let mut results: Vec<Option<Result<Vec<SessionSummary>, String>>> = (0..projects.len()).map(|_| None).collect();
+    while let Some(done) = tasks.join_next().await {
+        if let Ok((index, result)) = done {
+            results[index] = Some(result.map_err(|error| error.to_string()));
+        }
+    }
     let mut problem = None;
-    for project in projects {
-        match services.sessions.list_sessions(&project.path).await {
-            Ok(sessions) => loaded.push((project, sessions)),
-            Err(error) => {
+    let mut loaded = Vec::with_capacity(projects.len());
+    for (project, result) in projects.into_iter().zip(results) {
+        match result {
+            Some(Ok(found)) => loaded.push((project, found)),
+            Some(Err(error)) => {
                 problem.get_or_insert_with(|| format!("{}: {error}", project.path.display()));
                 loaded.push((project, Vec::new()));
             }
+            None => loaded.push((project, Vec::new())),
         }
     }
     (loaded, problem)
@@ -1369,6 +1396,39 @@ mod tests {
     use forge_domain::ArchivedRef;
 
     use super::*;
+
+    fn project(path: &str) -> ProjectSummary {
+        ProjectSummary { path: path.into(), last_active: String::new(), session_count: 1, exists: true }
+    }
+
+    fn summary(id: &str) -> SessionSummary {
+        SessionSummary { id: SessionId(id.to_string()), title: None, updated_at: String::new(), created_at: String::new() }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn the_sessions_of_every_project_load_together_and_keep_the_projects_order() {
+        let mut mock = forge_ports::MockSessionRepositoryPort::new();
+        mock.expect_list_sessions().returning(|path| {
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            // The first project answers last: the result must still list it first.
+            if name == "a" {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+            }
+            if name == "c" {
+                return Err(forge_ports::SessionRepositoryError::ListFailed("no access".to_string()));
+            }
+            Ok(vec![summary(&name)])
+        });
+        let projects = vec![project("/w/a"), project("/w/b"), project("/w/c"), project("/w/d")];
+
+        let (loaded, problem) = list_all(projects, Arc::new(mock)).await;
+
+        let names: Vec<_> = loaded.iter().map(|(project, _)| project.path.file_name().unwrap().to_string_lossy().to_string()).collect();
+        assert_eq!(names, ["a", "b", "c", "d"]);
+        assert_eq!(loaded[0].1[0].id.0, "a");
+        assert!(loaded[2].1.is_empty(), "a project that cannot be listed shows no sessions");
+        assert!(problem.unwrap().contains("/w/c"), "and the notice names it");
+    }
 
     #[test]
     fn archiving_adds_once_and_unarchiving_removes() {
