@@ -27,6 +27,16 @@ use crate::sidebar::{cycle_target, mark_archived, merge_sidebar, project_for_ope
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
 const SEARCH_LIMIT: usize = 50;
 
+/// Everything the Routines page and its timer need.
+#[derive(Clone)]
+pub struct RoutineServices {
+    pub routines: Arc<forge_application::RoutinesUseCase>,
+    pub runner: Arc<forge_application::RoutineRunner>,
+    pub host: Arc<forge_application::RegistryHost>,
+    /// Sessions the host started, waiting to be shown. The UI loop drains it.
+    pub starts: Arc<std::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<LiveSessionHandle>>>,
+}
+
 /// Everything the workspace needs from the outside, injected once by the composition root.
 #[derive(Clone)]
 pub struct WorkspaceServices {
@@ -46,6 +56,7 @@ pub struct WorkspaceServices {
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
     pub usage_stats: Arc<dyn UsageStatsPort>,
+    pub routines: RoutineServices,
 }
 
 /// What the main pane shows.
