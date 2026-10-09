@@ -7,6 +7,7 @@ use forge_features::{run_blocking, use_workspace, Panel};
 use forge_ports::{ChangedFile, GitError};
 
 use crate::panel_frame::PanelFrame;
+use forge_shared::tr;
 
 // A repository can have thousands of changed files (an untracked `node_modules`); only this many
 // rows are drawn.
@@ -80,7 +81,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         button {
             class: if list_open() { "icon-button active" } else { "icon-button" },
             r#type: "button",
-            title: "File list",
+            title: tr!("File list"),
             "aria-label": "File list",
             "aria-pressed": "{list_open()}",
             onclick: move |_| list_open.set(!list_open()),
@@ -89,7 +90,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         button {
             class: "icon-button",
             r#type: "button",
-            title: "Refresh",
+            title: tr!("Refresh"),
             "aria-label": "Refresh",
             onclick: move |_| refresh.set(refresh() + 1),
             "⟳"
@@ -97,10 +98,10 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     };
 
     let body = match status() {
-        None => rsx! { div { class: "dock-note", "Loading…" } },
-        Some(Err(GitError::NotARepository)) => rsx! { div { class: "dock-note", "No changes to show" } },
+        None => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
+        Some(Err(GitError::NotARepository)) => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
         Some(Err(error)) => rsx! { div { class: "dock-note error", "{error}" } },
-        Some(Ok(files)) if files.is_empty() => rsx! { div { class: "dock-note", "No changes to show" } },
+        Some(Ok(files)) if files.is_empty() => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
         Some(Ok(files)) => {
             let picked = selected();
             let hidden = files.len().saturating_sub(ROW_LIMIT);
@@ -108,13 +109,13 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 Some((path, Ok(text))) if Some(&path) == picked.as_ref() => {
                     let parsed = parse_unified_diff(&path, &text);
                     if parsed.hunks.is_empty() {
-                        rsx! { div { class: "dock-note", "No textual changes to show" } }
+                        rsx! { div { class: "dock-note", {tr!("No textual changes to show")} } }
                     } else {
                         rsx! { DiffView { diff: parsed } }
                     }
                 }
                 Some((path, Err(error))) if Some(&path) == picked.as_ref() => rsx! { div { class: "dock-note error", "{error}" } },
-                _ => rsx! { div { class: "dock-note", "Loading…" } },
+                _ => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
             };
             rsx! {
                 div { class: "changes-body",
@@ -147,7 +148,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                                 }
                             }
                             if hidden > 0 {
-                                li { class: "dock-note", "… {hidden} more files" }
+                                li { class: "dock-note", {tr!("… {count} more files", count = hidden)} }
                             }
                         }
                     }

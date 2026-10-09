@@ -11,6 +11,7 @@ use forge_ports::{TerminalEvent, TerminalId, TerminalPort, TerminalSize};
 use serde::Deserialize;
 
 use crate::panel_frame::PanelFrame;
+use forge_shared::tr;
 
 // What the page tells Rust: its size (columns and rows) and what the person typed.
 #[derive(Deserialize)]
@@ -98,7 +99,11 @@ async fn drive(
     let mut session = match terminal.open(&cwd, size) {
         Ok(session) => session,
         Err(error) => {
-            let _ = page.send(serde_json::json!({ "t": "text", "s": format!("\x1b[31m{error}\x1b[0m\r\n") }));
+            let message = match &error {
+                forge_ports::TerminalError::MissingDirectory(path) => tr!("Working directory “{path}” does not exist", path = path.display()),
+                other => other.to_string(),
+            };
+            let _ = page.send(serde_json::json!({ "t": "text", "s": format!("\x1b[31m{message}\x1b[0m\r\n") }));
             phase.set(Phase::Failed);
             return;
         }
@@ -126,8 +131,8 @@ async fn drive(
                 }
                 Some(TerminalEvent::Exited(code)) => {
                     let line = match code {
-                        Some(code) => format!("\r\n[Process exited ({code})]\r\n"),
-                        None => "\r\n[Process exited]\r\n".to_string(),
+                        Some(code) => format!("\r\n[{}]\r\n", tr!("Process exited ({code})", code = code)),
+                        None => format!("\r\n[{}]\r\n", tr!("Process exited")),
                     };
                     let _ = page.send(serde_json::json!({ "t": "text", "s": line }));
                     running.set(None);
@@ -174,9 +179,9 @@ fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<
     }
 
     let notice = match phase() {
-        Phase::Exited(Some(code)) => Some(format!("Process exited ({code})")),
-        Phase::Exited(None) => Some("Process exited".to_string()),
-        Phase::Failed => Some("Could not start the shell".to_string()),
+        Phase::Exited(Some(code)) => Some(tr!("Process exited ({code})", code = code)),
+        Phase::Exited(None) => Some(tr!("Process exited").to_string()),
+        Phase::Failed => Some(tr!("Could not start the shell").to_string()),
         Phase::Starting | Phase::Running => None,
     };
     rsx! {
@@ -185,7 +190,7 @@ fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<
             if let Some(notice) = notice {
                 div { class: "terminal-exited",
                     span { "{notice}" }
-                    button { class: "terminal-restart", r#type: "button", onclick: move |_| on_restart.call(tab), "Restart" }
+                    button { class: "terminal-restart", r#type: "button", onclick: move |_| on_restart.call(tab), {tr!("Restart")} }
                 }
             }
         }
@@ -208,12 +213,12 @@ pub fn TerminalPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let tools = rsx! {
         for (index, tab) in tab_ids.iter().copied().enumerate() {
             span { key: "{tab.0}", class: if Some(tab) == active { "terminal-tab active" } else { "terminal-tab" },
-                button { class: "terminal-tab-label", r#type: "button", onclick: move |_| tabs.write().select(tab), "Shell {index + 1}" }
+                button { class: "terminal-tab-label", r#type: "button", onclick: move |_| tabs.write().select(tab), {tr!("Shell {n}", n = index + 1)} }
                 button {
                     class: "terminal-tab-close",
                     r#type: "button",
-                    title: "Close tab",
-                    "aria-label": "Close tab",
+                    title: tr!("Close tab"),
+                    "aria-label": tr!("Close tab"),
                     onclick: move |_| {
                         tabs.write().close(tab);
                         if tabs.read().is_empty() {
@@ -227,8 +232,8 @@ pub fn TerminalPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         button {
             class: "icon-button",
             r#type: "button",
-            title: "New terminal",
-            "aria-label": "New terminal",
+            title: tr!("New terminal"),
+            "aria-label": tr!("New terminal"),
             onclick: move |_| {
                 tabs.write().open();
             },
