@@ -40,6 +40,9 @@ pub trait McpManagerPort: Send + Sync {
     async fn remove(&self, name: &str) -> Result<(), McpManagerError>;
     /// One line about the connection. The output of the CLI is not kept: it prints header and env values.
     async fn check(&self, name: &str) -> Result<Connection, McpManagerError>;
+    /// The shell line that starts the Claude Code Forge uses, with the config folder it uses. Typed into a
+    /// terminal, so the person's `/mcp` sign-in lands in the state the checks read.
+    fn launch_line(&self) -> Result<String, McpManagerError>;
 }
 
 #[cfg(test)]

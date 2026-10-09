@@ -137,6 +137,22 @@ impl McpManagerPort for ClaudeMcpCli {
         let output = self.exec(strings(&["mcp", "get", name]), CHECK).await?;
         Ok(parse_connection(&output))
     }
+
+    fn launch_line(&self) -> Result<String, McpManagerError> {
+        if !self.binary.exists() {
+            return Err(McpManagerError::BinaryMissing(self.binary.display().to_string()));
+        }
+        let program = shell_quote(&self.binary.to_string_lossy());
+        Ok(match &self.config_dir {
+            Some(dir) => format!("CLAUDE_CONFIG_DIR={} {program}", shell_quote(&dir.to_string_lossy())),
+            None => program,
+        })
+    }
+}
+
+/// Single quotes around the text; a quote inside it closes, escapes and opens again.
+fn shell_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', r"'\''"))
 }
 
 #[cfg(test)]
