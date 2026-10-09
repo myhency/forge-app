@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::split_cards;
-use forge_shared::{Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind};
 
 use crate::cards::line_count;
 use crate::composer_cards::ComposerCards;
@@ -101,7 +101,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
             CommandTextArea {
                 value: draft(),
                 commands: view.map(|view| view.read().commands.clone()).unwrap_or_default(),
-                placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, "Message Claude…"),
+                placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, tr!("Message Claude…")),
                 disabled: !can_send,
                 open_token: composer.popup_token(),
                 oninput: move |text| draft.set(text),
@@ -114,14 +114,14 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                     button {
                         class: "stop-button",
                         r#type: "button",
-                        title: "Stop",
+                        title: tr!("Stop"),
                         "aria-label": "Stop",
                         onclick: stop,
                         span { class: "stop-dot" }
                     }
                 } else {
                     Button {
-                        label: "Send",
+                        label: tr!("Send"),
                         kind: ButtonKind::Primary,
                         disabled: !can_send,
                         onclick: move |_| submit(),

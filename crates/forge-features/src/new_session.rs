@@ -4,6 +4,7 @@ use forge_domain::PermissionMode;
 use crate::command_box::CommandTextArea;
 use crate::composer_state::{use_composer_state_provider, ComposerChips};
 use crate::workspace::use_workspace;
+use forge_shared::tr;
 
 /// What was chosen for the new session before it exists: `None` follows the saved default model,
 /// `Some(None)` is the SDK's default, `Some(Some(id))` is that model.
@@ -77,7 +78,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
     rsx! {
         div { class: "new-session",
             if !has_folder {
-                div { class: "banner info", "No existing project folder was found in your Claude Code history. Use “Open folder…” to choose one." }
+                div { class: "banner info", {tr!("No existing project folder was found in your Claude Code history. Use “Open folder…” to choose one.")} }
             }
             div { class: "env-chips", {chips} }
             if let Some(message) = composer.error() {
@@ -89,7 +90,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
                     value: text(),
                     open_token: composer.popup_token(),
                     commands: workspace.new_commands(),
-                    placeholder: "Describe a task or ask a question",
+                    placeholder: tr!("Describe a task or ask a question"),
                     disabled: !has_folder,
                     oninput: move |value| text.set(value),
                     onsubmit: move |_| submit(),
@@ -97,7 +98,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
                 button {
                     class: if ready { "send-icon ready" } else { "send-icon" },
                     r#type: "button",
-                    title: "Send",
+                    title: tr!("Send"),
                     disabled: !has_folder || !ready,
                     onclick: move |_| submit(),
                     "↵"

@@ -69,7 +69,7 @@ pub use command_box::CommandTextArea;
 pub use editor_doc::{normalize_newlines, text_hash, Banner, TabDoc};
 pub use editor_tabs::{EditorTab, EditorTabs};
 pub use dock::{Column, DockState, DockStates, Panel, DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH};
-pub use effort::{effort_button_label, effort_levels, slider_position, EFFORT_HELP, SLIDER_FASTER, SLIDER_SMARTER};
+pub use effort::{effort_button_label, effort_levels, slider_position, effort_help, slider_faster, slider_smarter};
 pub use composer_cards::ComposerCards;
 pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, Outgoing};
 pub use filter_menu::{

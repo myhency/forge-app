@@ -1,3 +1,4 @@
+use forge_shared::tr;
 /// The value of the "Default" option in a model list (an empty model is stored as `None`).
 pub const DEFAULT_MODEL_VALUE: &str = "__default";
 
@@ -26,7 +27,7 @@ pub fn model_options(saved: Option<&str>) -> Vec<(String, String)> {
     let mut options = vec![(DEFAULT_MODEL_VALUE.to_string(), DEFAULT_LABEL.to_string())];
     options.extend(KNOWN_MODELS.iter().map(|(id, label)| (id.to_string(), label.to_string())));
     if let Some(id) = saved.filter(|id| !is_known(id)) {
-        options.push((id.to_string(), format!("Custom: {id}")));
+        options.push((id.to_string(), tr!("Custom: {id}", id = id)));
     }
     options
 }
@@ -39,7 +40,7 @@ pub fn model_value(saved: Option<&str>) -> String {
 /// A short name for the saved model, for read-only display.
 pub fn model_label(saved: Option<&str>) -> String {
     match saved {
-        None => "Default model".to_string(),
+        None => tr!("Default model").to_string(),
         Some(id) => KNOWN_MODELS
             .iter()
             .find(|(known, _)| *known == id)
@@ -87,10 +88,10 @@ pub fn model_menu_rows(current: Option<&str>) -> Vec<ModelRow> {
         })
         .collect();
     if let Some(id) = current.filter(|id| !is_known(id)) {
-        rows.push(ModelRow { value: Some(id.to_string()), label: format!("Custom: {id}"), key: None, divider_before: true });
+        rows.push(ModelRow { value: Some(id.to_string()), label: tr!("Custom: {id}", id = id), key: None, divider_before: true });
     }
     let divider_before = !rows.last().is_some_and(|row| row.divider_before);
-    rows.push(ModelRow { value: None, label: "Default model".to_string(), key: None, divider_before });
+    rows.push(ModelRow { value: None, label: tr!("Default model").to_string(), key: None, divider_before });
     rows
 }
 
