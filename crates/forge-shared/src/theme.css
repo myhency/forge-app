@@ -869,3 +869,33 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .customize-wrap { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
 .customize-pair { display: flex; gap: 8px; }
 .customize-pair .customize-field { flex: 1 1 0; min-width: 0; }
+
+/* Routines (Plan 31) */
+.routines-notice { margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--fg-muted); font-size: 13px; }
+.routine-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-top: 12px; }
+.routine-card { appearance: none; text-align: left; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); color: var(--fg); font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.routine-card:hover { background: var(--bg-hover); }
+.routine-card-title { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.routine-card-desc { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.routine-card-meta { color: var(--fg-muted); font-size: 13px; }
+.routine-tag { padding: 1px 8px; border-radius: 999px; background: var(--warning); color: var(--warning-fg); font-size: 11px; font-weight: 500; }
+.routine-head { display: flex; align-items: center; gap: 4px; margin-bottom: 12px; }
+.routine-head .link, .routine-rule .link, .routine-right .link { appearance: none; border: none; background: none; color: var(--fg-muted); font: inherit; cursor: pointer; padding: 0; text-decoration: underline; }
+.routine-actions { margin-left: auto; display: flex; gap: 8px; }
+.routine-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 32px; }
+.routine-columns h3 { margin: 16px 0 4px; font-size: 12px; font-weight: 500; color: var(--fg-muted); }
+.routine-switch { display: flex; align-items: center; gap: 8px; }
+.routine-folder { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.routine-instructions { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
+.routine-instructions.open { max-height: none; }
+.routine-rule { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.routine-run { appearance: none; display: flex; gap: 12px; width: 100%; padding: 8px 10px; margin-bottom: 6px; border: none; border-radius: 8px; background: var(--bg-hover); color: var(--fg); font: inherit; text-align: left; }
+.routine-run.clickable { cursor: pointer; }
+.routine-run-when { flex: none; }
+.routine-run-text { color: var(--fg-muted); overflow-wrap: anywhere; }
+.routine-form { display: flex; flex-direction: column; gap: 8px; max-width: 760px; }
+.routine-form > label { color: var(--fg-muted); font-size: 12px; margin-top: 8px; }
+.routine-form-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.routine-form-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.routine-problem { color: var(--danger); margin: 0; }
+@media (max-width: 760px) { .routine-columns { grid-template-columns: 1fr; } }
