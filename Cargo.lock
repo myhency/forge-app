@@ -1604,14 +1604,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "forge-adapter-sleep"
-version = "0.1.0"
-dependencies = [
- "forge-ports",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "forge-adapter-terminal"
 version = "0.1.0"
 dependencies = [
@@ -1635,7 +1627,6 @@ dependencies = [
  "forge-adapter-git",
  "forge-adapter-notify",
  "forge-adapter-sidecar",
- "forge-adapter-sleep",
  "forge-adapter-terminal",
  "forge-application",
  "forge-domain",

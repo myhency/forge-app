@@ -4,7 +4,7 @@ use forge_application::LiveSessionId;
 use forge_features::{use_workspace, Panel};
 
 /// The icons at the right of the chat header: the terminal toggle (hidden when `terminal` is
-/// false, as for an archived session) and the `⋮` menu with the Prevent sleep switch.
+/// false, as for an archived session) and the `⋮` menu with the panel switches.
 #[component]
 pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
     let workspace = use_workspace();
@@ -13,7 +13,6 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
     let changes_open = workspace.dock(id).is_open(Panel::Changes);
     let files_open = workspace.dock(id).is_open(Panel::Files);
     let preview_open = workspace.dock(id).is_open(Panel::Preview);
-    let sleeping = workspace.prevents_sleep(id);
     rsx! {
         div { class: "pane-tools",
             if terminal {
@@ -122,15 +121,6 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                 },
                                 span { {tr!("Files")} }
                             }
-                        }
-                        button {
-                            class: "picker-item",
-                            r#type: "button",
-                            role: "menuitemcheckbox",
-                            "aria-checked": "{sleeping}",
-                            onclick: move |_| workspace.set_prevent_sleep(id, !sleeping),
-                            span { {tr!("Prevent sleep")} }
-                            span { class: "menu-key", if sleeping { {tr!("On · This session only")} } else { {tr!("Off · This session only")} } }
                         }
                     }
                 }

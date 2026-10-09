@@ -69,7 +69,7 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 18 | Composer `+` menu (built, CMP-02 voice left out) | CMP-01, CMP-06 | Attachments are the largest piece; split if needed |
 | 19 | Fork and effort (built) | SES-01, CMP-05, OTH-07 | The small items the user chose first |
 | 20 | Archive (built) | SES-02, SES-06 key A, SES-08 status | Took Plan 20's place; the terminal moved to 21A |
-| 21A | Dock, terminal, prevent sleep (built) | PNL-01, PNL-06 | First right-hand dock; later panels reuse it |
+| 21A | Dock, terminal (built; its prevent sleep was removed 2026-10-09) | PNL-01 | First right-hand dock; later panels reuse it |
 | 21B | Changes, files, preview panels | PNL-02, PNL-03, PNL-04 | Observation round 5 is done; read-only Files and a small Preview (spec `2026-10-03-right-dock-panels-design.md`) |
 | 22 | Routines | PG-01 | Needs a scheduler that runs only while the app is open |
 | 23A | Chat view, static look (built) | new (observation round 7) | Spec `2026-10-04-chat-view-static-design.md`: ordered message blocks, folded tool activity, end card, markdown |
