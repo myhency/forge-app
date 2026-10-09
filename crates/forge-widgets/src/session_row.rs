@@ -273,7 +273,7 @@ pub fn SessionRow(
                                 span { class: "menu-key", "D" }
                             }
                             if actions.delete == DeleteAction::WhileOpen {
-                                div { class: "row-menu-note", "Close the session first ({forge_domain::KEY_CLOSE_SESSION}) to delete it." }
+                                div { class: "row-menu-note", {tr!("Close the session first ({key}) to delete it.", key = forge_domain::KEY_CLOSE_SESSION)} }
                             }
                         }
                     }
