@@ -1,8 +1,8 @@
 use dioxus::prelude::*;
-use forge_domain::{OutputStyle, TranscriptView};
+use forge_domain::{ChatWidth, FontChoice, MotionPref, OutputStyle, TextSize, Theme, TranscriptView};
 use forge_entities::{model_from_value, model_options, model_value};
-use forge_features::{use_settings, use_workspace, ExtensionKind, SettingsSection, SettingsStatus};
-use forge_shared::{Button, ButtonKind, Select, SettingRow, Switch, TextInput};
+use forge_features::{filter_pages, nav_groups, use_settings, use_workspace, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
+use forge_shared::{Button, ButtonKind, Segmented, Select, SettingRow, Switch, TextInput};
 
 /// The settings overlay (spec §16): a left navigation and rows on the right. Renders nothing while
 /// closed. Esc and ⌘, are handled by the page's key handler.
@@ -25,36 +25,36 @@ pub fn SettingsOverlay() -> Element {
                 onclick: move |event| event.stop_propagation(),
                 button { class: "settings-close", title: "Close (Esc)", onclick: move |_| settings.close(), "✕" }
                 div { class: "settings-nav",
-                    div { class: "settings-nav-heading", "Settings" }
-                    button {
-                        class: if section == SettingsSection::Connection { "settings-nav-item active" } else { "settings-nav-item" },
-                        onclick: move |_| settings.set_section(SettingsSection::Connection),
-                        "Connection"
+                    input {
+                        class: "settings-search",
+                        r#type: "text",
+                        placeholder: "Search",
+                        value: "{settings.search()}",
+                        oninput: move |event| settings.set_search(event.value()),
                     }
-                    button {
-                        class: if section == SettingsSection::Model { "settings-nav-item active" } else { "settings-nav-item" },
-                        onclick: move |_| settings.set_section(SettingsSection::Model),
-                        "Model"
-                    }
-                    button {
-                        class: if section == SettingsSection::Code { "settings-nav-item active" } else { "settings-nav-item" },
-                        onclick: move |_| settings.set_section(SettingsSection::Code),
-                        "Code"
-                    }
-                    button {
-                        class: if section == SettingsSection::Skills { "settings-nav-item active" } else { "settings-nav-item" },
-                        onclick: move |_| settings.set_section(SettingsSection::Skills),
-                        "Skills"
-                    }
-                    button {
-                        class: if section == SettingsSection::Plugins { "settings-nav-item active" } else { "settings-nav-item" },
-                        onclick: move |_| settings.set_section(SettingsSection::Plugins),
-                        "Plugins"
-                    }
-                    button {
-                        class: if section == SettingsSection::McpServers { "settings-nav-item active" } else { "settings-nav-item" },
-                        onclick: move |_| settings.set_section(SettingsSection::McpServers),
-                        "MCP servers"
+                    {
+                        let matches = filter_pages(&settings.search());
+                        if matches.is_empty() {
+                            rsx! { div { class: "hint settings-empty", "No settings match." } }
+                        } else {
+                            rsx! {
+                                for group in nav_groups() {
+                                    if group.pages.iter().any(|(page, _)| matches.contains(page)) {
+                                        div { key: "{group.title}", class: "settings-nav-heading", "{group.title}" }
+                                        for (page, name) in group.pages.clone() {
+                                            if matches.contains(&page) {
+                                                button {
+                                                    key: "{name}",
+                                                    class: if page == section { "settings-nav-item active" } else { "settings-nav-item" },
+                                                    onclick: move |_| settings.set_section(page),
+                                                    "{name}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     button {
                         class: "settings-nav-item",
@@ -68,6 +68,7 @@ pub fn SettingsOverlay() -> Element {
                 }
                 div { class: "settings-content",
                     match section {
+                        SettingsSection::General => rsx! { GeneralSection {} },
                         SettingsSection::Connection => rsx! { ConnectionSection {} },
                         SettingsSection::Model => rsx! { ModelSection {} },
                         // Temporary: Task 8 renders these tabs.
@@ -79,6 +80,85 @@ pub fn SettingsOverlay() -> Element {
                     StatusLine {}
                 }
             }
+        }
+    }
+}
+
+#[component]
+fn GeneralSection() -> Element {
+    let settings = use_settings();
+    let look = settings.appearance();
+    let notes = settings.notifications();
+    rsx! {
+        h2 { "General" }
+        h3 { class: "settings-group", "Appearance" }
+        SettingRow { title: "Theme", description: "System follows the computer's light or dark mode.",
+            Segmented {
+                label: "Theme",
+                value: look.theme.value().to_string(),
+                options: Theme::ALL.iter().map(|choice| (choice.value().to_string(), choice.label().to_string())).collect::<Vec<_>>(),
+                onchange: move |value: String| {
+                    if let Some(choice) = Theme::from_value(&value) {
+                        settings.set_theme(choice);
+                    }
+                },
+            }
+        }
+        SettingRow {
+            title: "Font",
+            description: "Used for the whole interface, the chat and code. OpenDyslexic must be installed on the computer.",
+            Select {
+                value: look.font.value().to_string(),
+                options: FontChoice::ALL.iter().map(|choice| (choice.value().to_string(), choice.label().to_string())).collect::<Vec<_>>(),
+                onchange: move |value: String| {
+                    if let Some(choice) = FontChoice::from_value(&value) {
+                        settings.set_font(choice);
+                    }
+                },
+            }
+        }
+        SettingRow { title: "Text size", description: "The size of the conversation text.",
+            Segmented {
+                label: "Text size",
+                value: look.text_size.value().to_string(),
+                options: TextSize::ALL.iter().map(|choice| (choice.value().to_string(), choice.label().to_string())).collect::<Vec<_>>(),
+                onchange: move |value: String| {
+                    if let Some(choice) = TextSize::from_value(&value) {
+                        settings.set_text_size(choice);
+                    }
+                },
+            }
+        }
+        SettingRow { title: "Chat width", description: "How wide the conversation column is.",
+            Segmented {
+                label: "Chat width",
+                value: look.chat_width.value().to_string(),
+                options: ChatWidth::ALL.iter().map(|choice| (choice.value().to_string(), choice.label().to_string())).collect::<Vec<_>>(),
+                onchange: move |value: String| {
+                    if let Some(choice) = ChatWidth::from_value(&value) {
+                        settings.set_chat_width(choice);
+                    }
+                },
+            }
+        }
+        SettingRow { title: "Reduce motion", description: "Turns off animation of streaming replies and other interface elements.",
+            Switch {
+                on: look.motion == MotionPref::Reduced,
+                onchange: move |on| settings.set_motion(if on { MotionPref::Reduced } else { MotionPref::System }),
+            }
+        }
+        h3 { class: "settings-group", "Notifications" }
+        SettingRow { title: "Reply done", description: "When a session you are not looking at finishes a reply.",
+            Switch { on: notes.reply_done, onchange: move |on| settings.set_notification(NotificationKind::ReplyDone, on) }
+        }
+        SettingRow { title: "Scheduled task", description: "When a routine needs you or cannot start.",
+            Switch { on: notes.scheduled_task, onchange: move |on| settings.set_notification(NotificationKind::ScheduledTask, on) }
+        }
+        SettingRow { title: "Code notice", description: "When a session fails or cannot continue.",
+            Switch { on: notes.code_notice, onchange: move |on| settings.set_notification(NotificationKind::CodeNotice, on) }
+        }
+        SettingRow { title: "Permission request", description: "When a session you are not looking at asks for approval.",
+            Switch { on: notes.permission_request, onchange: move |on| settings.set_notification(NotificationKind::PermissionRequest, on) }
         }
     }
 }
@@ -97,17 +177,15 @@ fn CodeSection() -> Element {
         SettingRow {
             title: "Default transcript view",
             description: "The view sessions open in. The view menu of a session changes that session only.",
-            div { class: "view-switch", role: "radiogroup", "aria-label": "Default transcript view",
-                for option in TranscriptView::ALL {
-                    button {
-                        key: "{option.label()}",
-                        class: if option == view { "view-option selected" } else { "view-option" },
-                        role: "radio",
-                        "aria-checked": "{option == view}",
-                        onclick: move |_| settings.set_default_transcript_view(option),
-                        "{option.label()}"
+            Segmented {
+                label: "Default transcript view",
+                value: view.label().to_string(),
+                options: TranscriptView::ALL.iter().map(|option| (option.label().to_string(), option.label().to_string())).collect::<Vec<_>>(),
+                onchange: move |value: String| {
+                    if let Some(option) = TranscriptView::ALL.iter().copied().find(|option| option.label() == value) {
+                        settings.set_default_transcript_view(option);
                     }
-                }
+                },
             }
         }
         SettingRow { title: "Output style", description: "Applies to new sessions.",
@@ -126,6 +204,13 @@ fn CodeSection() -> Element {
             title: "Allow bypass permissions mode",
             description: "Adds Bypass permissions to the mode menu, which skips every permission check in a session. A session that is already in that mode keeps it.",
             Switch { on: settings.allow_bypass_mode(), onchange: move |on| settings.set_allow_bypass_mode(on) }
+        }
+        if cfg!(target_os = "macos") {
+            SettingRow {
+                title: "Bounce the Dock icon",
+                description: "When a session needs your approval or stops, the Dock icon bounces until you come back.",
+                Switch { on: settings.attention_bounce(), onchange: move |on| settings.set_attention_bounce(on) }
+            }
         }
         div { class: "hint", style: "margin-top: 12px;",
             "Output style, prompt suggestions and the bypass switch apply to sessions that start after the change. The default view also applies to open sessions you have not changed."

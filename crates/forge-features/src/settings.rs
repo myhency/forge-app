@@ -13,6 +13,7 @@ use crate::shortcut::Shortcut;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsSection {
+    General,
     Connection,
     Model,
     Skills,
@@ -101,6 +102,7 @@ pub struct Settings {
     usecase: Signal<Arc<SettingsUseCase>>,
     open: Signal<bool>,
     section: Signal<SettingsSection>,
+    search: Signal<String>,
     saved: Signal<AppConfig>,
     base_url: Signal<String>,
     api_key: Signal<String>,
@@ -118,7 +120,8 @@ pub fn use_settings_provider() -> Settings {
     let settings = use_hook(move || Settings {
         usecase: Signal::new(services.settings.clone()),
         open: Signal::new(false),
-        section: Signal::new(SettingsSection::Connection),
+        section: Signal::new(SettingsSection::General),
+        search: Signal::new(String::new()),
         saved: Signal::new(AppConfig::default()),
         base_url: Signal::new(String::new()),
         api_key: Signal::new(String::new()),
@@ -148,6 +151,8 @@ impl Settings {
         let mut status = self.status;
         let mut key_visible = self.key_visible;
         open.set(true);
+        let mut search = self.search;
+        search.set(String::new());
         status.set(None);
         key_visible.set(false);
         self.reload();
@@ -157,6 +162,15 @@ impl Settings {
     pub fn close(&self) {
         let mut open = self.open;
         open.set(false);
+    }
+
+    pub fn search(&self) -> String {
+        self.search.read().clone()
+    }
+
+    pub fn set_search(&self, query: String) {
+        let mut search = self.search;
+        search.set(query);
     }
 
     pub fn section(&self) -> SettingsSection {
@@ -466,7 +480,7 @@ impl Settings {
         dioxus::core::spawn_forever(async move {
             match usecase.save_code_settings(|config| apply_code_change(config, change)).await {
                 Ok(config) => this.after_save_code(config),
-                Err(error) => this.fail(SettingsSection::Code, error.to_string()),
+                Err(error) => this.fail(*this.section.peek(), error.to_string()),
             }
         });
     }
@@ -486,7 +500,7 @@ impl Settings {
             current.attention_bounce = config.attention_bounce;
         }
         crate::appearance::apply_appearance(&config.appearance);
-        status.set(Some((SettingsSection::Code, SettingsStatus::Saved)));
+        status.set(Some((*self.section.peek(), SettingsStatus::Saved)));
     }
 
     // After a model save only the model changed; leave any unsaved Connection edits alone.

@@ -89,6 +89,25 @@ pub fn Select(
     }
 }
 
+/// A row of mutually exclusive choices over `(value, label)` pairs, shown as one segmented control.
+#[component]
+pub fn Segmented(label: String, value: String, options: Vec<(String, String)>, onchange: EventHandler<String>) -> Element {
+    rsx! {
+        div { class: "view-switch", role: "radiogroup", "aria-label": "{label}",
+            for (option_value, option_label) in options.iter().cloned() {
+                button {
+                    key: "{option_value}",
+                    class: if option_value == value { "view-option selected" } else { "view-option" },
+                    role: "radio",
+                    "aria-checked": "{option_value == value}",
+                    onclick: move |_| onchange.call(option_value.clone()),
+                    "{option_label}"
+                }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn TextArea(
     value: String,

@@ -229,6 +229,10 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .settings-panel { position: relative; display: flex; width: min(960px, calc(100% - 64px)); height: min(640px, calc(100% - 64px)); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; }
 .settings-nav { width: 220px; flex: none; padding: 20px 12px; background: var(--bg-sidebar); border-right: 1px solid var(--border); box-sizing: border-box; }
 .settings-nav-heading { padding: 0 10px 8px; font-size: 12px; color: var(--fg-muted); }
+.settings-search { display: block; width: 100%; box-sizing: border-box; margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; }
+.settings-nav-heading ~ .settings-nav-heading { margin-top: 10px; }
+.settings-group { margin: 22px 0 0; font-size: 13px; color: var(--fg-muted); font-weight: 600; }
+.settings-empty { padding: 6px 10px; }
 .settings-nav-item { display: block; width: 100%; padding: 7px 10px; border: none; border-radius: 8px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .settings-nav-item:hover { background: var(--bg-hover); }
 .settings-nav-item.active { background: var(--bg-hover); font-weight: 600; }
