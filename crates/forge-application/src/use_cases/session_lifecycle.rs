@@ -32,6 +32,7 @@ impl StartSessionUseCase {
                 extensions: Default::default(),
                 additional_directories: Vec::new(),
                 allowed_tools: Vec::new(),
+                defaults: forge_domain::SessionDefaults::default(),
             })
             .await
     }
@@ -73,6 +74,7 @@ impl ResumeSessionUseCase {
                 extensions: Default::default(),
                 additional_directories: Vec::new(),
                 allowed_tools: Vec::new(),
+                defaults: forge_domain::SessionDefaults::default(),
             })
             .await?;
 

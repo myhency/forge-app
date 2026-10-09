@@ -52,6 +52,9 @@ export type SidecarCommand =
       mcp_servers: Record<string, unknown>;
       additional_directories?: string[];
       allowed_tools?: string[];
+      output_style?: string;
+      prompt_suggestions: boolean;
+      allow_bypass: boolean;
     }
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision }

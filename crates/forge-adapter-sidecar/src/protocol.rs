@@ -20,6 +20,10 @@ pub enum SidecarCommand {
         additional_directories: Vec<String>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         allowed_tools: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        output_style: Option<String>,
+        prompt_suggestions: bool,
+        allow_bypass: bool,
     },
     SendMessage {
         id: String,
@@ -116,6 +120,9 @@ impl SidecarCommand {
             mcp_servers: params.extensions.mcp_servers,
             additional_directories: params.additional_directories,
             allowed_tools: params.allowed_tools,
+            output_style: params.defaults.output_style.map(|style| style.name().to_string()),
+            prompt_suggestions: params.defaults.prompt_suggestions,
+            allow_bypass: params.defaults.allow_bypass,
         }
     }
 
@@ -185,7 +192,30 @@ mod tests {
             extensions: ActiveExtensions::default(),
             additional_directories,
             allowed_tools: Vec::new(),
+            defaults: forge_domain::SessionDefaults::default(),
         }
+    }
+
+    #[test]
+    fn start_session_carries_the_defaults_and_leaves_the_style_out_when_there_is_none() {
+        let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params_with(Vec::new()))).unwrap();
+        assert!(json.get("output_style").is_none());
+        assert_eq!(json["prompt_suggestions"], serde_json::json!(true));
+        assert_eq!(json["allow_bypass"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn start_session_carries_the_style_name_and_the_switches() {
+        let mut params = params_with(Vec::new());
+        params.defaults = forge_domain::SessionDefaults {
+            output_style: Some(forge_domain::OutputStyle::Concise),
+            prompt_suggestions: false,
+            allow_bypass: true,
+        };
+        let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params)).unwrap();
+        assert_eq!(json["output_style"], serde_json::json!("Concise"));
+        assert_eq!(json["prompt_suggestions"], serde_json::json!(false));
+        assert_eq!(json["allow_bypass"], serde_json::json!(true));
     }
 
     #[test]
@@ -268,6 +298,7 @@ mod tests {
                 extensions: ActiveExtensions::default(),
                 additional_directories: Vec::new(),
                 allowed_tools: Vec::new(),
+                defaults: forge_domain::SessionDefaults::default(),
             },
         );
 
@@ -284,7 +315,9 @@ mod tests {
                 "effort": null,
                 "skills": {},
                 "plugins": [],
-                "mcp_servers": {}
+                "mcp_servers": {},
+                "prompt_suggestions": true,
+                "allow_bypass": false
             })
         );
     }
@@ -308,6 +341,7 @@ mod tests {
                 },
                 additional_directories: Vec::new(),
                 allowed_tools: Vec::new(),
+                defaults: forge_domain::SessionDefaults::default(),
             },
         );
 

@@ -243,6 +243,7 @@ impl Actor {
                 extensions: extensions.clone(),
                 additional_directories: self.additional_directories.clone(),
                 allowed_tools: self.allowed_tools.clone(),
+                defaults: forge_domain::SessionDefaults::default(),
             })
             .await
             .map_err(|e| e.to_string())?;

@@ -20,6 +20,8 @@ const startCommand: SidecarCommand = {
   skills: {},
   plugins: [],
   mcp_servers: {},
+  prompt_suggestions: true,
+  allow_bypass: true,
 };
 
 const skillRoots: string[] = [];
@@ -1153,6 +1155,43 @@ describe("SidecarSession", () => {
       await new SidecarSession(queryFn, () => {}).handle(startCommand);
 
       expect(captured.allowDangerouslySkipPermissions).toBe(true);
+    });
+  });
+
+  describe("the Code tab defaults", () => {
+    function capture(): { options: () => any; queryFn: QueryFn } {
+      let captured: any;
+      const queryFn: QueryFn = (args) => {
+        captured = args.options;
+        return toQueryHandle((async function* () {})());
+      };
+      return { options: () => captured, queryFn };
+    }
+
+    it("passes the output style as an inline setting, and no setting when there is none", async () => {
+      const styled = capture();
+      await new SidecarSession(styled.queryFn, () => {}).handle({ ...startCommand, output_style: "Concise" });
+      expect(styled.options().settings).toEqual({ outputStyle: "Concise" });
+
+      const plain = capture();
+      await new SidecarSession(plain.queryFn, () => {}).handle(startCommand);
+      expect(plain.options().settings).toBeUndefined();
+    });
+
+    it("follows the command for prompt suggestions", async () => {
+      const off = capture();
+      await new SidecarSession(off.queryFn, () => {}).handle({ ...startCommand, prompt_suggestions: false });
+      expect(off.options().promptSuggestions).toBe(false);
+    });
+
+    it("lets the SDK enter bypass only when the command allows it", async () => {
+      const refused = capture();
+      await new SidecarSession(refused.queryFn, () => {}).handle({ ...startCommand, allow_bypass: false });
+      expect(refused.options().allowDangerouslySkipPermissions).toBe(false);
+
+      const allowed = capture();
+      await new SidecarSession(allowed.queryFn, () => {}).handle({ ...startCommand, allow_bypass: true });
+      expect(allowed.options().allowDangerouslySkipPermissions).toBe(true);
     });
   });
 

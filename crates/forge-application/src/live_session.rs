@@ -309,6 +309,7 @@ mod tests {
             extensions: ActiveExtensions::default(),
             additional_directories: Vec::new(),
             allowed_tools: Vec::new(),
+            defaults: forge_domain::SessionDefaults::default(),
         }
     }
 
