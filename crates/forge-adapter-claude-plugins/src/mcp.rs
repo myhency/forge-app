@@ -137,10 +137,60 @@ impl McpManagerPort for ClaudeMcpCli {
         let output = self.exec(strings(&["mcp", "get", name]), CHECK).await?;
         Ok(parse_connection(&output))
     }
+
+    fn launch_line(&self) -> Result<String, McpManagerError> {
+        if !self.binary.exists() {
+            return Err(McpManagerError::BinaryMissing(self.binary.display().to_string()));
+        }
+        let dir = self.config_dir.as_ref().map(|dir| dir.to_string_lossy());
+        Ok(launch_line_for(cfg!(windows), &self.binary.to_string_lossy(), dir.as_deref()))
+    }
+}
+
+/// The line typed into the terminal's shell: PowerShell on Windows (the terminal panel runs it there), the
+/// person's POSIX shell elsewhere. A variable is set in front of the program for this one start only.
+fn launch_line_for(powershell: bool, program: &str, config_dir: Option<&str>) -> String {
+    if powershell {
+        let program = format!("& {}", powershell_quote(program));
+        return match config_dir {
+            Some(dir) => format!("$env:CLAUDE_CONFIG_DIR={}; {program}", powershell_quote(dir)),
+            None => program,
+        };
+    }
+    let program = shell_quote(program);
+    match config_dir {
+        Some(dir) => format!("CLAUDE_CONFIG_DIR={} {program}", shell_quote(dir)),
+        None => program,
+    }
+}
+
+/// Single quotes around the text; a quote inside it is doubled.
+fn powershell_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "''"))
+}
+
+/// Single quotes around the text; a quote inside it closes, escapes and opens again.
+fn shell_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', r"'\''"))
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_launch_line_for_powershell_sets_the_variable_first_and_calls_the_program_with_the_call_operator() {
+        assert_eq!(launch_line_for(true, r"C:\Program Files\forge\claude.exe", None), r"& 'C:\Program Files\forge\claude.exe'");
+        assert_eq!(
+            launch_line_for(true, r"C:\a\claude.exe", Some(r"C:\Users\it's me\.claude")),
+            r"$env:CLAUDE_CONFIG_DIR='C:\Users\it''s me\.claude'; & 'C:\a\claude.exe'"
+        );
+    }
+
+    #[test]
+    fn the_launch_line_for_a_posix_shell_puts_the_variable_in_front() {
+        assert_eq!(launch_line_for(false, "/a b/claude", None), "'/a b/claude'");
+        assert_eq!(launch_line_for(false, "/a/claude", Some("/c d")), "CLAUDE_CONFIG_DIR='/c d' '/a/claude'");
+    }
+
     use super::*;
 
     fn remote(sse: bool) -> NewConnector {

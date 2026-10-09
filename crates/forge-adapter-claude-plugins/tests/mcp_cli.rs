@@ -87,3 +87,20 @@ async fn check_reads_only_the_status_line_of_the_output() {
     assert_eq!(cli.check("web").await.unwrap(), Connection::NeedsSignIn);
     assert_eq!(lines(&log), ["mcp", "get", "web"]);
 }
+
+#[test]
+fn the_launch_line_quotes_the_program_and_carries_the_config_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let program = dir.path().join("it's claude");
+    std::fs::write(&program, "").unwrap();
+    let plain = ClaudeMcpCli::new(program.clone(), None);
+    assert_eq!(plain.launch_line().unwrap(), format!("'{}'", program.display().to_string().replace('\'', r"'\''")));
+    let with_dir = ClaudeMcpCli::new(program.clone(), Some(PathBuf::from("/tmp/a b")));
+    assert!(with_dir.launch_line().unwrap().starts_with("CLAUDE_CONFIG_DIR='/tmp/a b' '"));
+}
+
+#[test]
+fn the_launch_line_says_so_when_the_program_is_missing() {
+    let cli = ClaudeMcpCli::new(PathBuf::from("/no/such/claude"), None);
+    assert!(matches!(cli.launch_line(), Err(McpManagerError::BinaryMissing(_))));
+}

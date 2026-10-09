@@ -1,7 +1,9 @@
 use dioxus::prelude::*;
 use forge_domain::{ConnectorDraft, ConnectorKind};
-use forge_features::use_customize;
+use forge_features::{sign_in_status, use_customize};
 use forge_shared::{Button, ButtonKind};
+
+use crate::terminal_panel::SignInTerminal;
 
 fn kind_button(current: ConnectorKind, value: ConnectorKind, label: &'static str, mut kind: Signal<ConnectorKind>, disabled: bool) -> Element {
     rsx! {
@@ -138,6 +140,25 @@ pub fn ConfirmRemoveConnector(name: String) -> Element {
             if busy { span { class: "spinner", title: "Removing…" } }
             Button { label: "Cancel", disabled: busy, onclick: move |_| customize.close_dialog() }
             Button { label: "Remove", kind: ButtonKind::Primary, disabled: busy, onclick: move |_| customize.remove_connector(target.clone()) }
+        }
+    }
+}
+
+/// The sign-in dialog: a terminal that Forge types into, and one status line. Close ends the shell.
+#[component]
+pub fn SignInConnector(name: String) -> Element {
+    let customize = use_customize();
+    let Some(tap) = customize.sign_in_tap() else {
+        return rsx! {};
+    };
+    let status = sign_in_status(&customize.sign_in_state(), &customize.connection());
+    rsx! {
+        h2 { "Sign in to {name}" }
+        p { class: "hint", "Forge types into Claude Code's /mcp screen for you. Finish the sign-in in your browser. If it stops, you can type here." }
+        SignInTerminal { cwd: customize.sign_in_cwd(), tap }
+        div { class: "status-line customize-wrap", "{status}" }
+        div { class: "customize-dialog-buttons",
+            Button { label: "Close", kind: ButtonKind::Primary, onclick: move |_| customize.close_sign_in() }
         }
     }
 }

@@ -112,6 +112,10 @@ impl ConnectorCatalogUseCase {
         Ok(self.manager.check(name).await?)
     }
 
+    pub fn launch_line(&self) -> Result<String, ConnectorsError> {
+        Ok(self.manager.launch_line()?)
+    }
+
     // Loads, edits and saves the list; saves only when it changed.
     async fn edit_enabled(&self, edit: impl FnOnce(&mut Vec<String>)) -> Result<(), ConnectorsError> {
         let _held = self.lock.hold().await;
@@ -220,6 +224,15 @@ mod tests {
         let added = use_case(MockConnectorCatalogPort::new(), manager, config).add(&http_draft("web"), &[]).await.unwrap();
         assert_eq!(added, AddedConnector { name: "web".into(), id: "user:web".into() });
         assert_eq!(state.lock().unwrap().enabled_mcp_servers, vec!["web".to_string()]);
+    }
+
+    #[test]
+    fn the_launch_line_comes_from_the_manager() {
+        let mut manager = MockMcpManagerPort::new();
+        manager.expect_launch_line().returning(|| Ok("'/x/claude'".into()));
+        let (config, _) = memory_config(&[]);
+        let line = use_case(MockConnectorCatalogPort::new(), manager, config).launch_line().unwrap();
+        assert_eq!(line, "'/x/claude'");
     }
 
     #[tokio::test]

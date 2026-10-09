@@ -6,7 +6,7 @@ use forge_application::{CatalogView, PluginCatalogUseCase, SkillCatalogUseCase, 
 use forge_domain::{SkillFile, SkillFileList};
 use forge_ports::{FilePickerPort, FolderPickerPort};
 
-use crate::customize_connectors::Connectors;
+use crate::customize_connectors::{refreshes_on_tab, Connectors};
 use crate::customize_skills::{set_skill_enabled_in, SkillPane, SkillText};
 use crate::customize::{check_source, closes_detail, error_in_dialog, CustomizeMode, CustomizeTab, Job, JobQueue, Latest};
 use crate::workspace::WorkspaceServices;
@@ -27,7 +27,7 @@ fn shows_new_skill(tab: CustomizeTab) -> bool {
 
 /// What the skills are read against: the plugin catalogue when it was read, else an empty one, so a
 /// broken or missing bundled `claude` still leaves the person's own skills on the page.
-fn plugins_for_skills(loaded: &Loaded) -> CatalogView {
+pub(crate) fn plugins_for_skills(loaded: &Loaded) -> CatalogView {
     match loaded {
         Loaded::Ready(view) => view.clone(),
         _ => CatalogView { snapshot: forge_domain::PluginSnapshot::default(), enabled: Vec::new() },
@@ -44,6 +44,7 @@ pub enum Dialog {
     CreateSkill,
     AddConnector,
     ConfirmRemoveConnector(String),
+    SignInConnector(String),
 }
 
 /// Whether a job about one plugin is running, waiting, or neither.
@@ -71,7 +72,7 @@ pub struct Customize {
     skills_usecase: Signal<Arc<SkillCatalogUseCase>>,
     folder_picker: Signal<Arc<dyn FolderPickerPort>>,
     file_picker: Signal<Arc<dyn FilePickerPort>>,
-    project: Signal<Option<PathBuf>>,
+    pub(crate) project: Signal<Option<PathBuf>>,
     skills: Signal<Option<SkillView>>,
     skills_busy: Signal<bool>,
     skill_dir: Signal<Option<PathBuf>>,
@@ -249,6 +250,9 @@ impl Customize {
         let mut current = self.tab;
         current.set(tab);
         self.close_detail();
+        if refreshes_on_tab(tab) {
+            self.refresh_connectors();
+        }
     }
 
     pub fn mode(&self) -> CustomizeMode {
