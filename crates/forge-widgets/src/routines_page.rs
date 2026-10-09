@@ -111,7 +111,7 @@ fn RoutineList() -> Element {
                         }
                     }
                     div { class: "routine-card-desc", "{card.description}" }
-                    div { class: "routine-card-meta", "{card.state} · {card.schedule}" }
+                    div { class: "routine-card-meta", "{card.meta()}" }
                 }
             }
         }

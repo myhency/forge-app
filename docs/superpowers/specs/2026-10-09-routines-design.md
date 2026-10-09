@@ -99,3 +99,40 @@ They are ordinary sessions of the folder's project, listed in the sidebar like a
 4. Permission wait marking and "Always allowed".
 5. `NotifyPort` and the macOS adapter (cuttable).
 6. Real-window checks, review fixes, docs: backlog row PG-01, README order, an "As built" section here.
+
+## As built (2026-10-09)
+
+Plan `docs/superpowers/plans/2026-10-09-routines.md`, branch `plan-31`.
+
+### Differs from the spec above
+
+1. **One engine.** Every schedule tab becomes a cron expression and runs on the `cron` crate over `chrono` time zones (no `offset_at` argument). Weekdays are handed to the crate by name, because it numbers them from another start than the usual `0` or `7` for Sunday.
+2. **No Worktree checkbox** (Forge sessions have no worktree support). No `worktree` field is stored.
+3. **A folder is required** to create a routine, not only a name and a description.
+4. **Plain selects** for permission mode and model, and the folder picker button, in place of the composer's pickers and the folder menu.
+5. **Finished routine sessions are closed by Forge** (idle for over 60 s, nothing waiting, not on screen), so an hourly routine does not leave a process per run. The transcript stays and the session is a past session in the sidebar.
+6. **"Always allowed" needed a sidecar change.** The sidecar reports the rules an "always allow" would add (`permission_request.rules`, from the SDK's `addRules` suggestions) and takes `allowed_tools` at start. The session view keeps `allowed_rules`; the registry host copies them to the routine.
+7. A routine card for a manual routine says "Manual" once (found in the real window).
+
+### Checked in the real window (harness fixture, real SDK, throwaway folder)
+
+- Sidebar link, empty list, the form (Create off until name, description and folder; the reason shows once something is typed; the discard dialog after a change), the list with cards, the detail screen, the edit form filled from the routine, the delete dialog and a delete that removes the history too, and the 640 pt layout (columns stack).
+- **Run now** starts a session titled `Oct 9 – <name>` in the folder; the history row reads "Done"; the session closes by itself after about a minute when it is not on screen. A second run while the folder is busy is refused with "A session of a routine is still working in this folder."
+- **Waiting for approval**: a routine in "Ask before edits" mode that needs Bash stops at the permission card; the sidebar row has the needs-attention marker, the detail screen shows a banner, the history row says "Waiting for approval". Nothing is approved by itself.
+- **Always allow** on a Bash request puts `Bash(touch /private/tmp/forge-routines/x2.txt)` under "Always allowed", and the next run of the routine does not ask.
+- **Timer**: a once-a-minute routine started a session at the minute (the Claude session id was written to its history line); a daily routine whose time passed hours ago was not run and left one `Skipped: Forge was closed or the computer was asleep` line.
+- The sessions the checks made were removed from `~/.claude/projects/-private-tmp-forge-routines/` by hand.
+
+### Not checked
+
+- Windows (no notification there; the timer and pages are the same code).
+- The macOS notification itself was sent through `osascript` but not seen on screen.
+- A click on a history row opens the session when it is in the sidebar's list; the harness reads a fake Claude home, so the transcripts of the checks were not listed there. The "not in the sidebar any more" message was seen instead.
+- The packaged app; the form's folder picker (a system dialog, so routines were seeded in the fixture config and the form was checked up to the folder).
+
+### Known limits and deferred minors
+
+- **"Always allow" on a file write** (Write, Edit) leaves "Always allowed" empty: the SDK suggests a mode change for those, not a rule, so the next run asks again.
+- Opening the Routines page again while it is shown does not re-read the list; the 30 second timer does.
+- The card shows no warning icon (its meaning was not seen); no Templates tab; no cloud routines.
+- `forge-adapter-claude-plugins` has two timing tests (`a_command_that_times_out_takes_the_processes_it_started_with_it`, `a_process_left_behind_holding_the_pipe_does_not_hang_the_command`) that fail now and then when the whole workspace runs at once and pass alone. Not touched by this plan.

@@ -32,6 +32,17 @@ pub struct RoutineCard {
     pub waiting: bool,
 }
 
+impl RoutineCard {
+    /// The card's second line: "On · Every hour"; a manual routine says "Manual" once.
+    pub fn meta(&self) -> String {
+        if self.state == self.schedule {
+            self.state.clone()
+        } else {
+            format!("{} · {}", self.state, self.schedule)
+        }
+    }
+}
+
 fn card_state(routine: &Routine) -> &'static str {
     if !routine.enabled {
         "Paused"
@@ -293,6 +304,15 @@ mod tests {
         assert_eq!((by_id("b").state.as_str(), by_id("b").schedule.as_str()), ("On", "Every hour"));
         assert_eq!((by_id("a").state.as_str(), by_id("a").schedule.as_str()), ("Paused", "Every day at 9:49 AM"));
         assert_eq!((by_id("c").state.as_str(), by_id("c").schedule.as_str()), ("Manual", "Manual"));
+    }
+
+    #[test]
+    fn a_cards_second_line_does_not_say_manual_twice() {
+        let all = cards(&sample(), &[], &[], "", RoutineFilter::All, RoutineSort::Name);
+        let meta = |id: &str| all.iter().find(|card| card.id == id).unwrap().meta();
+        assert_eq!(meta("c"), "Manual", "a manual routine is not 'Manual · Manual'");
+        assert_eq!(meta("b"), "On · Every hour");
+        assert_eq!(meta("a"), "Paused · Every day at 9:49 AM");
     }
 
     #[test]
