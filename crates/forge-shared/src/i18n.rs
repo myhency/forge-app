@@ -235,7 +235,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "until the account menu uses the entries (Task 6)"]
     fn every_korean_entry_is_used_in_the_sources() {
         let used = used_keys();
         for (english, _) in KO {
