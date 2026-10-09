@@ -339,6 +339,12 @@ impl Routines {
                 this.adopt_started(workspace);
                 let mut waiting = this.waiting;
                 waiting.set(services.host.waiting_now());
+                for run in services.host.waiting() {
+                    let name = this.routines.peek().iter().find(|routine| routine.id == run.routine_id).map(|routine| routine.name.clone()).unwrap_or(run.routine_id.clone());
+                    let (title, body) = crate::routines::waiting_notice(&name, &run.tool_name);
+                    // A notification that cannot be sent is not worth a banner: the page and the sidebar show the wait.
+                    let _ = services.notify.notify(&title, &body);
+                }
                 this.reload();
                 tokio::time::sleep(TICK).await;
             }

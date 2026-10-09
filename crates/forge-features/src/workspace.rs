@@ -35,6 +35,8 @@ pub struct RoutineServices {
     pub host: Arc<forge_application::RegistryHost>,
     /// Sessions the host started, waiting to be shown. The UI loop drains it.
     pub starts: Arc<std::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<LiveSessionHandle>>>,
+    /// Tells the person when a routine waits for approval.
+    pub notify: Arc<dyn forge_ports::NotifyPort>,
 }
 
 /// Everything the workspace needs from the outside, injected once by the composition root.

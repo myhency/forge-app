@@ -11,6 +11,7 @@ forge-adapter-config = { path = "../forge-adapter-config" }
 forge-adapter-dialog = { path = "../forge-adapter-dialog" }
 forge-adapter-files = { path = "../forge-adapter-files" }
 forge-adapter-git = { path = "../forge-adapter-git" }
+forge-adapter-notify = { path = "../forge-adapter-notify" }
 forge-adapter-sidecar = { path = "../forge-adapter-sidecar" }
 forge-adapter-sleep = { path = "../forge-adapter-sleep" }
 forge-adapter-terminal = { path = "../forge-adapter-terminal" }

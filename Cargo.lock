@@ -1570,6 +1570,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-adapter-notify"
+version = "0.1.0"
+dependencies = [
+ "forge-ports",
+]
+
+[[package]]
 name = "forge-adapter-sidecar"
 version = "0.1.0"
 dependencies = [
@@ -1611,6 +1618,7 @@ dependencies = [
  "forge-adapter-dialog",
  "forge-adapter-files",
  "forge-adapter-git",
+ "forge-adapter-notify",
  "forge-adapter-sidecar",
  "forge-adapter-sleep",
  "forge-adapter-terminal",

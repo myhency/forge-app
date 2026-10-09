@@ -228,6 +228,11 @@ pub fn history_rows(runs: &[RoutineRun], routine_id: &str, state_of: &dyn Fn(&st
         .collect()
 }
 
+/// The notification for a routine whose session waits for the person: `(title, body)`.
+pub fn waiting_notice(routine_name: &str, tool_name: &str) -> (String, String) {
+    ("Routine needs your approval".to_string(), format!("{routine_name} wants to use {tool_name}"))
+}
+
 const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /// "Oct 9, 10:19 AM" in `offset`.
@@ -401,6 +406,14 @@ mod tests {
         assert_eq!(run_state_text(Some((Phase::Idle, 0))), "Done");
         assert_eq!(run_state_text(Some((Phase::Failed, 0))), "Done");
         assert_eq!(run_state_text(None), "Done", "a session that is not open any more is done");
+    }
+
+    #[test]
+    fn the_waiting_notice_names_the_routine_and_the_tool() {
+        assert_eq!(
+            waiting_notice("Daily review", "Bash"),
+            ("Routine needs your approval".to_string(), "Daily review wants to use Bash".to_string())
+        );
     }
 
     #[test]
