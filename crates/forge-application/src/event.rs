@@ -37,14 +37,19 @@ pub fn push_user_message(session: &mut Session, text: String, attachments: Vec<A
     session.messages.push(message);
 }
 
+/// The assistant message the running turn is still writing, if there is one.
+fn open_assistant_message(session: &mut Session) -> Option<&mut Message> {
+    session.messages.last_mut().filter(|message| message.role == MessageRole::Assistant && !message.turn_closed)
+}
+
 pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> SessionUpdate {
     match event {
         SidecarEvent::SessionStarted { session_id } => SessionUpdate::SessionStarted {
             session_id: SessionId(session_id.clone()),
         },
         SidecarEvent::AssistantDelta { text } => {
-            match session.messages.last_mut() {
-                Some(message) if message.role == MessageRole::Assistant => message.push_text(text),
+            match open_assistant_message(session) {
+                Some(message) => message.push_text(text),
                 _ => {
                     let mut message = Message::new(MessageRole::Assistant);
                     message.push_text(text);
@@ -54,8 +59,8 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             SessionUpdate::MessageDelta { text: text.clone() }
         }
         SidecarEvent::ThinkingDelta { text } => {
-            match session.messages.last_mut() {
-                Some(message) if message.role == MessageRole::Assistant => message.push_thinking(text),
+            match open_assistant_message(session) {
+                Some(message) => message.push_thinking(text),
                 _ => {
                     let mut message = Message::new(MessageRole::Assistant);
                     message.push_thinking(text);
@@ -71,11 +76,7 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
                 input: input.clone(),
                 result: None,
             };
-            match session
-                .messages
-                .last_mut()
-                .filter(|m| m.role == MessageRole::Assistant)
-            {
+            match open_assistant_message(session) {
                 Some(message) => message.push_tool(tool_call.clone()),
                 None => {
                     let mut message = Message::new(MessageRole::Assistant);
@@ -110,6 +111,9 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
         SidecarEvent::TurnComplete { usage } => {
             for (model, tokens) in usage {
                 session.usage.add(model, *tokens);
+            }
+            if let Some(message) = session.messages.last_mut().filter(|message| message.role == MessageRole::Assistant) {
+                message.turn_closed = true;
             }
             SessionUpdate::TurnCompleted
         }
@@ -183,6 +187,38 @@ mod tests {
 
         assert_eq!(session.messages.len(), 1);
         assert_eq!(session.messages[0].text(), "Hello");
+    }
+
+    #[test]
+    fn text_after_a_finished_turn_starts_a_new_message() {
+        let mut session = empty_session();
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "It is running.".to_string() });
+        apply_sidecar_event(&mut session, &SidecarEvent::TurnComplete { usage: Default::default() });
+        // A background task ended and Claude answered again; no user message came in between.
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "It finished.".to_string() });
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: " Here it is.".to_string() });
+
+        assert_eq!(session.messages.len(), 2);
+        assert_eq!(session.messages[0].text(), "It is running.");
+        assert_eq!(session.messages[1].text(), "It finished. Here it is.", "the new turn keeps growing its own message");
+    }
+
+    #[test]
+    fn a_thought_or_a_tool_call_after_a_finished_turn_starts_a_new_message_too() {
+        let mut thought = empty_session();
+        apply_sidecar_event(&mut thought, &SidecarEvent::AssistantDelta { text: "One".to_string() });
+        apply_sidecar_event(&mut thought, &SidecarEvent::TurnComplete { usage: Default::default() });
+        apply_sidecar_event(&mut thought, &SidecarEvent::ThinkingDelta { text: "Hmm".to_string() });
+        assert_eq!(thought.messages.len(), 2);
+
+        let mut tool = empty_session();
+        apply_sidecar_event(&mut tool, &SidecarEvent::AssistantDelta { text: "One".to_string() });
+        apply_sidecar_event(&mut tool, &SidecarEvent::TurnComplete { usage: Default::default() });
+        apply_sidecar_event(
+            &mut tool,
+            &SidecarEvent::ToolUse { tool_call_id: "t".to_string(), name: "Read".to_string(), input: serde_json::json!({}) },
+        );
+        assert_eq!(tool.messages.len(), 2);
     }
 
     #[test]

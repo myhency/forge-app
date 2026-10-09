@@ -15,10 +15,73 @@ pub struct PermissionView {
     pub path: Option<String>,
     /// The full command of a Bash call.
     pub command: Option<String>,
+    /// Set when the request is to run a workflow: its card has its own text and two choices.
+    pub workflow: Option<WorkflowAsk>,
+}
+
+/// What a workflow's own card adds to the title: the one-line description from the script.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowAsk {
+    pub description: Option<String>,
+}
+
+/// The tool Claude calls to run a workflow.
+const WORKFLOW_TOOL: &str = "Workflow";
+
+/// The string literal after `key:` in the script's text, the first time `key` stands alone as a
+/// word. Reads `'...'`, `"..."` and backtick strings with backslash escapes; `None` when the key is
+/// absent or its value is not a plain string. A script is JavaScript, so this reads only what the
+/// `meta` block needs, never runs or parses the rest.
+fn script_literal(script: &str, key: &str) -> Option<String> {
+    let mut from = 0;
+    while let Some(found) = script[from..].find(key) {
+        let start = from + found;
+        let end = start + key.len();
+        from = end;
+        let before_ok = script[..start].chars().next_back().is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+        let rest = script[end..].trim_start();
+        let Some(rest) = rest.strip_prefix(':') else { continue };
+        let mut chars = rest.trim_start().chars();
+        let Some(quote) = chars.next().filter(|c| matches!(c, '\'' | '"' | '`')) else { continue };
+        if !before_ok {
+            continue;
+        }
+        let mut value = String::new();
+        while let Some(c) = chars.next() {
+            match c {
+                '\\' => match chars.next() {
+                    Some('n') => value.push('\n'),
+                    Some('t') => value.push('\t'),
+                    Some(other) => value.push(other),
+                    None => return None,
+                },
+                c if c == quote => return Some(value).filter(|value| !value.is_empty()),
+                c => value.push(c),
+            }
+        }
+        return None;
+    }
+    None
 }
 
 pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
     let text = |key: &str| input.get(key).and_then(Value::as_str).filter(|text| !text.is_empty()).map(str::to_string);
+    if tool_name == WORKFLOW_TOOL {
+        // The meta block comes first in a script; stop before the body so a string in a later
+        // agent prompt is never taken for the workflow's name.
+        let script = input.get("script").and_then(Value::as_str).unwrap_or("");
+        let meta = script.split("\n}").next().unwrap_or(script);
+        if let Some(name) = script_literal(meta, "name") {
+            let description = script_literal(meta, "description");
+            return PermissionView {
+                title: tr!("Allow Claude to run the workflow {name}?", name = name),
+                subject: name,
+                path: None,
+                command: None,
+                workflow: Some(WorkflowAsk { description }),
+            };
+        }
+    }
     let kind = tool_kind(tool_name);
     let (verb, subject, path, command) = match kind {
         ToolKind::Created | ToolKind::Edited | ToolKind::Read => {
@@ -40,7 +103,7 @@ pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
         ToolKind::Command => tr!("Claude wants to run {subject}?", subject = subject),
         ToolKind::Other => tr!("Claude wants to use {subject}?", subject = subject),
     };
-    PermissionView { title, subject, path, command }
+    PermissionView { title, subject, path, command, workflow: None }
 }
 
 /// Whether a card that just appeared may take keyboard focus: not while the person is typing.
@@ -77,6 +140,17 @@ pub fn permission_key(code: &str, shift: bool, meta: bool, other_modifier: bool)
         "Digit1" | "Numpad1" => Some(PermissionKey::Deny),
         "Digit2" | "Numpad2" => Some(PermissionKey::AllowAlways),
         "Digit3" | "Numpad3" => Some(PermissionKey::AllowOnce),
+        _ => None,
+    }
+}
+
+/// The keys of a workflow's card, which has two choices: `1` and Esc deny, `2` and ⌘↩ allow once.
+/// There is no always-allow and no third choice, so `3` and ⇧⌘↩ do nothing.
+pub fn workflow_permission_key(code: &str, shift: bool, meta: bool, other_modifier: bool) -> Option<PermissionKey> {
+    match permission_key(code, shift, meta, other_modifier)? {
+        PermissionKey::Deny => Some(PermissionKey::Deny),
+        PermissionKey::AllowOnce if matches!(code, "Enter" | "NumpadEnter") => Some(PermissionKey::AllowOnce),
+        PermissionKey::AllowAlways if matches!(code, "Digit2" | "Numpad2") => Some(PermissionKey::AllowOnce),
         _ => None,
     }
 }
@@ -122,6 +196,45 @@ mod tests {
             assert_eq!(view.path, None);
             assert_eq!(view.command, None);
         }
+    }
+
+    fn workflow_input() -> Value {
+        json!({"script": "export const meta = {\n  name: 'sample-risk-review',\n  description: \"Three parallel agents review sample/domain; a fourth merges\",\n  phases: [{ title: 'Analyze' }],\n}\nconst x = await agent('name: not this one')"})
+    }
+
+    #[test]
+    fn a_workflow_asks_by_its_own_name_and_shows_its_description() {
+        let view = permission_view("Workflow", &workflow_input());
+        assert_eq!(view.title, "Allow Claude to run the workflow sample-risk-review?");
+        let workflow = view.workflow.expect("a workflow card");
+        assert_eq!(workflow.description.as_deref(), Some("Three parallel agents review sample/domain; a fourth merges"));
+        assert_eq!(view.command, None);
+    }
+
+    #[test]
+    fn a_workflow_without_a_readable_meta_falls_back_to_the_plain_tool_card() {
+        for input in [json!({}), json!({"script": "const nothing = 1"}), json!({"script": 7})] {
+            let view = permission_view("Workflow", &input);
+            assert_eq!(view.title, "Claude wants to use Workflow?");
+            assert_eq!(view.workflow, None);
+        }
+    }
+
+    #[test]
+    fn a_workflow_name_with_an_escaped_quote_reads_whole() {
+        let view = permission_view("Workflow", &json!({"script": "export const meta = { name: 'it\\'s fine', description: 'd' }"}));
+        assert_eq!(view.title, "Allow Claude to run the workflow it's fine?");
+    }
+
+    #[test]
+    fn a_workflow_card_has_two_choices_and_no_always() {
+        assert_eq!(workflow_permission_key("Digit1", false, false, false), Some(PermissionKey::Deny));
+        assert_eq!(workflow_permission_key("Escape", false, false, false), Some(PermissionKey::Deny));
+        assert_eq!(workflow_permission_key("Digit2", false, false, false), Some(PermissionKey::AllowOnce));
+        assert_eq!(workflow_permission_key("Enter", false, true, false), Some(PermissionKey::AllowOnce));
+        assert_eq!(workflow_permission_key("Digit3", false, false, false), None, "there is no third choice");
+        assert_eq!(workflow_permission_key("Enter", true, true, false), None, "there is no always allow");
+        assert_eq!(workflow_permission_key("Digit2", false, true, false), None, "a digit with another modifier is not a decision");
     }
 
     #[test]

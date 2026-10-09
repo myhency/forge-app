@@ -36,7 +36,7 @@ pub use highlight::{code_html, language_of};
 pub use markdown::render_markdown;
 pub use message::attachment_label;
 pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_options, model_value, ModelRow, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
-pub use permission_view::{card_takes_focus, permission_key, permission_view, PermissionKey, PermissionView};
+pub use permission_view::{card_takes_focus, permission_key, permission_view, workflow_permission_key, PermissionKey, PermissionView, WorkflowAsk};
 pub use preview::{has_rendered_view, icon_of, preview_kind, FileIcon, PreviewKind};
 pub use question::{answer_pairs, answers_map, questions_of, AnswerPair, Picks, Question, QuestionOption, QUESTION_TOOL};
 pub use relative_time::{month_short, relative_time};

@@ -52,11 +52,14 @@ pub struct Message {
     pub cards: Vec<crate::Card>,
     /// RFC 3339 time of the last transcript line of this message; `None` for a message built live.
     pub at: Option<String>,
+    /// Set when the turn that wrote this message ended; whatever Claude says next (an answer to a
+    /// background task, say) is a new message, not more of this one.
+    pub turn_closed: bool,
 }
 
 impl Message {
     pub fn new(role: MessageRole) -> Self {
-        Self { role, blocks: Vec::new(), attachments: Vec::new(), cards: Vec::new(), at: None }
+        Self { role, blocks: Vec::new(), attachments: Vec::new(), cards: Vec::new(), at: None, turn_closed: false }
     }
 
     pub fn user(text: impl Into<String>) -> Self {
