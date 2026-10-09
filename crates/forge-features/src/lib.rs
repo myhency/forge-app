@@ -80,7 +80,7 @@ pub use refocus::{refocus_composer, refocus_workspace, watch_focus};
 pub use permission_mode::{menu_digit_row, confirmation_still_valid, mode_choice, mode_options, mode_rows, mode_value, parse_mode, ModeChoice, ModeRow};
 pub use search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
 pub use send_message::SendMessageBox;
-pub use settings::{use_settings, use_settings_provider, ExtensionKind, Settings, SettingsSection, SettingsStatus};
+pub use settings::{use_settings, use_settings_provider, ExtensionKind, NotificationKind, Settings, SettingsSection, SettingsStatus};
 pub use settings_draft::ConnectionDraft;
 pub use shortcut::{command_held, match_code, swallowed_behind_overlay, types_text, command_pressed, shortcut_allowed, shortcut_for, shortcut_sections, KeyPress, Shortcut, ShortcutSection};
 pub use sidebar::{

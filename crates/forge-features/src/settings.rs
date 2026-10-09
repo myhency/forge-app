@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, SettingsUseCase};
-use forge_domain::{AppConfig, McpServerDefinition, OutputStyle, PluginDefinition, SkillDefinition, TranscriptView};
+use forge_domain::{AppConfig, Appearance, ChatWidth, FontChoice, McpServerDefinition, MotionPref, NotificationPrefs, OutputStyle, PluginDefinition, SkillDefinition, TextSize, Theme, TranscriptView};
 use forge_entities::{mcp_rows, plugin_rows, project_label, skill_rows, ExtensionRow};
 
 use crate::section_status::status_for;
@@ -49,6 +49,18 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::OutputStyle(style) => config.output_style = style,
         CodeChange::PromptSuggestions(on) => config.prompt_suggestions = on,
         CodeChange::AllowBypass(on) => config.allow_bypass_mode = on,
+        CodeChange::Theme(value) => config.appearance.theme = value,
+        CodeChange::Font(value) => config.appearance.font = value,
+        CodeChange::TextSize(value) => config.appearance.text_size = value,
+        CodeChange::ChatWidth(value) => config.appearance.chat_width = value,
+        CodeChange::Motion(value) => config.appearance.motion = value,
+        CodeChange::Notification(kind, on) => match kind {
+            NotificationKind::ReplyDone => config.notifications.reply_done = on,
+            NotificationKind::ScheduledTask => config.notifications.scheduled_task = on,
+            NotificationKind::CodeNotice => config.notifications.code_notice = on,
+            NotificationKind::PermissionRequest => config.notifications.permission_request = on,
+        },
+        CodeChange::AttentionBounce(on) => config.attention_bounce = on,
     }
 }
 
@@ -58,6 +70,22 @@ pub(crate) enum CodeChange {
     OutputStyle(Option<OutputStyle>),
     PromptSuggestions(bool),
     AllowBypass(bool),
+    Theme(Theme),
+    Font(FontChoice),
+    TextSize(TextSize),
+    ChatWidth(ChatWidth),
+    Motion(MotionPref),
+    Notification(NotificationKind, bool),
+    AttentionBounce(bool),
+}
+
+/// One of the four notification switches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationKind {
+    ReplyDone,
+    ScheduledTask,
+    CodeNotice,
+    PermissionRequest,
 }
 
 /// The outcome of the last save, shown under the fields until the next edit or save.
@@ -212,6 +240,51 @@ impl Settings {
 
     pub fn set_allow_bypass_mode(&self, on: bool) {
         self.change_code(CodeChange::AllowBypass(on));
+    }
+
+    pub fn appearance(&self) -> Appearance {
+        self.saved.read().appearance
+    }
+
+    pub fn notifications(&self) -> NotificationPrefs {
+        self.saved.read().notifications
+    }
+
+    pub fn attention_bounce(&self) -> bool {
+        self.saved.read().attention_bounce
+    }
+
+    /// The config as last loaded or saved.
+    pub fn saved_config(&self) -> AppConfig {
+        self.saved.read().clone()
+    }
+
+    pub fn set_theme(&self, value: Theme) {
+        self.change_code(CodeChange::Theme(value));
+    }
+
+    pub fn set_font(&self, value: FontChoice) {
+        self.change_code(CodeChange::Font(value));
+    }
+
+    pub fn set_text_size(&self, value: TextSize) {
+        self.change_code(CodeChange::TextSize(value));
+    }
+
+    pub fn set_chat_width(&self, value: ChatWidth) {
+        self.change_code(CodeChange::ChatWidth(value));
+    }
+
+    pub fn set_motion(&self, value: MotionPref) {
+        self.change_code(CodeChange::Motion(value));
+    }
+
+    pub fn set_notification(&self, kind: NotificationKind, on: bool) {
+        self.change_code(CodeChange::Notification(kind, on));
+    }
+
+    pub fn set_attention_bounce(&self, on: bool) {
+        self.change_code(CodeChange::AttentionBounce(on));
     }
 
     pub fn status(&self) -> Option<SettingsStatus> {
@@ -407,6 +480,9 @@ impl Settings {
             current.output_style = config.output_style;
             current.prompt_suggestions = config.prompt_suggestions;
             current.allow_bypass_mode = config.allow_bypass_mode;
+            current.appearance = config.appearance;
+            current.notifications = config.notifications;
+            current.attention_bounce = config.attention_bounce;
         }
         status.set(Some((SettingsSection::Code, SettingsStatus::Saved)));
     }
@@ -455,5 +531,26 @@ mod tests {
         let mut config = AppConfig { output_style: Some(OutputStyle::Concise), ..AppConfig::default() };
         apply_code_change(&mut config, CodeChange::OutputStyle(None));
         assert_eq!(config.output_style, None);
+    }
+
+    #[test]
+    fn the_new_controls_change_their_own_field_only() {
+        let mut config = AppConfig::default();
+        apply_code_change(&mut config, CodeChange::Theme(Theme::Dark));
+        apply_code_change(&mut config, CodeChange::Font(FontChoice::OpenDyslexic));
+        apply_code_change(&mut config, CodeChange::TextSize(TextSize::Large));
+        apply_code_change(&mut config, CodeChange::ChatWidth(ChatWidth::Narrow));
+        apply_code_change(&mut config, CodeChange::Motion(MotionPref::Reduced));
+        apply_code_change(&mut config, CodeChange::Notification(NotificationKind::ReplyDone, false));
+        apply_code_change(&mut config, CodeChange::AttentionBounce(true));
+        assert_eq!(config.appearance.theme, Theme::Dark);
+        assert_eq!(config.appearance.font, FontChoice::OpenDyslexic);
+        assert_eq!(config.appearance.text_size, TextSize::Large);
+        assert_eq!(config.appearance.chat_width, ChatWidth::Narrow);
+        assert_eq!(config.appearance.motion, MotionPref::Reduced);
+        assert!(!config.notifications.reply_done);
+        assert!(config.notifications.permission_request, "the other switches stay on");
+        assert!(config.attention_bounce);
+        assert!(config.prompt_suggestions, "nothing else is touched");
     }
 }
