@@ -20,8 +20,10 @@ pub enum Shortcut {
     TogglePanel(Panel),
 }
 
-/// A key press: the physical key (`event.code()`, `"KeyN"`) and the modifiers held. Never the typed
-/// character: Option changes it on a Mac and an input method (Korean) changes it too.
+/// A key press: the key's code in the table's spelling (`"KeyN"`) and the modifiers held. `match_code`
+/// makes the code: the letter on the keycap when that is a plain ASCII letter (so AZERTY and Dvorak
+/// keep their shortcuts), the physical key otherwise (Option changes the typed character on a Mac and
+/// an input method such as Korean replaces it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyPress<'a> {
     pub code: &'a str,
@@ -179,6 +181,52 @@ fn key_label(code: &str) -> String {
 fn digit_index(code: &str) -> Option<usize> {
     let number: usize = code.strip_prefix("Digit")?.parse().ok()?;
     (1..=9).contains(&number).then(|| number - 1)
+}
+
+/// The code a key press is matched by, in `event.code()` spelling. The letter the key is labelled with
+/// wins when it is an ASCII letter, one of the table's unshifted punctuation keys, or a digit 1 to 9,
+/// so Cmd+Z stays on the key marked Z on AZERTY. Everything else uses `code`: Option or Alt
+/// combinations (the character is changed), an input method's "Process" or Hangul, shifted symbols,
+/// arrows, Tab, Escape.
+pub fn match_code(key: &str, code: &str, alt: bool) -> String {
+    let mut chars = key.chars();
+    if let (Some(c), None) = (chars.next(), chars.next()) {
+        if c.is_ascii_alphabetic() && !alt {
+            return format!("Key{}", c.to_ascii_uppercase());
+        }
+        if matches!(c, '1'..='9') {
+            return format!("Digit{c}");
+        }
+        let punctuation = match c {
+            ',' => Some("Comma"),
+            '/' => Some("Slash"),
+            '[' => Some("BracketLeft"),
+            ']' => Some("BracketRight"),
+            '`' => Some("Backquote"),
+            _ => None,
+        };
+        if let (Some(name), false) = (punctuation, alt) {
+            return name.to_string();
+        }
+    }
+    code.to_string()
+}
+
+/// Whether a key press typed a character instead of asking for a shortcut. On Windows AltGr arrives as
+/// Ctrl+Alt, and AltGr+A types "ą" on a Polish layout; Ctrl+Alt with a plain ASCII letter or digit is
+/// the shortcut. On a Mac Option text is expected and the shortcuts still apply.
+pub fn types_text(key: &str, ctrl: bool, alt: bool, mac: bool) -> bool {
+    if mac || !ctrl || !alt {
+        return false;
+    }
+    let mut chars = key.chars();
+    matches!((chars.next(), chars.next()), (Some(c), None) if !c.is_ascii_alphanumeric() && !c.is_control())
+}
+
+/// Whether the key press of a shortcut that `shortcut_allowed` refused is swallowed (default prevented).
+/// The session-cycling keys are not: Alt+Up and Alt+Down belong to the text field behind them.
+pub fn swallowed_behind_overlay(shortcut: Shortcut) -> bool {
+    !matches!(shortcut, Shortcut::NextSession | Shortcut::PreviousSession)
 }
 
 /// The shortcut a key press is, if any. "Cmd" is Ctrl on platforms other than macOS.
@@ -382,11 +430,71 @@ mod tests {
             let mut seen = HashSet::new();
             for row in SHORTCUTS {
                 for binding in row.keys {
-                    let key = (binding.code, binding.command, binding.ctrl, binding.alt, binding.shift);
+                    let key = (binding.code, binding.wanted(mac), binding.alt, binding.shift);
                     assert!(seen.insert(key), "{} repeats a key (mac={mac})", row.label);
                 }
             }
         }
+    }
+
+    #[test]
+    fn match_code_follows_the_letter_on_the_keycap_not_the_place_of_the_key() {
+        assert_eq!(match_code("z", "KeyW", false), "KeyZ", "AZERTY");
+        assert_eq!(match_code("n", "KeyB", false), "KeyN", "Dvorak");
+        assert_eq!(match_code("N", "KeyN", false), "KeyN", "uppercase");
+        assert_eq!(match_code(",", "Comma", false), "Comma");
+        assert_eq!(match_code("/", "Slash", false), "Slash");
+        assert_eq!(match_code("[", "BracketLeft", false), "BracketLeft");
+        assert_eq!(match_code("]", "BracketRight", false), "BracketRight");
+        assert_eq!(match_code("`", "Backquote", false), "Backquote");
+    }
+
+    #[test]
+    fn match_code_falls_back_to_the_physical_key() {
+        assert_eq!(match_code("ㅊ", "KeyC", false), "KeyC", "Korean IME");
+        assert_eq!(match_code("Process", "KeyC", false), "KeyC", "IME in progress");
+        assert_eq!(match_code("å", "KeyA", true), "KeyA", "Option changes the character");
+        assert_eq!(match_code("a", "KeyQ", true), "KeyQ", "with Alt held the code decides");
+        assert_eq!(match_code("{", "BracketLeft", false), "BracketLeft", "shifted symbol");
+        assert_eq!(match_code("ArrowUp", "ArrowUp", false), "ArrowUp");
+        assert_eq!(match_code("Tab", "Tab", false), "Tab");
+        assert_eq!(match_code("Escape", "Escape", false), "Escape");
+    }
+
+    #[test]
+    fn match_code_digits() {
+        assert_eq!(match_code("1", "Digit1", false), "Digit1");
+        assert_eq!(match_code("&", "Digit1", false), "Digit1", "AZERTY");
+        assert_eq!(match_code("0", "Digit0", false), "Digit0", "0 is no shortcut, the code is kept");
+    }
+
+    #[test]
+    fn altgr_text_is_not_a_shortcut_off_a_mac() {
+        assert!(types_text("ą", true, true, false), "Polish AltGr+A");
+        assert!(types_text("ó", true, true, false), "Polish AltGr+O");
+        assert!(types_text("@", true, true, false), "AltGr+Q on a German layout");
+        assert!(!types_text("a", true, true, false), "plain Ctrl+Alt+A");
+        assert!(!types_text("A", true, true, false));
+        assert!(!types_text("ArrowUp", true, true, false), "not a single character");
+        assert!(!types_text("ą", false, true, false), "Alt alone");
+        assert!(!types_text("ą", true, false, false), "Ctrl alone");
+        assert_eq!(shortcut_for(&press("KeyA", true, false, true, false), false), Some(Shortcut::ArchiveActive));
+    }
+
+    #[test]
+    fn option_text_is_expected_on_a_mac() {
+        assert!(!types_text("å", true, true, true));
+        assert!(!types_text("å", false, true, true), "⌥⌘A types å on a Mac and is still the shortcut");
+    }
+
+    #[test]
+    fn a_key_the_overlay_blocks_is_swallowed_except_the_session_cycling_keys() {
+        use crate::dock::Panel;
+        assert!(!swallowed_behind_overlay(Shortcut::NextSession));
+        assert!(!swallowed_behind_overlay(Shortcut::PreviousSession));
+        assert!(swallowed_behind_overlay(Shortcut::CloseSession));
+        assert!(swallowed_behind_overlay(Shortcut::GoToSession(0)));
+        assert!(swallowed_behind_overlay(Shortcut::TogglePanel(Panel::Files)));
     }
 
     #[test]

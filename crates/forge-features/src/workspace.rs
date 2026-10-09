@@ -17,7 +17,7 @@ use crate::files_store::{FilesStore, Restore};
 use crate::dock::{DockState, DockStates, Panel};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::new_session::ModelChoice;
-use crate::shortcut::{shortcut_allowed, shortcut_for, KeyPress, Shortcut};
+use crate::shortcut::{match_code, shortcut_allowed, shortcut_for, swallowed_behind_overlay, types_text, KeyPress, Shortcut};
 use crate::tool_activity::finished_tool_calls;
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, open_session_order, ArrangedGroup};
@@ -910,7 +910,7 @@ impl Workspace {
             (ArchiveKey::Unarchive, Some(session)) => self.unarchive_session(project, session),
             (ArchiveKey::ArchiveAndClose, Some(session)) => {
                 self.archive_session(project, session);
-                self.close(id);
+                self.close_remembering(id);
             }
             (ArchiveKey::StopFirst, _) => self.report("Stop the session before archiving it.".to_string()),
             _ => {}
@@ -1107,19 +1107,15 @@ impl Workspace {
         let Some((project, session)) = closed.write().pop() else {
             return;
         };
+        // Archiving closed it; the default list hides archived rows, so bring it back to the list too.
+        if self.is_archived(&project, &session) {
+            self.unarchive_session(project.clone(), session.clone());
+        }
         let summary = project_for_open(&self.past.peek(), &project);
         self.open_past(summary, session);
     }
 
     pub fn close(&self, id: LiveSessionId) {
-        // Remembered for "reopen the last closed session"; a session that never got an id has no transcript to come back to.
-        if let Some(handle) = self.handle(id) {
-            let view = handle.snapshot();
-            if let Some(session) = view.claude_session_id {
-                let mut closed = self.closed;
-                closed.write().push(view.project_path, session);
-            }
-        }
         let services = (*self.services.peek()).clone();
         services.registry.close(id);
         let mut live = self.live;
@@ -1146,8 +1142,22 @@ impl Workspace {
 
     pub fn close_active(&self) {
         if let Active::Live(id) = self.active() {
-            self.close(id);
+            self.close_remembering(id);
         }
+    }
+
+    /// Closes a session the person asked to close (Cmd+W, the archive key) and remembers it for
+    /// "reopen the last closed session". Closes the app makes itself (a finished routine) use `close`.
+    pub fn close_remembering(&self, id: LiveSessionId) {
+        // A session that never got an id has no transcript to come back to.
+        if let Some(handle) = self.handle(id) {
+            let view = handle.snapshot();
+            if let Some(session) = view.claude_session_id {
+                let mut closed = self.closed;
+                closed.write().push(view.project_path, session);
+            }
+        }
+        self.close(id);
     }
 
     /// Focuses the next (or previous) open session in the order the sidebar draws them; `false` when
@@ -1159,6 +1169,8 @@ impl Workspace {
             Active::NewSession | Active::Customize | Active::Routines => None,
         };
         match cycle_target(&order, current, forward) {
+            // The only open session: nothing to switch to, so the key stays the caret's.
+            Some(target) if Some(target) == current => false,
             Some(target) => {
                 self.select(target);
                 true
@@ -1207,6 +1219,9 @@ impl Workspace {
             return false;
         };
         if !shortcut_allowed(shortcut, overlay_open) {
+            if !swallowed_behind_overlay(shortcut) {
+                return false;
+            }
             event.prevent_default();
             return true;
         }
@@ -1285,10 +1300,15 @@ impl Workspace {
 /// The shortcut a key press is, if any (platform-aware: Cmd on macOS, Ctrl elsewhere).
 pub fn shortcut_from_event(event: &KeyboardEvent) -> Option<Shortcut> {
     let modifiers = event.modifiers();
-    let code = event.code().to_string();
+    let mac = cfg!(target_os = "macos");
+    let key = event.key().to_string();
+    if types_text(&key, modifiers.ctrl(), modifiers.alt(), mac) {
+        return None;
+    }
+    let code = match_code(&key, &event.code().to_string(), modifiers.alt());
     shortcut_for(
         &KeyPress { code: &code, ctrl: modifiers.ctrl(), meta: modifiers.meta(), alt: modifiers.alt(), shift: modifiers.shift() },
-        cfg!(target_os = "macos"),
+        mac,
     )
 }
 
