@@ -116,7 +116,9 @@ pub(crate) mod mark {
     pub const SELECTED: char = '❯';
     pub const ITEM: &str = "Authenticate";
     pub const SIGNED: &[&str] = &["Authentication successful"];
-    pub const FAILED: &[&str] = &["Authentication failed", "Authentication cancelled"];
+    /// A refused or impossible sign-in brings the item screen back with one of the first two lines (seen in the real
+    /// CLI: a refused consent, and a server without dynamic client registration). The last two are not seen yet.
+    pub const FAILED: &[&str] = &["OAuth error:", "SDK auth failed:", "Authentication failed", "Authentication cancelled"];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -610,5 +612,21 @@ mod tests {
         driver.feed(mark::ITEM.as_bytes(), secs(4));
         let line = "  \u{23bf}  Authentication successful. Connected to figma.";
         assert_eq!(driver.feed(line.as_bytes(), secs(40)), vec![Action::Done(Outcome::Signed)]);
+    }
+
+    #[test]
+    fn the_error_lines_the_cli_printed_for_a_refused_or_impossible_sign_in_end_the_run_as_failed() {
+        // Read from the real CLI (Claude Code 2.1.283): the item screen comes back with one of these lines.
+        for line in [
+            "OAuth error: access_denied - User denied",
+            "SDK auth failed: Incompatible auth server: does not support dynamic client registration",
+        ] {
+            let mut driver = at_list("web");
+            settled(&mut driver, list("web", 1).as_bytes(), secs(3));
+            driver.feed(mark::ITEM.as_bytes(), secs(4));
+            driver.feed(b"Opening your browser", secs(5));
+            let screen = format!("web MCP Server\r\nStatus: needs authentication\r\n{line}\r\n\u{276f} 1. {}\r\n", mark::ITEM);
+            assert_eq!(driver.feed(screen.as_bytes(), secs(30)), vec![Action::Done(Outcome::Failed)], "{line}");
+        }
     }
 }
