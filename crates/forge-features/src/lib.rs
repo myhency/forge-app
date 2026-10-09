@@ -26,6 +26,7 @@ mod permission_mode;
 mod preview_tabs;
 mod suggestion;
 mod refocus;
+mod routines;
 mod search;
 mod send_message;
 mod section_status;
@@ -85,6 +86,7 @@ pub use sidebar::{
     LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,
 };
 pub use terminal_tabs::{TabId, TerminalTabs};
+pub use routines::{cards, history_rows, run_state_text, skip_text, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};
 pub use workspace::{use_workspace, use_workspace_provider, Active, Picture, RoutineServices, Workspace, WorkspaceServices};
 pub use blocking::run_blocking;
 pub use file_tree::{parse_files_query, FileTree, FilesQuery, TreeRow};
