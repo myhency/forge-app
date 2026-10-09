@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_domain::{
-    ActiveExtensions, AppConfig, McpServerDefinition, PluginDefinition, SkillDefinition,
+    ActiveExtensions, AppConfig, McpServerDefinition, PluginDefinition, SessionDefaults,
+    SkillDefinition,
 };
 use forge_ports::{
     ConfigError, ConfigRepositoryPort, McpRegistryError, McpRegistryPort, PluginRepositoryError,
@@ -70,6 +71,15 @@ impl ExtensionsUseCase {
         &self,
         project: &Path,
     ) -> Result<ActiveExtensions, ExtensionsError> {
+        Ok(self.resolve_start(project).await?.0)
+    }
+
+    /// What a session starts with, from one read of the config: the enabled extensions and the
+    /// Code tab defaults. (The extensions part is described on `resolve_active`.)
+    pub async fn resolve_start(
+        &self,
+        project: &Path,
+    ) -> Result<(ActiveExtensions, SessionDefaults), ExtensionsError> {
         let config = self.config.load().await?;
         let skills = if config.enabled_skills.is_empty() {
             Vec::new()
@@ -86,8 +96,9 @@ impl ExtensionsUseCase {
         } else {
             self.mcp.list_servers(project).await?
         };
-        Ok(ActiveExtensions::select(
-            &config, &skills, &plugins, &servers,
+        Ok((
+            ActiveExtensions::select(&config, &skills, &plugins, &servers),
+            SessionDefaults::from_config(&config),
         ))
     }
 
@@ -359,5 +370,31 @@ mod tests {
         .unwrap();
 
         assert_eq!(saved.enabled_plugins, vec!["hud@official".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn resolve_start_gives_the_extensions_and_the_defaults_from_one_read_of_the_config() {
+        let config = AppConfig {
+            output_style: Some(forge_domain::OutputStyle::Proactive),
+            allow_bypass_mode: true,
+            ..AppConfig::default()
+        };
+        let mut config_port = MockConfigRepositoryPort::new();
+        config_port.expect_load().times(1).returning(move || Ok(config.clone()));
+
+        let (active, defaults) = ExtensionsUseCase::new(
+            Arc::new(config_port),
+            Arc::new(MockSkillRepositoryPort::new()),
+            Arc::new(MockPluginRepositoryPort::new()),
+            Arc::new(MockMcpRegistryPort::new()),
+            PathBuf::from("/home/me"),
+        )
+        .resolve_start(Path::new("/work/a"))
+        .await
+        .unwrap();
+
+        assert!(active.skills.is_empty());
+        assert_eq!(defaults.output_style, Some(forge_domain::OutputStyle::Proactive));
+        assert!(defaults.allow_bypass);
     }
 }

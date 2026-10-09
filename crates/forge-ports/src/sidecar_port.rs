@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use forge_domain::{ActiveExtensions, Attachment, AvailableModel, EffortLevel, PermissionDecision, PermissionMode, SlashCommand, TokenUsage};
+use forge_domain::{ActiveExtensions, Attachment, AvailableModel, EffortLevel, PermissionDecision, PermissionMode, SessionDefaults, SlashCommand, TokenUsage};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -24,6 +24,8 @@ pub struct StartSessionParams {
     pub additional_directories: Vec<String>,
     /// Permission rules that need no asking (the SDK's `allowedTools`): `Read`, `Bash(npm test:*)`.
     pub allowed_tools: Vec<String>,
+    /// What the Code tab of Settings decides for this start.
+    pub defaults: SessionDefaults,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -158,6 +160,7 @@ mod tests {
                 extensions: ActiveExtensions::default(),
                 additional_directories: Vec::new(),
                 allowed_tools: Vec::new(),
+                defaults: forge_domain::SessionDefaults::default(),
             })
             .await;
 

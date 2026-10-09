@@ -506,9 +506,9 @@ impl Workspace {
         });
     }
 
-    /// How much of the open session the chat shows. Normal until the person changes it.
-    pub fn transcript_view(&self, id: LiveSessionId) -> TranscriptView {
-        self.transcript_views.read().get(id)
+    /// How much of the open session the chat shows: the person's choice for it, else `default`.
+    pub fn transcript_view(&self, id: LiveSessionId, default: TranscriptView) -> TranscriptView {
+        self.transcript_views.read().get(id, default)
     }
 
     /// The dock of one session: which panels are open and how wide.

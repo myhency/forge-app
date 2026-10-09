@@ -1,5 +1,6 @@
 /// How much of a session the chat shows (Claude Code desktop: 트랜스크립트 보기).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TranscriptView {
     /// Answers, and one collapsed line per tool call.
     #[default]

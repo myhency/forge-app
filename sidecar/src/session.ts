@@ -342,19 +342,21 @@ export class SidecarSession {
           canUseTool,
           includePartialMessages: true,
           // The SDK refuses bypassPermissions later unless this is set now. It only lets the mode be
-          // chosen; Forge enters it only when the person confirms.
-          allowDangerouslySkipPermissions: true,
+          // chosen; Forge enters it only when the person confirms, and only when Settings allows it.
+          allowDangerouslySkipPermissions: command.allow_bypass,
           // The SDK sends thinking with its text omitted unless asked for a summary.
           thinking: { type: "adaptive", display: "summarized" },
           settingSources: ["project"],
           strictMcpConfig: true,
           skills: skillsPlugin?.skills ?? [],
           plugins,
+          // The output style of a new session; the SDK's default style when none is set.
+          ...(command.output_style ? { settings: { outputStyle: command.output_style } } : {}),
           mcpServers: command.mcp_servers ?? {},
           additionalDirectories: command.additional_directories ?? [],
           allowedTools: command.allowed_tools ?? [],
-          // Forge shows a stop button per background task and predicts the next prompt.
-          promptSuggestions: true,
+          // Forge shows a stop button per background task and predicts the next prompt unless Settings turns it off.
+          promptSuggestions: command.prompt_suggestions,
           perTaskStopAffordance: true,
         },
       });

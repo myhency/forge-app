@@ -254,6 +254,23 @@ pub(crate) fn extensions_with(config: AppConfig, skills: Vec<SkillDefinition>) -
     ))
 }
 
+/// The first read of the config gives `first`, every later read `later`: a config edited while a
+/// session is open.
+pub(crate) fn extensions_changing_config(first: AppConfig, later: AppConfig) -> Arc<ExtensionsUseCase> {
+    let reads = Arc::new(AtomicUsize::new(0));
+    let mut config_port = MockConfigRepositoryPort::new();
+    config_port.expect_load().returning(move || {
+        Ok(if reads.fetch_add(1, Ordering::SeqCst) == 0 { first.clone() } else { later.clone() })
+    });
+    Arc::new(ExtensionsUseCase::new(
+        Arc::new(config_port),
+        Arc::new(MockSkillRepositoryPort::new()),
+        Arc::new(MockPluginRepositoryPort::new()),
+        Arc::new(MockMcpRegistryPort::new()),
+        PathBuf::from("/home/me"),
+    ))
+}
+
 /// A skill is enabled and found; the counter says how many times the config file was read.
 pub(crate) fn counting_extensions() -> (Arc<ExtensionsUseCase>, Arc<AtomicUsize>) {
     let loads = Arc::new(AtomicUsize::new(0));

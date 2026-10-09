@@ -72,6 +72,16 @@ impl SettingsUseCase {
         Ok(config)
     }
 
+    /// Saves the Code tab's switches: loads the config, lets `change` edit it, writes it back. Like
+    /// `save_sidebar`, a config that cannot be read is never replaced, and it shares the write lock.
+    pub async fn save_code_settings(&self, change: impl FnOnce(&mut AppConfig)) -> Result<AppConfig, ConfigError> {
+        let _saving = self.write_lock.hold().await;
+        let mut config = self.config.load().await?;
+        change(&mut config);
+        self.config.save(&config).await?;
+        Ok(config)
+    }
+
     /// Saves which sessions are archived. Like `save_sidebar`, a config that cannot be read is never
     /// replaced, and it shares the write lock so a quick archive and filter change both survive.
     pub async fn save_archived(&self, archived: &[ArchivedRef]) -> Result<AppConfig, ConfigError> {
@@ -294,6 +304,27 @@ mod tests {
         let result = usecase.save_sidebar(&forge_domain::SidebarPrefs::default()).await;
 
         assert!(matches!(result, Err(ConfigError::ParseFailed(_))));
+    }
+
+    #[tokio::test]
+    async fn save_code_settings_changes_only_what_the_closure_changes_and_saves_once() {
+        let mut mock = MockConfigRepositoryPort::new();
+        mock.expect_load().returning(|| Ok(AppConfig { model: Some("m".to_string()), ..AppConfig::default() }));
+        mock.expect_save()
+            .withf(|config| config.allow_bypass_mode && config.model.as_deref() == Some("m"))
+            .times(1)
+            .returning(|_| Ok(()));
+
+        let saved = SettingsUseCase::new(Arc::new(mock)).save_code_settings(|config| config.allow_bypass_mode = true).await.unwrap();
+        assert!(saved.allow_bypass_mode);
+    }
+
+    #[tokio::test]
+    async fn save_code_settings_never_replaces_a_config_that_cannot_be_read() {
+        let mut mock = MockConfigRepositoryPort::new();
+        mock.expect_load().returning(|| Err(ConfigError::ParseFailed("bad".to_string())));
+        // No expect_save: a save would panic.
+        assert!(SettingsUseCase::new(Arc::new(mock)).save_code_settings(|config| config.prompt_suggestions = false).await.is_err());
     }
 
     // A config kept in memory whose load and save each yield once, so two saves really interleave.

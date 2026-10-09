@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use forge_domain::{OutputStyle, TranscriptView};
 use forge_entities::{model_from_value, model_options, model_value};
 use forge_features::{use_settings, ExtensionKind, SettingsSection, SettingsStatus};
 use forge_shared::{Button, ButtonKind, Select, SettingRow, Switch, TextInput};
@@ -35,6 +36,11 @@ pub fn SettingsOverlay() -> Element {
                         "Model"
                     }
                     button {
+                        class: if section == SettingsSection::Code { "settings-nav-item active" } else { "settings-nav-item" },
+                        onclick: move |_| settings.set_section(SettingsSection::Code),
+                        "Code"
+                    }
+                    button {
                         class: if section == SettingsSection::Skills { "settings-nav-item active" } else { "settings-nav-item" },
                         onclick: move |_| settings.set_section(SettingsSection::Skills),
                         "Skills"
@@ -58,10 +64,61 @@ pub fn SettingsOverlay() -> Element {
                         SettingsSection::Skills => rsx! { ExtensionSection { kind: ExtensionKind::Skill } },
                         SettingsSection::Plugins => rsx! { ExtensionSection { kind: ExtensionKind::Plugin } },
                         SettingsSection::McpServers => rsx! { ExtensionSection { kind: ExtensionKind::McpServer } },
+                        SettingsSection::Code => rsx! { CodeSection {} },
                     }
                     StatusLine {}
                 }
             }
+        }
+    }
+}
+
+const DEFAULT_STYLE_VALUE: &str = "default";
+
+#[component]
+fn CodeSection() -> Element {
+    let settings = use_settings();
+    let view = settings.default_transcript_view();
+    let style_value = settings.output_style().map_or(DEFAULT_STYLE_VALUE, OutputStyle::name).to_string();
+    let mut style_options = vec![(DEFAULT_STYLE_VALUE.to_string(), "Default".to_string())];
+    style_options.extend(OutputStyle::ALL.iter().map(|style| (style.name().to_string(), style.name().to_string())));
+    rsx! {
+        h2 { "Code" }
+        SettingRow {
+            title: "Default transcript view",
+            description: "The view sessions open in. The view menu of a session changes that session only.",
+            div { class: "view-switch", role: "radiogroup", "aria-label": "Default transcript view",
+                for option in TranscriptView::ALL {
+                    button {
+                        key: "{option.label()}",
+                        class: if option == view { "view-option selected" } else { "view-option" },
+                        role: "radio",
+                        "aria-checked": "{option == view}",
+                        onclick: move |_| settings.set_default_transcript_view(option),
+                        "{option.label()}"
+                    }
+                }
+            }
+        }
+        SettingRow { title: "Output style", description: "Applies to new sessions.",
+            Select {
+                value: style_value,
+                options: style_options,
+                onchange: move |value: String| settings.set_output_style(OutputStyle::from_name(&value)),
+            }
+        }
+        SettingRow {
+            title: "Prompt suggestions",
+            description: "Show a suggested next prompt in the message box after Claude answers. Suggestions use a little more of your usage.",
+            Switch { on: settings.prompt_suggestions(), onchange: move |on| settings.set_prompt_suggestions(on) }
+        }
+        SettingRow {
+            title: "Allow bypass permissions mode",
+            description: "Adds Bypass permissions to the mode menu, which skips every permission check in a session. A session that is already in that mode keeps it.",
+            Switch { on: settings.allow_bypass_mode(), onchange: move |on| settings.set_allow_bypass_mode(on) }
+        }
+        div { class: "hint", style: "margin-top: 12px;",
+            "Output style, prompt suggestions and the bypass switch apply to sessions that start after the change. The default view also applies to open sessions you have not changed."
         }
     }
 }

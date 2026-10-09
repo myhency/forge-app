@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
 use forge_entities::{live_state, pill_label, TranscriptView, Turns};
-use forge_features::{use_workspace, Panel, SendMessageBox};
+use forge_features::{use_settings, use_workspace, Panel, SendMessageBox};
 
 use crate::composer_controls::{EffortPicker, ModePicker, ModelPicker};
 use crate::dock::Dock;
@@ -42,6 +42,7 @@ fn ScrollToEnd() -> Element {
 #[component]
 pub fn ChatWindow(id: LiveSessionId) -> Element {
     let workspace = use_workspace();
+    let settings = use_settings();
     use_future(move || async move {
         let mut links = document::eval(WATCH_FILE_LINKS);
         while let Ok(path) = links.recv::<String>().await {
@@ -52,7 +53,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
         return rsx! { div { class: "empty-state", "This session is no longer open." } };
     };
     let view = view_signal.read();
-    let mode = workspace.transcript_view(id);
+    let mode = workspace.transcript_view(id, settings.default_transcript_view());
     let archived = view
         .claude_session_id
         .as_ref()

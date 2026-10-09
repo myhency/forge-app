@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, SettingsUseCase};
-use forge_domain::{AppConfig, McpServerDefinition, PluginDefinition, SkillDefinition};
+use forge_domain::{AppConfig, McpServerDefinition, OutputStyle, PluginDefinition, SkillDefinition, TranscriptView};
 use forge_entities::{mcp_rows, plugin_rows, project_label, skill_rows, ExtensionRow};
 
 use crate::section_status::status_for;
@@ -18,6 +18,7 @@ pub enum SettingsSection {
     Skills,
     Plugins,
     McpServers,
+    Code,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +39,25 @@ impl Default for Catalog {
     fn default() -> Self {
         Self { skills: Ok(Vec::new()), plugins: Ok(Vec::new()), mcp: Ok(Vec::new()) }
     }
+}
+
+/// What a Code tab control does to the stored config. One function per control keeps the setters
+/// below one line each and the effect testable without a runtime.
+pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
+    match change {
+        CodeChange::DefaultView(view) => config.default_transcript_view = view,
+        CodeChange::OutputStyle(style) => config.output_style = style,
+        CodeChange::PromptSuggestions(on) => config.prompt_suggestions = on,
+        CodeChange::AllowBypass(on) => config.allow_bypass_mode = on,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CodeChange {
+    DefaultView(TranscriptView),
+    OutputStyle(Option<OutputStyle>),
+    PromptSuggestions(bool),
+    AllowBypass(bool),
 }
 
 /// The outcome of the last save, shown under the fields until the next edit or save.
@@ -160,6 +180,38 @@ impl Settings {
     /// The stored default model (`None`: the SDK chooses).
     pub fn model(&self) -> Option<String> {
         self.saved.read().model.clone()
+    }
+
+    pub fn default_transcript_view(&self) -> TranscriptView {
+        self.saved.read().default_transcript_view
+    }
+
+    pub fn output_style(&self) -> Option<OutputStyle> {
+        self.saved.read().output_style
+    }
+
+    pub fn prompt_suggestions(&self) -> bool {
+        self.saved.read().prompt_suggestions
+    }
+
+    pub fn allow_bypass_mode(&self) -> bool {
+        self.saved.read().allow_bypass_mode
+    }
+
+    pub fn set_default_transcript_view(&self, view: TranscriptView) {
+        self.change_code(CodeChange::DefaultView(view));
+    }
+
+    pub fn set_output_style(&self, style: Option<OutputStyle>) {
+        self.change_code(CodeChange::OutputStyle(style));
+    }
+
+    pub fn set_prompt_suggestions(&self, on: bool) {
+        self.change_code(CodeChange::PromptSuggestions(on));
+    }
+
+    pub fn set_allow_bypass_mode(&self, on: bool) {
+        self.change_code(CodeChange::AllowBypass(on));
     }
 
     pub fn status(&self) -> Option<SettingsStatus> {
@@ -331,6 +383,34 @@ impl Settings {
         status.set(Some((SettingsSection::Connection, SettingsStatus::Saved)));
     }
 
+    // Saves one Code tab control at once. The shown value follows the save, so a failed save leaves
+    // the control where it was and shows the error.
+    fn change_code(&self, change: CodeChange) {
+        let usecase = (*self.usecase.peek()).clone();
+        let this = *self;
+        // Pinned to the root scope, like the other saves: switching tab must not cancel it.
+        dioxus::core::spawn_forever(async move {
+            match usecase.save_code_settings(|config| apply_code_change(config, change)).await {
+                Ok(config) => this.after_save_code(config),
+                Err(error) => this.fail(SettingsSection::Code, error.to_string()),
+            }
+        });
+    }
+
+    // After a Code save only its four fields changed; leave unsaved Connection edits alone.
+    fn after_save_code(&self, config: AppConfig) {
+        let mut saved = self.saved;
+        let mut status = self.status;
+        {
+            let mut current = saved.write();
+            current.default_transcript_view = config.default_transcript_view;
+            current.output_style = config.output_style;
+            current.prompt_suggestions = config.prompt_suggestions;
+            current.allow_bypass_mode = config.allow_bypass_mode;
+        }
+        status.set(Some((SettingsSection::Code, SettingsStatus::Saved)));
+    }
+
     // After a model save only the model changed; leave any unsaved Connection edits alone.
     fn after_save_model(&self, config: AppConfig) {
         let mut saved = self.saved;
@@ -348,5 +428,32 @@ impl Settings {
     fn clear_status(&self) {
         let mut status = self.status;
         status.set(None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_control_changes_its_own_field_only() {
+        let mut config = AppConfig::default();
+        apply_code_change(&mut config, CodeChange::DefaultView(TranscriptView::Thinking));
+        apply_code_change(&mut config, CodeChange::OutputStyle(Some(OutputStyle::Learning)));
+        apply_code_change(&mut config, CodeChange::PromptSuggestions(false));
+        apply_code_change(&mut config, CodeChange::AllowBypass(true));
+
+        assert_eq!(config.default_transcript_view, TranscriptView::Thinking);
+        assert_eq!(config.output_style, Some(OutputStyle::Learning));
+        assert!(!config.prompt_suggestions);
+        assert!(config.allow_bypass_mode);
+        assert_eq!(config.model, None, "nothing else is touched");
+    }
+
+    #[test]
+    fn choosing_the_default_style_clears_it() {
+        let mut config = AppConfig { output_style: Some(OutputStyle::Concise), ..AppConfig::default() };
+        apply_code_change(&mut config, CodeChange::OutputStyle(None));
+        assert_eq!(config.output_style, None);
     }
 }
