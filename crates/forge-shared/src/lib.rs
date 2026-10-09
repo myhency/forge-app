@@ -1,5 +1,7 @@
 mod components;
 mod editor;
+pub mod i18n;
+mod ko;
 mod theme;
 mod xterm;
 
