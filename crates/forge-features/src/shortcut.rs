@@ -1,4 +1,5 @@
 use crate::dock::Panel;
+use forge_shared::{msg, tr};
 
 /// What a shortcut does. `GoToSession` counts from 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,8 +78,8 @@ pub enum Group {
 impl Group {
     pub fn title(self) -> &'static str {
         match self {
-            Group::General => "General",
-            Group::Panels => "Panels",
+            Group::General => tr!("General"),
+            Group::Panels => tr!("Panels"),
         }
     }
 }
@@ -95,34 +96,34 @@ pub struct ShortcutRow {
 /// Every shortcut Forge has. The key handler and the shortcut list both read this table, so a key
 /// that is not here is not bound and not shown.
 pub static SHORTCUTS: &[ShortcutRow] = &[
-    ShortcutRow { group: Group::General, label: "Search sessions", action: Shortcut::OpenSearch, keys: &[cmd("KeyK")] },
-    ShortcutRow { group: Group::General, label: "New session", action: Shortcut::NewSession, keys: &[cmd("KeyN")] },
-    ShortcutRow { group: Group::General, label: "New session in this folder", action: Shortcut::NewSessionHere, keys: &[cmd_shift("KeyN")] },
-    ShortcutRow { group: Group::General, label: "Close the session", action: Shortcut::CloseSession, keys: &[cmd("KeyW")] },
-    ShortcutRow { group: Group::General, label: "Settings", action: Shortcut::OpenSettings, keys: &[cmd("Comma")] },
-    ShortcutRow { group: Group::General, label: "Keyboard shortcuts", action: Shortcut::ShowShortcuts, keys: &[cmd("Slash")] },
-    ShortcutRow { group: Group::General, label: "Show or hide the sidebar", action: Shortcut::ToggleSidebar, keys: &[cmd("KeyB")] },
+    ShortcutRow { group: Group::General, label: msg!("Search sessions"), action: Shortcut::OpenSearch, keys: &[cmd("KeyK")] },
+    ShortcutRow { group: Group::General, label: msg!("New session"), action: Shortcut::NewSession, keys: &[cmd("KeyN")] },
+    ShortcutRow { group: Group::General, label: msg!("New session in this folder"), action: Shortcut::NewSessionHere, keys: &[cmd_shift("KeyN")] },
+    ShortcutRow { group: Group::General, label: msg!("Close the session"), action: Shortcut::CloseSession, keys: &[cmd("KeyW")] },
+    ShortcutRow { group: Group::General, label: msg!("Settings"), action: Shortcut::OpenSettings, keys: &[cmd("Comma")] },
+    ShortcutRow { group: Group::General, label: msg!("Keyboard shortcuts"), action: Shortcut::ShowShortcuts, keys: &[cmd("Slash")] },
+    ShortcutRow { group: Group::General, label: msg!("Show or hide the sidebar"), action: Shortcut::ToggleSidebar, keys: &[cmd("KeyB")] },
     ShortcutRow {
         group: Group::General,
-        label: "Next session",
+        label: msg!("Next session"),
         action: Shortcut::NextSession,
         keys: &[ctrl("Tab"), cmd_shift("BracketRight"), alt("ArrowDown")],
     },
     ShortcutRow {
         group: Group::General,
-        label: "Previous session",
+        label: msg!("Previous session"),
         action: Shortcut::PreviousSession,
         keys: &[ctrl_shift("Tab"), cmd_shift("BracketLeft"), alt("ArrowUp")],
     },
-    ShortcutRow { group: Group::General, label: "Go to session 1…9", action: Shortcut::GoToSession(0), keys: &[cmd(DIGITS)] },
-    ShortcutRow { group: Group::General, label: "Reopen the last closed session", action: Shortcut::ReopenClosed, keys: &[cmd_shift("KeyT")] },
-    ShortcutRow { group: Group::General, label: "Archive or unarchive the session", action: Shortcut::ArchiveActive, keys: &[cmd_alt("KeyA")] },
-    ShortcutRow { group: Group::General, label: "Fork the session", action: Shortcut::ForkActive, keys: &[cmd_alt("KeyO")] },
-    ShortcutRow { group: Group::General, label: "Rename the session", action: Shortcut::RenameActive, keys: &[cmd_alt("KeyR")] },
-    ShortcutRow { group: Group::Panels, label: "Changes", action: Shortcut::TogglePanel(Panel::Changes), keys: &[cmd_shift("KeyD")] },
-    ShortcutRow { group: Group::Panels, label: "Files", action: Shortcut::TogglePanel(Panel::Files), keys: &[cmd_shift("KeyF")] },
-    ShortcutRow { group: Group::Panels, label: "Terminal", action: Shortcut::TogglePanel(Panel::Terminal), keys: &[cmd("KeyJ"), ctrl("Backquote")] },
-    ShortcutRow { group: Group::Panels, label: "Preview", action: Shortcut::TogglePanel(Panel::Preview), keys: &[cmd_shift("KeyB")] },
+    ShortcutRow { group: Group::General, label: msg!("Go to session 1…9"), action: Shortcut::GoToSession(0), keys: &[cmd(DIGITS)] },
+    ShortcutRow { group: Group::General, label: msg!("Reopen the last closed session"), action: Shortcut::ReopenClosed, keys: &[cmd_shift("KeyT")] },
+    ShortcutRow { group: Group::General, label: msg!("Archive or unarchive the session"), action: Shortcut::ArchiveActive, keys: &[cmd_alt("KeyA")] },
+    ShortcutRow { group: Group::General, label: msg!("Fork the session"), action: Shortcut::ForkActive, keys: &[cmd_alt("KeyO")] },
+    ShortcutRow { group: Group::General, label: msg!("Rename the session"), action: Shortcut::RenameActive, keys: &[cmd_alt("KeyR")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Changes"), action: Shortcut::TogglePanel(Panel::Changes), keys: &[cmd_shift("KeyD")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Files"), action: Shortcut::TogglePanel(Panel::Files), keys: &[cmd_shift("KeyF")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Terminal"), action: Shortcut::TogglePanel(Panel::Terminal), keys: &[cmd("KeyJ"), ctrl("Backquote")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Preview"), action: Shortcut::TogglePanel(Panel::Preview), keys: &[cmd_shift("KeyB")] },
 ];
 
 impl Binding {
@@ -271,7 +272,7 @@ pub fn shortcut_sections(mac: bool) -> Vec<ShortcutSection> {
             rows: SHORTCUTS
                 .iter()
                 .filter(|row| row.group == group)
-                .map(|row| (row.label.to_string(), row.keys.iter().map(|binding| binding.display(mac)).collect::<Vec<_>>().join(" or ")))
+                .map(|row| (forge_shared::i18n::text(row.label).to_string(), row.keys.iter().map(|binding| binding.display(mac)).collect::<Vec<_>>().join(tr!(" or "))))
                 .collect(),
         })
         .collect()

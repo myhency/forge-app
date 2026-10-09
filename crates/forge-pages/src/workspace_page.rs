@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use forge_domain::{keep_peek, layout_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
 use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_width, use_workspace_provider, Active};
 use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, NewSessionPanel, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
+use forge_shared::tr;
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
 /// the active session. The root also catches the session shortcuts.
@@ -124,7 +125,7 @@ pub fn WorkspacePage() -> Element {
                         div { class: "sidebar-rail",
                             button {
                                 class: "icon-button",
-                                title: "Show the sidebar",
+                                title: tr!("Show the sidebar"),
                                 onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = false),
                                 "›"
                             }
@@ -144,7 +145,7 @@ pub fn WorkspacePage() -> Element {
                     button {
                         class: "icon-button sidebar-toggle",
                         r#type: "button",
-                        title: "Toggle the sidebar",
+                        title: tr!("Toggle the sidebar"),
                         "aria-label": "Toggle the sidebar",
                         "aria-expanded": "{peek()}",
                         onclick: move |_| peek.set(!peek()),

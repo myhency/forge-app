@@ -117,7 +117,7 @@ fn PaletteBody() -> Element {
                         }
                     }
                     if rows.is_empty() {
-                        div { class: "palette-empty", "No sessions match" }
+                        div { class: "palette-empty", {tr!("No sessions match")} }
                     }
                 }
             }

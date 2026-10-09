@@ -143,7 +143,7 @@ impl EditorPrefs {
 }
 
 macro_rules! choice_enum {
-    ($name:ident, default $default:ident, { $($variant:ident => ($value:literal, $label:literal)),+ $(,)? }) => {
+    ($name:ident, default $default:ident, { $($variant:ident => ($value:literal, $label:expr)),+ $(,)? }) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
         #[serde(rename_all = "snake_case")]
         pub enum $name {
@@ -171,12 +171,12 @@ macro_rules! choice_enum {
 }
 
 // Light, dark, or whatever the system says.
-choice_enum!(Theme, default System, { System => ("system", "System"), Light => ("light", "Light"), Dark => ("dark", "Dark") });
+choice_enum!(Theme, default System, { System => ("system", crate::msg!("System")), Light => ("light", crate::msg!("Light")), Dark => ("dark", crate::msg!("Dark")) });
 // One font for the interface, the chat and code.
-choice_enum!(FontChoice, default System, { System => ("system", "System"), OpenDyslexic => ("opendyslexic", "OpenDyslexic") });
-choice_enum!(TextSize, default Normal, { Small => ("small", "Small"), Normal => ("normal", "Normal"), Large => ("large", "Large") });
-choice_enum!(ChatWidth, default Normal, { Narrow => ("narrow", "Narrow"), Normal => ("normal", "Normal"), Wide => ("wide", "Wide") });
-choice_enum!(MotionPref, default System, { System => ("system", "System"), Reduced => ("reduced", "Reduced") });
+choice_enum!(FontChoice, default System, { System => ("system", crate::msg!("System")), OpenDyslexic => ("opendyslexic", crate::msg!("OpenDyslexic")) });
+choice_enum!(TextSize, default Normal, { Small => ("small", crate::msg!("Small")), Normal => ("normal", crate::msg!("Normal|size")), Large => ("large", crate::msg!("Large")) });
+choice_enum!(ChatWidth, default Normal, { Narrow => ("narrow", crate::msg!("Narrow")), Normal => ("normal", crate::msg!("Normal|width")), Wide => ("wide", crate::msg!("Wide")) });
+choice_enum!(MotionPref, default System, { System => ("system", crate::msg!("System")), Reduced => ("reduced", crate::msg!("Reduced")) });
 // The language of the interface. Each language is named in its own language and never translated.
 choice_enum!(Language, default English, { English => ("en", "English"), Korean => ("ko", "한국어") });
 

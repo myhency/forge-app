@@ -1712,6 +1712,7 @@ dependencies = [
  "dioxus",
  "forge-domain",
  "forge-features",
+ "forge-shared",
  "forge-widgets",
 ]
 
