@@ -16,7 +16,7 @@ use crate::files_store::{FilesStore, Restore};
 use crate::dock::{DockState, DockStates, Panel};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::new_session::ModelChoice;
-use crate::shortcut::{shortcut_allowed, shortcut_for, Shortcut};
+use crate::shortcut::{shortcut_allowed, shortcut_for, KeyPress, Shortcut};
 use crate::tool_activity::finished_tool_calls;
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, open_session_order, ArrangedGroup};
@@ -1065,6 +1065,16 @@ impl Workspace {
             Shortcut::NextSession => self.cycle(true),
             Shortcut::PreviousSession => self.cycle(false),
             Shortcut::CloseSession => self.close_active(),
+            // Temporary: Tasks 2 to 5 give each of these its action.
+            Shortcut::NewSessionHere
+            | Shortcut::ToggleSidebar
+            | Shortcut::ShowShortcuts
+            | Shortcut::GoToSession(_)
+            | Shortcut::ReopenClosed
+            | Shortcut::ArchiveActive
+            | Shortcut::ForkActive
+            | Shortcut::RenameActive
+            | Shortcut::TogglePanel(_) => return false,
         }
         event.prevent_default();
         true
@@ -1112,14 +1122,13 @@ impl Workspace {
 }
 
 /// The shortcut a key press is, if any (platform-aware: Cmd on macOS, Ctrl elsewhere).
-pub(crate) fn shortcut_from_event(event: &KeyboardEvent) -> Option<Shortcut> {
-    let key = match event.key() {
-        Key::Tab => "Tab".to_string(),
-        Key::Character(text) => text,
-        _ => return None,
-    };
+pub fn shortcut_from_event(event: &KeyboardEvent) -> Option<Shortcut> {
     let modifiers = event.modifiers();
-    shortcut_for(&key, modifiers.ctrl(), modifiers.meta(), modifiers.shift(), cfg!(target_os = "macos"))
+    let code = event.code().to_string();
+    shortcut_for(
+        &KeyPress { code: &code, ctrl: modifiers.ctrl(), meta: modifiers.meta(), alt: modifiers.alt(), shift: modifiers.shift() },
+        cfg!(target_os = "macos"),
+    )
 }
 
 // Every known project with its sessions. A project whose listing fails is kept (empty) and the

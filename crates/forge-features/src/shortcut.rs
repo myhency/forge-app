@@ -1,31 +1,232 @@
+use crate::dock::Panel;
+
+/// What a shortcut does. `GoToSession` counts from 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shortcut {
     NewSession,
+    NewSessionHere,
     NextSession,
     PreviousSession,
     CloseSession,
     OpenSettings,
     OpenSearch,
+    ToggleSidebar,
+    ShowShortcuts,
+    GoToSession(usize),
+    ReopenClosed,
+    ArchiveActive,
+    ForkActive,
+    RenameActive,
+    TogglePanel(Panel),
 }
 
-/// Claude Code desktop's session shortcuts: Cmd+N new session, Cmd+W close the session, Cmd+, open settings, Cmd+K search the sessions,
-/// Ctrl+Tab / Ctrl+Shift+Tab cycle. "Cmd" is Ctrl on platforms other than macOS. `key` is the
-/// pressed key: `"Tab"`, or a character in any case.
-pub fn shortcut_for(key: &str, ctrl: bool, meta: bool, shift: bool, mac: bool) -> Option<Shortcut> {
-    if key == "Tab" && ctrl {
-        return Some(if shift { Shortcut::PreviousSession } else { Shortcut::NextSession });
+/// A key press: the physical key (`event.code()`, `"KeyN"`) and the modifiers held. Never the typed
+/// character: Option changes it on a Mac and an input method (Korean) changes it too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyPress<'a> {
+    pub code: &'a str,
+    pub ctrl: bool,
+    pub meta: bool,
+    pub alt: bool,
+    pub shift: bool,
+}
+
+/// One key of a shortcut. `command` is Cmd on macOS and Ctrl elsewhere; `ctrl` is the Control key
+/// itself on every platform. `code` `DIGITS` stands for the keys 1 to 9.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Binding {
+    pub code: &'static str,
+    pub command: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+}
+
+pub const DIGITS: &str = "Digit*";
+
+const fn binding(code: &'static str, command: bool, ctrl: bool, alt: bool, shift: bool) -> Binding {
+    Binding { code, command, ctrl, alt, shift }
+}
+const fn cmd(code: &'static str) -> Binding {
+    binding(code, true, false, false, false)
+}
+const fn cmd_shift(code: &'static str) -> Binding {
+    binding(code, true, false, false, true)
+}
+const fn cmd_alt(code: &'static str) -> Binding {
+    binding(code, true, false, true, false)
+}
+const fn ctrl(code: &'static str) -> Binding {
+    binding(code, false, true, false, false)
+}
+const fn ctrl_shift(code: &'static str) -> Binding {
+    binding(code, false, true, false, true)
+}
+const fn alt(code: &'static str) -> Binding {
+    binding(code, false, false, true, false)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Group {
+    General,
+    Panels,
+}
+
+impl Group {
+    pub fn title(self) -> &'static str {
+        match self {
+            Group::General => "General",
+            Group::Panels => "Panels",
+        }
     }
-    let command = if mac { meta && !ctrl } else { ctrl && !meta };
-    if !command || shift {
-        return None;
+}
+
+/// One row of the shortcut list and the action it stands for.
+#[derive(Debug, Clone, Copy)]
+pub struct ShortcutRow {
+    pub group: Group,
+    pub label: &'static str,
+    pub action: Shortcut,
+    pub keys: &'static [Binding],
+}
+
+/// Every shortcut Forge has. The key handler and the shortcut list both read this table, so a key
+/// that is not here is not bound and not shown.
+pub static SHORTCUTS: &[ShortcutRow] = &[
+    ShortcutRow { group: Group::General, label: "Search sessions", action: Shortcut::OpenSearch, keys: &[cmd("KeyK")] },
+    ShortcutRow { group: Group::General, label: "New session", action: Shortcut::NewSession, keys: &[cmd("KeyN")] },
+    ShortcutRow { group: Group::General, label: "New session in this folder", action: Shortcut::NewSessionHere, keys: &[cmd_shift("KeyN")] },
+    ShortcutRow { group: Group::General, label: "Close the session", action: Shortcut::CloseSession, keys: &[cmd("KeyW")] },
+    ShortcutRow { group: Group::General, label: "Settings", action: Shortcut::OpenSettings, keys: &[cmd("Comma")] },
+    ShortcutRow { group: Group::General, label: "Keyboard shortcuts", action: Shortcut::ShowShortcuts, keys: &[cmd("Slash")] },
+    ShortcutRow { group: Group::General, label: "Show or hide the sidebar", action: Shortcut::ToggleSidebar, keys: &[cmd("KeyB")] },
+    ShortcutRow {
+        group: Group::General,
+        label: "Next session",
+        action: Shortcut::NextSession,
+        keys: &[ctrl("Tab"), cmd_shift("BracketRight"), alt("ArrowDown")],
+    },
+    ShortcutRow {
+        group: Group::General,
+        label: "Previous session",
+        action: Shortcut::PreviousSession,
+        keys: &[ctrl_shift("Tab"), cmd_shift("BracketLeft"), alt("ArrowUp")],
+    },
+    ShortcutRow { group: Group::General, label: "Go to session 1…9", action: Shortcut::GoToSession(0), keys: &[cmd(DIGITS)] },
+    ShortcutRow { group: Group::General, label: "Reopen the last closed session", action: Shortcut::ReopenClosed, keys: &[cmd_shift("KeyT")] },
+    ShortcutRow { group: Group::General, label: "Archive or unarchive the session", action: Shortcut::ArchiveActive, keys: &[cmd_alt("KeyA")] },
+    ShortcutRow { group: Group::General, label: "Fork the session", action: Shortcut::ForkActive, keys: &[cmd_alt("KeyO")] },
+    ShortcutRow { group: Group::General, label: "Rename the session", action: Shortcut::RenameActive, keys: &[cmd_alt("KeyR")] },
+    ShortcutRow { group: Group::Panels, label: "Changes", action: Shortcut::TogglePanel(Panel::Changes), keys: &[cmd_shift("KeyD")] },
+    ShortcutRow { group: Group::Panels, label: "Files", action: Shortcut::TogglePanel(Panel::Files), keys: &[cmd_shift("KeyF")] },
+    ShortcutRow { group: Group::Panels, label: "Terminal", action: Shortcut::TogglePanel(Panel::Terminal), keys: &[cmd("KeyJ"), ctrl("Backquote")] },
+    ShortcutRow { group: Group::Panels, label: "Preview", action: Shortcut::TogglePanel(Panel::Preview), keys: &[cmd_shift("KeyB")] },
+];
+
+impl Binding {
+    // The Meta and Ctrl keys this binding asks for on the platform.
+    fn wanted(&self, mac: bool) -> (bool, bool) {
+        if self.command {
+            if mac { (true, false) } else { (false, true) }
+        } else {
+            (false, self.ctrl)
+        }
     }
-    match key.to_lowercase().as_str() {
-        "n" => Some(Shortcut::NewSession),
-        "w" => Some(Shortcut::CloseSession),
-        "," => Some(Shortcut::OpenSettings),
-        "k" => Some(Shortcut::OpenSearch),
-        _ => None,
+
+    fn modifiers_match(&self, press: &KeyPress, mac: bool) -> bool {
+        let (meta, ctrl) = self.wanted(mac);
+        press.meta == meta && press.ctrl == ctrl && press.alt == self.alt && press.shift == self.shift
     }
+
+    /// The key as the list shows it: `⌥⌘A` on a Mac, `Ctrl+Alt+A` elsewhere.
+    pub fn display(&self, mac: bool) -> String {
+        let (meta, ctrl) = self.wanted(mac);
+        let key = key_label(self.code);
+        if mac {
+            let mut text = String::new();
+            if ctrl { text.push('⌃'); }
+            if self.alt { text.push('⌥'); }
+            if self.shift { text.push('⇧'); }
+            if meta { text.push('⌘'); }
+            text.push_str(&key);
+            text
+        } else {
+            let mut parts = Vec::new();
+            if ctrl { parts.push("Ctrl".to_string()); }
+            if self.alt { parts.push("Alt".to_string()); }
+            if self.shift { parts.push("Shift".to_string()); }
+            parts.push(key);
+            parts.join("+")
+        }
+    }
+}
+
+fn key_label(code: &str) -> String {
+    match code {
+        DIGITS => "1…9".to_string(),
+        "ArrowDown" => "↓".to_string(),
+        "ArrowUp" => "↑".to_string(),
+        "Comma" => ",".to_string(),
+        "Slash" => "/".to_string(),
+        "BracketLeft" => "[".to_string(),
+        "BracketRight" => "]".to_string(),
+        "Backquote" => "`".to_string(),
+        other => other.strip_prefix("Key").unwrap_or(other).to_string(),
+    }
+}
+
+// The 0-based place a `DigitN` code stands for (`Digit1` is 0); 0 and anything else is none.
+fn digit_index(code: &str) -> Option<usize> {
+    let number: usize = code.strip_prefix("Digit")?.parse().ok()?;
+    (1..=9).contains(&number).then(|| number - 1)
+}
+
+/// The shortcut a key press is, if any. "Cmd" is Ctrl on platforms other than macOS.
+pub fn shortcut_for(press: &KeyPress, mac: bool) -> Option<Shortcut> {
+    for row in SHORTCUTS {
+        for binding in row.keys {
+            if !binding.modifiers_match(press, mac) {
+                continue;
+            }
+            if binding.code == DIGITS {
+                if let Some(index) = digit_index(press.code) {
+                    return Some(Shortcut::GoToSession(index));
+                }
+            } else if binding.code == press.code {
+                return Some(row.action);
+            }
+        }
+    }
+    None
+}
+
+/// Whether `shortcut` may act while an overlay (Settings, the search palette, the shortcut list) is
+/// open. Only opening settings and the list do: the session shortcuts would change the session
+/// hidden behind the overlay (Plan 6 found ⌘W closing it).
+pub fn shortcut_allowed(shortcut: Shortcut, overlay_open: bool) -> bool {
+    !overlay_open || matches!(shortcut, Shortcut::OpenSettings | Shortcut::ShowShortcuts)
+}
+
+/// One group of the shortcut list: rows of (label, keys text).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShortcutSection {
+    pub title: &'static str,
+    pub rows: Vec<(String, String)>,
+}
+
+/// The shortcut list as the dialog draws it, groups in order, alternatives joined with " or ".
+pub fn shortcut_sections(mac: bool) -> Vec<ShortcutSection> {
+    [Group::General, Group::Panels]
+        .into_iter()
+        .map(|group| ShortcutSection {
+            title: group.title(),
+            rows: SHORTCUTS
+                .iter()
+                .filter(|row| row.group == group)
+                .map(|row| (row.label.to_string(), row.keys.iter().map(|binding| binding.display(mac)).collect::<Vec<_>>().join(" or ")))
+                .collect(),
+        })
+        .collect()
 }
 
 /// Whether the platform's command key is held: Cmd on macOS, Ctrl elsewhere (Meta there is the Windows key).
@@ -38,15 +239,21 @@ pub fn command_held(modifiers: dioxus::prelude::Modifiers) -> bool {
     command_pressed(modifiers.ctrl(), modifiers.meta(), cfg!(target_os = "macos"))
 }
 
-/// Whether `shortcut` may act while the settings overlay is open. Only opening settings does: the
-/// session shortcuts would change the session hidden behind the overlay (Plan 6 found ⌘W closing it).
-pub fn shortcut_allowed(shortcut: Shortcut, overlay_open: bool) -> bool {
-    !overlay_open || shortcut == Shortcut::OpenSettings
-}
-
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
+
+    fn press(code: &str, ctrl: bool, meta: bool, alt: bool, shift: bool) -> KeyPress<'_> {
+        KeyPress { code, ctrl, meta, alt, shift }
+    }
+
+    /// The press a binding stands for on `mac`.
+    fn press_of(binding: &Binding, code: &'static str, mac: bool) -> KeyPress<'static> {
+        let (meta, ctrl) = if binding.command { if mac { (true, false) } else { (false, true) } } else { (false, binding.ctrl) };
+        KeyPress { code, ctrl, meta, alt: binding.alt, shift: binding.shift }
+    }
 
     #[test]
     fn the_command_key_is_meta_on_a_mac_and_ctrl_elsewhere() {
@@ -58,68 +265,172 @@ mod tests {
 
     #[test]
     fn cmd_n_and_cmd_w_on_a_mac() {
-        assert_eq!(shortcut_for("n", false, true, false, true), Some(Shortcut::NewSession));
-        assert_eq!(shortcut_for("w", false, true, false, true), Some(Shortcut::CloseSession));
-        assert_eq!(shortcut_for("N", false, true, false, true), Some(Shortcut::NewSession), "caps lock");
+        assert_eq!(shortcut_for(&press("KeyN", false, true, false, false), true), Some(Shortcut::NewSession));
+        assert_eq!(shortcut_for(&press("KeyW", false, true, false, false), true), Some(Shortcut::CloseSession));
     }
 
     #[test]
     fn ctrl_n_and_ctrl_w_elsewhere() {
-        assert_eq!(shortcut_for("n", true, false, false, false), Some(Shortcut::NewSession));
-        assert_eq!(shortcut_for("w", true, false, false, false), Some(Shortcut::CloseSession));
+        assert_eq!(shortcut_for(&press("KeyN", true, false, false, false), false), Some(Shortcut::NewSession));
+        assert_eq!(shortcut_for(&press("KeyW", true, false, false, false), false), Some(Shortcut::CloseSession));
     }
 
     #[test]
     fn the_wrong_modifier_for_the_platform_does_nothing() {
-        assert_eq!(shortcut_for("n", true, false, false, true), None, "Ctrl+N on a Mac");
-        assert_eq!(shortcut_for("w", false, true, false, false), None, "Meta+W elsewhere");
+        assert_eq!(shortcut_for(&press("KeyN", true, false, false, false), true), None, "Ctrl+N on a Mac");
+        assert_eq!(shortcut_for(&press("KeyW", false, true, false, false), false), None, "Meta+W elsewhere");
     }
 
     #[test]
-    fn plain_keys_and_shifted_commands_do_nothing() {
-        assert_eq!(shortcut_for("n", false, false, false, true), None);
-        assert_eq!(shortcut_for("n", false, true, true, true), None, "Cmd+Shift+N");
-        assert_eq!(shortcut_for("x", false, true, false, true), None);
+    fn plain_keys_and_unbound_commands_do_nothing() {
+        assert_eq!(shortcut_for(&press("KeyN", false, false, false, false), true), None);
+        assert_eq!(shortcut_for(&press("KeyX", false, true, false, false), true), None);
+        assert_eq!(shortcut_for(&press("KeyN", false, true, true, false), true), None, "an extra Option turns Cmd+N into something else");
+    }
+
+    #[test]
+    fn shift_cmd_n_starts_a_session_in_this_folder() {
+        assert_eq!(shortcut_for(&press("KeyN", false, true, false, true), true), Some(Shortcut::NewSessionHere));
     }
 
     #[test]
     fn ctrl_tab_cycles_on_every_platform_and_shift_reverses() {
         for mac in [true, false] {
-            assert_eq!(shortcut_for("Tab", true, false, false, mac), Some(Shortcut::NextSession));
-            assert_eq!(shortcut_for("Tab", true, false, true, mac), Some(Shortcut::PreviousSession));
+            assert_eq!(shortcut_for(&press("Tab", true, false, false, false), mac), Some(Shortcut::NextSession));
+            assert_eq!(shortcut_for(&press("Tab", true, false, false, true), mac), Some(Shortcut::PreviousSession));
         }
     }
 
     #[test]
     fn tab_without_ctrl_is_left_alone() {
-        assert_eq!(shortcut_for("Tab", false, false, false, true), None);
-        assert_eq!(shortcut_for("Tab", false, true, false, true), None);
+        assert_eq!(shortcut_for(&press("Tab", false, false, false, false), true), None);
+        assert_eq!(shortcut_for(&press("Tab", false, true, false, false), true), None);
     }
 
     #[test]
-    fn cmd_comma_opens_settings_on_a_mac_and_ctrl_comma_elsewhere() {
-        assert_eq!(shortcut_for(",", false, true, false, true), Some(Shortcut::OpenSettings));
-        assert_eq!(shortcut_for(",", true, false, false, false), Some(Shortcut::OpenSettings));
-        assert_eq!(shortcut_for(",", true, false, false, true), None, "Ctrl+, on a Mac");
-        assert_eq!(shortcut_for(",", false, true, true, true), None, "Cmd+Shift+,");
-    }
-
-    #[test]
-    fn while_the_overlay_is_open_only_opening_settings_is_allowed() {
-        for shortcut in [Shortcut::NewSession, Shortcut::NextSession, Shortcut::PreviousSession, Shortcut::CloseSession, Shortcut::OpenSearch] {
-            assert!(shortcut_allowed(shortcut, false), "{shortcut:?} with the overlay closed");
-            assert!(!shortcut_allowed(shortcut, true), "{shortcut:?} behind the overlay");
+    fn the_other_keys_for_next_and_previous_session() {
+        for mac in [true, false] {
+            assert_eq!(shortcut_for(&press("ArrowDown", false, false, true, false), mac), Some(Shortcut::NextSession), "Option+Down");
+            assert_eq!(shortcut_for(&press("ArrowUp", false, false, true, false), mac), Some(Shortcut::PreviousSession), "Option+Up");
         }
-        assert!(shortcut_allowed(Shortcut::OpenSettings, true));
-        assert!(shortcut_allowed(Shortcut::OpenSettings, false));
+        assert_eq!(shortcut_for(&press("BracketRight", false, true, false, true), true), Some(Shortcut::NextSession));
+        assert_eq!(shortcut_for(&press("BracketLeft", false, true, false, true), true), Some(Shortcut::PreviousSession));
+        assert_eq!(shortcut_for(&press("ArrowDown", false, false, false, false), true), None, "plain Down is the caret's");
     }
 
     #[test]
-    fn cmd_k_opens_the_search_on_a_mac_and_ctrl_k_elsewhere() {
-        assert_eq!(shortcut_for("k", false, true, false, true), Some(Shortcut::OpenSearch));
-        assert_eq!(shortcut_for("K", false, true, false, true), Some(Shortcut::OpenSearch), "caps lock");
-        assert_eq!(shortcut_for("k", true, false, false, false), Some(Shortcut::OpenSearch));
-        assert_eq!(shortcut_for("k", true, false, false, true), None, "Ctrl+K on a Mac");
-        assert_eq!(shortcut_for("k", false, true, true, true), None, "Cmd+Shift+K");
+    fn cmd_comma_opens_settings_and_cmd_k_the_search() {
+        assert_eq!(shortcut_for(&press("Comma", false, true, false, false), true), Some(Shortcut::OpenSettings));
+        assert_eq!(shortcut_for(&press("Comma", true, false, false, false), false), Some(Shortcut::OpenSettings));
+        assert_eq!(shortcut_for(&press("Comma", true, false, false, false), true), None, "Ctrl+, on a Mac");
+        assert_eq!(shortcut_for(&press("KeyK", false, true, false, false), true), Some(Shortcut::OpenSearch));
+        assert_eq!(shortcut_for(&press("KeyK", true, false, false, false), false), Some(Shortcut::OpenSearch));
+    }
+
+    #[test]
+    fn the_digits_go_to_the_session_at_that_place() {
+        assert_eq!(shortcut_for(&press("Digit1", false, true, false, false), true), Some(Shortcut::GoToSession(0)));
+        assert_eq!(shortcut_for(&press("Digit9", false, true, false, false), true), Some(Shortcut::GoToSession(8)));
+        assert_eq!(shortcut_for(&press("Digit0", false, true, false, false), true), None);
+        assert_eq!(shortcut_for(&press("Digit1", false, false, false, false), true), None, "a typed digit");
+    }
+
+    #[test]
+    fn option_combinations_match_by_the_physical_key() {
+        // On a Mac Option+Cmd+A types "å"; the press carries the key's code, not the character.
+        assert_eq!(shortcut_for(&press("KeyA", false, true, true, false), true), Some(Shortcut::ArchiveActive));
+        assert_eq!(shortcut_for(&press("KeyO", false, true, true, false), true), Some(Shortcut::ForkActive));
+        assert_eq!(shortcut_for(&press("KeyR", false, true, true, false), true), Some(Shortcut::RenameActive));
+        assert_eq!(shortcut_for(&press("KeyA", true, false, true, false), false), Some(Shortcut::ArchiveActive), "Ctrl+Alt+A elsewhere");
+    }
+
+    #[test]
+    fn the_panel_keys() {
+        use crate::dock::Panel;
+        assert_eq!(shortcut_for(&press("KeyD", false, true, false, true), true), Some(Shortcut::TogglePanel(Panel::Changes)));
+        assert_eq!(shortcut_for(&press("KeyF", false, true, false, true), true), Some(Shortcut::TogglePanel(Panel::Files)));
+        assert_eq!(shortcut_for(&press("KeyJ", false, true, false, false), true), Some(Shortcut::TogglePanel(Panel::Terminal)));
+        assert_eq!(shortcut_for(&press("Backquote", true, false, false, false), true), Some(Shortcut::TogglePanel(Panel::Terminal)));
+        assert_eq!(shortcut_for(&press("KeyB", false, true, false, true), true), Some(Shortcut::TogglePanel(Panel::Preview)));
+        assert_eq!(shortcut_for(&press("KeyB", false, true, false, false), true), Some(Shortcut::ToggleSidebar));
+    }
+
+    #[test]
+    fn the_rest_of_the_general_keys() {
+        assert_eq!(shortcut_for(&press("Slash", false, true, false, false), true), Some(Shortcut::ShowShortcuts));
+        assert_eq!(shortcut_for(&press("KeyT", false, true, false, true), true), Some(Shortcut::ReopenClosed));
+    }
+
+    #[test]
+    fn every_binding_of_every_row_gives_that_row_back_on_both_platforms() {
+        for mac in [true, false] {
+            for row in SHORTCUTS {
+                for binding in row.keys {
+                    if binding.code == DIGITS {
+                        continue;
+                    }
+                    let found = shortcut_for(&press_of(binding, binding.code, mac), mac);
+                    assert_eq!(found, Some(row.action), "{} on mac={mac}", row.label);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn no_two_bindings_share_a_key() {
+        for mac in [true, false] {
+            let mut seen = HashSet::new();
+            for row in SHORTCUTS {
+                for binding in row.keys {
+                    let key = (binding.code, binding.command, binding.ctrl, binding.alt, binding.shift);
+                    assert!(seen.insert(key), "{} repeats a key (mac={mac})", row.label);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_row_has_a_label_and_at_least_one_key() {
+        for row in SHORTCUTS {
+            assert!(!row.label.is_empty());
+            assert!(!row.keys.is_empty(), "{}", row.label);
+        }
+    }
+
+    #[test]
+    fn while_an_overlay_is_open_only_opening_settings_and_this_list_are_allowed() {
+        use crate::dock::Panel;
+        let mut actions: Vec<Shortcut> = SHORTCUTS.iter().map(|row| row.action).collect();
+        actions.push(Shortcut::GoToSession(3));
+        actions.push(Shortcut::TogglePanel(Panel::Files));
+        for action in actions {
+            assert!(shortcut_allowed(action, false), "{action:?} with no overlay");
+            let allowed = matches!(action, Shortcut::OpenSettings | Shortcut::ShowShortcuts);
+            assert_eq!(shortcut_allowed(action, true), allowed, "{action:?} behind an overlay");
+        }
+    }
+
+    #[test]
+    fn keys_are_shown_the_platform_way() {
+        let find = |label: &str| SHORTCUTS.iter().find(|row| row.label == label).unwrap();
+        assert_eq!(find("Archive or unarchive the session").keys[0].display(true), "⌥⌘A");
+        assert_eq!(find("Archive or unarchive the session").keys[0].display(false), "Ctrl+Alt+A");
+        assert_eq!(find("New session in this folder").keys[0].display(true), "⇧⌘N");
+        assert_eq!(find("New session in this folder").keys[0].display(false), "Ctrl+Shift+N");
+        assert_eq!(find("Go to session 1…9").keys[0].display(true), "⌘1…9");
+        assert_eq!(find("Next session").keys[0].display(true), "⌃Tab");
+        assert_eq!(find("Next session").keys[0].display(false), "Ctrl+Tab");
+        assert_eq!(find("Next session").keys[2].display(true), "⌥↓");
+        assert_eq!(find("Terminal").keys[1].display(true), "⌃`");
+    }
+
+    #[test]
+    fn the_dialog_lists_every_row_under_its_group_with_alternatives_joined() {
+        let sections = shortcut_sections(true);
+        assert_eq!(sections.iter().map(|section| section.title).collect::<Vec<_>>(), vec!["General", "Panels"]);
+        let total: usize = sections.iter().map(|section| section.rows.len()).sum();
+        assert_eq!(total, SHORTCUTS.len());
+        let next = sections[0].rows.iter().find(|(label, _)| label == "Next session").unwrap();
+        assert_eq!(next.1, "⌃Tab or ⇧⌘] or ⌥↓");
     }
 }
