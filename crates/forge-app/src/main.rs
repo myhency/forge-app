@@ -14,7 +14,7 @@ use forge_adapter_dialog::RfdFolderPicker;
 #[cfg(not(target_os = "macos"))]
 use forge_adapter_notify::NoNotify;
 #[cfg(target_os = "macos")]
-use forge_adapter_notify::OsascriptNotify;
+use forge_adapter_notify::{AttentionSlot, OsascriptNotify};
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
 use forge_adapter_browser::SystemBrowser;
@@ -235,9 +235,13 @@ fn default_shell(login_shell: Option<String>) -> String {
 }
 
 // macOS has a notification adapter; elsewhere the sidebar marker and the routine's card are the only sign.
+// The window gives the notifier its Dock bounce once it exists (see `App`).
+#[cfg(target_os = "macos")]
+static ATTENTION: std::sync::LazyLock<AttentionSlot> = std::sync::LazyLock::new(AttentionSlot::default);
+
 fn notifier() -> Arc<dyn forge_ports::NotifyPort> {
     #[cfg(target_os = "macos")]
-    return Arc::new(OsascriptNotify::new());
+    return Arc::new(OsascriptNotify::with_attention(ATTENTION.clone()));
     #[cfg(not(target_os = "macos"))]
     return Arc::new(NoNotify);
 }
@@ -251,6 +255,24 @@ fn keep_awake() -> Arc<dyn forge_ports::SleepPort> {
 
 #[component]
 fn App() -> Element {
+    #[cfg(target_os = "macos")]
+    {
+        // The window can only be touched from the UI thread: the notifier sends a request over a channel
+        // and this task, which runs on the UI thread, bounces the icon.
+        let window = dioxus::desktop::use_window();
+        use_future(move || {
+            let window = window.clone();
+            async move {
+                let (sender, mut requests) = tokio::sync::mpsc::unbounded_channel::<()>();
+                let _ = ATTENTION.set(Box::new(move || {
+                    let _ = sender.send(());
+                }));
+                while requests.recv().await.is_some() {
+                    window.window.request_user_attention(Some(dioxus::desktop::tao::window::UserAttentionType::Informational));
+                }
+            }
+        });
+    }
     rsx! {
         style { "{THEME_CSS}" }
         WorkspacePage {}
