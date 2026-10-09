@@ -29,6 +29,7 @@ async fn start(sidecar: &dyn SidecarPort) {
             effort: None,
             extensions: Default::default(),
             additional_directories: Vec::new(),
+            allowed_tools: Vec::new(),
         })
         .await
         .unwrap();

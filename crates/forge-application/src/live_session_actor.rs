@@ -27,6 +27,8 @@ pub(crate) struct Actor {
     sidecar: Option<Arc<dyn SidecarPort>>,
     /// Extra folders for the next start (the SDK reads them once, at start).
     additional_directories: Vec<String>,
+    /// Permission rules for the next start (the SDK's `allowedTools`).
+    allowed_tools: Vec<String>,
     /// The sidecar was started by a warm-up and nothing has been sent to it yet. A failure then is
     /// dropped quietly: nobody asked for anything, and the first send starts a sidecar again.
     warm_only: bool,
@@ -57,6 +59,7 @@ impl Actor {
             active: None,
             sidecar: None,
             additional_directories: Vec::new(),
+            allowed_tools: Vec::new(),
             warm_only: false,
             refusal_shown: false,
             dirty: false,
@@ -95,6 +98,7 @@ impl Actor {
         match command {
             LiveCommand::Send { text, attachments } => self.send(text, attachments).await,
             LiveCommand::AddDirectories(directories) => self.add_directories(directories).await,
+            LiveCommand::AllowTools(tools) => self.allow_tools(tools).await,
             LiveCommand::WarmUp => self.warm_up().await,
             LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
             LiveCommand::AnswerQuestion { id, answers } => self.answer_question(id, answers).await,
@@ -122,6 +126,23 @@ impl Actor {
             let directory = directory.to_string_lossy().to_string();
             if !self.additional_directories.contains(&directory) {
                 self.additional_directories.push(directory);
+            }
+        }
+        if self.warm_only {
+            self.warm_only = false;
+            self.discard_sidecar(true).await;
+        }
+    }
+
+    // Like folders, the SDK reads these once, at start: a warm-up sidecar is dropped so the first send
+    // starts one that has them; after a message was sent they are ignored.
+    async fn allow_tools(&mut self, tools: Vec<String>) {
+        if self.sidecar.is_some() && !self.warm_only {
+            return;
+        }
+        for tool in tools {
+            if !self.allowed_tools.contains(&tool) {
+                self.allowed_tools.push(tool);
             }
         }
         if self.warm_only {
@@ -221,6 +242,7 @@ impl Actor {
                 effort: self.effort,
                 extensions: extensions.clone(),
                 additional_directories: self.additional_directories.clone(),
+                allowed_tools: self.allowed_tools.clone(),
             })
             .await
             .map_err(|e| e.to_string())?;
@@ -259,6 +281,13 @@ impl Actor {
         let Some(sidecar) = self.sidecar.clone() else {
             return;
         };
+        if decision == PermissionDecision::AllowAlways {
+            for rule in self.view.pending_permissions[position].rules.clone() {
+                if !self.view.allowed_rules.contains(&rule) {
+                    self.view.allowed_rules.push(rule);
+                }
+            }
+        }
         self.view.pending_permissions.remove(position);
         self.dirty = true;
         if let Err(error) = ApprovePermissionUseCase::new(sidecar).execute(id, decision).await {

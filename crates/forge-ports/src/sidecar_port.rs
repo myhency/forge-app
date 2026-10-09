@@ -22,6 +22,8 @@ pub struct StartSessionParams {
     pub extensions: ActiveExtensions,
     /// Folders the session may use besides its own (the SDK's `additionalDirectories`).
     pub additional_directories: Vec<String>,
+    /// Permission rules that need no asking (the SDK's `allowedTools`): `Read`, `Bash(npm test:*)`.
+    pub allowed_tools: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -33,7 +35,14 @@ pub enum SidecarEvent {
     ThinkingDelta { text: String },
     ToolUse { tool_call_id: String, name: String, input: serde_json::Value },
     ToolResult { tool_call_id: String, output: String, is_error: bool },
-    PermissionRequest { permission_request_id: String, tool_name: String, input: serde_json::Value },
+    PermissionRequest {
+        permission_request_id: String,
+        tool_name: String,
+        input: serde_json::Value,
+        /// What "always allow" would add, as `allowed_tools` strings; empty when the SDK suggested none.
+        #[serde(default)]
+        rules: Vec<String>,
+    },
     /// What the turn added, per model.
     TurnComplete {
         #[serde(default)]
@@ -148,6 +157,7 @@ mod tests {
                 effort: None,
                 extensions: ActiveExtensions::default(),
                 additional_directories: Vec::new(),
+                allowed_tools: Vec::new(),
             })
             .await;
 

@@ -66,12 +66,16 @@ pub struct LiveSessionView {
     pub context: Option<ContextUsage>,
     /// The slash commands the SDK reported; empty until the first report.
     pub commands: Vec<SlashCommand>,
+    /// The rules of every request the person answered "always allow" in this session, in order.
+    pub allowed_rules: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LiveCommand {
     Send { text: String, attachments: Vec<Attachment> },
     AddDirectories(Vec<PathBuf>),
+    /// Permission rules the next start allows without asking.
+    AllowTools(Vec<String>),
     WarmUp,
     Approve { id: String, decision: PermissionDecision },
     AnswerQuestion { id: String, answers: std::collections::BTreeMap<String, String> },
@@ -115,6 +119,11 @@ impl LiveSessionHandle {
 
     /// Starts the session's sidecar now instead of at the first send, so its slash commands are known
     /// before the person types. A failure is not shown: the first send starts the sidecar again.
+    /// Permission rules the next start allows without asking (the SDK reads them once, at start).
+    pub fn allow_tools(&self, tools: Vec<String>) {
+        let _ = self.commands.send(LiveCommand::AllowTools(tools));
+    }
+
     pub fn warm_up(&self) {
         let _ = self.commands.send(LiveCommand::WarmUp);
     }
@@ -221,6 +230,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         failed_sends: 0,
         context: None,
         commands: init.commands,
+        allowed_rules: Vec::new(),
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
     let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -292,6 +302,7 @@ mod tests {
             effort: None,
             extensions: ActiveExtensions::default(),
             additional_directories: Vec::new(),
+            allowed_tools: Vec::new(),
         }
     }
 
@@ -300,6 +311,7 @@ mod tests {
             permission_request_id: id.to_string(),
             tool_name: "Bash".to_string(),
             input: serde_json::json!({ "command": "cargo test" }),
+            rules: Vec::new(),
         }
     }
 
@@ -377,6 +389,53 @@ mod tests {
         let mut expected = start_params(None);
         expected.additional_directories = vec!["/extra".to_string()];
         assert_eq!(control.calls(), vec![Call::Start(expected), Call::Send("hi".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn allowed_tools_go_to_the_first_start() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.allow_tools(vec!["Read".to_string(), "Read".to_string()]);
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        let mut expected = start_params(None);
+        expected.allowed_tools = vec!["Read".to_string()];
+        assert_eq!(control.calls(), vec![Call::Start(expected), Call::Send("hi".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn an_always_allow_answer_adds_the_requests_rules_to_the_view_and_a_single_allow_does_not() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("run tests".to_string());
+        control.push(SidecarEvent::PermissionRequest {
+            permission_request_id: "p1".to_string(),
+            tool_name: "Bash".to_string(),
+            input: serde_json::json!({ "command": "cargo test" }),
+            rules: vec!["Bash(cargo test:*)".to_string()],
+        });
+        wait_for(&mut view, "one queued request", |v| v.pending_permissions.len() == 1).await;
+        handle.approve("p1".to_string(), PermissionDecision::AllowAlways);
+        let after = wait_for(&mut view, "the request answered", |v| v.pending_permissions.is_empty()).await;
+        assert_eq!(after.allowed_rules, vec!["Bash(cargo test:*)".to_string()]);
+
+        control.push(SidecarEvent::PermissionRequest {
+            permission_request_id: "p2".to_string(),
+            tool_name: "Write".to_string(),
+            input: serde_json::json!({}),
+            rules: vec!["Write".to_string()],
+        });
+        wait_for(&mut view, "the second request", |v| v.pending_permissions.len() == 1).await;
+        handle.approve("p2".to_string(), PermissionDecision::AllowOnce);
+        let after = wait_for(&mut view, "the second answered", |v| v.pending_permissions.is_empty()).await;
+        assert_eq!(after.allowed_rules, vec!["Bash(cargo test:*)".to_string()], "a single allow adds nothing");
     }
 
     #[tokio::test]
@@ -701,6 +760,7 @@ mod tests {
             permission_request_id: id.to_string(),
             tool_name: "AskUserQuestion".to_string(),
             input: serde_json::json!({ "questions": [] }),
+            rules: Vec::new(),
         }
     }
 

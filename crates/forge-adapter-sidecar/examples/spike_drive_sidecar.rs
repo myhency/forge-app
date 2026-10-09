@@ -23,6 +23,7 @@ async fn main() {
             effort: None,
             extensions: Default::default(),
             additional_directories: Vec::new(),
+            allowed_tools: Vec::new(),
         })
         .await
         .expect("failed to send start_session");

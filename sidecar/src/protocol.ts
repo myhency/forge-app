@@ -51,6 +51,7 @@ export type SidecarCommand =
       plugins: string[];
       mcp_servers: Record<string, unknown>;
       additional_directories?: string[];
+      allowed_tools?: string[];
     }
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision }
@@ -68,7 +69,7 @@ export type SidecarEvent =
   | { type: "thinking_delta"; text: string }
   | { type: "tool_use"; tool_call_id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_call_id: string; output: string; is_error: boolean }
-  | { type: "permission_request"; permission_request_id: string; tool_name: string; input: unknown }
+  | { type: "permission_request"; permission_request_id: string; tool_name: string; input: unknown; rules?: string[] }
   | { type: "turn_complete"; usage: Record<string, WireTokenUsage> }
   | { type: "context_usage"; total_tokens: number; max_tokens: number }
   | { type: "commands_available"; commands: WireSlashCommand[] }
