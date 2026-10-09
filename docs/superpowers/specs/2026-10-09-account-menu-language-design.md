@@ -32,7 +32,7 @@ Each stage has its own spec, plan and merge. An untranslated string shows in Eng
 
 Module `i18n` in `forge-shared`.
 
-- `Language { English, Korean }`, stored in `AppConfig` like `Theme` (`choice_enum!`, serialised value `"en"` / `"ko"`). `AppConfig.language` is `Option<Language>`: `None` means "not chosen yet", and the system language decides. A value that cannot be read becomes `None`.
+- `Language { English, Korean }`, stored in `AppConfig` like `Theme` (`choice_enum!`; the config file holds `"english"` / `"korean"`, `value()` is `"en"` / `"ko"`). `AppConfig.language` is `Option<Language>`: `None` means "not chosen yet", and the system language decides. A value that cannot be read becomes `None`.
 - System language: Korean when the system's first preferred language starts with `ko`; English otherwise, and when it cannot be read. How to read it on macOS (the app started from the Dock has no `LANG`) and Windows is decided in the plan; a spike comes first.
 - The current language is a global Dioxus signal. Changing it redraws every view that calls `tr!`, with no restart. The choice is written to the config at once.
 - `tr!("Settings")` returns the Korean text when the language is Korean and the table has the sentence; otherwise the English sentence itself. The English sentence is the key.

@@ -105,6 +105,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .account-menu { min-width: 240px; }
 .account-heading { padding: 6px 8px; color: var(--fg-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .picker-check { flex: none; width: 14px; }
+.account-menu .picker-item { white-space: nowrap; }
+.account-menu .context-submenu { top: auto; bottom: -4px; min-width: 220px; }
 
 /* Session markers: idle is a hollow ring, running a turning ring, needs-attention a filled "!" */
 .status-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; }
