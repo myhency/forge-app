@@ -10,6 +10,7 @@ use crate::plus_menu::PlusMenu;
 use crate::question_panel::QuestionPanel;
 use crate::session_tools::SessionTools;
 use crate::sidebar::project_label;
+use crate::tasks_panel::use_running_workflows;
 use crate::usage_ring::UsageRing;
 use forge_shared::tr;
 
@@ -50,6 +51,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
             workspace.open_file_in_active(path);
         }
     });
+    let workflows = use_running_workflows(id);
     let Some(view_signal) = workspace.live_view(id) else {
         return rsx! { div { class: "empty-state", {tr!("This session is no longer open.")} } };
     };
@@ -90,6 +92,8 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     view: mode,
                     live: (view.phase == Phase::Running).then(|| live_state(view.turn_started, view.pending_permissions.front())),
                     on_open_file: move |path: String| workspace.open_file(id, path),
+                    workflows: workflows(),
+                    on_open_tasks: move |_| workspace.change_dock(id, |dock| if !dock.is_open(Panel::Tasks) { dock.toggle(Panel::Tasks) }),
                 }
                 {
                     let count = view.background_tasks.len();

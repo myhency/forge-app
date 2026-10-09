@@ -13,7 +13,8 @@ use crate::question::AnswerPair;
 use crate::relative_time::relative_time;
 use crate::tool_summary::elapsed_label;
 use forge_domain::TranscriptView;
-use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolRow};
+use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolRow, WorkflowItem};
+use crate::workflow_progress::{AgentState, JournalAgent};
 use forge_shared::tr;
 
 fn counts(added: usize, removed: usize) -> Option<(String, String)> {
@@ -31,24 +32,46 @@ fn CountChips(added: usize, removed: usize) -> Element {
     }
 }
 
+/// A workflow that is running now, with the agents its journal lists so far.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RunningWorkflow {
+    pub task_id: String,
+    pub seen_at: SystemTime,
+    pub agents: Vec<JournalAgent>,
+}
+
 /// The conversation: user bubbles, answer text, one folded activity line per turn, a card of the
 /// files the turn changed, and a footer under a finished turn.
 #[component]
-pub fn Turns(messages: Vec<Message>, view: TranscriptView, live: Option<LiveState>, on_open_file: EventHandler<String>) -> Element {
+pub fn Turns(
+    messages: Vec<Message>,
+    view: TranscriptView,
+    live: Option<LiveState>,
+    on_open_file: EventHandler<String>,
+    #[props(default)] workflows: Vec<RunningWorkflow>,
+    #[props(default)] on_open_tasks: EventHandler<()>,
+) -> Element {
     let known = known_paths(&messages);
     let items = build_turns(&messages, view, live.as_ref());
     let detailed = view.expands_tool_calls();
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file }
+                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), on_open_tasks }
             }
         }
     }
 }
 
 #[component]
-fn TurnItem(item: Item, detailed: bool, known: Vec<String>, on_open_file: EventHandler<String>) -> Element {
+fn TurnItem(
+    item: Item,
+    detailed: bool,
+    known: Vec<String>,
+    on_open_file: EventHandler<String>,
+    workflows: Vec<RunningWorkflow>,
+    on_open_tasks: EventHandler<()>,
+) -> Element {
     match item {
         Item::User(message) => {
             let text = message.text();
@@ -84,6 +107,42 @@ fn TurnItem(item: Item, detailed: bool, known: Vec<String>, on_open_file: EventH
         Item::Footer(footer) => rsx! { FooterView { footer } },
         Item::Answers(pairs) => rsx! { AnswerCard { pairs } },
         Item::Live(line) => rsx! { RunningLine { line } },
+        Item::Workflow(item) => {
+            let running = workflows.iter().find(|workflow| workflow.task_id == item.task_id).cloned();
+            rsx! { WorkflowLine { item, running, on_open_tasks } }
+        }
+    }
+}
+
+/// A launched workflow: a card while it runs (its name, how many agents it has started, a clock and
+/// a dot for each agent), one grey line after it ends. The card opens the Background tasks panel.
+#[component]
+fn WorkflowLine(item: WorkflowItem, running: Option<RunningWorkflow>, on_open_tasks: EventHandler<()>) -> Element {
+    let Some(running) = running else {
+        return rsx! { div { class: "workflow-done", {tr!("Workflow ran {name}", name = item.name)} } };
+    };
+    let started = running.seen_at;
+    rsx! {
+        button { class: "workflow-chat-card", r#type: "button", onclick: move |_| on_open_tasks.call(()),
+            span { class: "workflow-chat-main",
+                span { class: "workflow-chat-name", "{item.name}" }
+                span { class: "workflow-chat-meta",
+                    span { {tr!("Workflow")} }
+                    if running.agents.is_empty() {
+                        span { {tr!("Starting workflow")} }
+                    } else {
+                        span { {if running.agents.len() == 1 { tr!("{count} agent", count = 1) } else { tr!("{count} agents", count = running.agents.len()) }} }
+                    }
+                    Clock { started: Some(started) }
+                }
+                span { class: "wf-dots",
+                    for agent in running.agents.iter() {
+                        span { class: if agent.state == AgentState::Done { "wf-dot done" } else { "wf-dot running" } }
+                    }
+                }
+            }
+            span { class: "chevron", "›" }
+        }
     }
 }
 
