@@ -55,6 +55,7 @@ export type SidecarCommand =
       output_style?: string;
       prompt_suggestions: boolean;
       allow_bypass: boolean;
+      dynamic_workflows: boolean;
     }
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision }

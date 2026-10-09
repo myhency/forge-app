@@ -22,6 +22,7 @@ const startCommand: SidecarCommand = {
   mcp_servers: {},
   prompt_suggestions: true,
   allow_bypass: true,
+  dynamic_workflows: false,
 };
 
 const skillRoots: string[] = [];
@@ -1176,6 +1177,16 @@ describe("SidecarSession", () => {
       const plain = capture();
       await new SidecarSession(plain.queryFn, () => {}).handle(startCommand);
       expect(plain.options().settings).toBeUndefined();
+    });
+
+    it("turns the Workflow tool on only when the command asks, next to the style", async () => {
+      const on = capture();
+      await new SidecarSession(on.queryFn, () => {}).handle({ ...startCommand, dynamic_workflows: true });
+      expect(on.options().settings).toEqual({ enableWorkflows: true });
+
+      const both = capture();
+      await new SidecarSession(both.queryFn, () => {}).handle({ ...startCommand, output_style: "Concise", dynamic_workflows: true });
+      expect(both.options().settings).toEqual({ outputStyle: "Concise", enableWorkflows: true });
     });
 
     it("follows the command for prompt suggestions", async () => {

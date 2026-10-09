@@ -487,3 +487,7 @@ Same rules. The list opens from the account menu: `더 알아보기` (click the 
   - Split panes and a `사이드 채팅` exist (OBS-06): `⌥+Click`, `⌃⌘\`, `⌃⌘-` open or split; a side chat toggles with ⌘;.
   - The composer keys (⇧⌘M mode, ⇧⌘I model, ⇧⌘E effort) match Forge's pickers (CMP-03..05); queueing a message while Claude works (⌘Enter) is not in Forge's backlog.
 - **Not seen:** the dark theme list; what `사이드 채팅` looks like; what `빠른 모드` is (⌥⌘F); the window search; the three voice menus.
+
+## Round: dynamic workflows (SET-12), 2026-10-09
+
+Opened Settings > Claude Code > `세션` in the installed app and turned `동적 워크플로우` on and off once (left off). Text: "Claude가 복잡한 작업을 위해 여러 에이전트를 병렬로 실행하도록 합니다. 워크플로우는 사용량 한도를 빠르게 많이 소모할 수 있습니다." Off by default, right under `권한 우회 모드 허용`, no sub-option, no dialog. On wrote `"enableWorkflows": true` to `~/.claude/settings.json`; off removed the key (not `false`). A running Claude Code session got the `Workflow` tool at once and lost it again. With the real SDK, `settings: { enableWorkflows: true }` alone puts `Workflow` in the init tool list; `false` or nothing leaves it out.
