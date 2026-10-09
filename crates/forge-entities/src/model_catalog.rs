@@ -3,12 +3,14 @@ pub const DEFAULT_MODEL_VALUE: &str = "__default";
 
 /// The models offered in Settings: `(id, label)`. Nothing lists models at runtime, so this is the
 /// one place to edit when models change.
-pub const KNOWN_MODELS: [(&str, &str); 4] = [
+pub const KNOWN_MODELS: [(&str, &str); 5] = [
     ("claude-fable-5-1", "Fable 5.1"),
     ("claude-opus-5-5", "Opus 5.5"),
     // The id and name the bundled Claude Code lists (`supportedModels()`, checked 2026-10-03, Plan 19).
     // `claude-sonnet-5-5` is not in that catalog and `setModel` refuses it.
     ("claude-sonnet-5", "Sonnet 5"),
+    // Needs Claude Code 0.3.295 or later (the bundled SDK's catalog); 0.3.283 refuses it.
+    ("claude-haiku-5-5", "Haiku 5.5"),
     ("claude-haiku-4-5-20251001", "Haiku 4.5"),
 ];
 
@@ -61,16 +63,17 @@ pub struct ModelRow {
     /// `None` is the SDK's default model.
     pub value: Option<String>,
     pub label: String,
-    /// The number key that picks the row (1 to 4); only the four known models have one.
+    /// The number key that picks the row (1 to 4); only the first four known models have one.
     pub key: Option<usize>,
     /// A divider is drawn above the row.
     pub divider_before: bool,
 }
 
 // Claude Code desktop's order. Settings lists the same models in `KNOWN_MODELS` order.
-const MENU_ORDER: [&str; 4] = ["claude-opus-5-5", "claude-sonnet-5", "claude-fable-5-1", "claude-haiku-4-5-20251001"];
+const MENU_ORDER: [&str; 5] =
+    ["claude-opus-5-5", "claude-sonnet-5", "claude-fable-5-1", "claude-haiku-5-5", "claude-haiku-4-5-20251001"];
 
-/// The rows of the composer's model picker: the four known models with keys 1 to 4, then — when the
+/// The rows of the composer's model picker: the known models with keys 1 to 4 on the first four, then — when the
 /// session runs on something else — that model, then the default below a divider.
 pub fn model_menu_rows(current: Option<&str>) -> Vec<ModelRow> {
     let mut rows: Vec<ModelRow> = MENU_ORDER
@@ -79,7 +82,7 @@ pub fn model_menu_rows(current: Option<&str>) -> Vec<ModelRow> {
         .map(|(index, id)| ModelRow {
             value: Some(id.to_string()),
             label: model_label(Some(id)),
-            key: Some(index + 1),
+            key: (index < 4).then_some(index + 1),
             divider_before: false,
         })
         .collect();
@@ -99,11 +102,11 @@ mod tests {
     fn the_model_rows_follow_the_desktop_order_with_keys_one_to_four() {
         let rows = model_menu_rows(None);
         let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
-        assert_eq!(labels, vec!["Opus 5.5", "Sonnet 5", "Fable 5.1", "Haiku 4.5", "Default model"]);
+        assert_eq!(labels, vec!["Opus 5.5", "Sonnet 5", "Fable 5.1", "Haiku 5.5", "Haiku 4.5", "Default model"]);
         let keys: Vec<_> = rows.iter().map(|row| row.key).collect();
-        assert_eq!(keys, vec![Some(1), Some(2), Some(3), Some(4), None]);
-        assert_eq!(rows[4].value, None);
-        assert!(rows[4].divider_before);
+        assert_eq!(keys, vec![Some(1), Some(2), Some(3), Some(4), None, None]);
+        assert_eq!(rows[5].value, None);
+        assert!(rows[5].divider_before);
     }
 
     #[test]
@@ -128,7 +131,7 @@ mod tests {
     fn a_known_current_model_is_not_listed_twice() {
         let rows = model_menu_rows(Some("claude-sonnet-5"));
         assert_eq!(rows.iter().filter(|row| row.value.as_deref() == Some("claude-sonnet-5")).count(), 1);
-        assert_eq!(rows.len(), 5);
+        assert_eq!(rows.len(), 6);
     }
 
     #[test]
@@ -160,6 +163,7 @@ mod tests {
     #[test]
     fn labels_use_the_friendly_name_for_known_models_and_the_id_otherwise() {
         assert_eq!(model_label(None), "Default model");
+        assert_eq!(model_label(Some("claude-haiku-5-5")), "Haiku 5.5");
         assert_eq!(model_label(Some("claude-haiku-4-5-20251001")), "Haiku 4.5");
         assert_eq!(model_label(Some("my-private-model")), "my-private-model");
     }
