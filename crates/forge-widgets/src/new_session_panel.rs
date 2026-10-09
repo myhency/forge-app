@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_features::{use_workspace, NewSessionComposer};
 
-use crate::new_session_controls::{AddFolderButton, FolderChip, NewModePicker, NewModelPicker};
+use crate::new_session_controls::{AddFolderButton, FolderChip, NewEffortPicker, NewModePicker, NewModelPicker};
 use crate::plus_menu::PlusMenu;
 use crate::usage_card::UsageCard;
 use forge_shared::tr;
@@ -17,7 +17,6 @@ pub fn NewSessionPanel() -> Element {
             }
             NewSessionComposer {
                 chips: rsx! {
-                    span { class: "chip", {tr!("Local")} }
                     FolderChip {}
                     AddFolderButton {}
                 },
@@ -25,6 +24,7 @@ pub fn NewSessionPanel() -> Element {
                 NewModePicker {}
                 span { class: "spacer" }
                 NewModelPicker {}
+                NewEffortPicker {}
             }
         }
     }

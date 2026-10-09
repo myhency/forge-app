@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use forge_domain::{ProjectSummary, SlashCommand};
+use forge_domain::{AvailableModel, ProjectSummary, SlashCommand};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -23,6 +23,7 @@ struct State {
 struct Inner {
     registry: Arc<SessionRegistry>,
     commands: watch::Sender<Vec<SlashCommand>>,
+    models: watch::Sender<Vec<AvailableModel>>,
     state: Mutex<State>,
 }
 
@@ -36,6 +37,13 @@ impl Inner {
             self.commands.send_replace(list);
         }
     }
+
+    fn publish_models(&self, generation: u64, list: Vec<AvailableModel>) {
+        let state = self.state.lock().unwrap();
+        if state.running.as_ref().is_some_and(|running| running.generation == generation) {
+            self.models.send_replace(list);
+        }
+    }
 }
 
 /// Keeps at most one probe, for the folder the new-session screen shows, and republishes its list.
@@ -46,14 +54,24 @@ pub struct ProbeSlot {
 impl ProbeSlot {
     pub fn new(registry: Arc<SessionRegistry>) -> Self {
         let (commands, _) = watch::channel(Vec::new());
+        let (models, _) = watch::channel(Vec::new());
         Self {
-            inner: Arc::new(Inner { registry, commands, state: Mutex::new(State { running: None, generation: 0 }) }),
+            inner: Arc::new(Inner { registry, commands, models, state: Mutex::new(State { running: None, generation: 0 }) }),
         }
     }
 
     /// Wakes on every change of the list, including its clearing.
     pub fn subscribe(&self) -> watch::Receiver<Vec<SlashCommand>> {
         self.inner.commands.subscribe()
+    }
+
+    /// Wakes on every change of the model list, including its clearing.
+    pub fn subscribe_models(&self) -> watch::Receiver<Vec<AvailableModel>> {
+        self.inner.models.subscribe()
+    }
+
+    pub fn models(&self) -> Vec<AvailableModel> {
+        self.inner.models.borrow().clone()
     }
 
     pub fn commands(&self) -> Vec<SlashCommand> {
@@ -84,6 +102,7 @@ impl ProbeSlot {
             old.forwarder.abort();
         }
         self.inner.commands.send_replace(Vec::new());
+        self.inner.models.send_replace(Vec::new());
         let Some(project) = project else {
             return;
         };
@@ -95,9 +114,26 @@ impl ProbeSlot {
         let inner = self.inner.clone();
         let forwarder = tokio::spawn(async move {
             let mut updates = probe.subscribe();
-            while updates.changed().await.is_ok() {
-                let list = updates.borrow_and_update().clone();
-                inner.publish(generation, list);
+            let mut models = probe.subscribe_models();
+            // Each list ends on its own when the probe's task has ended; run until both have.
+            let (mut commands_open, mut models_open) = (true, true);
+            while commands_open || models_open {
+                tokio::select! {
+                    changed = updates.changed(), if commands_open => match changed {
+                        Ok(()) => {
+                            let list = updates.borrow_and_update().clone();
+                            inner.publish(generation, list);
+                        }
+                        Err(_) => commands_open = false,
+                    },
+                    changed = models.changed(), if models_open => match changed {
+                        Ok(()) => {
+                            let list = models.borrow_and_update().clone();
+                            inner.publish_models(generation, list);
+                        }
+                        Err(_) => models_open = false,
+                    },
+                }
             }
         });
         state.running = Some(Running { folder: project.path.clone(), generation, forwarder });
@@ -135,6 +171,34 @@ mod tests {
 
         assert_eq!(spawns.load(Ordering::SeqCst), 1);
         assert_eq!(slot.commands(), vec![command("compact")]);
+    }
+
+    #[tokio::test]
+    async fn the_models_the_probe_learns_reach_subscribers_and_are_cleared_with_the_folder() {
+        let (sidecar, control) = fake_sidecar();
+        let (registry, _spawns) = registry_with(vec![Ok(sidecar)]);
+        let slot = ProbeSlot::new(registry);
+        let mut models = slot.subscribe_models();
+        let listed = vec![forge_domain::AvailableModel {
+            value: "m".to_string(),
+            resolved_model: None,
+            display_name: "M".to_string(),
+            effort_levels: vec![forge_domain::EffortLevel::Low, forge_domain::EffortLevel::High],
+        }];
+
+        slot.set_folder(Some(&project("/work/a", true)));
+        control.push(SidecarEvent::ModelsAvailable { models: listed.clone() });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while models.borrow_and_update().is_empty() {
+                models.changed().await.unwrap();
+            }
+        })
+        .await
+        .expect("the models arrive");
+        assert_eq!(slot.models(), listed);
+
+        slot.end();
+        assert!(slot.models().is_empty());
     }
 
     #[tokio::test]

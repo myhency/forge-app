@@ -116,6 +116,20 @@ impl SessionRegistry {
         model: Option<String>,
         commands: Vec<SlashCommand>,
     ) -> Result<LiveSessionHandle, OpenError> {
+        self.open_new_with_effort(project, permission_mode, model, None, commands)
+    }
+
+    /// `open_new` with an effort level (`None`: the SDK's default) the session starts with. It is
+    /// given here, not set afterwards, because a warmed-up sidecar would be asked to change it
+    /// before its session runs.
+    pub fn open_new_with_effort(
+        &self,
+        project: &ProjectSummary,
+        permission_mode: PermissionMode,
+        model: Option<String>,
+        effort: Option<forge_domain::EffortLevel>,
+        commands: Vec<SlashCommand>,
+    ) -> Result<LiveSessionHandle, OpenError> {
         if !project.exists {
             return Err(OpenError::ProjectMissing(project.path.clone()));
         }
@@ -128,7 +142,7 @@ impl SessionRegistry {
             usage: forge_domain::SessionUsage::default(),
         };
         let mut handles = self.handles.lock().unwrap();
-        Ok(self.insert(&mut handles, project, session, None, model, commands))
+        Ok(self.insert(&mut handles, project, session, None, model, effort, commands))
     }
 
     /// Opens a past session read-only, or returns the handle it already has. Two sidecars must
@@ -150,7 +164,7 @@ impl SessionRegistry {
         if let Some(handle) = find_in(&handles, &session_id) {
             return Ok(OpenOutcome { handle, already_open: true });
         }
-        let handle = self.insert(&mut handles, project, session, Some(session_id), None, Vec::new());
+        let handle = self.insert(&mut handles, project, session, Some(session_id), None, None, Vec::new());
         Ok(OpenOutcome { handle, already_open: false })
     }
 
@@ -220,6 +234,7 @@ impl SessionRegistry {
         session: Session,
         claude_session_id: Option<SessionId>,
         model: Option<String>,
+        effort: Option<forge_domain::EffortLevel>,
         commands: Vec<SlashCommand>,
     ) -> LiveSessionHandle {
         let id = LiveSessionId(self.next_id.fetch_add(1, Ordering::Relaxed));
@@ -229,6 +244,7 @@ impl SessionRegistry {
             session,
             claude_session_id,
             model,
+            effort,
             can_send: project.exists,
             commands,
             factory: self.factory.clone(),
@@ -325,6 +341,17 @@ mod tests {
         assert!(view.can_send);
         assert_eq!(spawns.load(Ordering::SeqCst), 0, "opening spawns nothing");
         assert_eq!(registry.handles().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn open_new_with_effort_shows_the_effort_at_once() {
+        let (registry, _spawns) = registry(vec![], repository_returning("unused", 0));
+
+        let handle = registry
+            .open_new_with_effort(&project("/work/a", true), PermissionMode::Default, None, Some(forge_domain::EffortLevel::Low), Vec::new())
+            .unwrap();
+
+        assert_eq!(handle.snapshot().effort, Some(forge_domain::EffortLevel::Low));
     }
 
     #[tokio::test]

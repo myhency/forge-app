@@ -6,7 +6,7 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::{Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{ArchivedRef, Attachment, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort};
 use time::OffsetDateTime;
 
@@ -103,6 +103,7 @@ pub struct Workspace {
     picking: Signal<bool>,
     probe: Signal<Arc<ProbeSlot>>,
     new_commands: Signal<Vec<SlashCommand>>,
+    new_models: Signal<Vec<AvailableModel>>,
     transcript_views: Signal<TranscriptViews>,
     prefs: Signal<SidebarPrefs>,
     editor: Signal<EditorPrefs>,
@@ -136,6 +137,13 @@ pub fn use_workspace_provider() -> Workspace {
                 new_commands.set(list.borrow_and_update().clone());
             }
         });
+        let mut models = slot.subscribe_models();
+        let mut new_models = Signal::new_in_scope(Vec::new(), ScopeId::ROOT);
+        dioxus::core::spawn_forever(async move {
+            while models.changed().await.is_ok() {
+                new_models.set(models.borrow_and_update().clone());
+            }
+        });
         Workspace {
             services: Signal::new(services),
             past: Signal::new(Vec::new()),
@@ -148,6 +156,7 @@ pub fn use_workspace_provider() -> Workspace {
             picking: Signal::new(false),
             probe: Signal::new(slot),
             new_commands,
+            new_models,
             transcript_views: Signal::new(TranscriptViews::default()),
             prefs: Signal::new(SidebarPrefs::default()),
             editor: Signal::new(EditorPrefs::default()),
@@ -980,6 +989,11 @@ impl Workspace {
         self.new_commands.read().clone()
     }
 
+    /// The models the probed folder's SDK lists, with their effort levels; empty until the probe answers.
+    pub fn new_models(&self) -> Vec<AvailableModel> {
+        self.new_models.read().clone()
+    }
+
     /// The project the settings tabs describe: the active session's, or the one the new-session
     /// panel would start in, or none.
     pub fn context_project(&self) -> Option<PathBuf> {
@@ -1117,6 +1131,7 @@ impl Workspace {
         project: ProjectSummary,
         mode: PermissionMode,
         model: ModelChoice,
+        effort: Option<EffortLevel>,
         text: String,
         attachments: Vec<Attachment>,
         folders: Vec<PathBuf>,
@@ -1138,7 +1153,7 @@ impl Workspace {
                 },
             };
             let commands = slot.end();
-            match services.registry.open_new(&project, mode, model, commands) {
+            match services.registry.open_new_with_effort(&project, mode, model, effort, commands) {
                 Ok(handle) => {
                     let id = this.attach(handle.clone());
                     if !folders.is_empty() {

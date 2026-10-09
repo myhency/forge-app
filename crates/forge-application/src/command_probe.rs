@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_domain::{PermissionMode, SlashCommand};
+use forge_domain::{AvailableModel, PermissionMode, SlashCommand};
 use forge_ports::{SidecarEvent, SidecarFactoryPort, StartSessionParams};
 use tokio::sync::{oneshot, watch};
 
@@ -10,6 +10,7 @@ use crate::use_cases::ExtensionsUseCase;
 /// A sidecar started only to learn a folder's slash commands. Dropping the probe ends it.
 pub struct CommandProbe {
     commands: watch::Receiver<Vec<SlashCommand>>,
+    models: watch::Receiver<Vec<AvailableModel>>,
     // Dropping this sender is the signal for the probe's task to shut its sidecar down.
     _end: oneshot::Sender<()>,
 }
@@ -23,6 +24,11 @@ impl CommandProbe {
     pub fn subscribe(&self) -> watch::Receiver<Vec<SlashCommand>> {
         self.commands.clone()
     }
+
+    /// The same for the models the SDK lists, with the effort levels each takes.
+    pub fn subscribe_models(&self) -> watch::Receiver<Vec<AvailableModel>> {
+        self.models.clone()
+    }
 }
 
 /// Starts the probe's task. Must be called from inside a tokio runtime. Every failure ends the task
@@ -33,6 +39,7 @@ pub(crate) fn spawn_probe(
     project_path: PathBuf,
 ) -> CommandProbe {
     let (list_tx, list_rx) = watch::channel(Vec::new());
+    let (models_tx, models_rx) = watch::channel(Vec::new());
     let (end_tx, mut end_rx) = oneshot::channel::<()>();
     tokio::spawn(async move {
         let Ok(active) = extensions.resolve_active(&project_path).await else {
@@ -63,6 +70,9 @@ pub(crate) fn spawn_probe(
                         Some(SidecarEvent::CommandsAvailable { commands }) => {
                             list_tx.send_replace(commands);
                         }
+                        Some(SidecarEvent::ModelsAvailable { models }) => {
+                            models_tx.send_replace(models);
+                        }
                         Some(SidecarEvent::Error { .. }) | Some(SidecarEvent::SessionEnded) | None => break,
                         Some(_) => {}
                     },
@@ -71,7 +81,7 @@ pub(crate) fn spawn_probe(
         }
         let _ = sidecar.shutdown().await;
     });
-    CommandProbe { commands: list_rx, _end: end_tx }
+    CommandProbe { commands: list_rx, models: models_rx, _end: end_tx }
 }
 
 #[cfg(test)]

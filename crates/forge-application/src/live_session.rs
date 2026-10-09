@@ -208,6 +208,7 @@ pub(crate) struct LiveSessionInit {
     pub session: Session,
     pub claude_session_id: Option<SessionId>,
     pub model: Option<String>,
+    pub effort: Option<EffortLevel>,
     pub can_send: bool,
     pub commands: Vec<SlashCommand>,
     pub factory: Arc<dyn SidecarFactoryPort>,
@@ -222,7 +223,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         session: init.session,
         claude_session_id: init.claude_session_id,
         model: init.model.clone(),
-        effort: None,
+        effort: init.effort,
         available_models: Vec::new(),
         phase: Phase::Idle,
         turn_started: None,
@@ -240,7 +241,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
     let (command_tx, command_rx) = mpsc::unbounded_channel();
-    let actor = Actor::new(view, view_tx, command_rx, init.factory, init.model, init.extensions);
+    let actor = Actor::new(view, view_tx, command_rx, init.factory, init.model, init.effort, init.extensions);
     tokio::spawn(actor.run());
     LiveSessionHandle {
         id: init.id,
@@ -281,6 +282,7 @@ mod tests {
             session: empty_session(),
             claude_session_id: None,
             model: Some("model-x".to_string()),
+            effort: None,
             can_send: true,
             commands: Vec::new(),
             factory,

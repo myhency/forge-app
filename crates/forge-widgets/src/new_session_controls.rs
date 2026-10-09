@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
-use forge_features::{folder_menu_rows, refocus_composer, use_new_session_draft, use_settings, use_workspace};
+use forge_features::{effort_levels, folder_menu_rows, refocus_composer, use_new_session_draft, use_settings, use_workspace};
 
-use crate::composer_controls::{ModePickerView, ModelPickerView, Picker, PickerItem};
+use crate::composer_controls::{EffortPickerView, ModePickerView, ModelPickerView, Picker, PickerItem};
 use forge_shared::tr;
 
 /// The folder chip: the folder's name, and a menu of the recent folders with "Open folder…" below.
@@ -70,7 +70,34 @@ pub fn NewModelPicker() -> Element {
     };
     rsx! {
         div { class: "picker-end",
-            ModelPickerView { current, onchange: move |model| draft.model.set(Some(model)) }
+            ModelPickerView {
+                current,
+                onchange: move |model| {
+                    // The new model may not take the level chosen for the old one.
+                    draft.effort.set(None);
+                    draft.model.set(Some(model));
+                },
+            }
+        }
+    }
+}
+
+/// The effort for the session about to start. The stops are the levels the probed SDK lists for the
+/// chosen model, so nothing shows until the probe has answered.
+#[component]
+pub fn NewEffortPicker() -> Element {
+    let mut draft = use_new_session_draft();
+    let workspace = use_workspace();
+    let settings = use_settings();
+    let model = match draft.model.read().clone() {
+        Some(chosen) => chosen,
+        None => settings.model(),
+    };
+    let levels = effort_levels(&workspace.new_models(), model.as_deref());
+    let current = *draft.effort.read();
+    rsx! {
+        div { class: "picker-end",
+            EffortPickerView { levels, current, onchange: move |level| draft.effort.set(level) }
         }
     }
 }
