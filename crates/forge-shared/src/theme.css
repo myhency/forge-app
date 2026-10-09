@@ -58,7 +58,7 @@
 }
 
 html, body, #main { height: 100%; margin: 0; }
-body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: var(--bg); color: var(--fg); }
+body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: keep-all; background: var(--bg); color: var(--fg); }
 
 .workspace { position: relative; display: flex; height: 100vh; outline: none; }
 
