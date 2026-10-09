@@ -15,7 +15,6 @@ pub const KNOWN_MODELS: [(&str, &str); 5] = [
     ("claude-haiku-4-5-20251001", "Haiku 4.5"),
 ];
 
-const DEFAULT_LABEL: &str = "Default (chosen by the SDK)";
 
 fn is_known(id: &str) -> bool {
     KNOWN_MODELS.iter().any(|(known, _)| *known == id)
@@ -24,7 +23,7 @@ fn is_known(id: &str) -> bool {
 /// `(value, label)` for a model dropdown: the default, the known models, and — when the saved
 /// model is something else (typed by hand) — that model, so it is shown rather than hidden.
 pub fn model_options(saved: Option<&str>) -> Vec<(String, String)> {
-    let mut options = vec![(DEFAULT_MODEL_VALUE.to_string(), DEFAULT_LABEL.to_string())];
+    let mut options = vec![(DEFAULT_MODEL_VALUE.to_string(), tr!("Default (chosen by the SDK)").to_string())];
     options.extend(KNOWN_MODELS.iter().map(|(id, label)| (id.to_string(), label.to_string())));
     if let Some(id) = saved.filter(|id| !is_known(id)) {
         options.push((id.to_string(), tr!("Custom: {id}", id = id)));

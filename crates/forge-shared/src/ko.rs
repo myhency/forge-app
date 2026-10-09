@@ -89,6 +89,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Day of the month", "일"),
     ("Dec", "12월"),
     ("Default", "기본값"),
+    ("Default (chosen by the SDK)", "기본값 (SDK가 선택)"),
     ("Default app", "기본 앱"),
     ("Default model", "기본 모델"),
     ("Delete", "삭제"),
