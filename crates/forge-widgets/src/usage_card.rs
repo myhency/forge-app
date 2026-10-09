@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use forge_domain::{Day, RangeStats, StatsRange, UsageStats};
 use forge_entities::{chart_layout, day_label, format_tokens, heat_level, legend_rows, overview_tiles};
 use forge_features::{now_local, use_workspace};
+use forge_shared::tr;
 
 #[derive(Clone, PartialEq)]
 enum Load {
@@ -47,7 +48,7 @@ pub fn UsageCard() -> Element {
 
     let state = load.read().clone();
     let stats = match state {
-        Load::Loading => return rsx! { div { class: "usage-card", div { class: "usage-note", "Loading usage…" } } },
+        Load::Loading => return rsx! { div { class: "usage-card", div { class: "usage-note", {tr!("Loading usage…")} } } },
         Load::Failed(message) => return rsx! { div { class: "usage-card", div { class: "usage-note error", "{message}" } } },
         Load::Ready(stats) if stats.is_empty() => return rsx! {},
         Load::Ready(stats) => stats,
@@ -59,11 +60,11 @@ pub fn UsageCard() -> Element {
         div { class: "usage-card",
             div { class: "usage-head",
                 div { class: "usage-tabs",
-                    button { class: if tab() == Tab::Overview { "usage-tab on" } else { "usage-tab" }, onclick: move |_| tab.set(Tab::Overview), "Overview" }
-                    button { class: if tab() == Tab::Models { "usage-tab on" } else { "usage-tab" }, onclick: move |_| tab.set(Tab::Models), "Models" }
+                    button { class: if tab() == Tab::Overview { "usage-tab on" } else { "usage-tab" }, onclick: move |_| tab.set(Tab::Overview), {tr!("Overview")} }
+                    button { class: if tab() == Tab::Models { "usage-tab on" } else { "usage-tab" }, onclick: move |_| tab.set(Tab::Models), {tr!("Models")} }
                 }
                 div { class: "usage-tabs",
-                    for (value, text) in [(StatsRange::All, "All"), (StatsRange::Last30Days, "30d"), (StatsRange::Last7Days, "7d")] {
+                    for (value, text) in [(StatsRange::All, tr!("All")), (StatsRange::Last30Days, tr!("30d")), (StatsRange::Last7Days, tr!("7d"))] {
                         button {
                             key: "{text}",
                             class: if range() == value { "usage-tab on" } else { "usage-tab" },
@@ -95,14 +96,14 @@ fn heatmap(stats: &UsageStats, today: Day) -> Element {
     let max = map.iter().flatten().flatten().copied().max().unwrap_or(0);
     let weeks = map.first().map_or(0, Vec::len);
     rsx! {
-        div { class: "heatmap", role: "img", "aria-label": "Tokens used per day",
+        div { class: "heatmap", role: "img", "aria-label": tr!("Tokens used per day"),
             // Column by column: each column is one week, Sunday on top.
             for column in 0..weeks {
                 for row in 0..7usize {
                     {
                         let cell = map[row][column];
                         let level = cell.map_or(0, |tokens| heat_level(tokens, max));
-                        let text = cell.map_or_else(String::new, |tokens| format!("{}: {} tokens", day_label(day_at(today, column, row, weeks)), format_tokens(tokens)));
+                        let text = cell.map_or_else(String::new, |tokens| tr!("{day}: {tokens} tokens", day = day_label(day_at(today, column, row, weeks)), tokens = format_tokens(tokens)));
                         rsx! {
                             span {
                                 key: "{column}-{row}",
@@ -142,9 +143,9 @@ fn chart(shown: &RangeStats, range: StatsRange, today: Day) -> Element {
     rsx! {
         div { class: "usage-chart",
             if legend.is_empty() {
-                div { class: "usage-note", "No model use in this range." }
+                div { class: "usage-note", {tr!("No model use in this range.")} }
             } else {
-                svg { class: "chart-svg", view_box: "0 0 {WIDTH} {HEIGHT}", role: "img", "aria-label": "Tokens per day by model",
+                svg { class: "chart-svg", view_box: "0 0 {WIDTH} {HEIGHT}", role: "img", "aria-label": tr!("Tokens per day by model"),
                     for tick in layout.ticks.iter() {
                         g { key: "{tick}",
                             line { class: "chart-grid", x1: "{LEFT}", x2: "{WIDTH - 6.0}", y1: "{y_of(*tick)}", y2: "{y_of(*tick)}" }
@@ -183,7 +184,7 @@ fn chart(shown: &RangeStats, range: StatsRange, today: Day) -> Element {
                         div { key: "{row.label}", class: "legend-row",
                             span { class: "legend-swatch series-{row.series.min(5)}" }
                             span { class: "legend-name", "{row.label}" }
-                            span { class: "legend-tokens", "{row.input} in · {row.output} out" }
+                            span { class: "legend-tokens", {tr!("{input} in · {output} out", input = row.input, output = row.output)} }
                             span { class: "legend-share", "{row.share}" }
                         }
                     }

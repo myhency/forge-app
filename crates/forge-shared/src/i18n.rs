@@ -23,36 +23,13 @@ pub fn translate(language: Language, english: &'static str) -> &'static str {
     }
 }
 
-/// Replaces each `{name}` in `template` with its value. A placeholder with no value stays as
-/// written, and the text of a value is never searched again.
-pub fn fill(template: &str, args: &[(&str, String)]) -> String {
-    let mut out = String::with_capacity(template.len());
-    let mut rest = template;
-    while let Some(start) = rest.find('{') {
-        out.push_str(&rest[..start]);
-        let after = &rest[start..];
-        let value = after
-            .find('}')
-            .and_then(|end| args.iter().find(|(name, _)| *name == &after[1..end]).map(|(_, value)| (end, value)));
-        match value {
-            Some((end, value)) => {
-                out.push_str(value);
-                rest = &after[end + 1..];
-            }
-            None => {
-                out.push('{');
-                rest = &after[1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
-}
+pub use forge_domain::i18n::fill;
 
 static SYSTEM: OnceLock<Language> = OnceLock::new();
 
 /// Tells the module what the system language is. Called once, before the window opens.
 pub fn set_system_language(language: Language) {
+    register();
     let _ = SYSTEM.set(language);
 }
 
@@ -85,27 +62,21 @@ pub fn current() -> Language {
 }
 
 pub fn set_current(language: Language) {
+    register();
     MIRROR.store(u8::from(language == Language::Korean), Ordering::Relaxed);
     if Runtime::try_current().is_some() && *LANGUAGE.peek() != language {
         *LANGUAGE.write() = language;
     }
 }
 
+/// Lets the domain (which cannot see this module) translate through `text`. Idempotent.
+fn register() {
+    forge_domain::i18n::set_translator(text);
+}
+
 /// `english` in the current language (see `translate`).
 pub fn text(english: &'static str) -> &'static str {
     translate(current(), english)
-}
-
-/// The text in the current language: `tr!("Settings")`, or with values `tr!("{n} sessions", n = count)`.
-/// Takes a string literal only, so a test can list every sentence.
-#[macro_export]
-macro_rules! tr {
-    ($text:literal) => {
-        $crate::i18n::text($text)
-    };
-    ($text:literal, $($name:ident = $value:expr),+ $(,)?) => {
-        $crate::i18n::fill($crate::i18n::text($text), &[$((stringify!($name), ($value).to_string())),+])
-    };
 }
 
 #[cfg(test)]
@@ -203,7 +174,7 @@ mod tests {
         collect(&crates, &mut files);
         let mut keys = BTreeSet::new();
         for file in files {
-            if file.ends_with("forge-shared/src/i18n.rs") {
+            if file.ends_with("forge-shared/src/i18n.rs") || file.ends_with("forge-domain/src/i18n.rs") {
                 continue;
             }
             let source = std::fs::read_to_string(&file).unwrap();

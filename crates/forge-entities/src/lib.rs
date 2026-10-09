@@ -39,7 +39,7 @@ pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_op
 pub use permission_view::{card_takes_focus, permission_key, permission_view, PermissionKey, PermissionView};
 pub use preview::{has_rendered_view, icon_of, preview_kind, FileIcon, PreviewKind};
 pub use question::{answer_pairs, answers_map, questions_of, AnswerPair, Picks, Question, QuestionOption, QUESTION_TOOL};
-pub use relative_time::relative_time;
+pub use relative_time::{month_short, relative_time};
 pub use sidebar_item::{SessionMarker, SidebarItem};
 pub use forge_domain::TranscriptView;
 pub use turn::{Clock, Turns};

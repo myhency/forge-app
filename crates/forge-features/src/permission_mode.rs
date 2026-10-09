@@ -1,12 +1,12 @@
 use forge_domain::PermissionMode;
-use forge_shared::tr;
+use forge_shared::{msg, tr};
 
 const MODES: [(PermissionMode, &str, &str); 5] = [
-    (PermissionMode::Default, "default", "Ask before edits"),
-    (PermissionMode::AcceptEdits, "accept_edits", "Accept edits"),
-    (PermissionMode::Plan, "plan", "Plan mode"),
-    (PermissionMode::BypassPermissions, "bypass_permissions", "Bypass permissions"),
-    (PermissionMode::Auto, "auto", "Auto"),
+    (PermissionMode::Default, "default", msg!("Ask before edits")),
+    (PermissionMode::AcceptEdits, "accept_edits", msg!("Accept edits")),
+    (PermissionMode::Plan, "plan", msg!("Plan mode")),
+    (PermissionMode::BypassPermissions, "bypass_permissions", msg!("Bypass permissions")),
+    (PermissionMode::Auto, "auto", msg!("Auto")),
 ];
 
 /// `(value, label)` pairs for the mode selector. Bypass is left out unless `include_bypass`.
@@ -14,7 +14,7 @@ pub fn mode_options(include_bypass: bool) -> Vec<(String, String)> {
     MODES
         .iter()
         .filter(|(mode, _, _)| include_bypass || *mode != PermissionMode::BypassPermissions)
-        .map(|(_, value, label)| (value.to_string(), label.to_string()))
+        .map(|(_, value, label)| (value.to_string(), forge_shared::i18n::text(label).to_string()))
         .collect()
 }
 

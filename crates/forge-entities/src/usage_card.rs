@@ -2,6 +2,7 @@ use forge_domain::{Day, RangeStats, StatsRange};
 
 use crate::model_catalog::{model_label, KNOWN_MODELS};
 use crate::usage_view::format_tokens;
+use forge_shared::tr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tile {
@@ -27,19 +28,19 @@ pub fn hour_label(hour: u8) -> String {
         0 => 12,
         other => other,
     };
-    format!("{clock} {}", if hour % 24 < 12 { "AM" } else { "PM" })
+    if hour % 24 < 12 { tr!("{hour} AM", hour = clock) } else { tr!("{hour} PM", hour = clock) }
 }
 
 /// The six tiles of the overview, in the desktop app's order.
 pub fn overview_tiles(stats: &RangeStats) -> Vec<Tile> {
     let dash = || "–".to_string();
     vec![
-        Tile { label: "Sessions", value: with_commas(stats.session_count as u64) },
-        Tile { label: "Messages", value: with_commas(stats.message_count) },
-        Tile { label: "Total tokens", value: format_tokens(stats.total_tokens) },
-        Tile { label: "Active days", value: with_commas(stats.active_days as u64) },
-        Tile { label: "Peak hour", value: stats.peak_hour.map_or_else(dash, hour_label) },
-        Tile { label: "Favorite model", value: stats.favourite_model.as_deref().map_or_else(dash, dashboard_model_label) },
+        Tile { label: tr!("Sessions"), value: with_commas(stats.session_count as u64) },
+        Tile { label: tr!("Messages"), value: with_commas(stats.message_count) },
+        Tile { label: tr!("Total tokens"), value: format_tokens(stats.total_tokens) },
+        Tile { label: tr!("Active days"), value: with_commas(stats.active_days as u64) },
+        Tile { label: tr!("Peak hour"), value: stats.peak_hour.map_or_else(dash, hour_label) },
+        Tile { label: tr!("Favorite model"), value: stats.favourite_model.as_deref().map_or_else(dash, dashboard_model_label) },
     ]
 }
 
@@ -164,8 +165,7 @@ pub fn chart_layout(stats: &RangeStats, range: StatsRange, today: Day) -> ChartL
 
 /// `Oct 3`.
 pub fn day_label(day: Day) -> String {
-    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    format!("{} {}", MONTHS[usize::from(day.month.clamp(1, 12)) - 1], day.day)
+    tr!("{month} {day}", month = crate::month_short(day.month.clamp(1, 12)), day = day.day)
 }
 
 #[cfg(test)]

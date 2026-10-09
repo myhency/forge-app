@@ -5,6 +5,7 @@ use chrono::{DateTime, LocalResult, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::PermissionMode;
+use crate::tr;
 
 /// A run more than this far past its due time is not run (Forge was closed or the computer asleep).
 pub const MISSED_AFTER_MS: i64 = 30 * 60 * 1000;
@@ -20,10 +21,7 @@ const SCAN_LIMIT: usize = 2000;
 const LOOKBACKS_MS: [i64; 5] = [3_600_000, 86_400_000, 8 * 86_400_000, 40 * 86_400_000, 400 * 86_400_000];
 
 const DAY_NAMES: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const DAY_WORDS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const FIVE_FIELDS: &str = "A cron expression has five fields: minute hour day month weekday";
 const MONTH_NAMES: [&str; 12] = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-const WEEKDAY_RANGE: &str = "Weekday must be 0 to 7 (or SUN to SAT)";
 
 /// When a routine runs. These are the six tabs of the form. `day` is 0 (Sunday) to 6.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,7 +45,7 @@ impl Schedule {
             Schedule::Daily { hour, minute } => format!("0 {minute} {hour} * * *"),
             Schedule::Weekdays { hour, minute } => format!("0 {minute} {hour} * * MON-FRI"),
             Schedule::Weekly { day, hour, minute } => {
-                let name = DAY_NAMES.get(usize::from(*day)).ok_or("The day must be 0 to 6")?;
+                let name = DAY_NAMES.get(usize::from(*day)).ok_or(tr!("The day must be 0 to 6"))?;
                 format!("0 {minute} {hour} * * {name}")
             }
             Schedule::Cron { expression } => engine_expression(expression)?,
@@ -58,7 +56,7 @@ impl Schedule {
     fn engine(&self) -> Result<Option<cron::Schedule>, String> {
         match self.engine_text()? {
             None => Ok(None),
-            Some(text) => cron::Schedule::from_str(&text).map(Some).map_err(|_| "That cron expression cannot be scheduled".to_string()),
+            Some(text) => cron::Schedule::from_str(&text).map(Some).map_err(|_| tr!("That cron expression cannot be scheduled").to_string()),
         }
     }
 
@@ -73,12 +71,12 @@ impl Schedule {
             Schedule::Daily { hour, minute } | Schedule::Weekdays { hour, minute } | Schedule::Weekly { hour, minute, .. }
                 if *hour > 23 || *minute > 59 =>
             {
-                return Err("The time must be 00:00 to 23:59".to_string());
+                return Err(tr!("The time must be 00:00 to 23:59").to_string());
             }
             _ => {}
         }
         match self.engine()? {
-            Some(schedule) if schedule.upcoming(Utc).next().is_none() => Err("That expression never runs (check the day and the month)".to_string()),
+            Some(schedule) if schedule.upcoming(Utc).next().is_none() => Err(tr!("That expression never runs (check the day and the month)").to_string()),
             _ => Ok(()),
         }
     }
@@ -91,26 +89,42 @@ impl Schedule {
     /// How a card and the detail screen say it: "Every day at 9:00 AM".
     pub fn label(&self) -> String {
         match self {
-            Schedule::Manual => "Manual".to_string(),
-            Schedule::Hourly => "Every hour".to_string(),
-            Schedule::Daily { hour, minute } => format!("Every day at {}", clock(*hour, *minute)),
-            Schedule::Weekdays { hour, minute } => format!("Weekdays at {}", clock(*hour, *minute)),
+            Schedule::Manual => tr!("Manual").to_string(),
+            Schedule::Hourly => tr!("Every hour").to_string(),
+            Schedule::Daily { hour, minute } => tr!("Every day at {time}", time = clock(*hour, *minute)),
+            Schedule::Weekdays { hour, minute } => tr!("Weekdays at {time}", time = clock(*hour, *minute)),
             Schedule::Weekly { day, hour, minute } => {
-                format!("Every {} at {}", DAY_WORDS.get(usize::from(*day)).copied().unwrap_or("day"), clock(*hour, *minute))
+                tr!("Every {day} at {time}", day = day_word(*day), time = clock(*hour, *minute))
             }
-            Schedule::Cron { expression } => format!("Cron {expression}"),
+            Schedule::Cron { expression } => tr!("Cron {expression}", expression = expression),
         }
     }
 }
 
-fn clock(hour: u8, minute: u8) -> String {
-    let (twelve, suffix) = match hour {
-        0 => (12, "AM"),
-        1..=11 => (hour, "AM"),
-        12 => (12, "PM"),
-        _ => (hour - 12, "PM"),
+/// "9:05 AM" (or "오전 9:05"): the time as the cards say it.
+pub fn clock(hour: u8, minute: u8) -> String {
+    let (twelve, pm) = match hour {
+        0 => (12, false),
+        1..=11 => (hour, false),
+        12 => (12, true),
+        _ => (hour - 12, true),
     };
-    format!("{twelve}:{minute:02} {suffix}")
+    let time = format!("{twelve}:{minute:02}");
+    if pm { tr!("{time} PM", time = time) } else { tr!("{time} AM", time = time) }
+}
+
+/// The weekday's name in the language on screen; 0 is Sunday.
+fn day_word(day: u8) -> &'static str {
+    match day {
+        0 => tr!("Sunday"),
+        1 => tr!("Monday"),
+        2 => tr!("Tuesday"),
+        3 => tr!("Wednesday"),
+        4 => tr!("Thursday"),
+        5 => tr!("Friday"),
+        6 => tr!("Saturday"),
+        _ => tr!("day"),
+    }
 }
 
 /// A parsed schedule. It works on calendar (wall clock) times carried as UTC and turns each result into a
@@ -160,16 +174,16 @@ fn place<Tz: TimeZone>(zone: &Tz, wall: NaiveDateTime, after: &DateTime<Tz>) -> 
 fn engine_expression(expression: &str) -> Result<String, String> {
     let fields: Vec<&str> = expression.split_whitespace().collect();
     if fields.len() != 5 {
-        return Err(FIVE_FIELDS.to_string());
+        return Err(tr!("A cron expression has five fields: minute hour day month weekday").to_string());
     }
-    check_field("Minute", fields[0], 0, 59, &[])?;
-    check_field("Hour", fields[1], 0, 23, &[])?;
-    check_field("Day of the month", fields[2], 1, 31, &[])?;
-    check_field("Month", fields[3], 1, 12, &MONTH_NAMES)?;
+    check_field(tr!("Minute"), fields[0], 0, 59, &[])?;
+    check_field(tr!("Hour"), fields[1], 0, 23, &[])?;
+    check_field(tr!("Day of the month"), fields[2], 1, 31, &[])?;
+    check_field(tr!("Month"), fields[3], 1, 12, &MONTH_NAMES)?;
     let weekdays = weekday_names(fields[4])?;
     // Standard cron runs on either; the engine wants both. Asking for both is refused rather than misread.
     if fields[2] != "*" && weekdays != "*" {
-        return Err("Use either a day of the month or a weekday, not both".to_string());
+        return Err(tr!("Use either a day of the month or a weekday, not both").to_string());
     }
     Ok(format!("0 {} {} {} {} {}", fields[0], fields[1], fields[2], fields[3], weekdays))
 }
@@ -183,7 +197,7 @@ fn check_field(label: &str, text: &str, min: u32, max: u32, names: &[&str]) -> R
         };
         if let Some(step) = step {
             if !matches!(step.parse::<u32>(), Ok(count) if count >= 1) {
-                return Err(format!("{label}: the step must be a whole number of at least 1"));
+                return Err(tr!("{label}: the step must be a whole number of at least 1", label = label));
             }
         }
         if range == "*" {
@@ -191,11 +205,11 @@ fn check_field(label: &str, text: &str, min: u32, max: u32, names: &[&str]) -> R
         }
         let tokens: Vec<&str> = range.split('-').collect();
         if tokens.len() > 2 {
-            return Err(format!("{label} has a value that is not understood"));
+            return Err(tr!("{label} has a value that is not understood", label = label));
         }
         let values = tokens.iter().map(|token| field_value(label, token, min, max, names)).collect::<Result<Vec<u32>, String>>()?;
         if values.len() == 2 && values[0] > values[1] {
-            return Err(format!("{label}: the range runs backwards"));
+            return Err(tr!("{label}: the range runs backwards", label = label));
         }
     }
     Ok(())
@@ -203,11 +217,11 @@ fn check_field(label: &str, text: &str, min: u32, max: u32, names: &[&str]) -> R
 
 fn field_value(label: &str, token: &str, min: u32, max: u32, names: &[&str]) -> Result<u32, String> {
     if let Ok(number) = token.parse::<u32>() {
-        return if (min..=max).contains(&number) { Ok(number) } else { Err(format!("{label} must be {min} to {max}")) };
+        return if (min..=max).contains(&number) { Ok(number) } else { Err(tr!("{label} must be {min} to {max}", label = label, min = min, max = max)) };
     }
     match names.iter().position(|name| name.eq_ignore_ascii_case(token)) {
         Some(index) => Ok(min + index as u32),
-        None => Err(format!("{label} has a value that is not understood")),
+        None => Err(tr!("{label} has a value that is not understood", label = label)),
     }
 }
 
@@ -223,7 +237,7 @@ fn weekday_names(field: &str) -> Result<String, String> {
             None => (part, None),
         };
         let every: usize = match step {
-            Some(text) => text.parse::<usize>().ok().filter(|count| *count >= 1).ok_or("Weekday: the step must be a whole number of at least 1")?,
+            Some(text) => text.parse::<usize>().ok().filter(|count| *count >= 1).ok_or(tr!("Weekday: the step must be a whole number of at least 1"))?,
             None => 1,
         };
         if range == "*" {
@@ -238,7 +252,7 @@ fn weekday_names(field: &str) -> Result<String, String> {
         match numbers {
             Some(numbers) if numbers.len() <= 2 => {
                 if numbers.iter().any(|number| *number > 7) {
-                    return Err(WEEKDAY_RANGE.to_string());
+                    return Err(tr!("Weekday must be 0 to 7 (or SUN to SAT)").to_string());
                 }
                 let low = numbers[0];
                 let high = match numbers.get(1) {
@@ -247,7 +261,7 @@ fn weekday_names(field: &str) -> Result<String, String> {
                     None => low,
                 };
                 if low > high {
-                    return Err("Weekday: the range runs backwards".to_string());
+                    return Err(tr!("Weekday: the range runs backwards").to_string());
                 }
                 let mut days: Vec<&str> = Vec::new();
                 for day in (low..=high).step_by(every) {
@@ -258,11 +272,11 @@ fn weekday_names(field: &str) -> Result<String, String> {
                 }
                 parts.push(days.join(","));
             }
-            Some(_) => return Err("Weekday has a value that is not understood".to_string()),
+            Some(_) => return Err(tr!("Weekday has a value that is not understood").to_string()),
             None => {
                 // Names: SUN-SAT, optionally as a range.
                 if !tokens.iter().all(|token| DAY_NAMES.iter().any(|name| name.eq_ignore_ascii_case(token))) {
-                    return Err(WEEKDAY_RANGE.to_string());
+                    return Err(tr!("Weekday must be 0 to 7 (or SUN to SAT)").to_string());
                 }
                 parts.push(match step {
                     Some(text) => format!("{}/{text}", range.to_uppercase()),
@@ -453,13 +467,13 @@ pub fn routine_id(name: &str, taken: &[String]) -> String {
 /// Why a draft cannot be saved, in words for the form (the first problem only).
 pub fn validate_draft(draft: &RoutineDraft) -> Result<(), String> {
     if draft.name.trim().is_empty() {
-        return Err("Name is required".to_string());
+        return Err(tr!("Name is required").to_string());
     }
     if draft.description.trim().is_empty() {
-        return Err("Description is required".to_string());
+        return Err(tr!("Description is required").to_string());
     }
     if draft.folder.is_none() {
-        return Err("Choose a folder".to_string());
+        return Err(tr!("Choose a folder").to_string());
     }
     draft.schedule.validate()
 }
@@ -752,9 +766,9 @@ mod tests {
             schedule: Schedule::Manual,
         };
         assert_eq!(validate_draft(&good), Ok(()));
-        assert_eq!(validate_draft(&RoutineDraft { name: "  ".into(), ..good.clone() }), Err("Name is required".to_string()));
-        assert_eq!(validate_draft(&RoutineDraft { description: String::new(), ..good.clone() }), Err("Description is required".to_string()));
-        assert_eq!(validate_draft(&RoutineDraft { folder: None, ..good.clone() }), Err("Choose a folder".to_string()));
+        assert_eq!(validate_draft(&RoutineDraft { name: "  ".into(), ..good.clone() }), Err(tr!("Name is required").to_string()));
+        assert_eq!(validate_draft(&RoutineDraft { description: String::new(), ..good.clone() }), Err(tr!("Description is required").to_string()));
+        assert_eq!(validate_draft(&RoutineDraft { folder: None, ..good.clone() }), Err(tr!("Choose a folder").to_string()));
         assert!(validate_draft(&RoutineDraft { schedule: Schedule::Cron { expression: "x".into() }, ..good }).is_err());
     }
 
