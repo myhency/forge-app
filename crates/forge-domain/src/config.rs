@@ -177,6 +177,21 @@ choice_enum!(FontChoice, default System, { System => ("system", "System"), OpenD
 choice_enum!(TextSize, default Normal, { Small => ("small", "Small"), Normal => ("normal", "Normal"), Large => ("large", "Large") });
 choice_enum!(ChatWidth, default Normal, { Narrow => ("narrow", "Narrow"), Normal => ("normal", "Normal"), Wide => ("wide", "Wide") });
 choice_enum!(MotionPref, default System, { System => ("system", "System"), Reduced => ("reduced", "Reduced") });
+// The language of the interface. Each language is named in its own language and never translated.
+choice_enum!(Language, default English, { English => ("en", "English"), Korean => ("ko", "한국어") });
+
+impl Language {
+    /// The language for a system locale tag such as `ko-KR` or `ko_KR.UTF-8`: Korean when the
+    /// language code is `ko`, English for everything else (and for text that is not a tag).
+    pub fn from_locale(tag: &str) -> Language {
+        let code = tag.trim().split(|c: char| matches!(c, '-' | '_' | '.' | '@')).next().unwrap_or("");
+        if code.eq_ignore_ascii_case("ko") {
+            Language::Korean
+        } else {
+            Language::English
+        }
+    }
+}
 
 /// How Forge looks. Every field falls back to its default for a missing or unknown value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -254,6 +269,9 @@ pub struct AppConfig {
     /// Bounce the Dock icon when a notification says Claude needs the person.
     #[serde(default)]
     pub attention_bounce: bool,
+    /// The language the person chose; `None` follows the system language.
+    #[serde(default, deserialize_with = "lenient")]
+    pub language: Option<Language>,
 }
 
 fn default_true() -> bool {
@@ -292,6 +310,7 @@ impl Default for AppConfig {
             appearance: Appearance::default(),
             notifications: NotificationPrefs::default(),
             attention_bounce: false,
+            language: None,
         }
     }
 }
@@ -309,6 +328,48 @@ pub fn normalize_setting(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_config_without_a_language_follows_the_system() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":"https://x","api_key":null}"#).unwrap();
+        assert_eq!(config.language, None);
+        assert_eq!(config.base_url.as_deref(), Some("https://x"));
+    }
+
+    #[test]
+    fn a_null_or_unknown_language_reads_as_none_and_the_rest_still_loads() {
+        for text in [r#""language": null"#, r#""language": "klingon""#, r#""language": 7"#] {
+            let config: AppConfig = serde_json::from_str(&format!(r#"{{"base_url":"https://x",{text}}}"#)).unwrap();
+            assert_eq!(config.language, None, "{text}");
+            assert_eq!(config.base_url.as_deref(), Some("https://x"), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_chosen_language_is_stored_and_read_back() {
+        let config = AppConfig { language: Some(Language::Korean), ..AppConfig::default() };
+        let text = serde_json::to_string(&config).unwrap();
+        assert!(text.contains(r#""language":"korean""#), "{text}");
+        let back: AppConfig = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.language, Some(Language::Korean));
+    }
+
+    #[test]
+    fn the_system_language_is_korean_only_for_the_language_code_ko() {
+        for tag in ["ko", "ko-KR", "ko_KR", "ko_KR.UTF-8", "KO", "ko-Kore-KR", " ko-KR "] {
+            assert_eq!(Language::from_locale(tag), Language::Korean, "{tag}");
+        }
+        for tag in ["en-US", "en", "ja-JP", "kok-IN", "", "   ", "😀", "korean"] {
+            assert_eq!(Language::from_locale(tag), Language::English, "{tag}");
+        }
+    }
+
+    #[test]
+    fn languages_are_named_in_their_own_language() {
+        assert_eq!(Language::English.label(), "English");
+        assert_eq!(Language::Korean.label(), "한국어");
+        assert_eq!(Language::from_value("ko"), Some(Language::Korean));
+    }
 
     #[test]
     fn an_old_config_loads_with_todays_look_and_all_notifications_on() {

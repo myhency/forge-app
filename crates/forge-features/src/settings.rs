@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, SettingsUseCase};
-use forge_domain::{AppConfig, Appearance, ChatWidth, FontChoice, McpServerDefinition, MotionPref, NotificationPrefs, OutputStyle, PluginDefinition, SkillDefinition, TextSize, Theme, TranscriptView};
+use forge_domain::{AppConfig, Appearance, ChatWidth, FontChoice, Language, McpServerDefinition, MotionPref, NotificationPrefs, OutputStyle, PluginDefinition, SkillDefinition, TextSize, Theme, TranscriptView};
 use forge_entities::{mcp_rows, plugin_rows, project_label, skill_rows, ExtensionRow};
 
 use crate::section_status::status_for;
@@ -62,6 +62,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
             NotificationKind::PermissionRequest => config.notifications.permission_request = on,
         },
         CodeChange::AttentionBounce(on) => config.attention_bounce = on,
+        CodeChange::Language(value) => config.language = Some(value),
     }
 }
 
@@ -78,6 +79,7 @@ pub(crate) enum CodeChange {
     Motion(MotionPref),
     Notification(NotificationKind, bool),
     AttentionBounce(bool),
+    Language(Language),
 }
 
 /// One of the four notification switches.
@@ -254,6 +256,18 @@ impl Settings {
 
     pub fn set_allow_bypass_mode(&self, on: bool) {
         self.change_code(CodeChange::AllowBypass(on));
+    }
+
+    /// The language on screen.
+    pub fn language(&self) -> Language {
+        forge_shared::i18n::current()
+    }
+
+    /// Switches the interface language at once and remembers the choice. The screen follows the
+    /// choice even if the config cannot be written (the error shows as for any other setting).
+    pub fn set_language(&self, value: Language) {
+        forge_shared::i18n::set_current(value);
+        self.change_code(CodeChange::Language(value));
     }
 
     pub fn appearance(&self) -> Appearance {
@@ -458,6 +472,7 @@ impl Settings {
         let mut base_url = self.base_url;
         let mut api_key = self.api_key;
         crate::appearance::apply_appearance(&config.appearance);
+        forge_shared::i18n::set_current(forge_shared::i18n::effective_language(config.language));
         saved.set(config);
         base_url.set(draft.base_url);
         api_key.set(draft.api_key);
@@ -498,6 +513,7 @@ impl Settings {
             current.appearance = config.appearance;
             current.notifications = config.notifications;
             current.attention_bounce = config.attention_bounce;
+            current.language = config.language;
         }
         crate::appearance::apply_appearance(&config.appearance);
         status.set(Some((*self.section.peek(), SettingsStatus::Saved)));
@@ -526,6 +542,23 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn choosing_a_language_stores_it() {
+        let mut config = AppConfig::default();
+        apply_code_change(&mut config, CodeChange::Language(forge_domain::Language::Korean));
+        assert_eq!(config.language, Some(forge_domain::Language::Korean));
+        apply_code_change(&mut config, CodeChange::Language(forge_domain::Language::English));
+        assert_eq!(config.language, Some(forge_domain::Language::English));
+    }
+
+    #[test]
+    fn choosing_the_current_language_again_changes_nothing_else() {
+        let mut config = AppConfig { language: Some(forge_domain::Language::Korean), model: Some("m".into()), ..AppConfig::default() };
+        apply_code_change(&mut config, CodeChange::Language(forge_domain::Language::Korean));
+        assert_eq!(config.language, Some(forge_domain::Language::Korean));
+        assert_eq!(config.model.as_deref(), Some("m"));
+    }
 
     #[test]
     fn each_control_changes_its_own_field_only() {

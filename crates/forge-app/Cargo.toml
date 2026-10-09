@@ -17,9 +17,11 @@ forge-adapter-sidecar = { path = "../forge-adapter-sidecar" }
 forge-adapter-sleep = { path = "../forge-adapter-sleep" }
 forge-adapter-terminal = { path = "../forge-adapter-terminal" }
 forge-application = { path = "../forge-application" }
+forge-domain = { path = "../forge-domain" }
 forge-features = { path = "../forge-features" }
 forge-pages = { path = "../forge-pages" }
 forge-shared = { path = "../forge-shared" }
 dioxus = { version = "=0.7.10", features = ["desktop"] }
 time = { version = "0.3.55", features = ["local-offset"] }
 forge-ports = { version = "0.1.0", path = "../forge-ports" }
+sys-locale = "0.3"

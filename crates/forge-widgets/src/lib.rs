@@ -1,3 +1,4 @@
+mod account_menu;
 mod changes_panel;
 mod chat_window;
 mod composer_controls;

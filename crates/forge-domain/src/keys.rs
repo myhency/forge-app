@@ -12,6 +12,7 @@ pub const KEY_FIND: &str = command_label!("F");
 pub const KEY_ADD_FILES: &str = command_label!("U");
 pub const KEY_SEARCH: &str = command_label!("K");
 pub const KEY_SETTINGS: &str = command_label!(",");
+pub const KEY_SHORTCUTS: &str = command_label!("/");
 pub const KEY_CLOSE_SESSION: &str = command_label!("W");
 pub const KEY_ANSWER: &str = command_label!("↩");
 pub const KEY_ALLOW_ALWAYS: &str = if cfg!(target_os = "macos") { "⇧⌘↩" } else { "Ctrl+Shift+↩" };

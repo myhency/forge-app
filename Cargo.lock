@@ -1638,10 +1638,12 @@ dependencies = [
  "forge-adapter-sleep",
  "forge-adapter-terminal",
  "forge-application",
+ "forge-domain",
  "forge-features",
  "forge-pages",
  "forge-ports",
  "forge-shared",
+ "sys-locale",
  "time",
  "tokio",
 ]
@@ -1731,6 +1733,7 @@ name = "forge-shared"
 version = "0.1.0"
 dependencies = [
  "dioxus",
+ "forge-domain",
 ]
 
 [[package]]
@@ -4853,6 +4856,15 @@ dependencies = [
  "serde_derive",
  "thiserror 2.0.21",
  "walkdir",
+]
+
+[[package]]
+name = "sys-locale"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

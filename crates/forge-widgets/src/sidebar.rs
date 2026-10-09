@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
-use forge_features::{use_settings, use_workspace, Active, EntryKey, Heading};
+use forge_features::{use_workspace, Active, EntryKey, Heading};
 use forge_shared::{Button, ButtonKind};
 
+use crate::account_menu::AccountMenu;
 use crate::filter_menu::SidebarFilterMenu;
 use crate::session_row::SessionRow;
 
@@ -76,7 +77,6 @@ pub fn project_labels(paths: &[PathBuf]) -> Vec<String> {
 #[component]
 pub fn Sidebar() -> Element {
     let workspace = use_workspace();
-    let settings = use_settings();
     let prefs = workspace.prefs();
     let groups = workspace.arranged_sidebar(forge_features::now_local());
     // Headings of folder groups are told apart when two folders share a name; rows in a date
@@ -199,11 +199,7 @@ pub fn Sidebar() -> Element {
             }
             }
             div { class: "sidebar-footer",
-                button { class: "sidebar-footer-button", onclick: move |_| settings.open(),
-                    span { "⚙" }
-                    span { "Settings" }
-                    span { class: "keys", "{forge_domain::KEY_SETTINGS}" }
-                }
+                AccountMenu {}
             }
         }
     }
