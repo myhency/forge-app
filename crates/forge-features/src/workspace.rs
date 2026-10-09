@@ -11,6 +11,7 @@ use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPic
 use time::OffsetDateTime;
 
 use crate::cards::{clamp_cards, Cards};
+use crate::closed_sessions::ClosedSessions;
 use crate::editor_tabs::EditorTabs;
 use crate::files_store::{FilesStore, Restore};
 use crate::dock::{DockState, DockStates, Panel};
@@ -115,6 +116,7 @@ pub struct Workspace {
     search_query: Signal<String>,
     search_hits: Signal<Vec<SearchHit>>,
     search_task: Signal<Option<dioxus::core::Task>>,
+    closed: Signal<ClosedSessions>,
 }
 
 /// Creates the workspace, provides it to every descendant and loads the sidebar once. Call it in
@@ -157,6 +159,7 @@ pub fn use_workspace_provider() -> Workspace {
             search_query: Signal::new(String::new()),
             search_hits: Signal::new(Vec::new()),
             search_task: Signal::new(None),
+            closed: Signal::new(ClosedSessions::default()),
         }
     });
     use_context_provider(move || workspace);
@@ -1004,7 +1007,26 @@ impl Workspace {
         });
     }
 
+    /// Opens the session closed last again (or focuses it when it is open once more). Does
+    /// nothing when none was closed; a failed open shows as a notice, like any open.
+    pub fn reopen_closed(&self) {
+        let mut closed = self.closed;
+        let Some((project, session)) = closed.write().pop() else {
+            return;
+        };
+        let summary = project_for_open(&self.past.peek(), &project);
+        self.open_past(summary, session);
+    }
+
     pub fn close(&self, id: LiveSessionId) {
+        // Remembered for "reopen the last closed session"; a session that never got an id has no transcript to come back to.
+        if let Some(handle) = self.handle(id) {
+            let view = handle.snapshot();
+            if let Some(session) = view.claude_session_id {
+                let mut closed = self.closed;
+                closed.write().push(view.project_path, session);
+            }
+        }
         let services = (*self.services.peek()).clone();
         services.registry.close(id);
         let mut live = self.live;
@@ -1110,9 +1132,9 @@ impl Workspace {
             // The sidebar belongs to the page (it knows the layout); it offers the event next.
             Shortcut::ToggleSidebar => return false,
             Shortcut::CloseSession => self.close_active(),
+            Shortcut::ReopenClosed => self.reopen_closed(),
             // Temporary: later tasks give each of these its action.
             Shortcut::ShowShortcuts
-            | Shortcut::ReopenClosed
             | Shortcut::ArchiveActive
             | Shortcut::ForkActive
             | Shortcut::RenameActive => return false,

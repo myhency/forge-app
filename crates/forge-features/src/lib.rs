@@ -1,6 +1,7 @@
 mod window_width;
 mod blocking;
 mod cards;
+mod closed_sessions;
 mod customize;
 mod customize_connectors;
 mod customize_skills;
