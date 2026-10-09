@@ -440,7 +440,7 @@ mod tests {
         assert_eq!(config.output_style, None);
         assert!(config.prompt_suggestions, "suggestions stay on for a config written before the switch existed");
         assert!(!config.allow_bypass_mode);
-        assert_eq!(AppConfig::default().prompt_suggestions, true, "the derived Default agrees with the file default");
+        assert!(AppConfig::default().prompt_suggestions, "the manual Default agrees with the file default");
     }
 
     #[test]

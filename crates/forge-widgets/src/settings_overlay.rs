@@ -118,7 +118,7 @@ fn CodeSection() -> Element {
             Switch { on: settings.allow_bypass_mode(), onchange: move |on| settings.set_allow_bypass_mode(on) }
         }
         div { class: "hint", style: "margin-top: 12px;",
-            "Sessions that are already open keep what they started with; a change applies to the next new session."
+            "Output style, prompt suggestions and the bypass switch apply to sessions that start after the change. The default view also applies to open sessions you have not changed."
         }
     }
 }
