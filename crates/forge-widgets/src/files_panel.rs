@@ -18,6 +18,7 @@ use crate::files_menu::FilesMenu;
 use crate::files_state::FilesCtx;
 use crate::files_tabs::{FilesTabs, TabView};
 use crate::panel_frame::PanelFrame;
+use forge_shared::tr;
 
 // Typing waits this long before the files are searched.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -208,7 +209,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         button {
             class: if prefs.tree { "icon-button active" } else { "icon-button" },
             r#type: "button",
-            title: "File tree",
+            title: tr!("File tree"),
             "aria-label": "File tree",
             "aria-pressed": "{prefs.tree}",
             onclick: move |_| workspace.update_editor_prefs(|prefs| prefs.tree = !prefs.tree),
@@ -218,8 +219,8 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             button {
                 class: "icon-button files-source-toggle",
                 r#type: "button",
-                title: if source_on { "Show rendered" } else { "Show source" },
-                "aria-label": if source_on { "Show rendered" } else { "Show source" },
+                title: if source_on { tr!("Show rendered") } else { tr!("Show source") },
+                "aria-label": if source_on { tr!("Show rendered") } else { tr!("Show source") },
                 onclick: {
                     let (ctx, path) = (ctx.clone(), selected.clone().unwrap_or_default());
                     move |_| ctx.toggle_source(&path)
@@ -234,10 +235,10 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let query = parse_files_query(&typed);
     let list = if let FilesQuery::Content(text) = query {
         match hits() {
-            _ if text.is_empty() => rsx! { div { class: "dock-note", "Type the text to search for after ?" } },
-            None => rsx! { div { class: "dock-note", "Searching…" } },
+            _ if text.is_empty() => rsx! { div { class: "dock-note", {tr!("Type the text to search for after ?")} } },
+            None => rsx! { div { class: "dock-note", {tr!("Searching…")} } },
             Some((_, _, Err(message))) => rsx! { div { class: "dock-note error", "{message}" } },
-            Some((_, _, Ok(found))) if found.is_empty() => rsx! { div { class: "dock-note", "No matches" } },
+            Some((_, _, Ok(found))) if found.is_empty() => rsx! { div { class: "dock-note", {tr!("No matches")} } },
             Some((found_query, found_options, Ok(found))) => rsx! {
                 div { class: "files-list",
                     for group in group_hits(&found) {
@@ -267,11 +268,11 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     } else if let Some(message) = problem() {
         rsx! { div { class: "dock-note error", "{message}" } }
     } else if !tree.read().is_loaded("") {
-        rsx! { div { class: "dock-note", "Loading…" } }
+        rsx! { div { class: "dock-note", {tr!("Loading…")} } }
     } else {
         let rows = tree.read().rows(&typed);
         if rows.is_empty() {
-            let note = if typed.trim().is_empty() { "Folder is empty" } else { "No files match" };
+            let note = if typed.trim().is_empty() { tr!("Folder is empty") } else { tr!("No files match") };
             rsx! { div { class: "dock-note", "{note}" } }
         } else {
             let current = selected.clone();
@@ -333,8 +334,8 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             rsx! {
                 div { class: "files-banner", role: "alert",
                     span { "{Banner::Conflict.message()}" }
-                    button { r#type: "button", onclick: move |_| cancel_ctx.reload(cancel_key.clone()), "Cancel" }
-                    button { r#type: "button", onclick: move |_| overwrite_ctx.save_from_editor(&key, true), "Overwrite" }
+                    button { r#type: "button", onclick: move |_| cancel_ctx.reload(cancel_key.clone()), {tr!("Cancel")} }
+                    button { r#type: "button", onclick: move |_| overwrite_ctx.save_from_editor(&key, true), {tr!("Overwrite")} }
                 }
             }
         }
@@ -343,9 +344,9 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             let dismiss_key = key.clone();
             rsx! {
                 div { class: "files-banner", role: "alert",
-                    span { "Could not save: {reason}" }
-                    button { r#type: "button", onclick: move |_| retry_ctx.save_from_editor(&key, false), "Retry" }
-                    button { r#type: "button", onclick: move |_| dismiss_ctx.dismiss_banner(&dismiss_key), "Dismiss" }
+                    span { {Banner::SaveFailed(reason.clone()).message()} }
+                    button { r#type: "button", onclick: move |_| retry_ctx.save_from_editor(&key, false), {tr!("Retry")} }
+                    button { r#type: "button", onclick: move |_| dismiss_ctx.dismiss_banner(&dismiss_key), {tr!("Dismiss")} }
                 }
             }
         }
@@ -359,10 +360,10 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             let (save, discard, cancel) = (ctx.clone(), ctx.clone(), ctx.clone());
             rsx! {
                 div { class: "files-banner", role: "alertdialog",
-                    span { "Save changes to {name}?" }
-                    button { r#type: "button", onclick: move |_| save.confirm_save(), "Save" }
-                    button { r#type: "button", onclick: move |_| discard.confirm_discard(), "Don't save" }
-                    button { r#type: "button", onclick: move |_| cancel.confirm_cancel(), "Cancel" }
+                    span { {tr!("Save changes to {name}?", name = name)} }
+                    button { r#type: "button", onclick: move |_| save.confirm_save(), {tr!("Save")} }
+                    button { r#type: "button", onclick: move |_| discard.confirm_discard(), {tr!("Don't save")} }
+                    button { r#type: "button", onclick: move |_| cancel.confirm_cancel(), {tr!("Cancel")} }
                 }
             }
         }
@@ -370,12 +371,12 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     };
 
     let content = match (&selected, &kind) {
-        (None, _) => rsx! { div { class: "dock-note", "Pick a file" } },
-        (Some(_), None | Some(TabKind::Loading)) => rsx! { div { class: "dock-note", "Loading…" } },
+        (None, _) => rsx! { div { class: "dock-note", {tr!("Pick a file")} } },
+        (Some(_), None | Some(TabKind::Loading)) => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
         (Some(_), Some(TabKind::Failed(message))) => rsx! { div { class: "dock-note error", "{message}" } },
         (Some(path), Some(TabKind::Text { .. })) if unavailable => match ctx.fallback.read().get(path).cloned() {
             Some((html, numbers)) => rsx! {
-                div { class: "dock-note", "The editor could not be loaded, so this file is shown read only." }
+                div { class: "dock-note", {tr!("The editor could not be loaded, so this file is shown read only.")} }
                 div { class: "changes-diff",
                     div { class: "file-viewer", "aria-label": "{path}",
                         pre { class: "file-gutter", "{numbers}" }
@@ -383,11 +384,11 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                     }
                 }
             },
-            None => rsx! { div { class: "dock-note", "Loading…" } },
+            None => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
         },
         (Some(path), Some(TabKind::Text { .. })) if rendered_selected && !source_on => match ctx.rendered.read().get(path).cloned() {
             Some(rendered) => rsx! { RenderedView { key: "{path}", rendered, path: path.clone() } },
-            None => rsx! { div { class: "dock-note", "Loading…" } },
+            None => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
         },
         (Some(_), Some(TabKind::Text { .. })) => rsx! {},
         (Some(path), Some(other)) => {
@@ -466,7 +467,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 input {
                     class: "files-filter-input",
                     r#type: "text",
-                    placeholder: "Filter, or start with ? to search inside files",
+                    placeholder: tr!("Filter, or start with ? to search inside files"),
                     value: "{filter}",
                     oninput: move |event| filter.set(event.value()),
                     onmounted: move |mounted| async move {
@@ -476,9 +477,9 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 if matches!(query, FilesQuery::Content(_)) {
                     div { class: "files-search-toggles",
                         for (title, label, on, flip) in [
-                            ("Match case", "Aa", options().match_case, 0u8),
-                            ("Whole word", "ab", options().whole_word, 1),
-                            ("Regex", ".*", options().regex, 2),
+                            (tr!("Match case"), "Aa", options().match_case, 0u8),
+                            (tr!("Whole word"), "ab", options().whole_word, 1),
+                            (tr!("Regex"), ".*", options().regex, 2),
                         ] {
                             button {
                                 key: "{title}",
@@ -497,7 +498,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                         button {
                             class: "files-toggle",
                             r#type: "button",
-                            title: "Clear",
+                            title: tr!("Clear"),
                             "aria-label": "Clear",
                             onclick: move |_| filter.set(String::new()),
                             "×"

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use forge_shared::tr;
 
 /// What to do with a folder the person picked in the dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,7 +17,7 @@ pub enum FolderChoice {
 /// stays pure). Trailing separators do not make a path different.
 pub fn choose_folder(known: &[PathBuf], picked: PathBuf, is_dir: bool) -> FolderChoice {
     if !is_dir {
-        return FolderChoice::Rejected(format!("{} is not a folder that exists.", picked.display()));
+        return FolderChoice::Rejected(tr!("{path} is not a folder that exists.", path = picked.display()));
     }
     // `components()` ignores a trailing separator, so `/work/b/` equals `/work/b`.
     let normalized: PathBuf = picked.components().collect();

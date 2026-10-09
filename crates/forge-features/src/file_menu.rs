@@ -1,3 +1,4 @@
+use forge_shared::tr;
 /// What a menu item does. The Files panel performs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileAction {
@@ -38,11 +39,11 @@ fn item(label: &'static str, action: FileAction) -> MenuEntry {
 
 fn copy_menu() -> MenuEntry {
     MenuEntry::Submenu {
-        label: "Copy",
+        label: tr!("Copy"),
         entries: vec![
-            item("Absolute path", FileAction::CopyAbsolute),
-            item("Relative path", FileAction::CopyRelative),
-            item("File name", FileAction::CopyName),
+            item(tr!("Absolute path"), FileAction::CopyAbsolute),
+            item(tr!("Relative path"), FileAction::CopyRelative),
+            item(tr!("File name"), FileAction::CopyName),
         ],
     }
 }
@@ -50,33 +51,33 @@ fn copy_menu() -> MenuEntry {
 pub fn file_menu(target: MenuTarget) -> Vec<MenuEntry> {
     match target {
         MenuTarget::Tree => vec![
-            item("Attach as context", FileAction::Attach),
+            item(tr!("Attach as context"), FileAction::Attach),
             copy_menu(),
             MenuEntry::Divider,
             MenuEntry::Submenu {
-                label: "Open in",
-                entries: vec![item("VS Code", FileAction::OpenVsCode), MenuEntry::Divider, item("Default app", FileAction::OpenDefault)],
+                label: tr!("Open in"),
+                entries: vec![item(tr!("VS Code"), FileAction::OpenVsCode), MenuEntry::Divider, item(tr!("Default app"), FileAction::OpenDefault)],
             },
             item(forge_domain::SHOW_IN_FILE_MANAGER, FileAction::Reveal),
             MenuEntry::Divider,
-            item("Show in file tree", FileAction::ShowInTree),
+            item(tr!("Show in file tree"), FileAction::ShowInTree),
             MenuEntry::Divider,
-            MenuEntry::Action { label: "Find in file", shortcut: Some(forge_domain::KEY_FIND), action: FileAction::FindInFile, enabled: true },
-            item("Copy file contents", FileAction::CopyContents),
-            item("Reload file", FileAction::Reload),
+            MenuEntry::Action { label: tr!("Find in file"), shortcut: Some(forge_domain::KEY_FIND), action: FileAction::FindInFile, enabled: true },
+            item(tr!("Copy file contents"), FileAction::CopyContents),
+            item(tr!("Reload file"), FileAction::Reload),
             MenuEntry::Divider,
-            item("Close file", FileAction::Close),
+            item(tr!("Close file"), FileAction::Close),
         ],
         MenuTarget::Tab { preview } => vec![
-            item("Attach as context", FileAction::Attach),
+            item(tr!("Attach as context"), FileAction::Attach),
             copy_menu(),
             MenuEntry::Divider,
-            item("Show in file tree", FileAction::ShowInTree),
+            item(tr!("Show in file tree"), FileAction::ShowInTree),
             MenuEntry::Divider,
-            MenuEntry::Action { label: "Keep open", shortcut: None, action: FileAction::KeepOpen, enabled: preview },
-            item("Close file", FileAction::Close),
-            item("Close others", FileAction::CloseOthers),
-            item("Close all", FileAction::CloseAll),
+            MenuEntry::Action { label: tr!("Keep open"), shortcut: None, action: FileAction::KeepOpen, enabled: preview },
+            item(tr!("Close file"), FileAction::Close),
+            item(tr!("Close others"), FileAction::CloseOthers),
+            item(tr!("Close all"), FileAction::CloseAll),
         ],
     }
 }

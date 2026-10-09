@@ -2,6 +2,7 @@ use base64::Engine;
 use dioxus::prelude::*;
 use forge_features::{run_blocking, use_workspace, Picture};
 use forge_ports::FileContent;
+use forge_shared::tr;
 
 /// A picture over the dimmed window, opened by a click on a picture path in the chat: the picture
 /// in the middle, its path under it, `×` at its corner. A click anywhere, `×` or Escape closes it.
@@ -28,7 +29,7 @@ fn LightboxBody(picture: Picture) -> Element {
     use_effect(move || {
         if let Some(done) = &*image.read() {
             if !matches!(done, Some(Ok(FileContent::Image { .. }))) {
-                workspace.report("This picture cannot be shown.".to_string());
+                workspace.report(tr!("This picture cannot be shown.").to_string());
                 workspace.close_lightbox();
             }
         }
@@ -67,7 +68,7 @@ fn LightboxBody(picture: Picture) -> Element {
                         button {
                             class: "lightbox-close",
                             r#type: "button",
-                            title: "Close",
+                            title: tr!("Close"),
                             "aria-label": "Close",
                             onclick: move |event| {
                                 event.stop_propagation();

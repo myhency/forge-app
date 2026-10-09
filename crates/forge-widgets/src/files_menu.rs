@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::EditorPrefs;
 use forge_features::use_workspace;
+use forge_shared::tr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Item {
@@ -17,14 +18,14 @@ enum Item {
 impl Item {
     fn label(self) -> &'static str {
         match self {
-            Item::Tree => "Show file tree",
-            Item::PreviewTabs => "Preview tabs",
-            Item::AutoSave => "Auto save",
-            Item::TabIndent => "Tab key indents",
-            Item::Wrap => "Word wrap",
-            Item::Guides => "Indent guides",
-            Item::Whitespace => "Show whitespace",
-            Item::ScrollPastEnd => "Scroll past end",
+            Item::Tree => tr!("Show file tree"),
+            Item::PreviewTabs => tr!("Preview tabs"),
+            Item::AutoSave => tr!("Auto save"),
+            Item::TabIndent => tr!("Tab key indents"),
+            Item::Wrap => tr!("Word wrap"),
+            Item::Guides => tr!("Indent guides"),
+            Item::Whitespace => tr!("Show whitespace"),
+            Item::ScrollPastEnd => tr!("Scroll past end"),
         }
     }
 
@@ -88,7 +89,7 @@ pub fn FilesMenu() -> Element {
             button {
                 class: if open() { "picker-button open" } else { "picker-button" },
                 r#type: "button",
-                title: "Editor settings",
+                title: tr!("Editor settings"),
                 "aria-label": "Editor settings",
                 "aria-haspopup": "menu",
                 "aria-expanded": "{open()}",
@@ -141,7 +142,7 @@ pub fn FilesMenu() -> Element {
                             "aria-expanded": "{sizes()}",
                             onclick: move |_| sizes.set(!sizes()),
                             span { class: "picker-check" }
-                            span { class: "picker-text", "Tab size" }
+                            span { class: "picker-text", {tr!("Tab size")} }
                             span { class: "menu-key", "{tab_size} ›" }
                         }
                         if sizes() {
