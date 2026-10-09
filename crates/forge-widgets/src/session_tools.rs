@@ -130,7 +130,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                             "aria-checked": "{sleeping}",
                             onclick: move |_| workspace.set_prevent_sleep(id, !sleeping),
                             span { {tr!("Prevent sleep")} }
-                            span { class: "menu-key", if sleeping { "On · This session only" } else { "Off · This session only" } }
+                            span { class: "menu-key", if sleeping { {tr!("On · This session only")} } else { {tr!("Off · This session only")} } }
                         }
                     }
                 }
