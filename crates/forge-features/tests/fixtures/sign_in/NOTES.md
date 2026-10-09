@@ -19,6 +19,7 @@ A throwaway `CLAUDE_CONFIG_DIR` does not work: it has no login, so `claude` show
   `Auth: ✘ not authenticated`, then the items `❯  1.  Authenticate` and `2.  Disable`. The lower-case word
   `authenticated` is on the screen too, so the mark is the capital `Authenticate`. A server that is signed in shows
   `Re-authenticate` instead (not captured).
-- After Authenticate: the success and failure texts are **not** captured here; Task 8 reads them from a real sign-in.
+- After Authenticate (waiting for the browser): `Authenticating with <name>…`, `A browser window will open for authentication`, the URL, `If the redirect page shows a connection error, paste the URL…`, `URL >`, and `Return here after authenticating in your browser. Press Esc to go back.`
+- After a successful browser sign-in (Figma): the screen returns to the input box and shows `/mcp` with the line `Authentication successful. Connected to figma.` under it. The failure text is **not** captured.
 - Output is cut anywhere, and Ink draws a frame in several writes: act on the screen only after it has been quiet
   for a moment (150 ms), or a half-drawn frame can make Forge press Down twice.

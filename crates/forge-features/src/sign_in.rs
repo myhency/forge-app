@@ -601,4 +601,14 @@ mod tests {
         let screen = format!("{}\r\n{row}", mark::LIST);
         assert_eq!(sends(&settled(&mut driver, screen.as_bytes(), secs(3))), vec![b"\r".to_vec()]);
     }
+
+    #[test]
+    fn the_success_line_the_cli_printed_for_figma_ends_the_run_as_signed() {
+        // Read from the real window (Claude Code 2.1.283, Figma, 2026-10-09).
+        let mut driver = at_list("figma");
+        settled(&mut driver, list("figma", 1).as_bytes(), secs(3));
+        driver.feed(mark::ITEM.as_bytes(), secs(4));
+        let line = "  \u{23bf}  Authentication successful. Connected to figma.";
+        assert_eq!(driver.feed(line.as_bytes(), secs(40)), vec![Action::Done(Outcome::Signed)]);
+    }
 }

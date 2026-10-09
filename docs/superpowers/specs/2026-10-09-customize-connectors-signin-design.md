@@ -82,5 +82,12 @@ Real Claude home, a temporary user connector `forge-signin-test` (`https://mcp.s
 
 ### Not checked
 
-- **The end of a sign-in**: the browser part needs the person's account. The texts `mark::SIGNED` (`Authentication successful`) and `mark::FAILED` are what the CLI is expected to print and are **not confirmed**. If they differ, the dialog stays on "Signing in…" and the person closes it and presses Check connection (the status line says so). To confirm: sign in to a real server and read the terminal text; edit `crates/forge-features/src/sign_in.rs` `mark` and add the capture to the fixtures.
+- **The failure text of a sign-in** (`mark::FAILED`: `Authentication failed`, `Authentication cancelled`) is what the CLI is expected to print for a refused or cancelled sign-in, and is **not confirmed**. If it differs, the dialog stays on "Signing in…" and the person closes it and presses Check connection (the status line says so).
 - Folder trust prompt in a new folder (covered by a driver test, not by the real window), a double press of "Sign in" (covered by the guard in `sign_in_connector`, not pressed twice in the window), Windows, a proxy, servers that need a client id.
+
+### Checked with a real sign-in (Figma, 2026-10-09)
+
+Real Claude home, a user connector `figma` (`https://mcp.figma.com/mcp`), the person finished the Figma sign-in in the browser:
+- Sign in → the dialog reached "Authenticating with figma… A browser window will open for authentication", with "Return here after authenticating in your browser. Press Esc to go back." below the URL: pass.
+- After the browser sign-in the terminal printed `Authentication successful. Connected to figma.`: this is what `mark::SIGNED` (`Authentication successful`) matches. The dialog's status line went to "Connected" (the automatic check), and after Close the detail screen said "Connected", the "Sign in" button was gone: pass.
+- The shell of the dialog ended with Close (the remaining `claude` process has no terminal and belongs to the app's own sidecar).
