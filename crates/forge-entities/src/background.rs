@@ -3,6 +3,9 @@ use std::time::SystemTime;
 use forge_domain::{Message, RunningTask};
 use forge_shared::tr;
 
+use crate::workflow_progress::{journal_path, workflow_ref};
+use crate::workflow_script::workflow_meta;
+
 /// How much of a task's output the panel shows: the last 20000 bytes.
 pub const TASK_OUTPUT_TAIL: usize = 20_000;
 
@@ -51,6 +54,18 @@ pub struct TaskCard {
     /// The file the task writes its output to, only when `valid_output_path` holds.
     pub output_path: Option<String>,
     pub seen_at: SystemTime,
+    /// Set for a workflow, when the Workflow call that started it is in the session.
+    pub workflow: Option<WorkflowCard>,
+}
+
+/// What a workflow's card knows besides the task itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowCard {
+    pub name: String,
+    /// The phases the script lists, in order.
+    pub phases: Vec<String>,
+    /// The journal the card reads its progress from, only when its folder is a workflow run's.
+    pub journal_path: Option<String>,
 }
 
 /// A card for each running task, in the SDK's order. The command, a better description and the
@@ -65,9 +80,21 @@ pub fn task_cards(messages: &[Message], running: &[RunningTask]) -> Vec<TaskCard
             Some((reference, call))
         })
         .collect();
+    let workflows: Vec<(String, WorkflowCard, Option<String>)> = messages
+        .iter()
+        .flat_map(|message| message.tool_calls())
+        .filter(|call| call.name == "Workflow")
+        .filter_map(|call| {
+            let reference = workflow_ref(&call.result.as_ref()?.output)?;
+            let meta = workflow_meta(call.input.get("script")?.as_str()?)?;
+            let card = WorkflowCard { name: meta.name, phases: meta.phases, journal_path: journal_path(&reference.transcript_dir) };
+            Some((reference.task_id, card, meta.description))
+        })
+        .collect();
     running
         .iter()
         .map(|task| {
+            let workflow = workflows.iter().find(|(task_id, _, _)| task_id == &task.info.id);
             let call = started.iter().find(|(reference, _)| reference.task_id == task.info.id);
             let command = call.and_then(|(_, call)| call.input.get("command")).and_then(|value| value.as_str()).map(str::to_string);
             let description = call
@@ -79,16 +106,18 @@ pub fn task_cards(messages: &[Message], running: &[RunningTask]) -> Vec<TaskCard
             let output_path = call
                 .map(|(reference, _)| reference.output_path.clone())
                 .filter(|path| valid_output_path(path, &task.info.id));
-            TaskCard { id: task.info.id.clone(), description, task_type: task.info.task_type.clone(), command, output_path, seen_at: task.seen_at }
+            let description = workflow.and_then(|(_, _, text)| text.clone()).unwrap_or(description);
+            let workflow = workflow.map(|(_, card, _)| card.clone());
+            TaskCard { id: task.info.id.clone(), description, task_type: task.info.task_type.clone(), command, output_path, seen_at: task.seen_at, workflow }
         })
         .collect()
 }
 
 /// The key of a card in the panel. It changes when the card's output file becomes known: the panel
 /// starts reading the output when a card is created, so a card made before the Bash result named
-/// the file must be replaced by a new one.
+/// the file must be replaced by a new one. The same for a workflow's card and its journal.
 pub fn card_key(card: &TaskCard) -> String {
-    format!("{}:{}", card.id, card.output_path.is_some())
+    format!("{}:{}:{}", card.id, card.output_path.is_some(), card.workflow.is_some())
 }
 
 /// The pill under the chat: `1 background task`, `2 background tasks`.
@@ -219,6 +248,48 @@ mod tests {
         assert_ne!(card_key(&before[0]), card_key(&after[0]));
         assert_eq!(card_key(&after[0]), card_key(&after[0].clone()));
         assert!(card_key(&before[0]).starts_with("b1:"));
+    }
+
+    const WORKFLOW_RESULT: &str = "Workflow launched in background. Task ID: wf1\nSummary: s\nTranscript dir: /Users/me/.claude/projects/-tmp/6a/subagents/workflows/wf_abc-123\nScript file: /x.js\n";
+    const WORKFLOW_SCRIPT: &str = "export const meta = {\n  name: 'risk-review',\n  description: 'Three review, one merges',\n  phases: [{ title: 'Analyze' }, { title: 'Merge' }],\n}\n";
+
+    fn workflow_call(result: &str) -> Message {
+        let mut message = Message::new(MessageRole::Assistant);
+        message.blocks.push(Block::Tool(ToolCall {
+            id: "w".to_string(),
+            name: "Workflow".to_string(),
+            input: json!({"script": WORKFLOW_SCRIPT}),
+            result: Some(ToolResult { output: result.to_string(), is_error: false }),
+        }));
+        message
+    }
+
+    #[test]
+    fn a_workflow_card_takes_its_name_phases_and_journal_from_the_workflow_call() {
+        let cards = task_cards(&[workflow_call(WORKFLOW_RESULT)], &[running("wf1", 0)]);
+        let workflow = cards[0].workflow.as_ref().expect("a workflow card");
+        assert_eq!(workflow.name, "risk-review");
+        assert_eq!(workflow.phases, vec!["Analyze".to_string(), "Merge".to_string()]);
+        assert!(workflow.journal_path.as_deref().is_some_and(|path| path.ends_with("wf_abc-123/journal.jsonl")));
+        assert_eq!(cards[0].description, "Three review, one merges");
+        assert_eq!(cards[0].output_path, None, "a workflow has no output file");
+    }
+
+    #[test]
+    fn a_workflow_card_before_its_result_is_an_ordinary_card_and_gets_a_new_key_after() {
+        let before = task_cards(&[], &[running("wf1", 0)]);
+        let after = task_cards(&[workflow_call(WORKFLOW_RESULT)], &[running("wf1", 0)]);
+        assert_eq!(before[0].workflow, None);
+        assert_ne!(card_key(&before[0]), card_key(&after[0]));
+    }
+
+    #[test]
+    fn a_workflow_in_an_unexpected_folder_has_a_card_but_no_journal() {
+        let odd = WORKFLOW_RESULT.replace("/subagents/workflows/wf_abc-123", "/elsewhere");
+        let cards = task_cards(&[workflow_call(&odd)], &[running("wf1", 0)]);
+        let workflow = cards[0].workflow.as_ref().expect("a workflow card");
+        assert_eq!(workflow.journal_path, None);
+        assert_eq!(workflow.name, "risk-review");
     }
 
     #[test]

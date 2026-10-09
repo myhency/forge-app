@@ -763,6 +763,20 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .task-description { font-weight: 700; overflow-wrap: anywhere; }
 .task-meta { display: flex; gap: 10px; color: var(--fg-muted); font-size: 12px; }
 .task-stop { appearance: none; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
+.task-note { color: var(--fg-muted); font-size: 13px; overflow-wrap: anywhere; }
+.workflow-card .tasks-heading { margin-top: 4px; }
+.wf-step { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 8px; background: var(--bg-hover); }
+.wf-step-head { appearance: none; display: flex; align-items: center; gap: 8px; padding: 0; border: none; background: none; color: var(--fg); font: inherit; cursor: pointer; text-align: left; }
+.wf-step-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.wf-step-count { color: var(--fg-muted); font-size: 13px; }
+.wf-step-chevron { width: 12px; color: var(--fg-muted); text-align: center; }
+.wf-dots { display: flex; gap: 4px; min-height: 8px; }
+.wf-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.wf-dot.running { background: var(--link); }
+.wf-dot.done { background: var(--fg-muted); opacity: 0.45; }
+.wf-agent { display: flex; align-items: baseline; gap: 6px; padding-left: 4px; font-size: 13px; }
+.wf-agent-mark { width: 14px; color: var(--fg-muted); }
+.wf-agent-label { min-width: 0; overflow-wrap: anywhere; }
 .task-stop:hover { background: var(--bg-hover); }
 .task-stop-square { width: 10px; height: 10px; border-radius: 2px; background: var(--fg); }
 .task-command { padding: 8px 10px; background: var(--code-bg); border-radius: 8px; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
