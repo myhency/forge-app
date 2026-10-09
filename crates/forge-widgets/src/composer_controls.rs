@@ -3,7 +3,7 @@ use forge_application::LiveSessionId;
 use forge_domain::PermissionMode;
 use forge_entities::model_menu_rows;
 use forge_features::{
-    effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_workspace, ModeChoice,
+    effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_settings, use_workspace, ModeChoice,
     EFFORT_HELP, SLIDER_FASTER, SLIDER_SMARTER,
 };
 use forge_shared::{Button, ButtonKind};
@@ -118,7 +118,9 @@ pub(crate) fn Picker(
 pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<PermissionMode>) -> Element {
     // The row waiting for its confirmation.
     let mut confirming = use_signal(|| None::<usize>);
-    let rows = mode_rows();
+    let settings = use_settings();
+    // A session already in bypass mode keeps its row, selected, even when the switch is off.
+    let rows = mode_rows(settings.allow_bypass_mode() || current == PermissionMode::BypassPermissions);
     let items: Vec<PickerItem> = rows
         .iter()
         .map(|row| PickerItem {
