@@ -338,6 +338,11 @@ pub fn cycle_target(
     Some(order[index])
 }
 
+/// The open session at `index` (from 0) in the order the sidebar draws them; none when fewer are open.
+pub fn nth_session(order: &[LiveSessionId], index: usize) -> Option<LiveSessionId> {
+    order.get(index).copied()
+}
+
 // Counts characters, not bytes, so multi-byte text is never cut inside a character.
 fn truncate_chars(text: &str, max: usize) -> String {
     let flattened = text.replace('\n', " ");
@@ -844,5 +849,14 @@ mod tests {
         assert_eq!(menu_key_action("KeyA", false, all), None);
         all.archive = ArchiveAction::Archive;
         assert_eq!(menu_key_action("KeyA", true, all), None, "⌘A is select all, not archive");
+    }
+
+    #[test]
+    fn nth_session_counts_from_zero_and_gives_nothing_past_the_end() {
+        let order = [LiveSessionId(7), LiveSessionId(3), LiveSessionId(9)];
+        assert_eq!(nth_session(&order, 0), Some(LiveSessionId(7)));
+        assert_eq!(nth_session(&order, 2), Some(LiveSessionId(9)));
+        assert_eq!(nth_session(&order, 3), None);
+        assert_eq!(nth_session(&[], 0), None);
     }
 }

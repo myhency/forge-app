@@ -57,6 +57,7 @@ pub fn WorkspacePage() -> Element {
     };
     let docked_sidebar = if hidden { SIDEBAR_RAIL_WIDTH } else { prefs.clamped_width() };
     let layout = layout_for(window_width(), docked_sidebar, dock_width);
+    let sidebar_mode = layout.sidebar;
 
     rsx! {
         div {
@@ -74,7 +75,16 @@ pub fn WorkspacePage() -> Element {
                 }
                 // The palette is an overlay too: the session shortcuts wait while it is open.
                 if !workspace.on_key(&event, settings.is_open() || workspace.search_open()) {
-                    settings.on_key(&event);
+                    if forge_features::shortcut_from_event(&event) == Some(forge_features::Shortcut::ToggleSidebar) {
+                        // An overlay swallowed the key before this point (`shortcut_allowed`).
+                        match sidebar_mode {
+                            SidebarMode::Overlay => peek.set(!peek()),
+                            SidebarMode::Docked => workspace.update_prefs(|prefs| prefs.hidden = !prefs.hidden),
+                        }
+                        event.prevent_default();
+                    } else {
+                        settings.on_key(&event);
+                    }
                 }
             },
             // The sidebar's width follows the pointer while the handle is held; it is saved once, on release.

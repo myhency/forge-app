@@ -21,7 +21,7 @@ use crate::tool_activity::finished_tool_calls;
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, open_session_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
-use crate::sidebar::{cycle_target, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
+use crate::sidebar::{cycle_target, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
 
 // Typing waits this long before the transcripts are scanned.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -1035,15 +1035,47 @@ impl Workspace {
         }
     }
 
-    /// Focuses the next (or previous) open session in the order the sidebar draws them.
-    pub fn cycle(&self, forward: bool) {
+    /// Focuses the next (or previous) open session in the order the sidebar draws them; `false` when
+    /// no session is open, so the key press can be left to the page.
+    pub fn cycle(&self, forward: bool) -> bool {
         let order = open_session_order(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local());
         let current = match self.active() {
             Active::Live(id) => Some(id),
             Active::NewSession | Active::Customize | Active::Routines => None,
         };
-        if let Some(target) = cycle_target(&order, current, forward) {
-            self.select(target);
+        match cycle_target(&order, current, forward) {
+            Some(target) => {
+                self.select(target);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Focuses the n-th open session (from 0), in the order the sidebar draws them. Nothing when
+    /// fewer are open.
+    pub fn go_to_session(&self, index: usize) {
+        let order = open_session_order(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local());
+        if let Some(id) = nth_session(&order, index) {
+            self.select(id);
+        }
+    }
+
+    /// The new-session page with the active session's folder chosen (just the page when no session is active).
+    pub fn new_session_here(&self) {
+        if let Active::Live(id) = self.active() {
+            if let Some(view) = self.live_view(id) {
+                let folder = view.read().project_path.clone();
+                return self.show_new_session_in(folder);
+            }
+        }
+        self.show_new_session();
+    }
+
+    /// Opens or closes `panel` in the active session's dock; nothing on the other pages.
+    pub fn toggle_panel(&self, panel: Panel) {
+        if let Active::Live(id) = self.active() {
+            self.change_dock(id, |dock| dock.toggle(panel));
         }
     }
 
@@ -1062,19 +1094,28 @@ impl Workspace {
             Shortcut::OpenSettings => return false,
             Shortcut::NewSession => self.show_new_session(),
             Shortcut::OpenSearch => self.open_search(),
-            Shortcut::NextSession => self.cycle(true),
-            Shortcut::PreviousSession => self.cycle(false),
+            Shortcut::NextSession => {
+                if !self.cycle(true) {
+                    return false;
+                }
+            }
+            Shortcut::PreviousSession => {
+                if !self.cycle(false) {
+                    return false;
+                }
+            }
+            Shortcut::NewSessionHere => self.new_session_here(),
+            Shortcut::GoToSession(index) => self.go_to_session(index),
+            Shortcut::TogglePanel(panel) => self.toggle_panel(panel),
+            // The sidebar belongs to the page (it knows the layout); it offers the event next.
+            Shortcut::ToggleSidebar => return false,
             Shortcut::CloseSession => self.close_active(),
-            // Temporary: Tasks 2 to 5 give each of these its action.
-            Shortcut::NewSessionHere
-            | Shortcut::ToggleSidebar
-            | Shortcut::ShowShortcuts
-            | Shortcut::GoToSession(_)
+            // Temporary: later tasks give each of these its action.
+            Shortcut::ShowShortcuts
             | Shortcut::ReopenClosed
             | Shortcut::ArchiveActive
             | Shortcut::ForkActive
-            | Shortcut::RenameActive
-            | Shortcut::TogglePanel(_) => return false,
+            | Shortcut::RenameActive => return false,
         }
         event.prevent_default();
         true
