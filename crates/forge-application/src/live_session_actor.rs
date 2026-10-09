@@ -49,6 +49,7 @@ impl Actor {
         commands: mpsc::UnboundedReceiver<LiveCommand>,
         factory: Arc<dyn SidecarFactoryPort>,
         model: Option<String>,
+        effort: Option<EffortLevel>,
         extensions: Arc<ExtensionsUseCase>,
     ) -> Self {
         Self {
@@ -57,7 +58,7 @@ impl Actor {
             commands,
             factory,
             model,
-            effort: None,
+            effort,
             extensions,
             active: None,
             defaults: None,

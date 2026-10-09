@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_domain::PermissionMode;
+use forge_domain::{EffortLevel, PermissionMode};
 use forge_entities::model_menu_rows;
 use forge_features::{
     confirmation_still_valid, effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_settings, use_workspace, ModeChoice,
@@ -227,12 +227,19 @@ pub fn ModelPicker(id: LiveSessionId) -> Element {
 #[component]
 pub fn EffortPicker(id: LiveSessionId) -> Element {
     let workspace = use_workspace();
-    let mut open = use_signal(|| false);
     let Some(view) = workspace.live_view(id) else { return rsx! {} };
     let (levels, current) = {
         let view = view.read();
         (effort_levels(&view.available_models, view.model.as_deref()), view.effort)
     };
+    rsx! { EffortPickerView { levels, current, onchange: move |level| workspace.set_effort(id, level) } }
+}
+
+/// The effort button and its slider menu, for any owner of an effort: `levels` are the stops (nothing
+/// is drawn when empty), `onchange` gets a level, or `None` for "Use the default".
+#[component]
+pub fn EffortPickerView(levels: Vec<EffortLevel>, current: Option<EffortLevel>, onchange: EventHandler<Option<EffortLevel>>) -> Element {
+    let mut open = use_signal(|| false);
     if levels.is_empty() {
         return rsx! {};
     }
@@ -296,7 +303,7 @@ pub fn EffortPicker(id: LiveSessionId) -> Element {
                             let levels = levels.clone();
                             move |event: FormEvent| {
                                 if let Some(level) = event.value().parse::<usize>().ok().and_then(|index| levels.get(index)) {
-                                    workspace.set_effort(id, Some(*level));
+                                    onchange.call(Some(*level));
                                 }
                             }
                         },
@@ -304,7 +311,7 @@ pub fn EffortPicker(id: LiveSessionId) -> Element {
                     button {
                         class: "picker-item",
                         r#type: "button",
-                        onclick: move |_| workspace.set_effort(id, None),
+                        onclick: move |_| onchange.call(None),
                         span { class: "picker-text", span { class: "picker-label", {tr!("Use the default")} } }
                     }
                 }

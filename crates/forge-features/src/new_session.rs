@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_domain::PermissionMode;
+use forge_domain::{EffortLevel, PermissionMode};
 
 use crate::command_box::CommandTextArea;
 use crate::composer_state::{use_composer_state_provider, ComposerChips};
@@ -10,11 +10,13 @@ use forge_shared::tr;
 /// `Some(None)` is the SDK's default, `Some(Some(id))` is that model.
 pub type ModelChoice = Option<Option<String>>;
 
-/// The mode and model picked on the new-session screen. Nothing is saved to settings.
+/// The mode, model and effort picked on the new-session screen. Nothing is saved to settings.
+/// An effort of `None` is the SDK's default.
 #[derive(Clone, Copy)]
 pub struct NewSessionDraft {
     pub mode: Signal<PermissionMode>,
     pub model: Signal<ModelChoice>,
+    pub effort: Signal<Option<EffortLevel>>,
 }
 
 pub fn use_new_session_draft() -> NewSessionDraft {
@@ -31,7 +33,7 @@ pub fn send_ready(text: &str, attachments: usize) -> bool {
 #[component]
 pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
     let workspace = use_workspace();
-    let draft = use_context_provider(|| NewSessionDraft { mode: Signal::new(PermissionMode::Default), model: Signal::new(None) });
+    let draft = use_context_provider(|| NewSessionDraft { mode: Signal::new(PermissionMode::Default), model: Signal::new(None), effort: Signal::new(None) });
     let text = use_signal(String::new);
     let composer = use_composer_state_provider(text);
     let mut text = text;
@@ -67,6 +69,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
             project,
             *draft.mode.peek(),
             draft.model.peek().clone(),
+            *draft.effort.peek(),
             outgoing.text,
             outgoing.attachments,
             composer.take_folders(),
