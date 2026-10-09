@@ -1,5 +1,6 @@
 use forge_application::SkillView;
 use forge_domain::{split_plugin_id, SkillEntry, SkillOrigin};
+use forge_shared::tr;
 
 /// One skill in a list: the entry and whether it is on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,8 +42,8 @@ pub enum SkillText {
 /// `You`, `Project`, or the plugin's name.
 pub fn origin_label(origin: &SkillOrigin) -> String {
     match origin {
-        SkillOrigin::User => "You".to_string(),
-        SkillOrigin::Project => "Project".to_string(),
+        SkillOrigin::User => tr!("You").to_string(),
+        SkillOrigin::Project => tr!("Project").to_string(),
         SkillOrigin::Plugin { plugin_id } => split_plugin_id(plugin_id).0.to_string(),
     }
 }

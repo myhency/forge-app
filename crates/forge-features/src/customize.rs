@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use forge_domain::{split_plugin_id, PluginEntry};
+use forge_shared::tr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CustomizeTab {
@@ -60,7 +61,7 @@ pub fn explore_groups(plugins: &[PluginEntry], enabled: &[String], query: &str) 
 
 pub fn group_title(marketplace: &str) -> String {
     if marketplace.is_empty() {
-        "(no marketplace)".to_string()
+        tr!("(no marketplace)").to_string()
     } else {
         marketplace.to_string()
     }
@@ -217,11 +218,11 @@ pub fn short_time(iso: &str) -> String {
 pub fn check_source(input: &str) -> Result<String, &'static str> {
     let source = input.trim();
     if source.is_empty() {
-        Err("Type a GitHub repository (owner/repo), a Git URL or a folder.")
+        Err(tr!("Type a GitHub repository (owner/repo), a Git URL or a folder."))
     } else if source.contains('\n') || source.contains('\r') {
-        Err("Use one line.")
+        Err(tr!("Use one line."))
     } else if source.starts_with('-') {
-        Err("A source cannot start with a dash.")
+        Err(tr!("A source cannot start with a dash."))
     } else {
         Ok(source.to_string())
     }

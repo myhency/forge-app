@@ -3,6 +3,7 @@ use std::path::Path;
 
 use forge_domain::{McpServerDefinition, PluginDefinition, SkillDefinition};
 use serde_json::Value;
+use forge_shared::tr;
 
 /// One line of a Skills / Plugins / MCP servers tab. `key` is what the `enabled_*` list stores.
 #[derive(Debug, Clone, PartialEq)]
@@ -76,7 +77,7 @@ pub fn mcp_summary(config: &Value) -> String {
 pub fn project_label(project: Option<&Path>) -> String {
     match project.and_then(Path::file_name) {
         Some(name) => name.to_string_lossy().to_string(),
-        None => "your global definitions".to_string(),
+        None => tr!("your global definitions").to_string(),
     }
 }
 

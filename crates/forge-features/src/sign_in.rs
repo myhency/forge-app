@@ -2,6 +2,7 @@
 //! into text to look at; `SignInDriver` decides what to type.
 
 use std::time::Duration;
+use forge_shared::tr;
 
 const KEEP: usize = 16 * 1024;
 
@@ -158,11 +159,11 @@ enum Step {
 impl Step {
     fn waits_for(self) -> &'static str {
         match self {
-            Step::Shell => "the shell",
-            Step::Input => "the input box",
-            Step::List => "the list with the connector",
-            Step::Item => "the Authenticate item",
-            Step::Watch | Step::Over => "the sign-in",
+            Step::Shell => tr!("the shell"),
+            Step::Input => tr!("the input box"),
+            Step::List => tr!("the list with the connector"),
+            Step::Item => tr!("the Authenticate item"),
+            Step::Watch | Step::Over => tr!("the sign-in"),
         }
     }
 }

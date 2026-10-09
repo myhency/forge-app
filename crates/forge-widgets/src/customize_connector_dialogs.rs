@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::{ConnectorDraft, ConnectorKind};
 use forge_features::{sign_in_status, use_customize};
-use forge_shared::{Button, ButtonKind};
+use forge_shared::{msg, tr, Button, ButtonKind};
 
 use crate::terminal_panel::SignInTerminal;
 
@@ -11,7 +11,7 @@ fn kind_button(current: ConnectorKind, value: ConnectorKind, label: &'static str
             class: if current == value { "active" } else { "" },
             disabled,
             onclick: move |_| kind.set(value),
-            "{label}"
+            {forge_shared::i18n::text(label)}
         }
     }
 }
@@ -38,26 +38,26 @@ pub fn AddConnector() -> Element {
         env: env(),
     };
     rsx! {
-        h2 { "Add connector" }
-        p { class: "hint", "A connector is an MCP server. It is added for you in every project." }
+        h2 { {tr!("Add connector")} }
+        p { class: "hint", {tr!("A connector is an MCP server. It is added for you in every project.")} }
         input {
             class: "customize-field",
             r#type: "text",
-            placeholder: "Name (letters, numbers, - and _)",
+            placeholder: tr!("Name (letters, numbers, - and _)"),
             value: "{name}",
             disabled: adding,
             oninput: move |event| name.set(event.value()),
         }
         div { class: "customize-switch",
-            {kind_button(current, ConnectorKind::Http, "Remote (http)", kind, adding)}
-            {kind_button(current, ConnectorKind::Sse, "Remote (sse)", kind, adding)}
-            {kind_button(current, ConnectorKind::Stdio, "Local", kind, adding)}
+            {kind_button(current, ConnectorKind::Http, msg!("Remote (http)"), kind, adding)}
+            {kind_button(current, ConnectorKind::Sse, msg!("Remote (sse)"), kind, adding)}
+            {kind_button(current, ConnectorKind::Stdio, msg!("Local"), kind, adding)}
         }
         if current == ConnectorKind::Stdio {
             input {
                 class: "customize-field",
                 r#type: "text",
-                placeholder: "Command, e.g. npx",
+                placeholder: tr!("Command, e.g. npx"),
                 value: "{command}",
                 disabled: adding,
                 oninput: move |event| command.set(event.value()),
@@ -65,12 +65,12 @@ pub fn AddConnector() -> Element {
             input {
                 class: "customize-field",
                 r#type: "text",
-                placeholder: "Arguments, e.g. -y some-mcp-server",
+                placeholder: tr!("Arguments, e.g. -y some-mcp-server"),
                 value: "{args}",
                 disabled: adding,
                 oninput: move |event| args.set(event.value()),
             }
-            PairRows { label: "Environment variables", name_hint: "NAME", rows: env, disabled: adding }
+            PairRows { label: tr!("Environment variables"), name_hint: tr!("NAME"), rows: env, disabled: adding }
         } else {
             input {
                 class: "customize-field",
@@ -80,15 +80,15 @@ pub fn AddConnector() -> Element {
                 disabled: adding,
                 oninput: move |event| url.set(event.value()),
             }
-            PairRows { label: "Headers", name_hint: "Header name", rows: headers, disabled: adding }
+            PairRows { label: tr!("Headers"), name_hint: tr!("Header name"), rows: headers, disabled: adding }
         }
         if let Some(message) = customize.dialog_error() {
             div { class: "status-line error customize-wrap", "{message}" }
         }
         div { class: "customize-dialog-buttons",
-            if adding { span { class: "spinner", title: "Adding…" } }
-            Button { label: "Cancel", disabled: adding, onclick: move |_| customize.close_dialog() }
-            Button { label: "Add", kind: ButtonKind::Primary, disabled: adding, onclick: move |_| customize.add_connector(draft()) }
+            if adding { span { class: "spinner", title: tr!("Adding…") } }
+            Button { label: tr!("Cancel"), disabled: adding, onclick: move |_| customize.close_dialog() }
+            Button { label: tr!("Add"), kind: ButtonKind::Primary, disabled: adding, onclick: move |_| customize.add_connector(draft()) }
         }
     }
 }
@@ -112,7 +112,7 @@ fn PairRows(label: String, name_hint: String, rows: Signal<Vec<(String, String)>
                 input {
                     class: "customize-field",
                     r#type: "password",
-                    placeholder: "Value",
+                    placeholder: tr!("Value"),
                     value: "{rows.read()[index].1}",
                     disabled,
                     oninput: move |event| rows.write()[index].1 = event.value(),
@@ -120,7 +120,7 @@ fn PairRows(label: String, name_hint: String, rows: Signal<Vec<(String, String)>
             }
         }
         div {
-            Button { label: "+ Row", disabled, onclick: move |_| rows.write().push((String::new(), String::new())) }
+            Button { label: tr!("+ Row"), disabled, onclick: move |_| rows.write().push((String::new(), String::new())) }
         }
     }
 }
@@ -131,15 +131,15 @@ pub fn ConfirmRemoveConnector(name: String) -> Element {
     let busy = customize.connectors_busy();
     let target = name.clone();
     rsx! {
-        h2 { "Remove {name}?" }
-        p { class: "hint", "It is removed from Claude Code on this computer, so the terminal's Claude Code loses it too." }
+        h2 { {tr!("Remove {name}?", name = name)} }
+        p { class: "hint", {tr!("It is removed from Claude Code on this computer, so the terminal's Claude Code loses it too.")} }
         if let Some(message) = customize.dialog_error() {
             div { class: "status-line error customize-wrap", "{message}" }
         }
         div { class: "customize-dialog-buttons",
-            if busy { span { class: "spinner", title: "Removing…" } }
-            Button { label: "Cancel", disabled: busy, onclick: move |_| customize.close_dialog() }
-            Button { label: "Remove", kind: ButtonKind::Primary, disabled: busy, onclick: move |_| customize.remove_connector(target.clone()) }
+            if busy { span { class: "spinner", title: tr!("Removing…") } }
+            Button { label: tr!("Cancel"), disabled: busy, onclick: move |_| customize.close_dialog() }
+            Button { label: tr!("Remove"), kind: ButtonKind::Primary, disabled: busy, onclick: move |_| customize.remove_connector(target.clone()) }
         }
     }
 }
@@ -153,12 +153,12 @@ pub fn SignInConnector(name: String) -> Element {
     };
     let status = sign_in_status(&customize.sign_in_state(), &customize.connection());
     rsx! {
-        h2 { "Sign in to {name}" }
-        p { class: "hint", "Forge types into Claude Code's /mcp screen for you. Finish the sign-in in your browser. If it stops, you can type here." }
+        h2 { {tr!("Sign in to {name}", name = name)} }
+        p { class: "hint", {tr!("Forge types into Claude Code's /mcp screen for you. Finish the sign-in in your browser. If it stops, you can type here.")} }
         SignInTerminal { cwd: customize.sign_in_cwd(), tap }
         div { class: "status-line customize-wrap", "{status}" }
         div { class: "customize-dialog-buttons",
-            Button { label: "Close", kind: ButtonKind::Primary, onclick: move |_| customize.close_sign_in() }
+            Button { label: tr!("Close"), kind: ButtonKind::Primary, onclick: move |_| customize.close_sign_in() }
         }
     }
 }

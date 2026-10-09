@@ -4,7 +4,7 @@ use forge_features::{
     body_after_front_matter, explore_skills, highlighted_code, file_depth, file_leaf, find_skill, is_markdown_file, origin_label, skill_groups,
     use_customize, use_workspace, Busy, CustomizeMode, Dialog, Job, Loaded, SkillPane, SkillRow, SkillText,
 };
-use forge_shared::{Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind};
 
 #[component]
 pub fn SkillsTab() -> Element {
@@ -13,14 +13,14 @@ pub fn SkillsTab() -> Element {
         return match customize.view() {
             Loaded::Failed(message) => rsx! {
                 div { class: "status-line error", "{message}" }
-                Button { label: "Try again", onclick: move |_| customize.reload() }
+                Button { label: tr!("Try again"), onclick: move |_| customize.reload() }
             },
             // The plugins were read and the skills were not: the reason is in the bar above.
             Loaded::Ready(_) => rsx! {
-                div { class: "status-line error", "The skills could not be read." }
-                Button { label: "Try again", onclick: move |_| customize.reload() }
+                div { class: "status-line error", {tr!("The skills could not be read.")} }
+                Button { label: tr!("Try again"), onclick: move |_| customize.reload() }
             },
-            Loaded::Loading => rsx! { div { class: "hint", "Loading…" } },
+            Loaded::Loading => rsx! { div { class: "hint", {tr!("Loading…")} } },
         };
     };
     if let Some(id) = customize.detail() {
@@ -28,8 +28,8 @@ pub fn SkillsTab() -> Element {
             Some(row) => rsx! { SkillDetail { row } },
             None => rsx! {
                 div { class: "hint",
-                    "That skill is no longer there. "
-                    Button { label: "Back", onclick: move |_| customize.close_detail() }
+                    {tr!("That skill is no longer there. ")}
+                    Button { label: tr!("Back"), onclick: move |_| customize.close_detail() }
                 }
             },
         };
@@ -39,20 +39,20 @@ pub fn SkillsTab() -> Element {
         CustomizeMode::Mine => {
             let groups = skill_groups(&view, &query);
             if groups.mine.is_empty() && groups.from_plugins.is_empty() {
-                let text = if query.trim().is_empty() { "No skills yet. Use + Add to upload or create one." } else { "Nothing matches." };
+                let text = if query.trim().is_empty() { tr!("No skills yet. Use + Add to upload or create one.") } else { tr!("Nothing matches.") };
                 return rsx! { div { class: "hint", "{text}" } };
             }
             rsx! {
-                if !groups.mine.is_empty() { SkillGroup { title: "Made by me", rows: groups.mine } }
-                if !groups.from_plugins.is_empty() { SkillGroup { title: "From plugins", rows: groups.from_plugins } }
+                if !groups.mine.is_empty() { SkillGroup { title: tr!("Made by me"), rows: groups.mine } }
+                if !groups.from_plugins.is_empty() { SkillGroup { title: tr!("From plugins"), rows: groups.from_plugins } }
             }
         }
         CustomizeMode::Explore => {
             if !view.has_marketplaces {
                 return rsx! {
                     div { class: "customize-note",
-                        p { "Add a marketplace in the Plugins tab to find skills." }
-                        Button { label: "Add marketplace", kind: ButtonKind::Primary, onclick: move |_| customize.open_dialog(Dialog::AddMarketplace) }
+                        p { {tr!("Add a marketplace in the Plugins tab to find skills.")} }
+                        Button { label: tr!("Add marketplace"), kind: ButtonKind::Primary, onclick: move |_| customize.open_dialog(Dialog::AddMarketplace) }
                     }
                 };
             }
@@ -60,7 +60,7 @@ pub fn SkillsTab() -> Element {
             if cards.is_empty() {
                 return rsx! {
                     div { class: "hint",
-                        "No skills to find in the marketplaces you added. Skills of a plugin that lives in another Git repository show after the plugin is installed."
+                        {tr!("No skills to find in the marketplaces you added. Skills of a plugin that lives in another Git repository show after the plugin is installed.")}
                     }
                 };
             }
@@ -98,7 +98,7 @@ fn SkillGroup(title: String, rows: Vec<SkillRow>) -> Element {
                             button {
                                 class: if on { "switch on" } else { "switch" },
                                 disabled: !row.switchable(),
-                                title: if row.switchable() { if on { "Turn off" } else { "Turn on" } } else { "Turned on and off with its plugin" },
+                                title: if row.switchable() { if on { tr!("Turn off") } else { tr!("Turn on") } } else { tr!("Turned on and off with its plugin") },
                                 onclick: move |event| {
                                     event.stop_propagation();
                                     customize.set_skill_enabled(name.clone(), !on);
@@ -129,11 +129,11 @@ fn SkillCard(row: SkillRow) -> Element {
                 div { class: "customize-source", "{plugin_id}" }
             }
             if busy != Busy::No {
-                span { class: "spinner", title: if busy == Busy::Waiting { "Waiting…" } else { "Working…" } }
+                span { class: "spinner", title: if busy == Busy::Waiting { tr!("Waiting…") } else { tr!("Working…") } }
             } else {
                 button {
                     class: "customize-plus",
-                    title: "Install the plugin {plugin_id}",
+                    title: tr!("Install the plugin {plugin}", plugin = plugin_id),
                     onclick: move |event| {
                         event.stop_propagation();
                         customize.run(Job::Install(install.clone()));
@@ -153,7 +153,7 @@ fn SkillDetail(row: SkillRow) -> Element {
     let busy = plugin_id.as_deref().map_or(Busy::No, |id| customize.busy(id));
     rsx! {
         div { class: "customize-detail",
-            button { class: "customize-back", onclick: move |_| customize.close_detail(), "← Skills" }
+            button { class: "customize-back", onclick: move |_| customize.close_detail(), {tr!("← Skills")} }
             div { class: "customize-detail-head",
                 div { class: "customize-icon big", "✦" }
                 div {
@@ -162,10 +162,10 @@ fn SkillDetail(row: SkillRow) -> Element {
                 }
                 div { class: "customize-detail-action",
                     if busy != Busy::No {
-                        span { class: "spinner", title: "Working…" }
+                        span { class: "spinner", title: tr!("Working…") }
                     } else if !row.entry.installed {
                         if let Some(id) = plugin_id.clone() {
-                            Button { label: "Install plugin", kind: ButtonKind::Primary, onclick: move |_| customize.run(Job::Install(id.clone())) }
+                            Button { label: tr!("Install plugin"), kind: ButtonKind::Primary, onclick: move |_| customize.run(Job::Install(id.clone())) }
                         }
                     }
                 }
@@ -174,22 +174,22 @@ fn SkillDetail(row: SkillRow) -> Element {
                 button {
                     class: if pane == SkillPane::Overview { "customize-tab active" } else { "customize-tab" },
                     onclick: move |_| customize.set_skill_pane(SkillPane::Overview),
-                    "Overview"
+                    {tr!("Overview")}
                 }
                 button {
                     class: if pane == SkillPane::Files { "customize-tab active" } else { "customize-tab" },
                     onclick: move |_| customize.set_skill_pane(SkillPane::Files),
-                    "Files"
+                    {tr!("Files")}
                 }
             }
             match pane {
                 SkillPane::Overview => rsx! {
-                    div { class: "customize-section", div { class: "label", "Description" } p { "{row.entry.description}" } }
-                    div { class: "customize-section", div { class: "label", "Made by" } p { "{origin_label(&row.entry.origin)}" } }
+                    div { class: "customize-section", div { class: "label", {tr!("Description")} } p { "{row.entry.description}" } }
+                    div { class: "customize-section", div { class: "label", {tr!("Made by")} } p { "{origin_label(&row.entry.origin)}" } }
                     if let Some(id) = plugin_id.clone() {
-                        div { class: "customize-section", div { class: "label", "Plugin" } p { "{id}" } }
+                        div { class: "customize-section", div { class: "label", {tr!("Plugin")} } p { "{id}" } }
                     }
-                    div { class: "customize-section", div { class: "label", "Folder" } p { class: "mono", "{row.entry.path.display()}" } }
+                    div { class: "customize-section", div { class: "label", {tr!("Folder")} } p { class: "mono", "{row.entry.path.display()}" } }
                 },
                 SkillPane::Files => rsx! { SkillFiles { folder: row.entry.path.clone() } },
             }
@@ -206,7 +206,7 @@ fn SkillFiles(folder: std::path::PathBuf) -> Element {
     let source = customize.skill_source();
     rsx! {
         div { class: "skill-files-bar",
-            Button { label: "Show in folder", onclick: move |_| workspace.reveal(&folder) }
+            Button { label: tr!("Show in folder"), onclick: move |_| workspace.reveal(&folder) }
         }
         div { class: "skill-files",
             div { class: "skill-tree-column",
@@ -231,7 +231,7 @@ fn SkillFiles(folder: std::path::PathBuf) -> Element {
                 }
             }
             if customize.skill_files_cut() {
-                div { class: "hint skill-tree-note", "Only the first files are listed. Use Show in folder to see all of them." }
+                div { class: "hint skill-tree-note", {tr!("Only the first files are listed. Use Show in folder to see all of them.")} }
             }
             }
             div { class: "skill-view",
@@ -240,15 +240,15 @@ fn SkillFiles(folder: std::path::PathBuf) -> Element {
                         span { class: "mono", "{path}" }
                         if is_markdown_file(&path) {
                             div { class: "customize-switch",
-                                button { class: if !source { "active" } else { "" }, onclick: move |_| customize.set_skill_source(false), "Rendered" }
-                                button { class: if source { "active" } else { "" }, onclick: move |_| customize.set_skill_source(true), "Source" }
+                                button { class: if !source { "active" } else { "" }, onclick: move |_| customize.set_skill_source(false), {tr!("Rendered")} }
+                                button { class: if source { "active" } else { "" }, onclick: move |_| customize.set_skill_source(true), {tr!("Source")} }
                             }
                         }
                     }
                 }
                 match customize.skill_text() {
-                    SkillText::Empty => rsx! { div { class: "hint", "Choose a file." } },
-                    SkillText::Loading => rsx! { div { class: "hint", "Loading…" } },
+                    SkillText::Empty => rsx! { div { class: "hint", {tr!("Choose a file.")} } },
+                    SkillText::Loading => rsx! { div { class: "hint", {tr!("Loading…")} } },
                     SkillText::Failed(message) => rsx! { div { class: "status-line error", "{message}" } },
                     SkillText::Ready(text) => {
                         let rendered = !source && selected.as_deref().is_some_and(is_markdown_file);
@@ -256,7 +256,7 @@ fn SkillFiles(folder: std::path::PathBuf) -> Element {
                             let html = render_markdown(body_after_front_matter(&text));
                             rsx! { div { class: "skill-rendered markdown", dangerous_inner_html: "{html}" } }
                         } else if text.is_empty() {
-                            rsx! { div { class: "hint", "This file is empty." } }
+                            rsx! { div { class: "hint", {tr!("This file is empty.")} } }
                         } else if let Some(html) = selected.as_deref().and_then(|path| highlighted_code(path, &text)) {
                             rsx! { pre { class: "skill-code", dangerous_inner_html: "{html}" } }
                         } else {

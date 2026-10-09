@@ -1,3 +1,4 @@
+use crate::msg;
 use serde_json::Value;
 
 /// How a connector talks to its server.
@@ -13,10 +14,10 @@ pub enum ConnectorKind {
 impl ConnectorKind {
     pub fn label(self) -> &'static str {
         match self {
-            ConnectorKind::Stdio => "Local (stdio)",
-            ConnectorKind::Http => "Remote (http)",
-            ConnectorKind::Sse => "Remote (sse)",
-            ConnectorKind::Unknown => "Unknown",
+            ConnectorKind::Stdio => msg!("Local (stdio)"),
+            ConnectorKind::Http => msg!("Remote (http)"),
+            ConnectorKind::Sse => msg!("Remote (sse)"),
+            ConnectorKind::Unknown => msg!("Unknown"),
         }
     }
 }
