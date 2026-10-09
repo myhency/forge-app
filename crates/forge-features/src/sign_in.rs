@@ -293,7 +293,9 @@ impl SignInDriver {
     }
 }
 
-/// The distinct list rows that name the connector. The pointer is not part of a row.
+/// The distinct list rows that name the connector. The pointer is not part of a row. Two rows with the very same
+/// text (same name and status in two scopes) count as one: a redraw of a row looks the same, and the screen
+/// has no frame boundary to tell them apart. The first one the pointer reaches is opened.
 fn rows_with_name(text: &str, name: &str) -> Vec<String> {
     let mut rows: Vec<String> = Vec::new();
     for line in text.lines().filter(|line| has_name(line, name)) {
