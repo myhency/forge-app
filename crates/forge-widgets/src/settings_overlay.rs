@@ -58,6 +58,7 @@ pub fn SettingsOverlay() -> Element {
                         SettingsSection::Skills => rsx! { ExtensionSection { kind: ExtensionKind::Skill } },
                         SettingsSection::Plugins => rsx! { ExtensionSection { kind: ExtensionKind::Plugin } },
                         SettingsSection::McpServers => rsx! { ExtensionSection { kind: ExtensionKind::McpServer } },
+                        SettingsSection::Code => rsx! {},
                     }
                     StatusLine {}
                 }

@@ -4,23 +4,21 @@ use forge_application::LiveSessionId;
 use forge_entities::TranscriptView;
 
 /// The view mode of each open session. It lives in memory only: a session that is opened again
-/// starts in Normal.
+/// starts in the default view.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TranscriptViews {
     modes: HashMap<LiveSessionId, TranscriptView>,
 }
 
 impl TranscriptViews {
-    pub fn get(&self, id: LiveSessionId) -> TranscriptView {
-        self.modes.get(&id).copied().unwrap_or_default()
+    /// The session's own choice, else `default` (the view Settings says new sessions open in).
+    pub fn get(&self, id: LiveSessionId, default: TranscriptView) -> TranscriptView {
+        self.modes.get(&id).copied().unwrap_or(default)
     }
 
+    /// Always stores: with a default that is not Normal, a chosen Normal must stay a choice.
     pub fn set(&mut self, id: LiveSessionId, view: TranscriptView) {
-        if view == TranscriptView::default() {
-            self.modes.remove(&id);
-        } else {
-            self.modes.insert(id, view);
-        }
+        self.modes.insert(id, view);
     }
 
     /// Drops what is kept for a session that was closed.
@@ -34,8 +32,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_session_starts_in_normal() {
-        assert_eq!(TranscriptViews::default().get(LiveSessionId(1)), TranscriptView::Normal);
+    fn a_session_without_a_choice_follows_the_default() {
+        let views = TranscriptViews::default();
+        assert_eq!(views.get(LiveSessionId(1), TranscriptView::Normal), TranscriptView::Normal);
+        assert_eq!(views.get(LiveSessionId(1), TranscriptView::Detailed), TranscriptView::Detailed);
     }
 
     #[test]
@@ -44,26 +44,23 @@ mod tests {
         views.set(LiveSessionId(1), TranscriptView::Thinking);
         views.set(LiveSessionId(2), TranscriptView::Detailed);
 
-        assert_eq!(views.get(LiveSessionId(1)), TranscriptView::Thinking);
-        assert_eq!(views.get(LiveSessionId(2)), TranscriptView::Detailed);
-        assert_eq!(views.get(LiveSessionId(3)), TranscriptView::Normal);
+        assert_eq!(views.get(LiveSessionId(1), TranscriptView::Normal), TranscriptView::Thinking);
+        assert_eq!(views.get(LiveSessionId(2), TranscriptView::Normal), TranscriptView::Detailed);
+        assert_eq!(views.get(LiveSessionId(3), TranscriptView::Normal), TranscriptView::Normal);
     }
 
     #[test]
-    fn setting_normal_again_stores_nothing() {
+    fn a_chosen_normal_sticks_when_the_default_is_something_else() {
+        let mut views = TranscriptViews::default();
+        views.set(LiveSessionId(1), TranscriptView::Normal);
+        assert_eq!(views.get(LiveSessionId(1), TranscriptView::Thinking), TranscriptView::Normal);
+    }
+
+    #[test]
+    fn a_closed_session_goes_back_to_the_default() {
         let mut views = TranscriptViews::default();
         views.set(LiveSessionId(1), TranscriptView::Detailed);
-        views.set(LiveSessionId(1), TranscriptView::Normal);
-
-        assert_eq!(views, TranscriptViews::default());
-    }
-
-    #[test]
-    fn a_closed_session_is_forgotten() {
-        let mut views = TranscriptViews::default();
-        views.set(LiveSessionId(1), TranscriptView::Thinking);
         views.forget(LiveSessionId(1));
-
-        assert_eq!(views.get(LiveSessionId(1)), TranscriptView::Normal);
+        assert_eq!(views.get(LiveSessionId(1), TranscriptView::Thinking), TranscriptView::Thinking);
     }
 }
