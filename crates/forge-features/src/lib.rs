@@ -27,6 +27,7 @@ mod preview_tabs;
 mod suggestion;
 mod refocus;
 mod routines;
+mod routines_state;
 mod search;
 mod send_message;
 mod section_status;
@@ -42,7 +43,7 @@ mod sidebar;
 mod transcript_views;
 mod workspace;
 
-pub use arrange::{arrange, arranged_open_order, folder_group_id, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
+pub use arrange::{arrange, arranged_open_order, folder_group_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use file_menu::{file_menu, menu_height, submenu_opens_left, FileAction, MenuEntry, MenuTarget};
 pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
@@ -87,6 +88,7 @@ pub use sidebar::{
 };
 pub use terminal_tabs::{TabId, TerminalTabs};
 pub use routines::{cards, history_rows, run_state_text, skip_text, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};
+pub use routines_state::{use_routines, use_routines_provider, RoutineDialog, RoutineScreen, Routines};
 pub use workspace::{use_workspace, use_workspace_provider, Active, Picture, RoutineServices, Workspace, WorkspaceServices};
 pub use blocking::run_blocking;
 pub use file_tree::{parse_files_query, FileTree, FilesQuery, TreeRow};
