@@ -18,6 +18,8 @@ pub enum SidecarCommand {
         mcp_servers: BTreeMap<String, serde_json::Value>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         additional_directories: Vec<String>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        allowed_tools: Vec<String>,
     },
     SendMessage {
         id: String,
@@ -113,6 +115,7 @@ impl SidecarCommand {
                 .collect(),
             mcp_servers: params.extensions.mcp_servers,
             additional_directories: params.additional_directories,
+            allowed_tools: params.allowed_tools,
         }
     }
 
@@ -181,6 +184,7 @@ mod tests {
             effort: None,
             extensions: ActiveExtensions::default(),
             additional_directories,
+            allowed_tools: Vec::new(),
         }
     }
 
@@ -221,6 +225,37 @@ mod tests {
     }
 
     #[test]
+    fn start_session_leaves_allowed_tools_out_when_there_are_none() {
+        let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params_with(Vec::new()))).unwrap();
+        assert!(json.get("allowed_tools").is_none());
+    }
+
+    #[test]
+    fn start_session_carries_allowed_tools_when_there_are_some() {
+        let mut params = params_with(Vec::new());
+        params.allowed_tools = vec!["Read".to_string(), "Bash(ls:*)".to_string()];
+        let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params)).unwrap();
+        assert_eq!(json["allowed_tools"], serde_json::json!(["Read", "Bash(ls:*)"]));
+    }
+
+    #[test]
+    fn a_permission_request_with_rules_and_one_without_both_read() {
+        let with: forge_ports::SidecarEvent = serde_json::from_str(
+            r#"{"type":"permission_request","permission_request_id":"p","tool_name":"Bash","input":{},"rules":["Bash(ls:*)"]}"#,
+        )
+        .unwrap();
+        let without: forge_ports::SidecarEvent =
+            serde_json::from_str(r#"{"type":"permission_request","permission_request_id":"p","tool_name":"Bash","input":{}}"#).unwrap();
+        match (with, without) {
+            (forge_ports::SidecarEvent::PermissionRequest { rules: a, .. }, forge_ports::SidecarEvent::PermissionRequest { rules: b, .. }) => {
+                assert_eq!(a, vec!["Bash(ls:*)".to_string()]);
+                assert!(b.is_empty());
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
     fn start_session_command_serializes_with_the_expected_shape() {
         let command = SidecarCommand::start_session(
             "1".to_string(),
@@ -232,6 +267,7 @@ mod tests {
                 effort: None,
                 extensions: ActiveExtensions::default(),
                 additional_directories: Vec::new(),
+                allowed_tools: Vec::new(),
             },
         );
 
@@ -271,6 +307,7 @@ mod tests {
                     mcp_servers,
                 },
                 additional_directories: Vec::new(),
+                allowed_tools: Vec::new(),
             },
         );
 

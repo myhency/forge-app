@@ -27,6 +27,18 @@ use crate::sidebar::{cycle_target, mark_archived, merge_sidebar, project_for_ope
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
 const SEARCH_LIMIT: usize = 50;
 
+/// Everything the Routines page and its timer need.
+#[derive(Clone)]
+pub struct RoutineServices {
+    pub routines: Arc<forge_application::RoutinesUseCase>,
+    pub runner: Arc<forge_application::RoutineRunner>,
+    pub host: Arc<forge_application::RegistryHost>,
+    /// Sessions the host started, waiting to be shown. The UI loop drains it.
+    pub starts: Arc<std::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<LiveSessionHandle>>>,
+    /// Tells the person when a routine waits for approval.
+    pub notify: Arc<dyn forge_ports::NotifyPort>,
+}
+
 /// Everything the workspace needs from the outside, injected once by the composition root.
 #[derive(Clone)]
 pub struct WorkspaceServices {
@@ -46,6 +58,7 @@ pub struct WorkspaceServices {
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
     pub usage_stats: Arc<dyn UsageStatsPort>,
+    pub routines: RoutineServices,
 }
 
 /// What the main pane shows.
@@ -53,6 +66,7 @@ pub struct WorkspaceServices {
 pub enum Active {
     NewSession,
     Customize,
+    Routines,
     Live(LiveSessionId),
 }
 
@@ -253,7 +267,7 @@ impl Workspace {
     pub fn arranged_sidebar(&self, now: OffsetDateTime) -> Vec<ArrangedGroup> {
         let active = match self.active() {
             Active::Live(id) => Some(id),
-            Active::NewSession | Active::Customize => None,
+            Active::NewSession | Active::Customize | Active::Routines => None,
         };
         arrange(&self.sidebar(), &self.prefs.read(), now, active)
     }
@@ -791,6 +805,51 @@ impl Workspace {
         active.set(Active::Customize);
     }
 
+    /// Shows the Routines page in the main pane.
+    pub fn show_routines(&self) {
+        self.close_lightbox();
+        let mut active = self.active;
+        active.set(Active::Routines);
+    }
+
+    /// Shows a session that something other than the person started (a routine). It is not selected:
+    /// the person keeps what they were doing.
+    pub fn adopt(&self, handle: LiveSessionHandle) {
+        self.ensure_attached(handle);
+    }
+
+    /// What a routine's run is now, read from its session when it is open: "Running", "Waiting for
+    /// approval" or "Done".
+    pub fn run_state(&self, claude_session_id: &str) -> &'static str {
+        let open = self.live.read().iter().find_map(|entry| {
+            let view = entry.view.read();
+            (view.claude_session_id.as_ref().is_some_and(|id| id.0 == claude_session_id)).then(|| (view.phase, view.pending_permissions.len()))
+        });
+        crate::routines::run_state_text(open)
+    }
+
+    /// Shows the session with this Claude session id: the open one, or the past one from the sidebar's list.
+    pub fn open_session_by_claude_id(&self, claude_session_id: &str) {
+        let open = self.live.read().iter().find_map(|entry| {
+            let view = entry.view.read();
+            view.claude_session_id.as_ref().is_some_and(|id| id.0 == claude_session_id).then(|| entry.handle.id())
+        });
+        if let Some(id) = open {
+            self.select(id);
+            return;
+        }
+        let found = self
+            .past
+            .read()
+            .iter()
+            .find(|(_, sessions)| sessions.iter().any(|session| session.id.0 == claude_session_id))
+            .map(|(project, _)| project.clone());
+        match found {
+            Some(project) => self.open_past(project, SessionId(claude_session_id.to_string())),
+            None => self.report("That session is not in the sidebar any more.".to_string()),
+        }
+    }
+
     pub fn show_new_session(&self) {
         self.close_lightbox();
         let mut active = self.active;
@@ -829,7 +888,7 @@ impl Workspace {
     pub fn context_project(&self) -> Option<PathBuf> {
         match self.active() {
             Active::Live(id) => self.live_view(id).map(|view| view.read().project_path.clone()),
-            Active::NewSession | Active::Customize => self
+            Active::NewSession | Active::Customize | Active::Routines => self
                 .new_folder()
                 .or_else(|| self.new_session_projects().into_iter().next().map(|project| project.path)),
         }
@@ -848,6 +907,9 @@ impl Workspace {
 
     pub fn select(&self, id: LiveSessionId) {
         self.close_lightbox();
+        // A routine's session the person opens stays open: what they type or edit in it must not be
+        // closed away by the routine timer.
+        self.services.peek().routines.host.keep_open(id);
         let mut active = self.active;
         active.set(Active::Live(id));
     }
@@ -978,7 +1040,7 @@ impl Workspace {
         let order = open_session_order(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local());
         let current = match self.active() {
             Active::Live(id) => Some(id),
-            Active::NewSession | Active::Customize => None,
+            Active::NewSession | Active::Customize | Active::Routines => None,
         };
         if let Some(target) = cycle_target(&order, current, forward) {
             self.select(target);

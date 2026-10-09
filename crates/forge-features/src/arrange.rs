@@ -158,6 +158,11 @@ pub fn now_in(offset: Option<UtcOffset>) -> OffsetDateTime {
     OffsetDateTime::now_utc().to_offset(offset.unwrap_or(UtcOffset::UTC))
 }
 
+/// The person's UTC offset (see `set_local_offset`); UTC when it is not known.
+pub fn local_offset() -> UtcOffset {
+    LOCAL_OFFSET.get().copied().unwrap_or(UtcOffset::UTC)
+}
+
 /// The current time in the person's time zone (see `set_local_offset`).
 pub fn now_local() -> OffsetDateTime {
     now_in(LOCAL_OFFSET.get().copied())

@@ -14,6 +14,7 @@ mod keys;
 mod paths;
 mod permission;
 mod project;
+mod routine;
 mod search;
 mod session;
 mod usage;
@@ -41,6 +42,10 @@ pub use skill_catalog::{skill_id, SkillEntry, SkillFile, SkillFileList, SkillOri
 pub use permission::{PermissionDecision, PermissionMode};
 pub use background::{BackgroundTaskInfo, RunningTask};
 pub use project::ProjectSummary;
+pub use routine::{
+    decide, delay_ms, push_run, routine_id, validate_draft, Decision, Routine, RoutineDraft, RoutineRun, RunOutcome, Schedule, SkipReason,
+    KEEP_RUNS, MAX_DELAY_MS, MISSED_AFTER_MS,
+};
 pub use search::{find_snippet, split_at_match, title_matches, SearchHit, Snippet};
 pub use session::{
     Block, Message, MessageRole, PermissionRequest, Session, SessionId, SessionSummary, ToolCall,

@@ -99,11 +99,12 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             }
             SessionUpdate::ToolCallCompleted { tool_call_id: tool_call_id.clone() }
         }
-        SidecarEvent::PermissionRequest { permission_request_id, tool_name, input } => {
+        SidecarEvent::PermissionRequest { permission_request_id, tool_name, input, rules } => {
             SessionUpdate::PermissionRequested(PermissionRequest {
                 id: permission_request_id.clone(),
                 tool_name: tool_name.clone(),
                 input: input.clone(),
+                rules: rules.clone(),
             })
         }
         SidecarEvent::TurnComplete { usage } => {
@@ -453,6 +454,7 @@ mod tests {
                 permission_request_id: "perm-1".to_string(),
                 tool_name: "Bash".to_string(),
                 input: serde_json::json!({"command": "rm -rf /"}),
+                rules: Vec::new(),
             },
         );
         assert_eq!(
@@ -461,6 +463,7 @@ mod tests {
                 id: "perm-1".to_string(),
                 tool_name: "Bash".to_string(),
                 input: serde_json::json!({"command": "rm -rf /"}),
+                rules: Vec::new(),
             })
         );
     }

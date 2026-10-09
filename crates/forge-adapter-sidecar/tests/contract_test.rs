@@ -21,6 +21,7 @@ fn default_params() -> StartSessionParams {
         effort: None,
         extensions: Default::default(),
         additional_directories: Vec::new(),
+        allowed_tools: Vec::new(),
     }
 }
 

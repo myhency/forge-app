@@ -155,6 +155,8 @@ pub struct PermissionRequest {
     pub id: String,
     pub tool_name: String,
     pub input: serde_json::Value,
+    /// What "always allow" would add, as the SDK's `allowedTools` strings.
+    pub rules: Vec<String>,
 }
 
 #[cfg(test)]

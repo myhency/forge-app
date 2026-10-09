@@ -124,6 +124,12 @@ pub fn Sidebar() -> Element {
                 span { "✦" }
                 span { "Customize" }
             }
+            button {
+                class: if active == Active::Routines { "sidebar-link active" } else { "sidebar-link" },
+                onclick: move |_| workspace.show_routines(),
+                span { "◷" }
+                span { "Routines" }
+            }
             div { class: "sidebar-scroll",
             if let Some(message) = notice {
                 div { class: "banner error",

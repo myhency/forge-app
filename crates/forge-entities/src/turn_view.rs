@@ -822,9 +822,9 @@ mod tests {
     fn live_state_follows_the_first_pending_request() {
         let started = std::time::UNIX_EPOCH;
         assert_eq!(live_state(Some(started), None), LiveState { started: Some(started), waiting: None });
-        let question = forge_domain::PermissionRequest { id: "q".to_string(), tool_name: "AskUserQuestion".to_string(), input: json!({}) };
+        let question = forge_domain::PermissionRequest { id: "q".to_string(), tool_name: "AskUserQuestion".to_string(), input: json!({}), rules: Vec::new() };
         assert_eq!(live_state(None, Some(&question)).waiting, Some(Waiting::Question));
-        let write = forge_domain::PermissionRequest { id: "p".to_string(), tool_name: "Write".to_string(), input: json!({"file_path": "/p/a"}) };
+        let write = forge_domain::PermissionRequest { id: "p".to_string(), tool_name: "Write".to_string(), input: json!({"file_path": "/p/a"}), rules: Vec::new() };
         assert_eq!(
             live_state(None, Some(&write)).waiting,
             Some(Waiting::Permission { tool_name: "Write".to_string(), input: json!({"file_path": "/p/a"}) })

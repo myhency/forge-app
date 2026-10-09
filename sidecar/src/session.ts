@@ -106,6 +106,19 @@ function toSdkPermissionMode(mode: string): "default" | "acceptEdits" | "bypassP
   }
 }
 
+/** The `allowedTools` strings an "always allow" would add: `Read`, `Bash(npm test:*)`. */
+export function rulesFromSuggestions(suggestions: unknown[] | undefined): string[] {
+  const rules: string[] = [];
+  for (const update of suggestions ?? []) {
+    const item = update as { type?: string; behavior?: string; rules?: Array<{ toolName: string; ruleContent?: string }> };
+    if (item.type !== "addRules" || item.behavior !== "allow") continue;
+    for (const rule of item.rules ?? []) {
+      rules.push(rule.ruleContent ? `${rule.toolName}(${rule.ruleContent})` : rule.toolName);
+    }
+  }
+  return rules;
+}
+
 function decisionToResult(decision: WirePermissionDecision, suggestions: unknown[] | undefined, toolName: string): PermissionResult {
   if (decision === "deny") {
     return { behavior: "deny", message: toolName === QUESTION_TOOL ? QUESTION_SKIPPED_MESSAGE : DENIED_MESSAGE };
@@ -284,6 +297,7 @@ export class SidecarSession {
         permission_request_id: permissionRequestId,
         tool_name: toolName,
         input,
+        rules: rulesFromSuggestions(options.suggestions),
       });
       return new Promise<PermissionResult>((resolve) => {
         this.pendingPermissions.set(permissionRequestId, { resolve, suggestions: options.suggestions, toolName, input });
@@ -338,6 +352,7 @@ export class SidecarSession {
           plugins,
           mcpServers: command.mcp_servers ?? {},
           additionalDirectories: command.additional_directories ?? [],
+          allowedTools: command.allowed_tools ?? [],
           // Forge shows a stop button per background task and predicts the next prompt.
           promptSuggestions: true,
           perTaskStopAffordance: true,

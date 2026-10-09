@@ -662,6 +662,61 @@ describe("SidecarSession", () => {
     expect(events.some((e) => e.type === "assistant_delta" && e.text === "approved")).toBe(true);
   });
 
+  it("tells Forge which rules 'always allow' would add, as the strings allowedTools takes", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = (args) => {
+      const canUseTool = (args.options as any).canUseTool;
+      return toQueryHandle((async function* () {
+        await canUseTool("Bash", { command: "npm test" }, {
+          requestId: "req-r",
+          suggestions: [
+            { type: "addRules", behavior: "allow", destination: "session", rules: [{ toolName: "Bash", ruleContent: "npm test:*" }, { toolName: "Read" }] },
+            { type: "addRules", behavior: "deny", destination: "session", rules: [{ toolName: "Bash", ruleContent: "rm:*" }] },
+            { type: "setMode", mode: "acceptEdits", destination: "session" },
+          ],
+        });
+      })());
+    };
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const request = events.find((e) => e.type === "permission_request") as { rules?: string[] };
+    expect(request.rules).toEqual(["Bash(npm test:*)", "Read"]);
+    await session.handle({ type: "permission_response", id: "2", permission_request_id: "req-r", decision: "allow_once" });
+    await started;
+  });
+
+  it("sends no rules when the SDK gave no suggestions", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = (args) => {
+      const canUseTool = (args.options as any).canUseTool;
+      return toQueryHandle((async function* () {
+        await canUseTool("Bash", { command: "ls" }, { requestId: "req-n" });
+      })());
+    };
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const request = events.find((e) => e.type === "permission_request") as { rules?: string[] };
+    expect(request.rules).toEqual([]);
+    await session.handle({ type: "permission_response", id: "2", permission_request_id: "req-n", decision: "deny" });
+    await started;
+  });
+
+  it("starts the SDK with the allowed tools it was given", async () => {
+    let options: any;
+    const queryFn: QueryFn = (args) => {
+      options = args.options;
+      return toQueryHandle((async function* () {})());
+    };
+    const session = new SidecarSession(queryFn, () => undefined);
+    await session.handle({ ...startCommand, allowed_tools: ["Read", "Bash(ls:*)"] } as SidecarCommand);
+    expect(options.allowedTools).toEqual(["Read", "Bash(ls:*)"]);
+    const plain = new SidecarSession(queryFn, () => undefined);
+    await plain.handle(startCommand);
+    expect(options.allowedTools).toEqual([]);
+  });
+
   it("resolves with a PermissionResult deny (with a message) when the decision is deny", async () => {
     const events: SidecarEvent[] = [];
     let capturedCanUseTool: any;

@@ -50,6 +50,7 @@ pub(crate) fn spawn_probe(
                 effort: None,
                 extensions: active,
                 additional_directories: Vec::new(),
+                allowed_tools: Vec::new(),
             })
             .await;
         if started.is_ok() {
@@ -147,6 +148,7 @@ pub(crate) mod tests {
                 effort: None,
                 extensions: ActiveExtensions::default(),
                 additional_directories: Vec::new(),
+                allowed_tools: Vec::new(),
             })]
         );
     }

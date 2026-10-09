@@ -527,6 +527,7 @@ mod tests {
             id: "p".to_string(),
             tool_name: "Bash".to_string(),
             input: serde_json::json!({}),
+            rules: Vec::new(),
         };
         LiveSessionView {
             id: LiveSessionId(1),
@@ -555,6 +556,7 @@ mod tests {
             failed_sends: 0,
             context: None,
             commands: Vec::new(),
+            allowed_rules: Vec::new(),
         }
     }
 

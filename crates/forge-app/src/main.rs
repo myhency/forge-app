@@ -11,6 +11,10 @@ use forge_adapter_claude_fs::{
 };
 use forge_adapter_claude_plugins::{claude_binary_for, ClaudeMcpCli, ClaudePluginCli};
 use forge_adapter_dialog::RfdFolderPicker;
+#[cfg(not(target_os = "macos"))]
+use forge_adapter_notify::NoNotify;
+#[cfg(target_os = "macos")]
+use forge_adapter_notify::OsascriptNotify;
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
 use forge_adapter_browser::SystemBrowser;
@@ -21,8 +25,8 @@ use forge_adapter_sleep::CaffeinateSleep;
 #[cfg(windows)]
 use forge_adapter_sleep::WindowsSleep;
 use forge_adapter_terminal::PtyTerminal;
-use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase};
-use forge_features::WorkspaceServices;
+use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, RegistryHost, RoutineRunner, RoutinesUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase};
+use forge_features::{RoutineServices, WorkspaceServices};
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
 
@@ -185,6 +189,10 @@ fn build_services() -> WorkspaceServices {
     let sessions = Arc::new(ClaudeSessionAdapter::new(claude_home.clone()));
     let projects = Arc::new(ClaudeProjectAdapter::new(claude_home.clone()));
     let registry = Arc::new(SessionRegistry::new(factory, sessions.clone(), extensions.clone()).with_warm_up());
+    let routines = Arc::new(RoutinesUseCase::new(config.clone()).with_config_lock(config_lock.clone()));
+    let (host, starts) = RegistryHost::new(registry.clone(), routines.clone());
+    let host = Arc::new(host);
+    let runner = Arc::new(RoutineRunner::new(routines.clone(), host.clone()));
     let picker = Arc::new(RfdFolderPicker::new());
     let shell = default_shell(std::env::var("SHELL").ok());
     WorkspaceServices {
@@ -204,6 +212,7 @@ fn build_services() -> WorkspaceServices {
         files: Arc::new(LocalFiles::new()),
         browser: Arc::new(SystemBrowser::new()),
         usage_stats: Arc::new(ClaudeUsageStatsAdapter::new(claude_home.clone())),
+        routines: RoutineServices { routines, runner, host, starts: Arc::new(std::sync::Mutex::new(starts)), notify: notifier() },
     }
 }
 
@@ -223,6 +232,14 @@ fn default_shell(login_shell: Option<String>) -> String {
         return "powershell.exe".to_string();
     }
     login_shell.filter(|shell| !shell.is_empty()).unwrap_or_else(|| "/bin/zsh".to_string())
+}
+
+// macOS has a notification adapter; elsewhere the sidebar marker and the routine's card are the only sign.
+fn notifier() -> Arc<dyn forge_ports::NotifyPort> {
+    #[cfg(target_os = "macos")]
+    return Arc::new(OsascriptNotify::new());
+    #[cfg(not(target_os = "macos"))]
+    return Arc::new(NoNotify);
 }
 
 fn keep_awake() -> Arc<dyn forge_ports::SleepPort> {
