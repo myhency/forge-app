@@ -781,6 +781,29 @@ describe("SidecarSession", () => {
     );
   });
 
+  it("tells the parent when the SDK withdraws a pending request, and denies it", async () => {
+    const events: SidecarEvent[] = [];
+    let result: any;
+    const controller = new AbortController();
+    const queryFn: QueryFn = (args) => {
+      const canUseTool = (args.options as any).canUseTool;
+      return toQueryHandle((async function* () {
+        result = await canUseTool("Bash", { command: "ls" }, { requestId: "w-1", signal: controller.signal });
+        yield { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "." } } };
+      })());
+    };
+    const session = new SidecarSession(queryFn, (event) => events.push(event));
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.abort();
+    await started;
+
+    expect(result).toEqual({ behavior: "deny", message: "Interrupted" });
+    expect(events).toContainEqual({ type: "permission_cancelled", permission_request_id: "w-1" });
+    // The answer for a request that is gone changes nothing.
+    await expect(session.handle({ type: "permission_response", id: "9", permission_request_id: "w-1", decision: "allow_once" })).resolves.toBeUndefined();
+  });
+
   it("denies a skipped question with its own message", async () => {
     let result: any;
     const queryFn: QueryFn = (args) => {

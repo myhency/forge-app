@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_entities::{card_key, parse_journal, steps, task_cards, AgentState, Clock, Step, TaskCard, TASK_OUTPUT_TAIL};
+use forge_entities::{card_key, parse_journal, steps, task_cards, AgentState, Clock, RunningWorkflow, Step, TaskCard, TASK_OUTPUT_TAIL};
 use forge_features::{run_blocking, use_workspace, Panel};
 
 use crate::panel_frame::PanelFrame;
@@ -11,6 +11,42 @@ use forge_shared::tr;
 
 /// How much of a workflow's journal is read: the SDK's own file, with each agent's result in it.
 const JOURNAL_TAIL: usize = 4_000_000;
+
+/// The workflows of a session that are running, with what their journals say, refreshed once a
+/// second while any runs. The chat draws its workflow cards from this.
+pub(crate) fn use_running_workflows(id: LiveSessionId) -> Signal<Vec<RunningWorkflow>> {
+    let workspace = use_workspace();
+    let mut found = use_signal(Vec::<RunningWorkflow>::new);
+    use_future(move || async move {
+        loop {
+            let cards = match workspace.live_view(id) {
+                Some(view) => {
+                    let view = view.peek();
+                    task_cards(&view.session.messages, &view.background_tasks)
+                }
+                None => Vec::new(),
+            };
+            let mut next = Vec::new();
+            for card in cards {
+                let Some(workflow) = card.workflow.as_ref() else { continue };
+                let mut agents = Vec::new();
+                if let Some(path) = workflow.journal_path.clone() {
+                    let files = workspace.files();
+                    let target = PathBuf::from(path);
+                    if let Some(Ok(text)) = run_blocking(move || files.read_tail(&target, JOURNAL_TAIL)).await {
+                        agents = parse_journal(&text);
+                    }
+                }
+                next.push(RunningWorkflow { task_id: card.id.clone(), seen_at: card.seen_at, agents });
+            }
+            if *found.peek() != next {
+                found.set(next);
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    });
+    found
+}
 
 /// The background tasks of a session: a card each with its command, a clock, the tail of its output
 /// and a stop button.

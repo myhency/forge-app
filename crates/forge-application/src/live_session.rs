@@ -1250,11 +1250,37 @@ mod tests {
         control.push(permission_request("p-1"));
         wait_for(&mut view, "a queued request", |v| !v.pending_permissions.is_empty()).await;
 
-        // Stop: the sidecar denies the open request itself and the turn ends.
+        // Stop: the sidecar denies the open request itself, says so, and the turn ends.
+        control.push(SidecarEvent::PermissionCancelled { permission_request_id: "p-1".to_string() });
         control.push(turn_complete());
         let seen = wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle).await;
 
         assert!(seen.pending_permissions.is_empty(), "a stale card would hide the next request");
+    }
+
+    #[tokio::test]
+    async fn a_request_still_open_when_the_turn_ends_stays_until_it_is_cancelled_or_answered() {
+        // A workflow's agents ask after the turn that started it has ended; their cards must stay.
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("run a workflow".to_string());
+        control.push(permission_request("p-1"));
+        control.push(permission_request("p-2"));
+        wait_for(&mut view, "two queued requests", |v| v.pending_permissions.len() == 2).await;
+
+        control.push(turn_complete());
+        let idle = wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle).await;
+        assert_eq!(idle.pending_permissions.len(), 2, "the turn ending does not withdraw them");
+
+        control.push(SidecarEvent::PermissionCancelled { permission_request_id: "p-1".to_string() });
+        let after = wait_for(&mut view, "one request left", |v| v.pending_permissions.len() == 1).await;
+        assert_eq!(after.pending_permissions[0].id, "p-2");
+
+        control.push(SidecarEvent::PermissionCancelled { permission_request_id: "unknown".to_string() });
+        handle.approve("p-2".to_string(), PermissionDecision::AllowOnce);
+        wait_for(&mut view, "none left", |v| v.pending_permissions.is_empty()).await;
     }
 
     #[tokio::test]

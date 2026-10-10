@@ -6,6 +6,8 @@ use serde_json::Value;
 use crate::diff::{diff_for_tool, diff_for_tool_call};
 use crate::question::{answer_pairs, AnswerPair, QUESTION_TOOL};
 use crate::tool_summary::{tool_call_status, tool_input_summary, ToolCallStatus};
+use crate::workflow_progress::workflow_ref;
+use crate::workflow_script::workflow_meta;
 use forge_domain::TranscriptView;
 use forge_shared::{i18n, tr};
 
@@ -87,6 +89,25 @@ pub enum Item {
     Footer(Footer),
     Answers(Vec<AnswerPair>),
     Live(LiveLine),
+    /// A workflow the turn launched: a card while it runs, one line after.
+    Workflow(WorkflowItem),
+}
+
+/// What the chat knows of a workflow from the call that started it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowItem {
+    pub task_id: String,
+    pub name: String,
+}
+
+/// The workflow a Workflow call launched, once its result says so and its script has a name.
+fn workflow_launch(call: &ToolCall) -> Option<WorkflowItem> {
+    if call.name != "Workflow" {
+        return None;
+    }
+    let reference = workflow_ref(&call.result.as_ref()?.output)?;
+    let meta = workflow_meta(call.input.get("script")?.as_str()?)?;
+    Some(WorkflowItem { task_id: reference.task_id, name: meta.name })
 }
 
 /// What a running turn is waiting for, if anything.
@@ -339,7 +360,25 @@ fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<Too
         if let (Some(first), Some(last)) = (first, last) {
             if index >= first && index <= last {
                 if index == first {
-                    items.push(Item::Activity(build_activity(&blocks[first..=last], &tool_rows[first..=last], view)));
+                    // A launched workflow has its own card; the rest of the stretch folds as before.
+                    let (kept, rows): (Vec<Block>, Vec<Option<ToolRow>>) = blocks[first..=last]
+                        .iter()
+                        .zip(&tool_rows[first..=last])
+                        .filter(|(block, _)| !matches!(block, Block::Tool(call) if workflow_launch(call).is_some()))
+                        .map(|(block, row)| (block.clone(), row.clone()))
+                        .unzip();
+                    if kept.iter().any(|block| matches!(block, Block::Tool(_))) {
+                        items.push(Item::Activity(build_activity(&kept, &rows, view)));
+                    } else {
+                        for block in &kept {
+                            plain(items, block);
+                        }
+                    }
+                    for block in &blocks[first..=last] {
+                        if let Block::Tool(call) = block {
+                            items.extend(workflow_launch(call).map(Item::Workflow));
+                        }
+                    }
                 }
                 continue;
             }
@@ -462,8 +501,52 @@ mod tests {
                 Item::Footer(_) => "footer",
                 Item::Answers(_) => "answers",
                 Item::Live(_) => "live",
+                Item::Workflow(_) => "workflow",
             })
             .collect()
+    }
+
+    const LAUNCHED: &str = "Workflow launched in background. Task ID: wf1\nSummary: s\nTranscript dir: /h/.claude/projects/-p/s/subagents/workflows/wf_abc\n";
+
+    fn workflow(id: &str, result: Option<&str>) -> Block {
+        Block::Tool(ToolCall {
+            id: id.to_string(),
+            name: "Workflow".to_string(),
+            input: json!({"script": "export const meta = { name: 'capitals', description: 'd', phases: [{ title: 'Ask' }] }"}),
+            result: result.map(|output| ToolResult { output: output.to_string(), is_error: false }),
+        })
+    }
+
+    #[test]
+    fn a_launched_workflow_is_its_own_item_not_a_row_of_the_folded_activity() {
+        let messages = vec![Message::user("go"), assistant(vec![workflow("w", Some(LAUNCHED)), text("Running.")])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        assert_eq!(kinds(&items), vec!["user", "workflow", "text", "footer"]);
+        assert_eq!(items[1], Item::Workflow(WorkflowItem { task_id: "wf1".to_string(), name: "capitals".to_string() }));
+    }
+
+    #[test]
+    fn other_tools_of_the_turn_still_fold_and_the_workflow_follows_them() {
+        let messages = vec![Message::user("go"), assistant(vec![bash("b", Some("List")), workflow("w", Some(LAUNCHED)), text("Running.")])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        assert_eq!(kinds(&items), vec!["user", "activity", "workflow", "text", "footer"]);
+        assert_eq!(activity(&items).rows.len(), 1, "the activity holds the command only");
+    }
+
+    #[test]
+    fn a_workflow_call_with_no_result_or_no_readable_script_stays_an_ordinary_row() {
+        for block in [workflow("w", None), workflow("w", Some("denied"))] {
+            let items = build_turns(&[Message::user("go"), assistant(vec![block])], TranscriptView::Normal, None);
+            assert_eq!(kinds(&items), vec!["user", "activity", "footer"]);
+        }
+        let nameless = Block::Tool(ToolCall {
+            id: "w".to_string(),
+            name: "Workflow".to_string(),
+            input: json!({"script": "const x = 1"}),
+            result: Some(ToolResult { output: LAUNCHED.to_string(), is_error: false }),
+        });
+        let items = build_turns(&[Message::user("go"), assistant(vec![nameless])], TranscriptView::Normal, None);
+        assert_eq!(kinds(&items), vec!["user", "activity", "footer"]);
     }
 
     #[test]

@@ -274,6 +274,12 @@ mod tests {
     }
 
     #[test]
+    fn a_cancelled_permission_request_reads() {
+        let event: forge_ports::SidecarEvent = serde_json::from_str(r#"{"type":"permission_cancelled","permission_request_id":"p-9"}"#).unwrap();
+        assert_eq!(event, forge_ports::SidecarEvent::PermissionCancelled { permission_request_id: "p-9".to_string() });
+    }
+
+    #[test]
     fn a_permission_request_with_rules_and_one_without_both_read() {
         let with: forge_ports::SidecarEvent = serde_json::from_str(
             r#"{"type":"permission_request","permission_request_id":"p","tool_name":"Bash","input":{},"rules":["Bash(ls:*)"]}"#,

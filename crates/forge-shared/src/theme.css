@@ -763,6 +763,12 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .task-description { font-weight: 700; overflow-wrap: anywhere; }
 .task-meta { display: flex; gap: 10px; color: var(--fg-muted); font-size: 12px; }
 .task-stop { appearance: none; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
+.workflow-done { margin: 8px 0; color: var(--fg-muted); font-size: 14px; }
+.workflow-chat-card { appearance: none; display: flex; align-items: center; gap: 12px; width: 100%; max-width: 360px; margin: 8px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.workflow-chat-card:hover { background: var(--bg-hover); }
+.workflow-chat-main { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.workflow-chat-name { font-weight: 700; overflow-wrap: anywhere; }
+.workflow-chat-meta { display: flex; gap: 10px; color: var(--fg-muted); font-size: 12px; }
 .task-note { color: var(--fg-muted); font-size: 13px; overflow-wrap: anywhere; }
 .workflow-card .tasks-heading { margin-top: 4px; }
 .wf-step { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 8px; background: var(--bg-hover); }

@@ -45,6 +45,9 @@ pub enum SidecarEvent {
         #[serde(default)]
         rules: Vec<String>,
     },
+    /// The SDK withdrew a request that was open (a stop denied it); its card goes. A finished turn
+    /// does not do this: a workflow's agents keep asking after the turn that started it.
+    PermissionCancelled { permission_request_id: String },
     /// What the turn added, per model.
     TurnComplete {
         #[serde(default)]

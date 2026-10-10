@@ -74,6 +74,8 @@ export type SidecarEvent =
   | { type: "tool_use"; tool_call_id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_call_id: string; output: string; is_error: boolean }
   | { type: "permission_request"; permission_request_id: string; tool_name: string; input: unknown; rules?: string[] }
+  // A request the SDK withdrew (the turn was interrupted); the parent stops showing it.
+  | { type: "permission_cancelled"; permission_request_id: string }
   | { type: "turn_complete"; usage: Record<string, WireTokenUsage> }
   | { type: "context_usage"; total_tokens: number; max_tokens: number }
   | { type: "commands_available"; commands: WireSlashCommand[] }
