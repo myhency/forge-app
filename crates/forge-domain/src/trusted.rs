@@ -17,6 +17,11 @@ pub fn add_trusted(list: &mut Vec<PathBuf>, path: PathBuf) -> bool {
     add_trusted_on(list, path, cfg!(windows))
 }
 
+/// The path without the `\\?\` (or `\\?\UNC\`) prefix `canonicalize` returns on Windows; any other path as it is.
+pub fn without_extended_prefix(path: &Path) -> PathBuf {
+    PathBuf::from(strip_extended_prefix(&path.to_string_lossy()))
+}
+
 fn is_trusted_on(list: &[PathBuf], path: &Path, windows: bool) -> bool {
     let Some(child) = parts(path, windows) else {
         return false;
@@ -25,34 +30,43 @@ fn is_trusted_on(list: &[PathBuf], path: &Path, windows: bool) -> bool {
 }
 
 fn add_trusted_on(list: &mut Vec<PathBuf>, path: PathBuf, windows: bool) -> bool {
-    let Some(new) = parts(&path, windows) else {
+    let Some(path) = tidy_path(&path, windows) else {
         return false;
     };
     if is_trusted_on(list, &path, windows) {
         return false;
     }
+    let new = parts(&path, windows).unwrap_or_default();
     list.retain(|entry| parts(entry, windows).map_or(true, |existing| !existing.starts_with(&new)));
     list.push(path);
     true
 }
 
-// The comparable parts of an absolute path, or `None` for a relative one. `.` and empty parts go;
-// `..` removes the part before it but never a drive or a share. On Windows the parts are lower case.
-fn parts(path: &Path, windows: bool) -> Option<Vec<String>> {
+// An absolute path read as text: how it starts (`prefix`), its parts with their case, and whether it
+// begins with a drive. `.` and empty parts go; `..` removes the part before it but never a drive or a
+// share. `None` for a relative path, and on Windows for a root that names nothing (`\`, `\\srv`).
+struct Tidy {
+    prefix: &'static str,
+    parts: Vec<String>,
+    drive: bool,
+}
+
+fn tidy(path: &Path, windows: bool) -> Option<Tidy> {
     let text = path.to_string_lossy();
     let text = if windows { strip_extended_prefix(&text) } else { text.to_string() };
-    let absolute = if windows { is_absolute_path(&text) } else { text.starts_with('/') };
-    if !absolute {
+    let (prefix, floor, drive) = if !windows {
+        if !text.starts_with('/') {
+            return None;
+        }
+        ("/", 0, false)
+    } else if !is_absolute_path(&text) {
         return None;
-    }
-    let floor = if !windows {
-        0
     } else if text.starts_with("\\\\") || text.starts_with("//") {
-        2
-    } else if text.as_bytes().get(1) == Some(&b':') {
-        1
+        ("\\\\", 2, false)
+    } else if text.starts_with(|c| c == '/' || c == '\\') {
+        ("\\", 0, false)
     } else {
-        0
+        ("", 1, true)
     };
     let mut parts: Vec<String> = Vec::new();
     for part in text.split(|c: char| c == '/' || (windows && c == '\\')) {
@@ -63,10 +77,31 @@ fn parts(path: &Path, windows: bool) -> Option<Vec<String>> {
                     parts.pop();
                 }
             }
-            other => parts.push(if windows { other.to_lowercase() } else { other.to_string() }),
+            other => parts.push(other.to_string()),
         }
     }
-    Some(parts)
+    if windows && parts.len() < floor.max(1) {
+        return None;
+    }
+    Some(Tidy { prefix, parts, drive })
+}
+
+// The comparable parts: lower case on Windows.
+fn parts(path: &Path, windows: bool) -> Option<Vec<String>> {
+    let tidy = tidy(path, windows)?;
+    Some(if windows { tidy.parts.iter().map(|part| part.to_lowercase()).collect() } else { tidy.parts })
+}
+
+// The path as it is stored: no `.`, no doubled or trailing separators, no extended prefix, the case kept.
+fn tidy_path(path: &Path, windows: bool) -> Option<PathBuf> {
+    let tidy = tidy(path, windows)?;
+    let separator = if windows { "\\" } else { "/" };
+    let mut text = String::from(tidy.prefix);
+    text.push_str(&tidy.parts.join(separator));
+    if tidy.drive && tidy.parts.len() == 1 {
+        text.push_str(separator);
+    }
+    Some(PathBuf::from(text))
 }
 
 // `\\?\C:\a` is `C:\a` and `\\?\UNC\srv\share` is `\\srv\share`: the form `canonicalize` returns on Windows.
@@ -83,6 +118,43 @@ fn strip_extended_prefix(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_is_stored_tidied_with_its_case_kept() {
+        let tidy_on = |path: &str, windows: bool| {
+            let mut folders = Vec::new();
+            assert!(add_trusted_on(&mut folders, path.into(), windows), "{path}");
+            folders.remove(0)
+        };
+        assert_eq!(tidy_on("/work/app/", false), PathBuf::from("/work/app"));
+        assert_eq!(tidy_on("/work/./a//b/../c", false), PathBuf::from("/work/a/c"));
+        assert_eq!(tidy_on("/", false), PathBuf::from("/"));
+        assert_eq!(tidy_on("C:\\Work\\App\\", true), PathBuf::from("C:\\Work\\App"));
+        assert_eq!(tidy_on("c:/Work/./App", true), PathBuf::from("c:\\Work\\App"));
+        assert_eq!(tidy_on("C:\\", true), PathBuf::from("C:\\"));
+        assert_eq!(tidy_on("\\\\srv\\Share\\a\\", true), PathBuf::from("\\\\srv\\Share\\a"));
+        assert_eq!(tidy_on("\\\\?\\C:\\Work", true), PathBuf::from("C:\\Work"), "the extended prefix is not stored");
+    }
+
+    #[test]
+    fn a_windows_root_with_no_drive_and_a_server_with_no_share_are_refused() {
+        for entry in ["\\", "/", "\\\\srv", "\\\\"] {
+            assert!(!windows(&[entry], "C:\\work"), "{entry}");
+            assert!(!windows(&[entry], "\\\\srv\\share\\a"), "{entry}");
+            let mut folders = Vec::new();
+            assert!(!add_trusted_on(&mut folders, entry.into(), true), "{entry}");
+            assert!(folders.is_empty());
+        }
+        assert!(windows(&["\\\\srv\\share"], "\\\\srv\\share\\a"), "a share is fine");
+    }
+
+    #[test]
+    fn the_extended_prefix_can_be_taken_off_a_path() {
+        assert_eq!(without_extended_prefix(Path::new("\\\\?\\C:\\a")), PathBuf::from("C:\\a"));
+        assert_eq!(without_extended_prefix(Path::new("\\\\?\\UNC\\srv\\sh\\a")), PathBuf::from("\\\\srv\\sh\\a"));
+        assert_eq!(without_extended_prefix(Path::new("C:\\a")), PathBuf::from("C:\\a"));
+        assert_eq!(without_extended_prefix(Path::new("/a/b")), PathBuf::from("/a/b"));
+    }
 
     fn list(paths: &[&str]) -> Vec<PathBuf> {
         paths.iter().map(PathBuf::from).collect()
