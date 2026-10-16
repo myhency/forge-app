@@ -544,3 +544,42 @@ Forge itself (harness fixture, a `python3 -m http.server` on `localhost` with an
 - Differences from the desktop app (rounds 11 and 12): the desktop app's PDF view has a dark toolbar (page box, zoom, rotate, print) and a thumbnail strip; Forge shows WebKit's own PDF view (no toolbar). The desktop app's bar shows the plain path for a local file; Forge shows the `file://` address. The first-run cookie modal, the layout icon, the element picker and the panel `⋮` are not built.
 - Harness notes: `osascript keystroke "k" using command down` reaches the page with Option set (alt true), so Forge's shortcuts ignore it; use `key code 40 using {command down}`. `keystroke` of a long address can drop letters (the field is controlled); type one letter at a time with a short delay. When reading a capture that was resized to a different aspect, convert x and y with their own factors before `click.py`.
 - Not checked: Windows (WebView2), dragging the panel's left edge by hand (the window resize and expand were), closing a tab and a session with several web views in the real window (unit tests cover the calls).
+
+## Round 18: workflow tokens, the finished fold and a stopped run (2026-10-17, OTH-10)
+
+The desktop app, session `obs-a dynamic workflow` in `/private/tmp/forge-observe`, mode 수동. Two small workflows were run with the user's go-ahead (obs-a: Analyze 2 agents, Merge 1 agent; obs-b: Analyze 2 agents). Compared with the agents' own `agent-*.jsonl` files under `subagents/workflows/wf_*`.
+
+**Tokens**
+- The running card shows `2개 에이전트  99.1k 토큰` and the number did not move while both agents waited for permission (40 s and 54 s). The finished card showed `3개 에이전트  157.4k 토큰`.
+- The number matches the sum, over the agents, of the token total of each agent's last assistant message (`input + cache_creation + cache_read + output`, the size of its last call): obs-a 157,477 at the end; 99,244 when each agent had made one call. It is not the sum of all calls (417,957 for obs-a). Per agent that is about 49.6k each in the first minute.
+- The chat card never shows tokens (`워크플로우  2개 에이전트  26초` and the dots only).
+
+**Dots and permission**
+- An agent waited for permission (a `find … -exec` card showed in the chat) while the dots, in both the chat card and the panel, stayed blue and the step name stayed plain. Seen 40 s and 54 s in obs-a and 54 s in obs-b. Amber was not seen in this round (round 16 saw it with three agents, after the first card was answered). Not explained.
+- The dots of a step that has not started are one pale dot; the `Merge 0/1` row and `Analyze` rows read `모델 / 시간` with one row per agent, the same elapsed time on every row.
+
+**The finished fold**
+- When a workflow ends the panel shows only `완료 1 ›` (the `실행 중` section is gone). Opened (`완료 1 ⌄`), the card reads: name and total time at the right (`1분 17초`), `워크플로우  완료됨`, `3개 에이전트  157.4k 토큰`, the description in grey, `단계` and the steps `Analyze 2/2 ›`, `Merge 1/1 ›` with grey dots, all grey text, no stop button. Steps are folded.
+- With a run going and one finished, the panel shows `실행 중` on top and `완료 1 ⌄` under it, open as it was left. The newest finished card comes first (`완료 2`: obs-b above obs-a).
+- The finished cards stay on screen with their steps folded each; there is no fold per card.
+
+**A stopped run**
+- The stop button (a small square, top right of the running card) stops at once. The chat line becomes `워크플로 실행됨 obs-b 중지됨` (obs-a's was `워크플로 실행됨 obs-a`). The card moves to `완료 2`: `4초` at the right (not the 80 s it ran), `워크플로우  중지됨`, `2개 에이전트  99.1k 토큰` (the last number kept), the description, `Analyze 0/2` with two hollow dots. The permission card that was open disappeared.
+
+**The trash icon**
+- It clears every finished card at once: the panel shows a diamond icon and `백그라운드 작업이 여기에 표시됩니다`, and the trash icon turns grey (nothing to clear). The chat lines `워크플로 실행됨 …` stay.
+
+Not seen: an agent that fails (and the card text for it), whether the finished list survives a switch to another session or a restart, the expanded panel's per-agent token column for a finished run, and whether Bash tasks join the fold.
+
+### Round 18, part 2: a denied agent, a failed run, the finished list across sessions, a Bash task (2026-10-17)
+
+Same session. obs-c: Analyze with three agents (a, b, c) and a script that throws `new Error('obs-c boom')` after them.
+
+- **Amber again not seen.** Three agents, 31 s and 45 s into the run with agent requests open: all three dots blue (chat card and panel). So the two rounds that saw nothing amber (obs-a, obs-b, obs-c) had 2 or 3 agents; round 16's amber is not reproduced.
+- **A denied agent turns red.** After `거부` on agent b's card its dot went red in the chat card and the panel, and the step's name (`Analyze`) turned dark red. Its time stopped (38 s while the others went on). It is not counted: the step read `0/3`, then `1/3` when agent a finished (a ✓ before its row, its dot grey). Tokens grew (148.9k, 153.1k, 157.5k).
+- **A failed run.** After the agents ended the script threw. Chat line: `워크플로 실행됨 obs-c 실패` with `실패` in dark red. Panel card (in the finished fold): name and total time (`1분 11초`) at the right, `워크플로우  실패` (`실패` red), `3개 에이전트  157.5k 토큰`, the description in grey, then a pink box headed `오류` (red) with the error text (`Error: obs-c boom` and two `at …` lines), then `단계` with `Analyze 2/3 ›` and grey, red, grey dots. No stop button.
+- **The finished list stays with its session.** Switching to another session and back kept the panel open, and obs-a's session showed its `완료 1 ⌄` as it was left (open). The other session, which had run a workflow long before, showed `완료 1 ›` (folded): the list is rebuilt from the session's own record, so it does not depend on the app having been open when the workflow ran.
+- **A Bash background task joins the fold.** `sleep 12; echo done` (run in the background) ended and the fold read `완료 2`: a small card first (the newest on top): its description (`Sleep 12 seconds then print done`), then `Bash  완료됨  12초`. No tokens, no steps, no stop button, no name at the right.
+- The chat showed no `워크플로 실행됨` line for the Bash task; only workflows have it.
+
+Still not seen: the finished fold's expanded steps of a failed run (the `Analyze 2/3 ›` fold was not opened), and the per-agent token column of the expanded panel.
