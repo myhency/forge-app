@@ -28,6 +28,11 @@ pub fn normalize_url(input: &str) -> Option<String> {
     Some(format!("{}://{text}", if local { "http" } else { "https" }))
 }
 
+// A page spells its address its own way: `http://host` is reported as `http://host/`.
+fn same_page(a: &str, b: &str) -> bool {
+    a.trim_end_matches('/') == b.trim_end_matches('/')
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PreviewTabId(pub u64);
 
@@ -107,14 +112,16 @@ impl PreviewTabs {
     pub fn loaded(&mut self, id: PreviewTabId, url: String) {
         let Some(tab) = self.tab_mut(id) else { return };
         tab.failure = None;
-        if tab.history.get(tab.position) == Some(&url) {
+        if tab.history.get(tab.position).is_some_and(|known| same_page(known, &url)) {
+            // The page's own spelling of its address replaces the typed one.
+            tab.history[tab.position] = url;
             return;
         }
-        if tab.position > 0 && tab.history.get(tab.position - 1) == Some(&url) {
+        if tab.position > 0 && tab.history.get(tab.position - 1).is_some_and(|known| same_page(known, &url)) {
             tab.position -= 1;
             return;
         }
-        if tab.history.get(tab.position + 1) == Some(&url) {
+        if tab.history.get(tab.position + 1).is_some_and(|known| same_page(known, &url)) {
             tab.position += 1;
             return;
         }
@@ -251,6 +258,21 @@ mod tests {
         assert_eq!(tabs.current(tab).as_deref(), Some("http://c"));
         assert!(!tabs.can_forward(tab));
         assert!(tabs.can_back(tab));
+    }
+
+    #[test]
+    fn a_reported_address_that_only_adds_a_trailing_slash_is_the_same_page() {
+        let mut tabs = PreviewTabs::default();
+        let tab = tabs.open();
+        // The person typed the address without the slash; the page reports it with one.
+        tabs.loaded(tab, "http://localhost:8130".into());
+        tabs.loaded(tab, "http://localhost:8130/".into());
+        assert!(!tabs.can_back(tab), "still the first page");
+        assert_eq!(tabs.current(tab).as_deref(), Some("http://localhost:8130/"), "the page's own spelling wins");
+        tabs.loaded(tab, "http://localhost:8130/second.html".into());
+        assert!(tabs.can_back(tab));
+        tabs.loaded(tab, "http://localhost:8130/".into());
+        assert!(!tabs.can_back(tab));
     }
 
     #[test]
