@@ -81,6 +81,7 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 30C | Customize Connectors tab: Mine, detail with connection check, Explore, add remote or local, remove (built, checked in the real window) | PG-02 | Spec `2026-10-09-customize-connectors-design.md`; add and remove are user scope only, through the bundled `claude mcp`; OAuth sign-in in the app is 30D (built) |
 | 30D | Connector sign-in: a dialog with a terminal that Forge types `/mcp` keys into, then checks the connection (built, checked in the real window up to the browser step) | PG-02 | Spec `2026-10-09-customize-connectors-signin-design.md`; approach B (the CLI owns the token); success and failure texts of the CLI are not captured, see "As built" |
 | 31 | Routines (built) | PG-01 | Spec `2026-10-09-routines-design.md`; observation round 14; a timer inside Forge, run history, approval wait, Forge's own storage |
+| 43 | Trusted folders (built, checked in the real window) | SET-15 | Spec `2026-10-16-trusted-folders-design.md`; the list in Settings, a question when an unknown folder is added to a session; the default browser row is left out |
 | 24 | Home dashboard and new-session composer (built) | PG-05, CMP-06 | Needed a new port `UsageStatsPort`; observation round 6 |
 | 25A | Files panel as an editor (built, checked in the real window) | PNL-04 | CodeMirror bundle, auto save and conflict banner, tabs; 25B line comments and 25C search and right click items next |
 | 26 | Responsive layout (built) | UI-01 | The user asked for it before any new feature; observation round 10 |
