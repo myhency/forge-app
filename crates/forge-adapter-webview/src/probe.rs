@@ -1,6 +1,10 @@
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
+// A port on this computer answers or refuses within a moment. The wait is spent on the window thread, so a
+// filtered port must not hold it for long.
+const PROBE_WAIT_MS: u64 = 300;
+
 fn default_port(scheme: &str) -> u16 {
     if scheme.eq_ignore_ascii_case("https") {
         443
@@ -31,7 +35,7 @@ pub fn loopback_unreachable(url: &str) -> Option<String> {
     let addresses: Vec<SocketAddr> = (host, port).to_socket_addrs().ok()?.collect();
     let mut last = String::from("no address");
     for address in addresses {
-        match TcpStream::connect_timeout(&address, Duration::from_millis(1500)) {
+        match TcpStream::connect_timeout(&address, Duration::from_millis(PROBE_WAIT_MS)) {
             Ok(_) => return None,
             Err(error) => last = error.to_string(),
         }

@@ -21,6 +21,9 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
     });
     let mut input = use_signal(String::new);
     let mut notice = use_signal(|| None::<String>);
+    // While the person is typing in the address field a page that moves on (a redirect, a reload on
+    // change) must not rewrite what they typed.
+    let mut editing = use_signal(|| false);
 
     let tabs = workspace.previews(id);
     let active = tabs.active();
@@ -31,18 +34,23 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
         Some(tab) => (tabs.can_back(tab), tabs.can_forward(tab)),
         None => (false, false),
     };
-    // The address field follows the page, and is only rewritten when the address itself changes.
+    // The address field follows the page, and is only rewritten when the address itself changes and
+    // nobody is typing in it.
     let address = use_memo(move || {
         let tabs = workspace.previews(id);
         tabs.active().and_then(|tab| tabs.current(tab)).unwrap_or_default()
     });
     use_effect(move || {
-        input.set(address());
+        let shown = address();
+        if !*editing.peek() {
+            input.set(shown);
+        }
         notice.set(None);
     });
 
     let mut submit = move || {
         let Some(tab) = workspace.previews(id).active() else { return };
+        editing.set(false);
         match workspace.preview_go(id, tab, &input()) {
             Ok(()) => notice.set(None),
             Err(message) => notice.set(Some(message)),
@@ -131,7 +139,14 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                     r#type: "text",
                     placeholder: tr!("Enter a URL"),
                     value: "{input}",
-                    oninput: move |event| input.set(event.value()),
+                    oninput: move |event| {
+                        editing.set(true);
+                        input.set(event.value());
+                    },
+                    onblur: move |_| {
+                        editing.set(false);
+                        input.set(address());
+                    },
                     onkeydown: move |event: KeyboardEvent| {
                         if event.key() == Key::Enter {
                             submit();

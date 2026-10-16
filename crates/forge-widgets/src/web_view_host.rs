@@ -18,12 +18,12 @@ function tick() {
 tick();
 "#;
 
-// Reports whether any backdrop (menu, dialog, palette, lightbox) is in the document.
+// Reports whether any backdrop (dialog, palette, lightbox) or a menu without one is in the document.
 const OVERLAY_SCRIPT: &str = r#"
 if (window.__forgeOverlayObserver) { window.__forgeOverlayObserver.disconnect(); }
 let last = null;
 function check() {
-  const open = document.querySelector('[class*="backdrop"]') !== null;
+  const open = document.querySelector('[class*="backdrop"], .row-menu, .perm-menu') !== null;
   if (open !== last) { last = open; dioxus.send(open); }
 }
 window.__forgeOverlayObserver = new MutationObserver(check);
@@ -119,6 +119,9 @@ mod tests {
         assert!(SURFACE_SCRIPT.contains("requestAnimationFrame"));
         assert!(OVERLAY_SCRIPT.contains("__forgeOverlayObserver.disconnect()"));
         assert!(OVERLAY_SCRIPT.contains("[class*=\"backdrop\"]"));
+        // Menus that have no backdrop of their own lie over the panel just the same.
+        assert!(OVERLAY_SCRIPT.contains(".row-menu"));
+        assert!(OVERLAY_SCRIPT.contains(".perm-menu"));
     }
 
     #[test]

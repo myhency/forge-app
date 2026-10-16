@@ -44,6 +44,12 @@ impl PreviewHost {
                 return Err(tr!("This file cannot be shown.").to_string());
             }
         }
+        // Asked before the view loads: the failure shows at once, the page in the view stays as it
+        // was, and the history only ever holds pages that loaded.
+        if let Some(reason) = webviews.unreachable(url) {
+            self.change(id, |tabs| tabs.fail(tab, url.to_string(), reason));
+            return Ok(());
+        }
         let first = self.tabs(id).current(tab).is_none();
         let view = WebViewTabId(tab.0);
         let result = if first {
@@ -130,6 +136,12 @@ mod tests {
         Surface { x: 10.0, y: 20.0, width: 400.0, height: 300.0 }
     }
 
+    fn reachable_views() -> MockWebViewPort {
+        let mut views = MockWebViewPort::new();
+        views.expect_unreachable().returning(|_| None);
+        views
+    }
+
     fn quiet_browser() -> MockBrowserPort {
         MockBrowserPort::new()
     }
@@ -150,7 +162,7 @@ mod tests {
             host.change(SESSION, |tabs| made = Some(tabs.open()));
             made.unwrap()
         };
-        let mut views = MockWebViewPort::new();
+        let mut views = reachable_views();
         views
             .expect_create()
             .withf(move |id, url, shown| *id == WebViewTabId(tab.0) && url == "http://localhost:3000" && *shown == surface())
@@ -189,7 +201,7 @@ mod tests {
         let tab = tab.unwrap();
         let file = temp_file("page file#1.html");
         let folder = file.parent().unwrap().to_string_lossy().to_string();
-        let mut views = MockWebViewPort::new();
+        let mut views = reachable_views();
         views.expect_create().times(1).returning(|_, _, _| Ok(()));
         let browser = quiet_browser();
 
@@ -204,7 +216,7 @@ mod tests {
         let mut host = PreviewHost::default();
         let mut tab = None;
         host.change(SESSION, |tabs| tab = Some(tabs.open()));
-        let mut views = MockWebViewPort::new();
+        let mut views = reachable_views();
         views.expect_create().times(1).returning(|_, _, _| Err("WebView2 is missing".to_string()));
         let mut browser = MockBrowserPort::new();
         browser.expect_open().withf(|url| url == "http://localhost:3000").times(1).returning(|_| Ok(()));
@@ -222,7 +234,7 @@ mod tests {
         let tab = tab.unwrap();
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let counted = calls.clone();
-        let mut views = MockWebViewPort::new();
+        let mut views = reachable_views();
         views.expect_create().times(2).returning(move |_, _, _| {
             if counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 { Err("WebView2 is missing".to_string()) } else { Ok(()) }
         });
@@ -234,6 +246,49 @@ mod tests {
         assert_eq!(host.tabs(SESSION).current(tab), None, "nothing is recorded for a page that is not there");
         host.go(SESSION, tab, "http://localhost:3000", Some(surface()), &views, &browser).unwrap();
         assert_eq!(host.tabs(SESSION).current(tab).as_deref(), Some("http://localhost:3000"));
+    }
+
+    #[test]
+    fn an_unreachable_address_fails_the_tab_at_once_and_leaves_its_page_and_history_alone() {
+        let mut host = PreviewHost::default();
+        let mut tab = None;
+        host.change(SESSION, |tabs| tab = Some(tabs.open()));
+        let tab = tab.unwrap();
+        let mut views = MockWebViewPort::new();
+        views.expect_unreachable().withf(|url| url == "http://localhost:9").returning(|_| Some("refused".to_string()));
+        views.expect_unreachable().returning(|_| None);
+        views.expect_create().times(1).returning(|_, _, _| Ok(()));
+        views.expect_navigate().never();
+        let browser = quiet_browser();
+
+        host.go(SESSION, tab, "http://localhost:3000", Some(surface()), &views, &browser).unwrap();
+        host.go(SESSION, tab, "http://localhost:9", Some(surface()), &views, &browser).unwrap();
+
+        let tabs = host.tabs(SESSION);
+        assert_eq!(tabs.current(tab).as_deref(), Some("http://localhost:3000"), "the page in the view is still the current one");
+        assert!(!tabs.can_back(tab), "a page that never loaded is not in the history");
+        assert_eq!(tabs.failure(tab), Some(("http://localhost:9".to_string(), "refused".to_string())));
+    }
+
+    #[test]
+    fn an_unreachable_first_address_makes_no_web_view_and_the_next_try_makes_it() {
+        let mut host = PreviewHost::default();
+        let mut tab = None;
+        host.change(SESSION, |tabs| tab = Some(tabs.open()));
+        let tab = tab.unwrap();
+        let mut views = MockWebViewPort::new();
+        views.expect_unreachable().times(1).returning(|_| Some("refused".to_string()));
+        views.expect_unreachable().times(1).returning(|_| None);
+        views.expect_create().times(1).returning(|_, _, _| Ok(()));
+        let browser = quiet_browser();
+
+        host.go(SESSION, tab, "http://localhost:9", Some(surface()), &views, &browser).unwrap();
+        assert_eq!(host.tabs(SESSION).current(tab), None);
+        assert!(host.tabs(SESSION).failure(tab).is_some());
+        host.go(SESSION, tab, "http://localhost:9", Some(surface()), &views, &browser).unwrap();
+
+        assert_eq!(host.tabs(SESSION).current(tab).as_deref(), Some("http://localhost:9"));
+        assert_eq!(host.tabs(SESSION).failure(tab), None, "a page that loads clears the failure");
     }
 
     #[test]

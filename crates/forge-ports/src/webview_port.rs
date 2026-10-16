@@ -51,6 +51,9 @@ pub struct WebViewEvent {
 pub trait WebViewPort: Send + Sync {
     /// Makes a web view for the tab and loads `url`. Only `http`, `https` and `file` addresses load.
     fn create(&self, tab: WebViewTabId, url: &str, surface: Surface) -> Result<(), String>;
+    /// Why `url` cannot be reached, for an address on this computer that nothing answers; `None`
+    /// when it can be or is not checked. It may wait a moment, so the caller asks before it loads.
+    fn unreachable(&self, url: &str) -> Option<String>;
     fn destroy(&self, tab: WebViewTabId);
     fn navigate(&self, tab: WebViewTabId, url: &str) -> Result<(), String>;
     fn back(&self, tab: WebViewTabId);

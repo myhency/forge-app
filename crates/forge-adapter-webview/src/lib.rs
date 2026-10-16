@@ -78,10 +78,6 @@ impl WryWebViews {
         }
         Ok(window.clone())
     }
-
-    fn send(&self, tab: WebViewTabId, kind: WebViewEventKind) {
-        let _ = self.events_tx.send(WebViewEvent { tab, kind });
-    }
 }
 
 impl Default for WryWebViews {
@@ -127,9 +123,6 @@ impl WebViewPort for WryWebViews {
         if !page_address(url) {
             return Err(REFUSED.to_string());
         }
-        if let Some(reason) = probe::loopback_unreachable(url) {
-            self.send(tab, WebViewEventKind::LoadFailed { url: url.to_string(), reason });
-        }
         let nonce = fresh_nonce();
         let nonce_check = nonce.clone();
         let (nav, load, title, new_window, ipc) =
@@ -171,6 +164,10 @@ impl WebViewPort for WryWebViews {
         Ok(())
     }
 
+    fn unreachable(&self, url: &str) -> Option<String> {
+        probe::loopback_unreachable(url)
+    }
+
     fn destroy(&self, tab: WebViewTabId) {
         VIEWS.with(|views| views.borrow_mut().remove(&tab.0));
     }
@@ -178,10 +175,6 @@ impl WebViewPort for WryWebViews {
     fn navigate(&self, tab: WebViewTabId, url: &str) -> Result<(), String> {
         if !page_address(url) {
             return Err(REFUSED.to_string());
-        }
-        if let Some(reason) = probe::loopback_unreachable(url) {
-            self.send(tab, WebViewEventKind::LoadFailed { url: url.to_string(), reason });
-            return Ok(());
         }
         VIEWS.with(|views| match views.borrow().get(&tab.0) {
             Some(view) => view.load_url(url).map_err(|error| error.to_string()),
