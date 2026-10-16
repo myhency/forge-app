@@ -21,7 +21,7 @@ pub fn nav_groups() -> Vec<NavGroup> {
 fn row_titles(section: SettingsSection) -> Vec<&'static str> {
     match section {
         SettingsSection::General => vec![
-            tr!("Appearance"), tr!("Theme"), tr!("Font"), tr!("Text size"), tr!("Chat width"), tr!("Reduce motion"), tr!("Notifications"), tr!("Reply done"),
+            tr!("Appearance"), tr!("Theme"), tr!("Font"), tr!("Text size"), tr!("Chat width"), tr!("Reduce motion"), tr!("Work"), tr!("Trusted folders"), tr!("Manage"), tr!("Notifications"), tr!("Reply done"),
             tr!("Scheduled task"), tr!("Code notice"), tr!("Permission request"),
         ],
         SettingsSection::Code => vec![tr!("Default transcript view"), tr!("Output style"), tr!("Prompt suggestions"), tr!("Allow bypass permissions mode"), tr!("Bounce the Dock icon")],
@@ -46,6 +46,12 @@ pub fn filter_pages(query: &str) -> Vec<SettingsSection> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_search_finds_the_trusted_folders_row_on_the_general_page() {
+        assert_eq!(filter_pages("trusted"), [SettingsSection::General]);
+        assert_eq!(filter_pages("TRUSTED FOLDERS"), [SettingsSection::General]);
+    }
 
     #[test]
     fn groups_follow_the_real_app() {

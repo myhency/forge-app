@@ -4,6 +4,7 @@ use std::sync::Arc;
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, SettingsUseCase};
 use forge_domain::{AppConfig, Appearance, ChatWidth, FontChoice, Language, McpServerDefinition, MotionPref, NotificationPrefs, OutputStyle, PluginDefinition, SkillDefinition, TextSize, Theme, TranscriptView};
+use forge_ports::FolderPickerPort;
 use forge_entities::{mcp_rows, plugin_rows, project_label, skill_rows, ExtensionRow};
 
 use crate::section_status::status_for;
@@ -65,10 +66,14 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         },
         CodeChange::AttentionBounce(on) => config.attention_bounce = on,
         CodeChange::Language(value) => config.language = Some(value),
+        CodeChange::TrustFolder(path) => {
+            forge_domain::add_trusted(&mut config.trusted_folders, path);
+        }
+        CodeChange::UntrustFolder(path) => config.trusted_folders.retain(|entry| *entry != path),
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CodeChange {
     DefaultView(TranscriptView),
     OutputStyle(Option<OutputStyle>),
@@ -83,6 +88,8 @@ pub(crate) enum CodeChange {
     Notification(NotificationKind, bool),
     AttentionBounce(bool),
     Language(Language),
+    TrustFolder(PathBuf),
+    UntrustFolder(PathBuf),
 }
 
 /// One of the four notification switches.
@@ -118,6 +125,8 @@ pub struct Settings {
     catalog: Signal<Catalog>,
     /// The local MCP server the Developer page shows in detail.
     server: Signal<Option<String>>,
+    folder_picker: Signal<Arc<dyn FolderPickerPort>>,
+    trusted_dialog: Signal<bool>,
 }
 
 /// Creates the settings state, provides it to every descendant and loads the saved config once.
@@ -138,6 +147,8 @@ pub fn use_settings_provider() -> Settings {
         project: Signal::new(None),
         catalog: Signal::new(Catalog::default()),
         server: Signal::new(None),
+        folder_picker: Signal::new(services.folder_picker.clone()),
+        trusted_dialog: Signal::new(false),
     });
     use_context_provider(move || settings);
     use_hook(move || settings.reload());
@@ -169,7 +180,9 @@ impl Settings {
 
     pub fn close(&self) {
         let mut open = self.open;
+        let mut dialog = self.trusted_dialog;
         open.set(false);
+        dialog.set(false);
     }
 
     pub fn search(&self) -> String {
@@ -329,6 +342,41 @@ impl Settings {
         self.change_code(CodeChange::AttentionBounce(on));
     }
 
+    pub fn trusted_folders(&self) -> Vec<PathBuf> {
+        self.saved.read().trusted_folders.clone()
+    }
+
+    pub fn trusted_dialog_open(&self) -> bool {
+        *self.trusted_dialog.read()
+    }
+
+    pub fn open_trusted_dialog(&self) {
+        let mut dialog = self.trusted_dialog;
+        dialog.set(true);
+    }
+
+    pub fn close_trusted_dialog(&self) {
+        let mut dialog = self.trusted_dialog;
+        dialog.set(false);
+    }
+
+    /// Asks for a folder with the system dialog and puts it on the list (a folder below a listed
+    /// one is not added again).
+    pub fn add_trusted_folder(&self) {
+        let picker = (*self.folder_picker.peek()).clone();
+        let this = *self;
+        // Pinned to the root scope, like the other saves: the dialog may be closed while the system dialog is open.
+        dioxus::core::spawn_forever(async move {
+            if let Some(picked) = picker.pick_folder().await {
+                this.change_code(CodeChange::TrustFolder(crate::trust::resolved(&picked)));
+            }
+        });
+    }
+
+    pub fn remove_trusted_folder(&self, path: PathBuf) {
+        self.change_code(CodeChange::UntrustFolder(path));
+    }
+
     pub fn status(&self) -> Option<SettingsStatus> {
         status_for(&self.status.read(), self.section())
     }
@@ -367,7 +415,11 @@ impl Settings {
     /// Opens on ⌘, and closes on Esc; returns whether the key press was one of them.
     pub fn on_key(&self, event: &KeyboardEvent) -> bool {
         if self.is_open() && event.key() == Key::Escape {
-            self.close();
+            if self.trusted_dialog_open() {
+                self.close_trusted_dialog();
+            } else {
+                self.close();
+            }
             event.prevent_default();
             return true;
         }
@@ -546,6 +598,7 @@ impl Settings {
             current.notifications = config.notifications;
             current.attention_bounce = config.attention_bounce;
             current.language = config.language;
+            current.trusted_folders = config.trusted_folders;
         }
         crate::appearance::apply_appearance(&config.appearance);
         status.set(Some((*self.section.peek(), SettingsStatus::Saved)));
@@ -574,6 +627,21 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trusting_and_untrusting_a_folder_changes_only_the_list() {
+        let mut config = AppConfig { model: Some("m".into()), ..AppConfig::default() };
+        apply_code_change(&mut config, CodeChange::TrustFolder("/work/app".into()));
+        apply_code_change(&mut config, CodeChange::TrustFolder("/other".into()));
+        assert_eq!(config.trusted_folders, vec![PathBuf::from("/work/app"), PathBuf::from("/other")]);
+        apply_code_change(&mut config, CodeChange::TrustFolder("/work/app/src".into()));
+        assert_eq!(config.trusted_folders.len(), 2, "below a trusted folder: no new entry");
+        apply_code_change(&mut config, CodeChange::UntrustFolder("/work/app".into()));
+        assert_eq!(config.trusted_folders, vec![PathBuf::from("/other")]);
+        apply_code_change(&mut config, CodeChange::UntrustFolder("/never/listed".into()));
+        assert_eq!(config.trusted_folders, vec![PathBuf::from("/other")]);
+        assert_eq!(config.model.as_deref(), Some("m"), "nothing else is touched");
+    }
 
     #[test]
     fn choosing_a_language_stores_it() {
