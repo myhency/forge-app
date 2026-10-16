@@ -4,7 +4,10 @@ use dioxus::prelude::*;
 use forge_domain::{with_cards, Attachment, AttachmentKind, Card};
 
 use crate::attachments::{add_attachments, check_attachments, folder_label, with_folder_hints};
-use crate::workspace::WorkspaceServices;
+use crate::blocking::run_blocking;
+use crate::trust::{answer_card, apply_pick, classify_added_folder, resolved, FolderAdd, TrustChoice};
+use crate::workspace::{use_workspace, Workspace, WorkspaceServices};
+use forge_shared::{tr, Button, ButtonKind};
 
 /// What a send takes out of the composer, decided without any UI.
 #[derive(Debug, Clone, PartialEq)]
@@ -35,12 +38,16 @@ pub struct ComposerState {
     error: Signal<Option<String>>,
     popup_token: Signal<u32>,
     picking: Signal<bool>,
+    /// A folder the person picked that is not trusted yet; the card under the chips asks about it.
+    pending_trust: Signal<Option<PathBuf>>,
     services: Signal<WorkspaceServices>,
+    workspace: Workspace,
 }
 
 pub fn use_composer_state_provider(draft: Signal<String>) -> ComposerState {
     // Read here, in the component: an event handler cannot call `use_context`.
     let services = use_context::<WorkspaceServices>();
+    let workspace = use_workspace();
     let state = use_hook(move || ComposerState {
         draft,
         attachments: Signal::new(Vec::new()),
@@ -48,7 +55,9 @@ pub fn use_composer_state_provider(draft: Signal<String>) -> ComposerState {
         error: Signal::new(None),
         popup_token: Signal::new(0),
         picking: Signal::new(false),
+        pending_trust: Signal::new(None),
         services: Signal::new(services),
+        workspace,
     });
     use_context_provider(move || state);
     state
@@ -125,7 +134,8 @@ impl ComposerState {
         });
     }
 
-    /// Opens the folder dialog and adds the chosen folder as a chip (once).
+    /// Opens the folder dialog. A trusted folder (or one below it) becomes a chip at once; any other
+    /// is held in `pending_trust` until the person answers the card.
     pub fn add_folder(&self) {
         if *self.picking.peek() {
             return;
@@ -133,15 +143,69 @@ impl ComposerState {
         let services = (*self.services.peek()).clone();
         let mut picking = self.picking;
         let mut folders = self.folders;
+        let mut pending = self.pending_trust;
         picking.set(true);
         spawn(async move {
             let picked = services.folder_picker.pick_folder().await;
             picking.set(false);
             let Some(path) = picked else { return };
-            if !folders.peek().iter().any(|(existing, _)| *existing == path) {
-                folders.write().push((path, false));
+            // A list that cannot be read counts as empty: the person is asked, never waved through.
+            let trusted = services.settings.load().await.map(|config| config.trusted_folders).unwrap_or_default();
+            let added: Vec<PathBuf> = folders.peek().iter().map(|(existing, _)| existing.clone()).collect();
+            // `canonicalize` can stall on a slow share: off the UI thread.
+            let picked = path.clone();
+            let verdict = run_blocking(move || classify_added_folder(&trusted, &added, &picked, &resolved(&picked))).await.unwrap_or(FolderAdd::NeedsAsking);
+            apply_pick(&mut folders.write(), &mut pending.write(), verdict, path);
+        });
+    }
+
+    pub fn pending_trust(&self) -> Option<PathBuf> {
+        self.pending_trust.read().clone()
+    }
+
+    /// `Trust and add`: the chip now, and the folder on the trusted list. When the list cannot be
+    /// saved the chip stays and a notice says so (the folder is then as for `Add this time`).
+    pub fn trust_and_add(&self) {
+        let Some(path) = self.answer(TrustChoice::TrustAndAdd) else { return };
+        let services = (*self.services.peek()).clone();
+        let workspace = self.workspace;
+        // Root scope: the save must finish even if the composer goes away meanwhile.
+        dioxus::core::spawn_forever(async move {
+            let folder = run_blocking(move || resolved(&path)).await;
+            let Some(folder) = folder else { return };
+            let saved = services.settings.save_code_settings(|config| {
+                forge_domain::add_trusted(&mut config.trusted_folders, folder);
+            });
+            if let Err(error) = saved.await {
+                workspace.report(tr!("Could not save the trusted folder: {error}", error = error));
             }
         });
+    }
+
+    /// `Add this time`: the chip only; nothing is saved.
+    pub fn add_once(&self) {
+        self.answer(TrustChoice::AddOnce);
+    }
+
+    /// `Cancel` and Esc: the card goes, no chip.
+    pub fn cancel_trust(&self) {
+        self.answer(TrustChoice::Cancel);
+    }
+
+    fn answer(&self, choice: TrustChoice) -> Option<PathBuf> {
+        let mut folders = self.folders;
+        let mut pending = self.pending_trust;
+        let to_save = answer_card(&mut folders.write(), &mut pending.write(), choice);
+        crate::refocus::refocus_composer();
+        to_save
+    }
+
+    // A message goes without the folder the card is still asking about, and the card goes with it.
+    fn drop_pending_trust(&self) {
+        let mut pending = self.pending_trust;
+        if pending.peek().is_some() {
+            pending.set(None);
+        }
     }
 
     /// Puts `/` in the text area (after a space when there is text) and asks it to open its
@@ -184,6 +248,7 @@ impl ComposerState {
         if !self.check_and_clear(&attachments) {
             return None;
         }
+        self.drop_pending_trust();
         Some(outgoing)
     }
 
@@ -210,6 +275,7 @@ impl ComposerState {
         for (_, told) in folders.write().iter_mut() {
             *told = true;
         }
+        self.drop_pending_trust();
         Some(outgoing)
     }
 }
@@ -249,6 +315,43 @@ pub fn ComposerChips() -> Element {
                         onclick: move |_| composer.remove_folder(index),
                         "×"
                     }
+                }
+            }
+        }
+    }
+}
+
+/// The question for a folder that is not trusted yet, under the chips of the message box. Takes the
+/// focus when it opens so Esc cancels.
+#[component]
+pub fn TrustCard() -> Element {
+    let composer = use_composer_state();
+    let Some(path) = composer.pending_trust() else {
+        return rsx! {};
+    };
+    rsx! {
+        // A one-item keyed list: a second pick changes the key, so the card is built again and takes
+        // the focus again (a lone element with a new key would be reused as it is).
+        for folder in [path] {
+            div {
+                key: "{folder.display()}",
+                class: "trust-card",
+                tabindex: "0",
+                onmounted: move |mounted| async move {
+                    let _ = mounted.set_focus(true).await;
+                },
+                onkeydown: move |event: KeyboardEvent| {
+                    if event.key() == Key::Escape {
+                        event.stop_propagation();
+                        composer.cancel_trust();
+                    }
+                },
+                div { class: "trust-question", {tr!("Allow Claude to use this folder and its subfolders?")} }
+                div { class: "trust-path", title: "{folder.display()}", "{folder.display()}" }
+                div { class: "trust-buttons",
+                    Button { label: tr!("Cancel"), onclick: move |_| composer.cancel_trust() }
+                    Button { label: tr!("Add this time"), onclick: move |_| composer.add_once() }
+                    Button { label: tr!("Trust and add"), kind: ButtonKind::Primary, onclick: move |_| composer.trust_and_add() }
                 }
             }
         }

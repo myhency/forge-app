@@ -82,6 +82,7 @@ pub fn SettingsOverlay() -> Element {
                     StatusLine {}
                 }
             }
+            TrustedFoldersDialog {}
         }
     }
 }
@@ -149,6 +150,12 @@ fn GeneralSection() -> Element {
                 onchange: move |on| settings.set_motion(if on { MotionPref::Reduced } else { MotionPref::System }),
             }
         }
+        h3 { class: "settings-group", {tr!("Work")} }
+        SettingRow {
+            title: tr!("Trusted folders"),
+            description: tr!("Trusting a folder on this computer lets Claude use that folder and its subfolders. Trusting a folder does not add it to new sessions. When you add a folder to a session, you may be asked to allow it again."),
+            Button { label: tr!("Manage"), onclick: move |_| settings.open_trusted_dialog() }
+        }
         h3 { class: "settings-group", {tr!("Notifications")} }
         SettingRow { title: tr!("Reply done"), description: tr!("When a session you are not looking at finishes a reply."),
             Switch { on: notes.reply_done, onchange: move |on| settings.set_notification(NotificationKind::ReplyDone, on) }
@@ -161,6 +168,55 @@ fn GeneralSection() -> Element {
         }
         SettingRow { title: tr!("Permission request"), description: tr!("When a session you are not looking at asks for approval."),
             Switch { on: notes.permission_request, onchange: move |on| settings.set_notification(NotificationKind::PermissionRequest, on) }
+        }
+    }
+}
+
+// Over the settings panel, not inside it: the backdrop is as big as the whole window.
+#[component]
+fn TrustedFoldersDialog() -> Element {
+    let settings = use_settings();
+    if !settings.trusted_dialog_open() {
+        return rsx! {};
+    }
+    let folders = settings.trusted_folders();
+    rsx! {
+        div {
+            class: "settings-backdrop trusted-backdrop",
+            onclick: move |event| {
+                event.stop_propagation();
+                settings.close_trusted_dialog();
+            },
+            div { class: "customize-dialog", onclick: move |event| event.stop_propagation(),
+                h2 { {tr!("Trusted folders")} }
+                p { class: "hint", {tr!("Trusting a folder on this computer lets Claude use that folder and its subfolders. Trusting a folder does not add it to new sessions. When you add a folder to a session, you may be asked to allow it again.")} }
+                if let Some(SettingsStatus::Error(message)) = settings.status() {
+                    div { class: "status-line error", "{message}" }
+                }
+                if folders.is_empty() {
+                    div { class: "hint", {tr!("No trusted folders yet")} }
+                }
+                for path in folders {
+                    div { key: "{path.display()}", class: "trusted-row",
+                        span { "📁" }
+                        span { class: "trusted-path", title: "{path.display()}", "{path.display()}" }
+                        button {
+                            class: "chip-remove",
+                            r#type: "button",
+                            title: tr!("Remove"),
+                            onclick: {
+                                let path = path.clone();
+                                move |_| settings.remove_trusted_folder(path.clone())
+                            },
+                            "×"
+                        }
+                    }
+                }
+                div { class: "customize-dialog-buttons trusted-buttons",
+                    Button { label: format!("+ {}", tr!("Add folder")), onclick: move |_| settings.add_trusted_folder() }
+                    Button { label: tr!("Done"), kind: ButtonKind::Primary, onclick: move |_| settings.close_trusted_dialog() }
+                }
+            }
         }
     }
 }

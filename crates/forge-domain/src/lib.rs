@@ -12,6 +12,7 @@ mod skill_catalog;
 mod layout;
 mod keys;
 mod paths;
+mod trusted;
 mod permission;
 mod project;
 mod routine;
@@ -35,6 +36,7 @@ pub use config::{
 pub use effort::{AvailableModel, EffortLevel};
 pub use keys::{SHOW_IN_FILE_MANAGER, KEY_ADD_FILES, KEY_ALLOW_ALWAYS, KEY_ANSWER, KEY_CLOSE_SESSION, KEY_FIND, KEY_SEARCH, KEY_SETTINGS, KEY_SHORTCUTS};
 pub use paths::{file_name, has_parent_part, is_absolute_path, path_parts};
+pub use trusted::{add_trusted, is_trusted, without_extended_prefix};
 pub use layout::{
     keep_peek, layout_for, workspace_class, DockMode, Layout, SidebarMode, MIN_CHAT_WIDTH, MIN_WINDOW_WIDTH, NARROW_CHAT_BELOW, SIDEBAR_OVERLAY_UP_TO,
     SIDEBAR_RAIL_WIDTH,

@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use forge_domain::{EffortLevel, PermissionMode};
 
 use crate::command_box::CommandTextArea;
-use crate::composer_state::{use_composer_state_provider, ComposerChips};
+use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCard};
 use crate::workspace::use_workspace;
 use forge_shared::tr;
 
@@ -88,6 +88,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
                 div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
             }
             ComposerChips {}
+            TrustCard {}
             div { class: "composer-box",
                 CommandTextArea {
                     value: text(),

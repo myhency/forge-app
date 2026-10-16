@@ -517,6 +517,10 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .picker-item .menu-key { margin-left: auto; color: var(--fg-muted); font-size: 11px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; padding: 2px 4px 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-hover); font-size: 12px; }
+.trust-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; margin: 6px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); outline: none; }
+.trust-question { font-size: 13px; font-weight: 600; }
+.trust-path { font-size: 12px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trust-buttons { display: flex; justify-content: flex-end; gap: 8px; }
 .chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-remove { border: none; background: transparent; color: var(--fg-muted); cursor: pointer; font: inherit; line-height: 1; }
 .chip-remove:hover { color: var(--fg); }
@@ -957,6 +961,10 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .customize-dialog h2 { margin: 0 0 8px; font-size: 18px; }
 .customize-field { width: 100%; padding: 8px 10px; margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; box-sizing: border-box; }
 .customize-dialog-buttons { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.trusted-backdrop { z-index: 20; }
+.trusted-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: 10px; }
+.trusted-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.trusted-buttons { justify-content: space-between; }
 .customize-market { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 10px; }
 .customize-check { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; }
 .customize-check button { flex: none; white-space: nowrap; }

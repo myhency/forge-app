@@ -19,6 +19,7 @@ mod editor_tabs;
 mod effort;
 mod composer_cards;
 mod composer_state;
+mod trust;
 mod dock;
 mod file_menu;
 mod file_tree;
