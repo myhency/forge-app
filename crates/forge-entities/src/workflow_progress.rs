@@ -45,6 +45,7 @@ pub fn journal_path(transcript_dir: &str) -> Option<String> {
 pub enum AgentState {
     Running,
     Done,
+    Failed,
 }
 
 /// One agent the workflow started.
@@ -75,6 +76,13 @@ pub fn parse_journal(text: &str) -> Vec<JournalAgent> {
                     agent.state = AgentState::Done;
                 }
             }
+            Some("failed") => {
+                if let Some(agent) = agents.iter_mut().find(|agent| agent.id == id) {
+                    if agent.state != AgentState::Done {
+                        agent.state = AgentState::Failed;
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -91,6 +99,10 @@ pub struct Step {
 impl Step {
     pub fn done(&self) -> usize {
         self.agents.iter().filter(|agent| agent.state == AgentState::Done).count()
+    }
+
+    pub fn failed(&self) -> bool {
+        self.agents.iter().any(|agent| agent.state == AgentState::Failed)
     }
 }
 
@@ -110,9 +122,50 @@ pub fn steps(titles: &[String], agents: &[JournalAgent]) -> Vec<Step> {
         .collect()
 }
 
+/// The CSS class of an agent's dot: blue running, grey done, red failed. In a run that was stopped an
+/// agent that never ended shows hollow.
+pub fn dot_class(state: AgentState, run_stopped: bool) -> &'static str {
+    match (state, run_stopped) {
+        (AgentState::Done, _) => "wf-dot done",
+        (AgentState::Failed, _) => "wf-dot failed",
+        (AgentState::Running, true) => "wf-dot stopped",
+        (AgentState::Running, false) => "wf-dot running",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_line_marks_the_agent_failed_and_a_later_result_wins() {
+        let text = concat!(
+            "{\"type\": \"started\", \"agentId\": \"a1\", \"label\": \"a\", \"phase\": \"Analyze\"}\n",
+            "{\"type\": \"started\", \"agentId\": \"a2\", \"label\": \"b\", \"phase\": \"Analyze\"}\n",
+            "{\"type\": \"started\", \"agentId\": \"a3\", \"label\": \"c\", \"phase\": \"Analyze\"}\n",
+            "{\"type\": \"failed\", \"key\": \"k2\", \"agentId\": \"a2\"}\n",
+            "{\"type\": \"failed\", \"agentId\": \"a3\"}\n",
+            "{\"type\": \"result\", \"agentId\": \"a3\", \"result\": \"ok\"}\n",
+            "{\"type\": \"failed\", \"agentId\": \"a1\"}\n",
+            "{\"type\": \"result\", \"agentId\": \"a1\", \"result\": \"ok\"}\n",
+            "{\"type\": \"failed\", \"agentId\": \"a1\"}\n",
+        );
+        let agents = parse_journal(text);
+        let states: Vec<AgentState> = agents.iter().map(|agent| agent.state).collect();
+        assert_eq!(states, vec![AgentState::Done, AgentState::Failed, AgentState::Done], "a failure after a result does not undo it");
+        let listed = steps(&["Analyze".to_string()], &agents);
+        assert!(listed[0].failed());
+        assert_eq!(listed[0].done(), 2, "a failed agent is not counted as done");
+    }
+
+    #[test]
+    fn dots_are_blue_grey_red_or_hollow() {
+        assert_eq!(dot_class(AgentState::Running, false), "wf-dot running");
+        assert_eq!(dot_class(AgentState::Done, false), "wf-dot done");
+        assert_eq!(dot_class(AgentState::Failed, false), "wf-dot failed");
+        assert_eq!(dot_class(AgentState::Running, true), "wf-dot stopped", "an agent that never ended in a stopped run");
+        assert_eq!(dot_class(AgentState::Done, true), "wf-dot done");
+    }
 
     const RESULT_TEXT: &str = "Workflow launched in background. Task ID: wdzs26lja\nSummary: Three parallel agents analyze\nTranscript dir: /Users/me/.claude/projects/-tmp-x/6a34/subagents/workflows/wf_cd3743cd-a82\nScript file: /Users/me/.claude/projects/-tmp-x/6a34/workflows/scripts/s.js\n(Edit this file)\nRun ID: wf_cd3743cd-a82\n\nYou will be notified when it completes.";
 

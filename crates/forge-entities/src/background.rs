@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use forge_domain::{Message, RunningTask};
+use forge_domain::{BackgroundTaskInfo, FinishedTask, Message, RunningTask, TaskStatus};
 use forge_shared::tr;
 
 use crate::workflow_progress::{journal_path, workflow_ref};
@@ -43,6 +43,15 @@ pub fn valid_output_path(path: &str, task_id: &str) -> bool {
     path.replace('\\', "/").ends_with(&format!("/tasks/{task_id}.output"))
 }
 
+/// What a finished task's card knows about its end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskEnd {
+    pub status: TaskStatus,
+    pub summary: String,
+    pub tokens: Option<u64>,
+    pub duration_ms: Option<u64>,
+}
+
 /// One card of the Tasks panel.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskCard {
@@ -56,6 +65,18 @@ pub struct TaskCard {
     pub seen_at: SystemTime,
     /// Set for a workflow, when the Workflow call that started it is in the session.
     pub workflow: Option<WorkflowCard>,
+    /// The tokens the SDK says a running task has used.
+    pub tokens: Option<u64>,
+    /// Set once the task has ended.
+    pub end: Option<TaskEnd>,
+}
+
+/// The running cards and the finished ones of a session.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskLists {
+    pub running: Vec<TaskCard>,
+    /// Newest first.
+    pub finished: Vec<TaskCard>,
 }
 
 /// What a workflow's card knows besides the task itself.
@@ -68,11 +89,13 @@ pub struct WorkflowCard {
     pub journal_path: Option<String>,
 }
 
-/// A card for each running task, in the SDK's order. The command, a better description and the
-/// output file come from the Bash call whose result names the task; a task without such a call
-/// (a sub-agent) keeps the SDK's description and has no command and no output.
-pub fn task_cards(messages: &[Message], running: &[RunningTask]) -> Vec<TaskCard> {
-    let started: Vec<(BackgroundRef, &forge_domain::ToolCall)> = messages
+struct Calls<'a> {
+    started: Vec<(BackgroundRef, &'a forge_domain::ToolCall)>,
+    workflows: Vec<(String, WorkflowCard, Option<String>)>,
+}
+
+fn calls(messages: &[Message]) -> Calls<'_> {
+    let started = messages
         .iter()
         .flat_map(|message| message.tool_calls())
         .filter_map(|call| {
@@ -80,7 +103,7 @@ pub fn task_cards(messages: &[Message], running: &[RunningTask]) -> Vec<TaskCard
             Some((reference, call))
         })
         .collect();
-    let workflows: Vec<(String, WorkflowCard, Option<String>)> = messages
+    let workflows = messages
         .iter()
         .flat_map(|message| message.tool_calls())
         .filter(|call| call.name == "Workflow")
@@ -91,33 +114,75 @@ pub fn task_cards(messages: &[Message], running: &[RunningTask]) -> Vec<TaskCard
             Some((reference.task_id, card, meta.description))
         })
         .collect();
-    running
+    Calls { started, workflows }
+}
+
+fn build_card(calls: &Calls<'_>, info: &BackgroundTaskInfo, seen_at: SystemTime, tokens: Option<u64>, end: Option<TaskEnd>) -> TaskCard {
+    let workflow = calls.workflows.iter().find(|(task_id, _, _)| task_id == &info.id);
+    let call = calls.started.iter().find(|(reference, _)| reference.task_id == info.id);
+    let command = call.and_then(|(_, call)| call.input.get("command")).and_then(|value| value.as_str()).map(str::to_string);
+    let description = call
+        .and_then(|(_, call)| call.input.get("description"))
+        .and_then(|value| value.as_str())
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| info.description.clone());
+    let output_path = call.map(|(reference, _)| reference.output_path.clone()).filter(|path| valid_output_path(path, &info.id));
+    let description = workflow.and_then(|(_, _, text)| text.clone()).unwrap_or(description);
+    let workflow = workflow.map(|(_, card, _)| card.clone());
+    TaskCard { id: info.id.clone(), description, task_type: info.task_type.clone(), command, output_path, seen_at, workflow, tokens, end }
+}
+
+/// A card for each running task, in the SDK's order. The command, a better description and the
+/// output file come from the Bash call whose result names the task; a task without such a call
+/// (a sub-agent) keeps the SDK's description and has no command and no output.
+pub fn task_cards(messages: &[Message], running: &[RunningTask]) -> Vec<TaskCard> {
+    let calls = calls(messages);
+    running.iter().map(|task| build_card(&calls, &task.info, task.seen_at, task.tokens, None)).collect()
+}
+
+/// The running cards and the finished ones. A task that is in both (its notification came before the
+/// set lost it) is a finished card only. A finished task with no call in the session has the
+/// notification's summary for its description.
+pub fn task_lists(messages: &[Message], running: &[RunningTask], finished: &[FinishedTask]) -> TaskLists {
+    let calls = calls(messages);
+    let ended = |id: &str| finished.iter().any(|item| item.task_id == id);
+    let running = running.iter().filter(|task| !ended(&task.info.id)).map(|task| build_card(&calls, &task.info, task.seen_at, task.tokens, None)).collect();
+    let finished = finished
         .iter()
-        .map(|task| {
-            let workflow = workflows.iter().find(|(task_id, _, _)| task_id == &task.info.id);
-            let call = started.iter().find(|(reference, _)| reference.task_id == task.info.id);
-            let command = call.and_then(|(_, call)| call.input.get("command")).and_then(|value| value.as_str()).map(str::to_string);
-            let description = call
-                .and_then(|(_, call)| call.input.get("description"))
-                .and_then(|value| value.as_str())
-                .filter(|text| !text.is_empty())
-                .map(str::to_string)
-                .unwrap_or_else(|| task.info.description.clone());
-            let output_path = call
-                .map(|(reference, _)| reference.output_path.clone())
-                .filter(|path| valid_output_path(path, &task.info.id));
-            let description = workflow.and_then(|(_, _, text)| text.clone()).unwrap_or(description);
-            let workflow = workflow.map(|(_, card, _)| card.clone());
-            TaskCard { id: task.info.id.clone(), description, task_type: task.info.task_type.clone(), command, output_path, seen_at: task.seen_at, workflow }
+        .rev()
+        .map(|item| {
+            let info = BackgroundTaskInfo { id: item.task_id.clone(), description: item.summary.clone(), task_type: String::new() };
+            let end = TaskEnd { status: item.status, summary: item.summary.clone(), tokens: item.tokens, duration_ms: item.duration_ms };
+            build_card(&calls, &info, SystemTime::UNIX_EPOCH, item.tokens, Some(end))
         })
-        .collect()
+        .collect();
+    TaskLists { running, finished }
+}
+
+/// The text of a failed task's error box: what follows `failed: ` in the summary, else the summary.
+pub fn error_text(summary: &str) -> String {
+    match summary.find(" failed: ") {
+        Some(at) => summary[at + " failed: ".len()..].to_string(),
+        None => summary.to_string(),
+    }
+}
+
+pub fn end_label(status: TaskStatus) -> String {
+    match status {
+        TaskStatus::Completed => tr!("Completed").to_string(),
+        TaskStatus::Stopped => tr!("Stopped").to_string(),
+        TaskStatus::Failed => tr!("Failed").to_string(),
+    }
 }
 
 /// The key of a card in the panel. It changes when the card's output file becomes known: the panel
 /// starts reading the output when a card is created, so a card made before the Bash result named
-/// the file must be replaced by a new one. The same for a workflow's card and its journal.
+/// the file must be replaced by a new one. The same for a workflow's card and its journal, and for a
+/// running card that has ended.
 pub fn card_key(card: &TaskCard) -> String {
-    format!("{}:{}:{}", card.id, card.output_path.is_some(), card.workflow.is_some())
+    let end = card.end.as_ref().map_or("running", |end| end.status.as_str());
+    format!("{}:{}:{}:{}", card.id, card.output_path.is_some(), card.workflow.is_some(), end)
 }
 
 /// The pill under the chat: `1 background task`, `2 background tasks`.
@@ -305,5 +370,71 @@ mod tests {
         assert!(valid_output_path("C:\\Users\\me\\AppData\\Local\\Temp\\claude\\x\\tasks\\abc1.output", "abc1"));
         assert!(!valid_output_path("C:\\Users\\..\\tasks\\abc1.output", "abc1"));
         assert!(!valid_output_path("C:\\Users\\me\\other\\abc1.output", "abc1"));
+    }
+
+    fn finished(id: &str, status: TaskStatus, summary: &str) -> forge_domain::FinishedTask {
+        forge_domain::FinishedTask { task_id: id.to_string(), status, summary: summary.to_string(), tokens: Some(157_469), duration_ms: Some(70_914) }
+    }
+
+    #[test]
+    fn finished_cards_come_newest_first_with_their_end() {
+        let lists = task_lists(
+            &[workflow_call(WORKFLOW_RESULT)],
+            &[],
+            &[finished("b1", TaskStatus::Completed, "Background command \"x\" completed"), finished("wf1", TaskStatus::Failed, "Dynamic workflow \"risk-review\" failed: Error: boom")],
+        );
+        assert!(lists.running.is_empty());
+        let ids: Vec<&str> = lists.finished.iter().map(|card| card.id.as_str()).collect();
+        assert_eq!(ids, vec!["wf1", "b1"]);
+        let end = lists.finished[0].end.as_ref().unwrap();
+        assert_eq!((end.status, end.tokens, end.duration_ms), (TaskStatus::Failed, Some(157_469), Some(70_914)));
+        assert_eq!(lists.finished[0].workflow.as_ref().unwrap().name, "risk-review", "the Workflow call gives the name");
+        assert_eq!(lists.finished[1].description, "Background command \"x\" completed", "no Bash call: the summary stands in");
+    }
+
+    #[test]
+    fn a_task_in_both_lists_shows_once_as_finished() {
+        let lists = task_lists(&[], &[running("b1", 3), running("b2", 3)], &[finished("b1", TaskStatus::Completed, "s")]);
+        assert_eq!(lists.running.iter().map(|card| card.id.as_str()).collect::<Vec<_>>(), vec!["b2"]);
+        assert_eq!(lists.finished.len(), 1);
+    }
+
+    #[test]
+    fn a_finished_bash_card_still_names_its_command_and_description() {
+        let messages = vec![bash("sleep 12; echo done", Some("Sleep 12 seconds then print done"), &SENTENCE.replace("bplyt9cwq", "bg9"))];
+        let lists = task_lists(&messages, &[], &[finished("bg9", TaskStatus::Completed, "Background command completed (exit code 0)")]);
+        assert_eq!(lists.finished[0].description, "Sleep 12 seconds then print done");
+        assert_eq!(lists.finished[0].command.as_deref(), Some("sleep 12; echo done"));
+    }
+
+    #[test]
+    fn a_running_card_carries_the_tokens_the_view_saw() {
+        let mut task = running("b1", 0);
+        task.tokens = Some(99_100);
+        assert_eq!(task_cards(&[], &[task])[0].tokens, Some(99_100));
+    }
+
+    #[test]
+    fn a_running_card_and_its_finished_card_have_different_keys() {
+        let before = task_cards(&[], &[running("b1", 0)]);
+        let after = task_lists(&[], &[], &[finished("b1", TaskStatus::Stopped, "s")]);
+        assert_ne!(card_key(&before[0]), card_key(&after.finished[0]));
+    }
+
+    #[test]
+    fn the_error_box_shows_what_follows_the_failed_marker() {
+        assert_eq!(
+            error_text("Dynamic workflow \"Run three\" failed: Error: obs-c boom\n    at <anonymous> (workflow.js:11:7)"),
+            "Error: obs-c boom\n    at <anonymous> (workflow.js:11:7)"
+        );
+        assert_eq!(error_text("Background command \"x\" failed with exit code 1"), "Background command \"x\" failed with exit code 1");
+        assert_eq!(error_text(""), "");
+    }
+
+    #[test]
+    fn each_end_has_a_label() {
+        assert_eq!(end_label(TaskStatus::Completed), "Completed");
+        assert_eq!(end_label(TaskStatus::Stopped), "Stopped");
+        assert_eq!(end_label(TaskStatus::Failed), "Failed");
     }
 }

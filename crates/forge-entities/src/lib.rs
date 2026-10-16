@@ -27,7 +27,7 @@ mod usage_view;
 
 pub use clipboard::copy_text;
 pub use card_view::{modal_title, CardView};
-pub use background::{background_ref, card_key, pill_label, task_cards, valid_output_path, BackgroundRef, TaskCard, WorkflowCard, TASK_OUTPUT_TAIL};
+pub use background::{background_ref, card_key, end_label, error_text, pill_label, task_cards, task_lists, TaskEnd, TaskLists, valid_output_path, BackgroundRef, TaskCard, WorkflowCard, TASK_OUTPUT_TAIL};
 pub use command_menu::{command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};
 pub use csv_table::{parse_csv, CsvTable, CSV_ROW_LIMIT};
 pub use diff::{diff_for_tool, diff_for_tool_call, parse_unified_diff, DiffLine, DiffLineKind, FileDiff};
@@ -39,7 +39,7 @@ pub use markdown::render_markdown;
 pub use message::attachment_label;
 pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_options, model_value, ModelRow, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
 pub use permission_view::{card_takes_focus, permission_key, permission_view, workflow_permission_key, PermissionKey, PermissionView, WorkflowAsk};
-pub use workflow_progress::{journal_path, parse_journal, steps, workflow_ref, AgentState, JournalAgent, Step, WorkflowRef};
+pub use workflow_progress::{journal_path, parse_journal, steps, workflow_ref, dot_class, AgentState, JournalAgent, Step, WorkflowRef};
 pub use workflow_script::{workflow_meta, WorkflowMeta};
 pub use preview::{file_address, has_rendered_view, icon_of, open_target, page_address, path_of_file_address, web_address, preview_kind, FileIcon, OpenTarget, PreviewKind};
 pub use question::{answer_pairs, answers_map, questions_of, AnswerPair, Picks, Question, QuestionOption, QUESTION_TOOL};
