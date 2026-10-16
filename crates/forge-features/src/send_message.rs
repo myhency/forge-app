@@ -5,7 +5,7 @@ use forge_shared::{tr, Button, ButtonKind};
 
 use crate::cards::line_count;
 use crate::composer_cards::ComposerCards;
-use crate::composer_state::{use_composer_state_provider, ComposerChips};
+use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCard};
 use crate::suggestion::{composer_placeholder, suggestion_to_accept};
 
 use crate::command_box::CommandTextArea;
@@ -98,6 +98,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
             }
             ComposerCards { id }
             ComposerChips {}
+            TrustCard {}
             CommandTextArea {
                 value: draft(),
                 commands: view.map(|view| view.read().commands.clone()).unwrap_or_default(),

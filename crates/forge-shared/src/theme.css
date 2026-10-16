@@ -517,6 +517,10 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .picker-item .menu-key { margin-left: auto; color: var(--fg-muted); font-size: 11px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; padding: 2px 4px 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-hover); font-size: 12px; }
+.trust-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; margin: 6px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); outline: none; }
+.trust-question { font-size: 13px; font-weight: 600; }
+.trust-path { font-size: 12px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trust-buttons { display: flex; justify-content: flex-end; gap: 8px; }
 .chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-remove { border: none; background: transparent; color: var(--fg-muted); cursor: pointer; font: inherit; line-height: 1; }
 .chip-remove:hover { color: var(--fg); }
