@@ -92,7 +92,7 @@ mod account_menu;
 pub use account_menu::{account_rows, user_initial, user_name, AccountAction, AccountRow};
 pub use settings::{use_settings, use_settings_provider, ExtensionKind, NotificationKind, Settings, SettingsSection, SettingsStatus};
 pub use settings_draft::ConnectionDraft;
-pub use shortcut::{command_held, match_code, swallowed_behind_overlay, types_text, command_pressed, shortcut_allowed, shortcut_for, shortcut_sections, KeyPress, Shortcut, ShortcutSection};
+pub use shortcut::{forwarded_shortcut, command_held, match_code, swallowed_behind_overlay, types_text, command_pressed, shortcut_allowed, shortcut_for, shortcut_sections, KeyPress, Shortcut, ShortcutSection};
 pub use sidebar::{
     cycle_target, mark_archived, marker_for, menu_key_action, merge_sidebar, open_order, replace_project_sessions, ArchiveAction, DeleteAction, EntryKey,
     LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,

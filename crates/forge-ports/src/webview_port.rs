@@ -58,6 +58,8 @@ pub trait WebViewPort: Send + Sync {
     fn reload(&self, tab: WebViewTabId);
     fn set_surface(&self, tab: WebViewTabId, surface: Surface);
     fn set_visible(&self, tab: WebViewTabId, visible: bool);
+    /// Gives the keyboard back to the app's own view (the page it came from keeps the mouse).
+    fn focus_app(&self, tab: WebViewTabId);
     /// The stream of page events. It can be taken once; later calls give `None`.
     fn take_events(&self) -> Option<UnboundedReceiver<WebViewEvent>>;
 }

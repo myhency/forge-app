@@ -7,8 +7,8 @@ use dioxus::prelude::*;
 use forge_application::{Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewEventKind, WebViewPort, WebViewTabId};
-use forge_ports::{KeyForward, Surface};
+use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
+use forge_ports::Surface;
 use time::OffsetDateTime;
 
 use crate::cards::{clamp_cards, Cards};
@@ -117,7 +117,6 @@ pub struct Workspace {
     previews: Signal<PreviewHost>,
     preview_surface: Signal<Option<Surface>>,
     overlay_open: Signal<bool>,
-    key_forward: Signal<Option<KeyForward>>,
     lightbox: Signal<Option<Picture>>,
     cards: Signal<Cards>,
     files_stores: Signal<HashMap<LiveSessionId, FilesStore>>,
@@ -174,7 +173,6 @@ pub fn use_workspace_provider() -> Workspace {
             previews: Signal::new(PreviewHost::default()),
             preview_surface: Signal::new(None),
             overlay_open: Signal::new(false),
-            key_forward: Signal::new(None),
             lightbox: Signal::new(None),
             cards: Signal::new(Cards::default()),
             files_stores: Signal::new(HashMap::new()),
@@ -651,11 +649,6 @@ impl Workspace {
 
     /// Takes in what a web view reported.
     pub fn apply_web_view_event(&self, event: WebViewEvent) {
-        if let WebViewEventKind::Key(key) = event.kind {
-            let mut forward = self.key_forward;
-            forward.set(Some(key));
-            return;
-        }
         let mut previews = self.previews;
         let asked = previews.write().apply(event);
         if let Some((id, url)) = asked {
@@ -680,13 +673,6 @@ impl Workspace {
         if *slot.peek() != open {
             slot.set(open);
         }
-    }
-
-    /// A key a page sent on, once: reading it clears it.
-    pub fn take_key_forward(&self) -> Option<KeyForward> {
-        let mut slot = self.key_forward;
-        let key = slot.write().take();
-        key
     }
 
     /// Whether the Preview panel of the session on screen is open (reads, so an effect follows it).

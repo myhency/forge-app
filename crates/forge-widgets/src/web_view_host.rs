@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_features::use_workspace;
-use forge_ports::Surface;
+use forge_ports::{KeyForward, Surface, WebViewEventKind};
 
 // Reports the Preview surface rectangle when it changes: one message per change, empty when there
 // is no surface. A new run takes over from an older one (`dioxus.send` belongs to its eval).
@@ -39,6 +39,22 @@ fn parse_surface(text: &str) -> Option<Surface> {
     }
 }
 
+// The chord as a `keydown` on Forge's own page root, which is where its shortcuts are read. The
+// text is quoted as JSON, so what a page sends can never leave the string.
+fn key_script(key: &KeyForward) -> String {
+    let quote = |text: &str| serde_json::to_string(text).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        "(function(){{var t=document.querySelector('.workspace')||document.body;t.focus();\
+         t.dispatchEvent(new KeyboardEvent('keydown',{{key:{},code:{},ctrlKey:{},metaKey:{},altKey:{},shiftKey:{},bubbles:true,cancelable:true}}));}})();",
+        quote(&key.key),
+        quote(&key.code),
+        key.ctrl,
+        key.meta,
+        key.alt,
+        key.shift
+    )
+}
+
 /// Draws nothing. It keeps the Preview web views in step with the page: where the surface is,
 /// whether an overlay is open, what the web views report, and which session and panel are on screen.
 #[component]
@@ -61,6 +77,15 @@ pub fn WebViewHost() -> Element {
     use_future(move || async move {
         let Some(mut events) = workspace.webviews().take_events() else { return };
         while let Some(event) = events.recv().await {
+            // A chord pressed in a page that is one of Forge's shortcuts: the keyboard goes back to
+            // the app and the key is played again on its page.
+            if let WebViewEventKind::Key(key) = &event.kind {
+                if forge_features::forwarded_shortcut(key, cfg!(target_os = "macos")).is_some() {
+                    workspace.webviews().focus_app(event.tab);
+                    document::eval(&key_script(key));
+                }
+                continue;
+            }
             workspace.apply_web_view_event(event);
         }
     });
@@ -94,5 +119,15 @@ mod tests {
         assert!(SURFACE_SCRIPT.contains("requestAnimationFrame"));
         assert!(OVERLAY_SCRIPT.contains("__forgeOverlayObserver.disconnect()"));
         assert!(OVERLAY_SCRIPT.contains("[class*=\"backdrop\"]"));
+    }
+
+    #[test]
+    fn the_key_script_carries_the_chord_and_quotes_the_text() {
+        let script = key_script(&KeyForward { key: "k".into(), code: "KeyK".into(), ctrl: false, meta: true, alt: false, shift: false });
+        assert!(script.contains("key:\"k\""), "{script}");
+        assert!(script.contains("metaKey:true"));
+        assert!(script.contains(".workspace"));
+        let hostile = key_script(&KeyForward { key: "\"});alert(1);//".into(), code: "x".into(), ctrl: false, meta: false, alt: false, shift: false });
+        assert!(hostile.contains("key:\"\\\"});alert(1);//\""), "the quote is escaped: {hostile}");
     }
 }

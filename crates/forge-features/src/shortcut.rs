@@ -249,6 +249,16 @@ pub fn shortcut_for(press: &KeyPress, mac: bool) -> Option<Shortcut> {
     None
 }
 
+/// The shortcut a chord sent from a page in the Preview panel is, if any. Only chords the
+/// table knows count, so copy, paste and the like stay with the page.
+pub fn forwarded_shortcut(key: &forge_ports::KeyForward, mac: bool) -> Option<Shortcut> {
+    if types_text(&key.key, key.ctrl, key.alt, mac) {
+        return None;
+    }
+    let code = match_code(&key.key, &key.code, key.alt);
+    shortcut_for(&KeyPress { code: &code, ctrl: key.ctrl, meta: key.meta, alt: key.alt, shift: key.shift }, mac)
+}
+
 /// Whether `shortcut` may act while an overlay (Settings, the search palette, the shortcut list) is
 /// open. Only opening settings and the list do: the session shortcuts would change the session
 /// hidden behind the overlay (Plan 6 found ⌘W closing it).
@@ -290,6 +300,24 @@ pub fn command_held(modifiers: dioxus::prelude::Modifiers) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_chord_sent_from_a_page_is_a_shortcut_only_when_the_table_has_it() {
+        let key = |key: &str, code: &str, meta: bool, ctrl: bool| forge_ports::KeyForward {
+            key: key.to_string(),
+            code: code.to_string(),
+            ctrl,
+            meta,
+            alt: false,
+            shift: false,
+        };
+        assert_eq!(forwarded_shortcut(&key("k", "KeyK", true, false), true), Some(Shortcut::OpenSearch));
+        assert_eq!(forwarded_shortcut(&key("/", "Slash", true, false), true), Some(Shortcut::ShowShortcuts));
+        assert_eq!(forwarded_shortcut(&key("k", "KeyK", false, true), false), Some(Shortcut::OpenSearch), "Ctrl is the command key off a Mac");
+        for (letter, code) in [("c", "KeyC"), ("v", "KeyV"), ("a", "KeyA"), ("z", "KeyZ")] {
+            assert_eq!(forwarded_shortcut(&key(letter, code, true, false), true), None, "{letter} belongs to the page");
+        }
+    }
     use std::collections::HashSet;
 
     use super::*;

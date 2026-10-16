@@ -16,10 +16,11 @@ thread_local! {
     static VIEWS: RefCell<HashMap<u64, WebView>> = RefCell::new(HashMap::new());
 }
 
-// The key forwarder: a chord with Command or Control (or Escape) goes to Forge. Nothing else leaves the page.
+// The key forwarder: a chord with Command or Control goes to Forge, which decides whether it is one of its
+// shortcuts. The page still gets the key. Nothing else leaves the page.
 const KEY_SCRIPT: &str = r#"
 window.addEventListener('keydown', function (e) {
-  if (!(e.metaKey || e.ctrlKey || e.key === 'Escape')) return;
+  if (!(e.metaKey || e.ctrlKey)) return;
   window.ipc.postMessage(JSON.stringify({ k: e.key, c: e.code, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey, shift: e.shiftKey }));
 }, true);
 "#;
@@ -185,6 +186,12 @@ impl WebViewPort for WryWebViews {
     fn set_visible(&self, tab: WebViewTabId, visible: bool) {
         with_view(tab, |view| {
             let _ = view.set_visible(visible);
+        });
+    }
+
+    fn focus_app(&self, tab: WebViewTabId) {
+        with_view(tab, |view| {
+            let _ = view.focus_parent();
         });
     }
 
