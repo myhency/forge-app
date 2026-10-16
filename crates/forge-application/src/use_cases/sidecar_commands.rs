@@ -96,6 +96,7 @@ mod tests {
 
     fn empty_session() -> Session {
         Session {
+            finished_tasks: Vec::new(),
             id: forge_domain::SessionId("s-1".to_string()),
             project_path: std::path::PathBuf::from("/tmp/project"),
             title: None,

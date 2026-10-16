@@ -374,7 +374,7 @@ impl Actor {
                     .into_iter()
                     .map(|info| {
                         let seen_at = previous.iter().find(|task| task.info.id == info.id).map_or(now, |task| task.seen_at);
-                        forge_domain::RunningTask { info, seen_at }
+                        forge_domain::RunningTask { info, seen_at, tokens: None }
                     })
                     .collect();
             }

@@ -266,6 +266,7 @@ mod tests {
 
     fn empty_session() -> Session {
         Session {
+            finished_tasks: Vec::new(),
             id: SessionId(String::new()),
             project_path: PathBuf::from("/work/a"),
             title: None,

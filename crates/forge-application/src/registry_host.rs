@@ -247,6 +247,7 @@ mod tests {
             id: LiveSessionId(1),
             project_path: PathBuf::from("/work/a"),
             session: Session {
+                finished_tasks: Vec::new(),
                 id: SessionId(String::new()),
                 project_path: PathBuf::from("/work/a"),
                 title: None,

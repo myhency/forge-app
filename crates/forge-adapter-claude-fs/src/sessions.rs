@@ -544,6 +544,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         let mut titles = TitleTracker::default();
         let mut usage = UsageCollector::default();
         let mut session = Session {
+            finished_tasks: Vec::new(),
             id: session_id.clone(),
             project_path: project_path.to_path_buf(),
             title: None,

@@ -50,7 +50,7 @@ pub use output_style::OutputStyle;
 pub use session_defaults::SessionDefaults;
 pub use transcript_view::TranscriptView;
 pub use permission::{PermissionDecision, PermissionMode};
-pub use background::{BackgroundTaskInfo, RunningTask};
+pub use background::{parse_task_notification, record_finished, BackgroundTaskInfo, FinishedTask, RunningTask, TaskStatus};
 pub use project::ProjectSummary;
 pub use routine::{
     clock, decide, delay_ms, push_run, routine_id, validate_draft, Decision, Routine, RoutineDraft, RoutineRun, RunOutcome, Schedule, SkipReason,

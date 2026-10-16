@@ -14,6 +14,9 @@ pub struct Session {
     pub permission_mode: PermissionMode,
     /// What the session has used so far: restored from the session file, then grown by each turn.
     pub usage: SessionUsage,
+    /// The tasks that have ended, in the order they ended. Filled live from the sidecar and, for a
+    /// session read from its record, from the `<task-notification>` lines.
+    pub finished_tasks: Vec<crate::FinishedTask>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -260,6 +263,7 @@ mod tests {
     #[test]
     fn a_new_session_has_used_nothing() {
         let session = Session {
+            finished_tasks: Vec::new(),
             id: SessionId("s".to_string()),
             project_path: PathBuf::from("/p"),
             title: None,

@@ -173,6 +173,7 @@ mod tests {
 
     fn running(id: &str, secs: u64) -> RunningTask {
         RunningTask {
+            tokens: None,
             info: BackgroundTaskInfo { id: id.to_string(), description: format!("sdk {id}"), task_type: "local_bash".to_string() },
             seen_at: UNIX_EPOCH + Duration::from_secs(secs),
         }
