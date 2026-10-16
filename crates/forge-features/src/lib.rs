@@ -31,6 +31,7 @@ mod folder_menu;
 mod new_session;
 mod permission_mode;
 mod browser_host;
+mod preview_host;
 mod preview_tabs;
 mod suggestion;
 mod refocus;
@@ -103,6 +104,7 @@ pub use workspace::{shortcut_from_event, use_workspace, use_workspace_provider, 
 pub use blocking::run_blocking;
 pub use file_tree::{parse_files_query, FileTree, FilesQuery, TreeRow};
 pub use browser_host::{should_show, ShowInput};
+pub use preview_host::PreviewHost;
 pub use preview_tabs::{normalize_url, PreviewTabId, PreviewTabs};
 pub use suggestion::{composer_placeholder, suggestion_to_accept};
 pub use tool_activity::finished_tool_calls;

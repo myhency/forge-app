@@ -7,7 +7,8 @@ use dioxus::prelude::*;
 use forge_application::{Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewPort};
+use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewEventKind, WebViewPort};
+use forge_ports::{KeyForward, Surface};
 use time::OffsetDateTime;
 
 use crate::cards::{clamp_cards, Cards};
@@ -17,6 +18,8 @@ use crate::files_store::{FilesStore, Restore};
 use crate::dock::{DockState, DockStates, Panel};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::nav_history::NavHistory;
+use crate::preview_host::PreviewHost;
+use crate::preview_tabs::{normalize_url, PreviewTabId, PreviewTabs};
 use crate::new_session::ModelChoice;
 use crate::shortcut::{match_code, shortcut_allowed, shortcut_for, swallowed_behind_overlay, types_text, KeyPress, Shortcut};
 use crate::tool_activity::finished_tool_calls;
@@ -111,6 +114,10 @@ pub struct Workspace {
     archived: Signal<Vec<ArchivedRef>>,
     docks: Signal<DockStates>,
     file_requests: Signal<HashMap<LiveSessionId, String>>,
+    previews: Signal<PreviewHost>,
+    preview_surface: Signal<Option<Surface>>,
+    overlay_open: Signal<bool>,
+    key_forward: Signal<Option<KeyForward>>,
     lightbox: Signal<Option<Picture>>,
     cards: Signal<Cards>,
     files_stores: Signal<HashMap<LiveSessionId, FilesStore>>,
@@ -164,6 +171,10 @@ pub fn use_workspace_provider() -> Workspace {
             archived: Signal::new(Vec::new()),
             docks: Signal::new(DockStates::default()),
             file_requests: Signal::new(HashMap::new()),
+            previews: Signal::new(PreviewHost::default()),
+            preview_surface: Signal::new(None),
+            overlay_open: Signal::new(false),
+            key_forward: Signal::new(None),
             lightbox: Signal::new(None),
             cards: Signal::new(Cards::default()),
             files_stores: Signal::new(HashMap::new()),
@@ -562,6 +573,128 @@ impl Workspace {
         docks.write().change(id, change);
     }
 
+    /// The Preview tabs of a session.
+    pub fn previews(&self, id: LiveSessionId) -> PreviewTabs {
+        self.previews.read().tabs(id)
+    }
+
+    pub fn change_previews(&self, id: LiveSessionId, change: impl FnOnce(&mut PreviewTabs)) {
+        let mut previews = self.previews;
+        previews.write().change(id, change);
+    }
+
+    /// An address typed in the Preview bar: the tab shows it. The error is a message for the person.
+    pub fn preview_go(&self, id: LiveSessionId, tab: PreviewTabId, typed: &str) -> Result<(), String> {
+        let url = normalize_url(typed).ok_or_else(|| tr!("Enter a web address, such as localhost:3000").to_string())?;
+        self.preview_load(id, tab, &url)
+    }
+
+    fn preview_load(&self, id: LiveSessionId, tab: PreviewTabId, url: &str) -> Result<(), String> {
+        let (webviews, browser, surface) = (self.webviews(), self.browser(), self.surface());
+        let mut previews = self.previews;
+        let result = previews.write().go(id, tab, url, surface, webviews.as_ref(), browser.as_ref());
+        self.sync_web_views();
+        result
+    }
+
+    /// Opens a file of the session in a new Preview tab; the panel opens if it is closed.
+    pub fn open_in_preview(&self, id: LiveSessionId, absolute_path: &str) {
+        self.open_preview_tab(id, &forge_entities::file_address(absolute_path));
+    }
+
+    fn open_preview_tab(&self, id: LiveSessionId, url: &str) {
+        self.change_dock(id, |dock| {
+            if !dock.is_open(Panel::Preview) {
+                dock.toggle(Panel::Preview);
+            }
+        });
+        let mut tab = None;
+        self.change_previews(id, |tabs| tab = Some(tabs.open()));
+        if let Some(tab) = tab {
+            if let Err(message) = self.preview_load(id, tab, url) {
+                self.report(message);
+            }
+        }
+    }
+
+    /// Closes a Preview tab and its web view; the panel closes with its last tab.
+    pub fn close_preview_tab(&self, id: LiveSessionId, tab: PreviewTabId) {
+        let webviews = self.webviews();
+        let mut previews = self.previews;
+        previews.write().close_tab(id, tab, webviews.as_ref());
+        if self.previews(id).is_empty() {
+            self.change_dock(id, |dock| dock.close(Panel::Preview));
+        }
+        self.sync_web_views();
+    }
+
+    /// Takes in what a web view reported.
+    pub fn apply_web_view_event(&self, event: WebViewEvent) {
+        if let WebViewEventKind::Key(key) = event.kind {
+            let mut forward = self.key_forward;
+            forward.set(Some(key));
+            return;
+        }
+        let mut previews = self.previews;
+        let asked = previews.write().apply(event);
+        if let Some((id, url)) = asked {
+            self.open_preview_tab(id, &url);
+        }
+        self.sync_web_views();
+    }
+
+    pub fn set_surface(&self, surface: Option<Surface>) {
+        let mut slot = self.preview_surface;
+        if *slot.peek() != surface {
+            slot.set(surface);
+        }
+    }
+
+    pub fn surface(&self) -> Option<Surface> {
+        *self.preview_surface.peek()
+    }
+
+    pub fn set_overlay_open(&self, open: bool) {
+        let mut slot = self.overlay_open;
+        if *slot.peek() != open {
+            slot.set(open);
+        }
+    }
+
+    /// A key a page sent on, once: reading it clears it.
+    pub fn take_key_forward(&self) -> Option<KeyForward> {
+        let mut slot = self.key_forward;
+        let key = slot.write().take();
+        key
+    }
+
+    /// Whether the Preview panel of the session on screen is open (reads, so an effect follows it).
+    pub fn active_dock_open_preview(&self) -> bool {
+        match self.active() {
+            Active::Live(id) => self.dock(id).is_open(Panel::Preview),
+            _ => false,
+        }
+    }
+
+    /// Puts every web view where it belongs: shown over the surface, or hidden.
+    pub fn sync_web_views(&self) {
+        let active = match self.active() {
+            Active::Live(id) => Some(id),
+            _ => None,
+        };
+        let (overlay, surface) = (*self.overlay_open.peek(), self.surface());
+        let plan = self.previews.peek().visibility(active, &|id| self.docks.peek().get(id).is_open(Panel::Preview), overlay, surface);
+        let webviews = self.webviews();
+        for (tab, show) in plan {
+            if show {
+                if let Some(surface) = surface {
+                    webviews.set_surface(tab, surface);
+                }
+            }
+            webviews.set_visible(tab, show);
+        }
+    }
+
     /// Opens a file in the session's Files panel. The path must be absolute and inside the session
     /// folder; anything else only sets a notice. The panel opens if it is closed and shows the file
     /// once it is mounted. A picture opens in the lightbox instead.
@@ -573,11 +706,19 @@ impl Workspace {
             notice.set(Some(tr!("Only files inside the session folder can be opened here.").to_string()));
             return;
         };
-        // A picture opens in the lightbox over the window, not in the Files panel.
-        if forge_entities::preview_kind(&relative) == forge_entities::PreviewKind::Image {
-            let mut lightbox = self.lightbox;
-            lightbox.set(Some(Picture { folder, relative }));
-            return;
+        match forge_entities::open_target(&relative) {
+            // A picture opens in the lightbox over the window, not in the Files panel.
+            forge_entities::OpenTarget::Lightbox => {
+                let mut lightbox = self.lightbox;
+                lightbox.set(Some(Picture { folder, relative }));
+                return;
+            }
+            // A page, a pdf or an svg opens in a new tab of the Preview panel.
+            forge_entities::OpenTarget::Preview => {
+                self.open_in_preview(id, &absolute_path);
+                return;
+            }
+            forge_entities::OpenTarget::Files => {}
         }
         self.change_dock(id, |dock| {
             if !dock.is_open(Panel::Files) {
@@ -1196,6 +1337,9 @@ impl Workspace {
         views.write().forget(id);
         let mut docks = self.docks;
         docks.write().forget(id);
+        let webviews = self.webviews();
+        let mut previews = self.previews;
+        previews.write().forget_session(id, webviews.as_ref());
         // What the session left behind: the Files panel's tabs and drafts, and unsent cards.
         let mut stores = self.files_stores;
         stores.write().remove(&id);
