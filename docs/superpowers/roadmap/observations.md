@@ -528,3 +528,19 @@ I allowed the three read-only agent commands (`find ... wc -l`, `head`/`grep` ov
 - When it ended, the panel lost its `실행 중` section. It shows a fold `완료 1 ›`; the trash icon turns dark (there is now something to clear). Opened, the card reads: name and total time at the right (`3분 43초`), `워크플로우  완료됨`, `4개 에이전트  234k 토큰`, the description in grey, `단계` with `Analyze 3/3 ›` and `Merge 1/1 ›` (folded, grey dots), and no stop button.
 - The usage banner above the composer changed during the run: `세션 사용량 한도 초과 임박  오후 11:50에 재설정  [업그레이드]  ×` in place of the weekly one.
 - The final summary came without a second approval; the follow-up text is a long reply with headings, a numbered `Ranked risks` list and file names as links.
+
+## Round 17: Forge's Preview web view checked in the real window (2026-10-16, Plan 44)
+
+Forge itself (harness fixture, a `python3 -m http.server` on `localhost` with an index and a second page), not the desktop app. Compared against rounds 5, 11 and 12 of this file.
+
+- `localhost:8130` loads inside the Preview panel; a link inside the page changes the address bar and the tab name (the page's title); back works and enables forward; typing and scrolling work in the page.
+- A page that Forge reports as `http://host/` while the person typed `http://host` is one entry in the history (fixed during the check; before it, back was enabled on the first page).
+- The panel expanded, the window resized to 1000 x 640, and the floating dock (Preview beside Files) all keep the page exactly on the panel body.
+- The search palette hides the page and is fully visible over the Preview column; Escape brings the page back. After a click inside the page, ⌘K opens the palette and the next typing goes to the palette's field (checked with `key code 40 using {command down}`).
+- A server that is off (`localhost:9`): the panel shows "이 주소에 연결할 수 없습니다.", the address and `다시 시도`; typing a good address afterwards replaces it. `javascript:alert(1)` is refused with the "Enter a web address" notice and nothing loads.
+- A `target=_blank` link opens a new Preview tab.
+- Switching to another session hides the page and the other session shows no panel; coming back shows the same tabs and pages. After quitting, no `forge-app` process is left.
+- Paths clicked in the chat: `page.html`, `doc.pdf` and `pic.svg` open as new Preview tabs named by the file (`file://` address in the bar); `data.csv` opens in the Files panel; `pic.png` opens the lightbox.
+- Differences from the desktop app (rounds 11 and 12): the desktop app's PDF view has a dark toolbar (page box, zoom, rotate, print) and a thumbnail strip; Forge shows WebKit's own PDF view (no toolbar). The desktop app's bar shows the plain path for a local file; Forge shows the `file://` address. The first-run cookie modal, the layout icon, the element picker and the panel `⋮` are not built.
+- Harness notes: `osascript keystroke "k" using command down` reaches the page with Option set (alt true), so Forge's shortcuts ignore it; use `key code 40 using {command down}`. `keystroke` of a long address can drop letters (the field is controlled); type one letter at a time with a short delay. When reading a capture that was resized to a different aspect, convert x and y with their own factors before `click.py`.
+- Not checked: Windows (WebView2), dragging the panel's left edge by hand (the window resize and expand were), closing a tab and a session with several web views in the real window (unit tests cover the calls).
