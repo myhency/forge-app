@@ -794,6 +794,16 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .wf-agent-label { min-width: 0; overflow-wrap: anywhere; }
 .task-stop:hover { background: var(--bg-hover); }
 .task-stop-square { width: 10px; height: 10px; border-radius: 2px; background: var(--fg); }
+.wf-dot.failed { background: var(--danger); }
+.wf-dot.stopped { background: transparent; box-shadow: inset 0 0 0 1px var(--fg-muted); }
+.wf-step-name.failed { color: var(--danger); }
+.end-failed, .workflow-end.failed { color: var(--danger); }
+.task-total { margin-left: auto; color: var(--fg-muted); font-size: 13px; }
+.task-error { padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.task-error-title { color: var(--danger); font-size: 13px; }
+.task-error pre { margin: 4px 0 0; font: inherit; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tasks-fold-head { appearance: none; display: flex; align-items: center; gap: 6px; padding: 0; border: none; background: none; color: var(--fg-muted); font: inherit; cursor: pointer; }
+.task-card-done .task-description, .workflow-card.ended .task-description { color: var(--fg-muted); }
 .task-command { padding: 8px 10px; background: var(--code-bg); border-radius: 8px; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .task-output { margin: 0; padding: 8px 10px; max-height: 240px; overflow: auto; background: var(--code-bg); border-radius: 8px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .task-output.empty { font-family: inherit; color: var(--fg-muted); }

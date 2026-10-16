@@ -93,6 +93,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     live: (view.phase == Phase::Running).then(|| live_state(view.turn_started, view.pending_permissions.front())),
                     on_open_file: move |path: String| workspace.open_file(id, path),
                     workflows: workflows(),
+                    finished: view.session.finished_tasks.clone(),
                     on_open_tasks: move |_| workspace.change_dock(id, |dock| if !dock.is_open(Panel::Tasks) { dock.toggle(Panel::Tasks) }),
                 }
                 {
