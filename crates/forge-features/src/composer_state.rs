@@ -330,26 +330,29 @@ pub fn TrustCard() -> Element {
         return rsx! {};
     };
     rsx! {
-        div {
-            // Keyed by the folder: a second pick remounts the card, so it takes the focus again.
-            key: "{path.display()}",
-            class: "trust-card",
-            tabindex: "0",
-            onmounted: move |mounted| async move {
-                let _ = mounted.set_focus(true).await;
-            },
-            onkeydown: move |event: KeyboardEvent| {
-                if event.key() == Key::Escape {
-                    event.stop_propagation();
-                    composer.cancel_trust();
+        // A one-item keyed list: a second pick changes the key, so the card is built again and takes
+        // the focus again (a lone element with a new key would be reused as it is).
+        for folder in [path] {
+            div {
+                key: "{folder.display()}",
+                class: "trust-card",
+                tabindex: "0",
+                onmounted: move |mounted| async move {
+                    let _ = mounted.set_focus(true).await;
+                },
+                onkeydown: move |event: KeyboardEvent| {
+                    if event.key() == Key::Escape {
+                        event.stop_propagation();
+                        composer.cancel_trust();
+                    }
+                },
+                div { class: "trust-question", {tr!("Allow Claude to use this folder and its subfolders?")} }
+                div { class: "trust-path", title: "{folder.display()}", "{folder.display()}" }
+                div { class: "trust-buttons",
+                    Button { label: tr!("Cancel"), onclick: move |_| composer.cancel_trust() }
+                    Button { label: tr!("Add this time"), onclick: move |_| composer.add_once() }
+                    Button { label: tr!("Trust and add"), kind: ButtonKind::Primary, onclick: move |_| composer.trust_and_add() }
                 }
-            },
-            div { class: "trust-question", {tr!("Allow Claude to use this folder and its subfolders?")} }
-            div { class: "trust-path", title: "{path.display()}", "{path.display()}" }
-            div { class: "trust-buttons",
-                Button { label: tr!("Cancel"), onclick: move |_| composer.cancel_trust() }
-                Button { label: tr!("Add this time"), onclick: move |_| composer.add_once() }
-                Button { label: tr!("Trust and add"), kind: ButtonKind::Primary, onclick: move |_| composer.trust_and_add() }
             }
         }
     }
