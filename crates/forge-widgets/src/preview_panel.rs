@@ -1,9 +1,22 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{use_workspace, Panel};
+use forge_features::{preview_key_from_event, use_workspace, Panel, PreviewKey, Workspace};
 
 use crate::panel_frame::PanelFrame;
 use forge_shared::tr;
+
+/// Puts the keyboard in the address field, once the field is there (a new tab draws it a moment later).
+fn focus_address() {
+    let _ = document::eval("setTimeout(function(){var i=document.querySelector('.preview-url');if(i){i.focus();i.select();}},30);");
+}
+
+/// Does a Preview key for session `id`. A new tab and the address key leave the cursor in the address field.
+pub(crate) fn run_preview_key(workspace: Workspace, id: LiveSessionId, key: PreviewKey) {
+    workspace.preview_key(id, key);
+    if matches!(key, PreviewKey::NewTab | PreviewKey::FocusAddress) {
+        focus_address();
+    }
+}
 
 /// Tabs, back, forward, reload and an address bar over a surface that the page's own web view
 /// covers (`WebViewHost` keeps the two in step). A tab that could not be reached shows a notice
@@ -97,7 +110,18 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
     };
 
     rsx! {
-        PanelFrame { id, panel: Panel::Preview, tools,
+        PanelFrame {
+            id,
+            panel: Panel::Preview,
+            tools,
+            // Browser keys pressed in the panel: they come before the session keys (⌃Tab, ⌘1…9).
+            onkeydown: move |event: KeyboardEvent| {
+                if let Some(key) = preview_key_from_event(&event) {
+                    event.prevent_default();
+                    event.stop_propagation();
+                    run_preview_key(workspace, id, key);
+                }
+            },
             div { class: "preview-bar",
                 button {
                     class: "icon-button",

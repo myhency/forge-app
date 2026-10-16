@@ -21,6 +21,14 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let mut refresh = use_signal(|| 0u32);
     let mut selected = use_signal(|| None::<String>);
     let mut list_open = use_signal(|| true);
+    // ⇧⌘Y shows or hides the list.
+    use_effect(move || {
+        if workspace.changes_list_request() {
+            workspace.clear_changes_list_request();
+            let shown = *list_open.peek();
+            list_open.set(!shown);
+        }
+    });
     let mut status = use_signal(|| None::<Result<Vec<ChangedFile>, GitError>>);
     let mut diff = use_signal(|| None::<(String, Result<String, GitError>)>);
     // The count changes only when a tool call finishes; reading the session's view directly in an

@@ -96,6 +96,21 @@ impl DockState {
         self.expanded = None;
     }
 
+    /// Puts an expanded panel back, or expands the first panel of the newest column. Nothing
+    /// happens when no panel is open.
+    pub fn toggle_expanded(&mut self) {
+        if self.expanded.is_some() {
+            self.collapse();
+        } else if let Some(panel) = self.columns.last().and_then(|column| column.panels.first().copied()) {
+            self.expand(panel);
+        }
+    }
+
+    /// The panel whose file list a key shows or hides: Files when it is open, else Changes.
+    pub fn file_list_panel(&self) -> Option<Panel> {
+        [Panel::Files, Panel::Changes].into_iter().find(|panel| self.is_open(*panel))
+    }
+
     /// Sets a column's width, kept between the minimum and the maximum. A column that does not
     /// exist and a width that is not a number are ignored.
     pub fn resize(&mut self, column: usize, width: f32) {
@@ -140,6 +155,29 @@ impl DockStates {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_expand_key_expands_the_newest_column_and_puts_it_back() {
+        let mut dock = DockState::default();
+        dock.toggle_expanded();
+        assert_eq!(dock.expanded, None, "nothing is open");
+        dock.toggle(Panel::Terminal);
+        dock.toggle(Panel::Preview);
+        dock.toggle_expanded();
+        assert_eq!(dock.expanded, Some(Panel::Preview));
+        dock.toggle_expanded();
+        assert_eq!(dock.expanded, None);
+    }
+
+    #[test]
+    fn the_file_list_key_prefers_files_over_changes() {
+        let mut dock = DockState::default();
+        assert_eq!(dock.file_list_panel(), None);
+        dock.toggle(Panel::Changes);
+        assert_eq!(dock.file_list_panel(), Some(Panel::Changes));
+        dock.toggle(Panel::Files);
+        assert_eq!(dock.file_list_panel(), Some(Panel::Files));
+    }
 
     #[test]
     fn toggling_a_closed_panel_opens_it_in_a_new_column_at_the_default_width() {

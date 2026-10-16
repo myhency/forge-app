@@ -14,6 +14,15 @@ pub enum TranscriptView {
 impl TranscriptView {
     pub const ALL: [TranscriptView; 3] = [TranscriptView::Normal, TranscriptView::Thinking, TranscriptView::Detailed];
 
+    /// The view after this one, going back to Normal after Detailed.
+    pub fn next(self) -> TranscriptView {
+        match self {
+            TranscriptView::Normal => TranscriptView::Thinking,
+            TranscriptView::Thinking => TranscriptView::Detailed,
+            TranscriptView::Detailed => TranscriptView::Normal,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             TranscriptView::Normal => crate::msg!("Normal"),
@@ -34,6 +43,13 @@ impl TranscriptView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn next_goes_round_the_three_views() {
+        assert_eq!(TranscriptView::Normal.next(), TranscriptView::Thinking);
+        assert_eq!(TranscriptView::Thinking.next(), TranscriptView::Detailed);
+        assert_eq!(TranscriptView::Detailed.next(), TranscriptView::Normal);
+    }
 
     #[test]
     fn normal_is_the_default() {

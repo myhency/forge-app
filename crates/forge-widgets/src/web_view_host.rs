@@ -80,9 +80,21 @@ pub fn WebViewHost() -> Element {
             // A chord pressed in a page that is one of Forge's shortcuts: the keyboard goes back to
             // the app and the key is played again on its page.
             if let WebViewEventKind::Key(key) = &event.kind {
-                if forge_features::forwarded_shortcut(key, cfg!(target_os = "macos")).is_some() {
-                    workspace.webviews().focus_app(event.tab);
-                    document::eval(&key_script(key));
+                match forge_features::forwarded_shortcut(key, cfg!(target_os = "macos")) {
+                    // A browser key pressed in the page acts on the Preview panel of the session on screen.
+                    Some(forge_features::Shortcut::Preview(browser_key)) => {
+                        if let forge_features::Active::Live(id) = workspace.active() {
+                            if browser_key != forge_features::PreviewKey::Reload {
+                                workspace.webviews().focus_app(event.tab);
+                            }
+                            crate::preview_panel::run_preview_key(workspace, id, browser_key);
+                        }
+                    }
+                    Some(_) => {
+                        workspace.webviews().focus_app(event.tab);
+                        document::eval(&key_script(key));
+                    }
+                    None => {}
                 }
                 continue;
             }

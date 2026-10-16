@@ -21,7 +21,7 @@ use crate::nav_history::NavHistory;
 use crate::preview_host::PreviewHost;
 use crate::preview_tabs::{normalize_url, PreviewTabId, PreviewTabs};
 use crate::new_session::ModelChoice;
-use crate::shortcut::{match_code, shortcut_allowed, shortcut_for, swallowed_behind_overlay, types_text, KeyPress, Shortcut};
+use crate::shortcut::{match_code, shortcut_allowed, shortcut_for, swallowed_behind_overlay, types_text, KeyPress, PickerKind, PreviewKey, Shortcut};
 use crate::tool_activity::finished_tool_calls;
 use crate::task_list_views::{TaskListView, TaskListViews};
 use crate::transcript_views::TranscriptViews;
@@ -131,6 +131,8 @@ pub struct Workspace {
     search_task: Signal<Option<dioxus::core::Task>>,
     closed: Signal<ClosedSessions>,
     rename_request: Signal<Option<EntryKey>>,
+    picker_request: Signal<Option<PickerKind>>,
+    changes_list_request: Signal<bool>,
 }
 
 /// Creates the workspace, provides it to every descendant and loads the sidebar once. Call it in
@@ -188,6 +190,8 @@ pub fn use_workspace_provider() -> Workspace {
             search_task: Signal::new(None),
             closed: Signal::new(ClosedSessions::default()),
             rename_request: Signal::new(None),
+            picker_request: Signal::new(None),
+            changes_list_request: Signal::new(false),
         }
     });
     use_context_provider(move || workspace);
@@ -1449,6 +1453,87 @@ impl Workspace {
         }
     }
 
+    /// Asks the composer menu of `kind` on screen to open. It opens only if a menu of that kind is
+    /// there (an open session, or the new-session screen).
+    pub fn request_picker(&self, kind: PickerKind) {
+        if matches!(self.active(), Active::Live(_) | Active::NewSession) {
+            let mut request = self.picker_request;
+            request.set(Some(kind));
+        }
+    }
+
+    pub fn picker_request(&self) -> Option<PickerKind> {
+        *self.picker_request.read()
+    }
+
+    pub fn clear_picker_request(&self) {
+        let mut request = self.picker_request;
+        if request.peek().is_some() {
+            request.set(None);
+        }
+    }
+
+    /// Steps the active session's transcript view (Normal, Thinking, Detailed, Normal…).
+    pub fn cycle_transcript_view(&self) {
+        if let Active::Live(id) = self.active() {
+            // The page provides the settings to every handler; without them the plain default holds.
+            let default = try_consume_context::<crate::Settings>().map(|settings| settings.default_transcript_view()).unwrap_or_default();
+            let next = self.transcript_view(id, default).next();
+            self.set_transcript_view(id, next);
+        }
+    }
+
+    /// Shows or hides the file list of the Files panel, or of Changes when Files is shut.
+    pub fn toggle_file_list(&self) {
+        let Active::Live(id) = self.active() else { return };
+        match self.dock(id).file_list_panel() {
+            Some(Panel::Files) => self.update_editor_prefs(|prefs| prefs.tree = !prefs.tree),
+            Some(Panel::Changes) => {
+                let mut request = self.changes_list_request;
+                request.set(true);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn changes_list_request(&self) -> bool {
+        *self.changes_list_request.read()
+    }
+
+    pub fn clear_changes_list_request(&self) {
+        let mut request = self.changes_list_request;
+        if *request.peek() {
+            request.set(false);
+        }
+    }
+
+    /// Expands the open panel of the active session, or puts an expanded one back.
+    pub fn toggle_panel_expanded(&self) {
+        if let Active::Live(id) = self.active() {
+            self.change_dock(id, |dock| dock.toggle_expanded());
+        }
+    }
+
+    /// A key of the Preview panel of session `id`: its tabs, address bar and reload.
+    pub fn preview_key(&self, id: LiveSessionId, key: PreviewKey) {
+        match key {
+            PreviewKey::NewTab => self.change_previews(id, |tabs| {
+                tabs.open();
+            }),
+            PreviewKey::NextTab => self.change_previews(id, |tabs| tabs.step(true)),
+            PreviewKey::PreviousTab => self.change_previews(id, |tabs| tabs.step(false)),
+            PreviewKey::GoToTab(index) => self.change_previews(id, |tabs| tabs.select_index(index)),
+            PreviewKey::Reload => {
+                if let Some(tab) = self.previews(id).active() {
+                    // A page that cannot be reloaded says so in its own notice; a key stays quiet.
+                    let _ = self.preview_reload(id, tab);
+                }
+            }
+            // The address field belongs to the panel, which watches for this (`PreviewPanel`).
+            PreviewKey::FocusAddress => {}
+        }
+    }
+
     /// Handles the session shortcuts; returns whether the key press was one of them. While the
     /// settings overlay is open they are swallowed (spec §17.5).
     pub fn on_key(&self, event: &KeyboardEvent, overlay_open: bool) -> bool {
@@ -1494,6 +1579,12 @@ impl Workspace {
             Shortcut::ForkActive => self.fork_active(),
             Shortcut::RenameActive => self.rename_active(),
             Shortcut::ShowShortcuts => self.toggle_shortcuts(),
+            Shortcut::OpenPicker(kind) => self.request_picker(kind),
+            Shortcut::CycleTranscript => self.cycle_transcript_view(),
+            Shortcut::ToggleFileList => self.toggle_file_list(),
+            Shortcut::ExpandPanel => self.toggle_panel_expanded(),
+            // The composer handles ⌘U itself, and the Preview panel its own keys.
+            Shortcut::AddFiles | Shortcut::Preview(_) => return false,
         }
         event.prevent_default();
         true
@@ -1552,6 +1643,17 @@ pub fn shortcut_from_event(event: &KeyboardEvent) -> Option<Shortcut> {
     shortcut_for(
         &KeyPress { code: &code, ctrl: modifiers.ctrl(), meta: modifiers.meta(), alt: modifiers.alt(), shift: modifiers.shift() },
         mac,
+    )
+}
+
+/// The Preview panel key a key press is, if any. Only the panel's own handler asks.
+pub fn preview_key_from_event(event: &KeyboardEvent) -> Option<PreviewKey> {
+    let modifiers = event.modifiers();
+    let key = event.key().to_string();
+    let code = match_code(&key, &event.code().to_string(), modifiers.alt());
+    crate::shortcut::preview_shortcut(
+        &KeyPress { code: &code, ctrl: modifiers.ctrl(), meta: modifiers.meta(), alt: modifiers.alt(), shift: modifiers.shift() },
+        cfg!(target_os = "macos"),
     )
 }
 

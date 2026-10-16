@@ -94,7 +94,7 @@ mod account_menu;
 pub use account_menu::{account_rows, user_initial, user_name, AccountAction, AccountRow};
 pub use settings::{use_settings, use_settings_provider, ExtensionKind, NotificationKind, Settings, SettingsSection, SettingsStatus};
 pub use settings_draft::ConnectionDraft;
-pub use shortcut::{forwarded_shortcut, command_held, match_code, swallowed_behind_overlay, types_text, command_pressed, shortcut_allowed, shortcut_for, shortcut_sections, KeyPress, Shortcut, ShortcutSection};
+pub use shortcut::{forwarded_shortcut, command_held, match_code, swallowed_behind_overlay, types_text, command_pressed, shortcut_allowed, shortcut_for, preview_shortcut, shortcut_sections, PickerKind, PreviewKey, KeyPress, Shortcut, ShortcutSection};
 pub use sidebar::{
     cycle_target, mark_archived, marker_for, menu_key_action, merge_sidebar, open_order, replace_project_sessions, ArchiveAction, DeleteAction, EntryKey,
     LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,
@@ -102,7 +102,7 @@ pub use sidebar::{
 pub use terminal_tabs::{TabId, TerminalTabs};
 pub use routines::{cards, history_rows, run_state_text, local_when_label, notices, offset_at, skip_text, start_failed_notice, waiting_notice, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};
 pub use routines_state::{use_routines, use_routines_provider, RoutineDialog, RoutineScreen, Routines};
-pub use workspace::{shortcut_from_event, use_workspace, use_workspace_provider, Active, Picture, RoutineServices, Workspace, WorkspaceServices};
+pub use workspace::{preview_key_from_event, shortcut_from_event, use_workspace, use_workspace_provider, Active, Picture, RoutineServices, Workspace, WorkspaceServices};
 pub use blocking::run_blocking;
 pub use file_tree::{parse_files_query, FileTree, FilesQuery, TreeRow};
 pub use browser_host::{should_show, ShowInput};

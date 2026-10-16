@@ -82,6 +82,21 @@ impl PreviewTabs {
         }
     }
 
+    /// Makes the tab after the active one (or before it, with `forward` false) active, wrapping round.
+    pub fn step(&mut self, forward: bool) {
+        let count = self.tabs.len();
+        let Some(index) = self.active.and_then(|active| self.tabs.iter().position(|tab| tab.id == active)) else { return };
+        let next = if forward { (index + 1) % count } else { (index + count - 1) % count };
+        self.active = Some(self.tabs[next].id);
+    }
+
+    /// Makes the tab at `index` (from 0) active; a place with no tab changes nothing.
+    pub fn select_index(&mut self, index: usize) {
+        if let Some(tab) = self.tabs.get(index) {
+            self.active = Some(tab.id);
+        }
+    }
+
     pub fn contains(&self, id: PreviewTabId) -> bool {
         self.tabs.iter().any(|tab| tab.id == id)
     }
@@ -198,6 +213,25 @@ impl PreviewTabs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stepping_wraps_round_and_a_place_with_no_tab_changes_nothing() {
+        let mut tabs = PreviewTabs::default();
+        let first = tabs.open();
+        let second = tabs.open();
+        let third = tabs.open();
+        tabs.step(true);
+        assert_eq!(tabs.active(), Some(first), "after the last comes the first");
+        tabs.step(false);
+        assert_eq!(tabs.active(), Some(third), "before the first comes the last");
+        tabs.select_index(1);
+        assert_eq!(tabs.active(), Some(second));
+        tabs.select_index(7);
+        assert_eq!(tabs.active(), Some(second));
+        let mut none = PreviewTabs::default();
+        none.step(true);
+        assert_eq!(none.active(), None);
+    }
 
     #[test]
     fn local_hosts_get_http_and_other_hosts_get_https() {

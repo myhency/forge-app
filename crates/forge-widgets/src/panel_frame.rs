@@ -6,11 +6,19 @@ use forge_shared::tr;
 /// The box every dock panel sits in: a header with its title, the panel's own tools, expand and
 /// close, and the body below.
 #[component]
-pub fn PanelFrame(id: LiveSessionId, panel: Panel, tools: Element, children: Element) -> Element {
+pub fn PanelFrame(id: LiveSessionId, panel: Panel, tools: Element, children: Element, #[props(default)] onkeydown: Option<EventHandler<KeyboardEvent>>) -> Element {
     let workspace = use_workspace();
     let expanded = workspace.dock(id).expanded == Some(panel);
     rsx! {
-        section { class: "dock-panel", "aria-label": "{panel.title()}",
+        section {
+            class: "dock-panel",
+            "aria-label": "{panel.title()}",
+            // A panel may take the keys pressed in it before the rest of the app sees them.
+            onkeydown: move |event: KeyboardEvent| {
+                if let Some(handler) = onkeydown.as_ref() {
+                    handler.call(event);
+                }
+            },
             header { class: "dock-header",
                 span { class: "dock-title", "{panel.title()}" }
                 div { class: "dock-tools", {tools} }

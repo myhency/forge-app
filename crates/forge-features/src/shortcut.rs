@@ -19,6 +19,37 @@ pub enum Shortcut {
     ForkActive,
     RenameActive,
     TogglePanel(Panel),
+    /// Opens one of the composer's menus (⇧⌘M, ⇧⌘I, ⇧⌘E).
+    OpenPicker(PickerKind),
+    /// Steps the chat's transcript view: Normal, Thinking, Detailed, Normal…
+    CycleTranscript,
+    /// Shows or hides the file list of the Files panel, or of Changes when Files is shut.
+    ToggleFileList,
+    /// Expands the open panel, or puts an expanded one back.
+    ExpandPanel,
+    /// ⌘U. The composer handles it; the table only lists it.
+    AddFiles,
+    /// A key of the Preview panel; see `PREVIEW_SHORTCUTS`.
+    Preview(PreviewKey),
+}
+
+/// The composer menus a key can open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickerKind {
+    Mode,
+    Model,
+    Effort,
+}
+
+/// What a key does in the Preview panel. `GoToTab` counts from 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewKey {
+    NewTab,
+    FocusAddress,
+    Reload,
+    NextTab,
+    PreviousTab,
+    GoToTab(usize),
 }
 
 /// A key press: the key's code in the table's spelling (`"KeyN"`) and the modifiers held. `match_code`
@@ -73,6 +104,7 @@ const fn alt(code: &'static str) -> Binding {
 pub enum Group {
     General,
     Panels,
+    Composer,
 }
 
 impl Group {
@@ -80,6 +112,7 @@ impl Group {
         match self {
             Group::General => tr!("General"),
             Group::Panels => tr!("Panels"),
+            Group::Composer => tr!("Composer"),
         }
     }
 }
@@ -120,10 +153,29 @@ pub static SHORTCUTS: &[ShortcutRow] = &[
     ShortcutRow { group: Group::General, label: msg!("Archive or unarchive the session"), action: Shortcut::ArchiveActive, keys: &[cmd_alt("KeyA")] },
     ShortcutRow { group: Group::General, label: msg!("Fork the session"), action: Shortcut::ForkActive, keys: &[cmd_alt("KeyO")] },
     ShortcutRow { group: Group::General, label: msg!("Rename the session"), action: Shortcut::RenameActive, keys: &[cmd_alt("KeyR")] },
+    ShortcutRow { group: Group::General, label: msg!("Change the transcript view"), action: Shortcut::CycleTranscript, keys: &[ctrl("KeyO")] },
     ShortcutRow { group: Group::Panels, label: msg!("Changes"), action: Shortcut::TogglePanel(Panel::Changes), keys: &[cmd_shift("KeyD")] },
     ShortcutRow { group: Group::Panels, label: msg!("Files"), action: Shortcut::TogglePanel(Panel::Files), keys: &[cmd_shift("KeyF")] },
     ShortcutRow { group: Group::Panels, label: msg!("Terminal"), action: Shortcut::TogglePanel(Panel::Terminal), keys: &[cmd("KeyJ"), ctrl("Backquote")] },
     ShortcutRow { group: Group::Panels, label: msg!("Preview"), action: Shortcut::TogglePanel(Panel::Preview), keys: &[cmd_shift("KeyB")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Show or hide the file list"), action: Shortcut::ToggleFileList, keys: &[cmd_shift("KeyY")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Expand or collapse the panel"), action: Shortcut::ExpandPanel, keys: &[cmd_shift("Backslash")] },
+    ShortcutRow { group: Group::Composer, label: msg!("Open the mode menu"), action: Shortcut::OpenPicker(PickerKind::Mode), keys: &[cmd_shift("KeyM")] },
+    ShortcutRow { group: Group::Composer, label: msg!("Open the model menu"), action: Shortcut::OpenPicker(PickerKind::Model), keys: &[cmd_shift("KeyI")] },
+    ShortcutRow { group: Group::Composer, label: msg!("Open the effort menu"), action: Shortcut::OpenPicker(PickerKind::Effort), keys: &[cmd_shift("KeyE")] },
+    ShortcutRow { group: Group::Composer, label: msg!("Add file or photo"), action: Shortcut::AddFiles, keys: &[cmd("KeyU")] },
+];
+
+/// The keys of the Preview panel. They share keys with the session keys (Ctrl+Tab, Cmd+1…9), so
+/// they are not in `SHORTCUTS`: the Preview panel looks here first for a key pressed in it or in
+/// its page, and every other key press never sees this table.
+pub static PREVIEW_SHORTCUTS: &[ShortcutRow] = &[
+    ShortcutRow { group: Group::Panels, label: msg!("New browser tab"), action: Shortcut::Preview(PreviewKey::NewTab), keys: &[cmd("KeyT")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Focus the address bar"), action: Shortcut::Preview(PreviewKey::FocusAddress), keys: &[cmd("KeyL")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Reload the page"), action: Shortcut::Preview(PreviewKey::Reload), keys: &[cmd("KeyR")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Next browser tab"), action: Shortcut::Preview(PreviewKey::NextTab), keys: &[ctrl("Tab")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Previous browser tab"), action: Shortcut::Preview(PreviewKey::PreviousTab), keys: &[ctrl_shift("Tab")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Go to browser tab 1…9"), action: Shortcut::Preview(PreviewKey::GoToTab(0)), keys: &[cmd(DIGITS)] },
 ];
 
 impl Binding {
@@ -174,6 +226,7 @@ fn key_label(code: &str) -> String {
         "BracketLeft" => "[".to_string(),
         "BracketRight" => "]".to_string(),
         "Backquote" => "`".to_string(),
+        "Backslash" => "\\".to_string(),
         other => other.strip_prefix("Key").unwrap_or(other).to_string(),
     }
 }
@@ -204,6 +257,7 @@ pub fn match_code(key: &str, code: &str, alt: bool) -> String {
             '[' => Some("BracketLeft"),
             ']' => Some("BracketRight"),
             '`' => Some("Backquote"),
+            '\\' => Some("Backslash"),
             _ => None,
         };
         if let (Some(name), false) = (punctuation, alt) {
@@ -249,6 +303,31 @@ pub fn shortcut_for(press: &KeyPress, mac: bool) -> Option<Shortcut> {
     None
 }
 
+/// The Preview panel key a key press is, if any. Only the Preview panel (and its page) asks.
+pub fn preview_shortcut(press: &KeyPress, mac: bool) -> Option<PreviewKey> {
+    for row in PREVIEW_SHORTCUTS {
+        for binding in row.keys {
+            if !binding.modifiers_match(press, mac) {
+                continue;
+            }
+            let hit = if binding.code == DIGITS {
+                digit_index(press.code).map(PreviewKey::GoToTab)
+            } else if binding.code == press.code {
+                match row.action {
+                    Shortcut::Preview(key) => Some(key),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if hit.is_some() {
+                return hit;
+            }
+        }
+    }
+    None
+}
+
 /// The shortcut a chord sent from a page in the Preview panel is, if any. Only chords the
 /// table knows count, so copy, paste and the like stay with the page.
 pub fn forwarded_shortcut(key: &forge_ports::KeyForward, mac: bool) -> Option<Shortcut> {
@@ -256,7 +335,12 @@ pub fn forwarded_shortcut(key: &forge_ports::KeyForward, mac: bool) -> Option<Sh
         return None;
     }
     let code = match_code(&key.key, &key.code, key.alt);
-    shortcut_for(&KeyPress { code: &code, ctrl: key.ctrl, meta: key.meta, alt: key.alt, shift: key.shift }, mac)
+    let press = KeyPress { code: &code, ctrl: key.ctrl, meta: key.meta, alt: key.alt, shift: key.shift };
+    // The page is in the Preview panel, so the browser keys come before the session keys.
+    match preview_shortcut(&press, mac) {
+        Some(key) => Some(Shortcut::Preview(key)),
+        None => shortcut_for(&press, mac),
+    }
 }
 
 /// Whether `shortcut` may act while an overlay (Settings, the search palette, the shortcut list) is
@@ -275,12 +359,13 @@ pub struct ShortcutSection {
 
 /// The shortcut list as the dialog draws it, groups in order, alternatives joined with " or ".
 pub fn shortcut_sections(mac: bool) -> Vec<ShortcutSection> {
-    [Group::General, Group::Panels]
+    [Group::General, Group::Panels, Group::Composer]
         .into_iter()
         .map(|group| ShortcutSection {
             title: group.title(),
             rows: SHORTCUTS
                 .iter()
+                .chain(PREVIEW_SHORTCUTS)
                 .filter(|row| row.group == group)
                 .map(|row| (forge_shared::i18n::text(row.label).to_string(), row.keys.iter().map(|binding| binding.display(mac)).collect::<Vec<_>>().join(tr!(" or "))))
                 .collect(),
@@ -433,6 +518,70 @@ mod tests {
     }
 
     #[test]
+    fn the_composer_keys_and_the_new_panel_keys() {
+        use crate::dock::Panel;
+        for (code, kind) in [("KeyM", PickerKind::Mode), ("KeyI", PickerKind::Model), ("KeyE", PickerKind::Effort)] {
+            assert_eq!(shortcut_for(&press(code, false, true, false, true), true), Some(Shortcut::OpenPicker(kind)));
+            assert_eq!(shortcut_for(&press(code, true, false, false, true), false), Some(Shortcut::OpenPicker(kind)), "Ctrl+Shift elsewhere");
+        }
+        assert_eq!(shortcut_for(&press("KeyU", false, true, false, false), true), Some(Shortcut::AddFiles));
+        assert_eq!(shortcut_for(&press("KeyO", true, false, false, false), true), Some(Shortcut::CycleTranscript), "Control, not Cmd, on a Mac");
+        assert_eq!(shortcut_for(&press("KeyY", false, true, false, true), true), Some(Shortcut::ToggleFileList));
+        assert_eq!(shortcut_for(&press("Backslash", false, true, false, true), true), Some(Shortcut::ExpandPanel));
+        assert_eq!(shortcut_for(&press("Backslash", false, true, false, false), true), None, "Cmd+\\ is not bound");
+        assert_eq!(match_code("|", "Backslash", false), "Backslash", "Shift types a bar; the physical key is used");
+        assert_eq!(match_code("\\", "Backslash", false), "Backslash");
+        let _ = Panel::Files;
+    }
+
+    #[test]
+    fn the_browser_keys_are_only_in_the_preview_table() {
+        for mac in [true, false] {
+            assert_eq!(shortcut_for(&press("KeyT", !mac, mac, false, false), mac), None, "Cmd+T means nothing outside the Preview panel");
+            assert_eq!(shortcut_for(&press("KeyR", !mac, mac, false, false), mac), None);
+            assert_eq!(preview_shortcut(&press("KeyT", !mac, mac, false, false), mac), Some(PreviewKey::NewTab));
+            assert_eq!(preview_shortcut(&press("KeyL", !mac, mac, false, false), mac), Some(PreviewKey::FocusAddress));
+            assert_eq!(preview_shortcut(&press("KeyR", !mac, mac, false, false), mac), Some(PreviewKey::Reload));
+            assert_eq!(preview_shortcut(&press("Tab", true, false, false, false), mac), Some(PreviewKey::NextTab));
+            assert_eq!(preview_shortcut(&press("Tab", true, false, false, true), mac), Some(PreviewKey::PreviousTab));
+            assert_eq!(preview_shortcut(&press("Digit3", !mac, mac, false, false), mac), Some(PreviewKey::GoToTab(2)));
+            assert_eq!(preview_shortcut(&press("Digit0", !mac, mac, false, false), mac), None);
+            assert_eq!(preview_shortcut(&press("KeyN", !mac, mac, false, false), mac), None, "session keys are not browser keys");
+        }
+        // Shift+Cmd+T reopens a closed session, and Preview has no closed-tab memory.
+        assert_eq!(preview_shortcut(&press("KeyT", false, true, false, true), true), None);
+    }
+
+    #[test]
+    fn a_page_in_the_preview_panel_gets_the_browser_keys_before_the_session_keys() {
+        let key = |key: &str, code: &str, meta: bool, ctrl: bool| forge_ports::KeyForward { key: key.to_string(), code: code.to_string(), ctrl, meta, alt: false, shift: false };
+        assert_eq!(forwarded_shortcut(&key("t", "KeyT", true, false), true), Some(Shortcut::Preview(PreviewKey::NewTab)));
+        assert_eq!(forwarded_shortcut(&key("2", "Digit2", true, false), true), Some(Shortcut::Preview(PreviewKey::GoToTab(1))), "not session 2");
+        assert_eq!(forwarded_shortcut(&key("Tab", "Tab", false, true), true), Some(Shortcut::Preview(PreviewKey::NextTab)));
+        assert_eq!(forwarded_shortcut(&key("n", "KeyN", true, false), true), Some(Shortcut::NewSession), "other session keys still go to the app");
+    }
+
+    #[test]
+    fn the_preview_table_is_consistent_and_the_list_shows_every_row_once() {
+        for mac in [true, false] {
+            let mut seen = HashSet::new();
+            for row in PREVIEW_SHORTCUTS {
+                for binding in row.keys {
+                    assert!(seen.insert((binding.code, binding.wanted(mac), binding.alt, binding.shift)), "{} repeats a key", row.label);
+                    if binding.code == DIGITS {
+                        continue;
+                    }
+                    let found = preview_shortcut(&press_of(binding, binding.code, mac), mac);
+                    assert_eq!(found.map(Shortcut::Preview), Some(row.action), "{} on mac={mac}", row.label);
+                }
+            }
+        }
+        let listed: usize = shortcut_sections(true).iter().map(|section| section.rows.len()).sum();
+        assert_eq!(listed, SHORTCUTS.len() + PREVIEW_SHORTCUTS.len());
+        assert_eq!(shortcut_sections(true).last().map(|section| section.rows.len()), Some(4), "the composer group: three menus and add file");
+    }
+
+    #[test]
     fn the_rest_of_the_general_keys() {
         assert_eq!(shortcut_for(&press("Slash", false, true, false, false), true), Some(Shortcut::ShowShortcuts));
         assert_eq!(shortcut_for(&press("KeyT", false, true, false, true), true), Some(Shortcut::ReopenClosed));
@@ -559,14 +708,16 @@ mod tests {
         assert_eq!(find("Next session").keys[0].display(false), "Ctrl+Tab");
         assert_eq!(find("Next session").keys[2].display(true), "⌥↓");
         assert_eq!(find("Terminal").keys[1].display(true), "⌃`");
+        assert_eq!(find("Expand or collapse the panel").keys[0].display(true), "⇧⌘\\");
+        assert_eq!(find("Change the transcript view").keys[0].display(true), "⌃O");
     }
 
     #[test]
     fn the_dialog_lists_every_row_under_its_group_with_alternatives_joined() {
         let sections = shortcut_sections(true);
-        assert_eq!(sections.iter().map(|section| section.title).collect::<Vec<_>>(), vec!["General", "Panels"]);
+        assert_eq!(sections.iter().map(|section| section.title).collect::<Vec<_>>(), vec!["General", "Panels", "Composer"]);
         let total: usize = sections.iter().map(|section| section.rows.len()).sum();
-        assert_eq!(total, SHORTCUTS.len());
+        assert_eq!(total, SHORTCUTS.len() + PREVIEW_SHORTCUTS.len());
         let next = sections[0].rows.iter().find(|(label, _)| label == "Next session").unwrap();
         assert_eq!(next.1, "⌃Tab or ⇧⌘] or ⌥↓");
     }

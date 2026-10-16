@@ -3,7 +3,7 @@ use forge_application::LiveSessionId;
 use forge_domain::{EffortLevel, PermissionMode};
 use forge_entities::model_menu_rows;
 use forge_features::{
-    confirmation_still_valid, effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_settings, use_workspace, ModeChoice,
+    confirmation_still_valid, effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_settings, use_workspace, ModeChoice, PickerKind,
     effort_help, slider_faster, slider_smarter,
 };
 use forge_shared::{tr, Button, ButtonKind};
@@ -18,6 +18,17 @@ pub(crate) struct PickerItem {
     pub(crate) divider_before: bool,
 }
 
+/// Opens the menu when a shortcut asked for the menu of `kind` (⇧⌘M, ⇧⌘I, ⇧⌘E).
+fn use_picker_request(kind: Option<PickerKind>, mut open: Signal<bool>) {
+    let workspace = use_workspace();
+    use_effect(move || {
+        if kind.is_some() && workspace.picker_request() == kind {
+            workspace.clear_picker_request();
+            open.set(true);
+        }
+    });
+}
+
 /// A button with the current choice that opens a list above it. Number keys pick the rows that
 /// have one, Escape or a click outside closes it. `onpick` gets the index of the row.
 #[component]
@@ -27,8 +38,10 @@ pub(crate) fn Picker(
     items: Vec<PickerItem>,
     onpick: EventHandler<usize>,
     #[props(default)] heading: Option<String>,
+    #[props(default)] kind: Option<PickerKind>,
 ) -> Element {
     let mut open = use_signal(|| false);
+    use_picker_request(kind, open);
     let keyed = items.clone();
     rsx! {
         div { class: "picker",
@@ -136,6 +149,7 @@ pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<Per
     rsx! {
         Picker {
             title: tr!("Mode"),
+            kind: PickerKind::Mode,
             current: label,
             items,
             onpick: move |index: usize| {
@@ -202,6 +216,7 @@ pub(crate) fn ModelPickerView(current: Option<String>, onchange: EventHandler<Op
     rsx! {
         Picker {
             title: tr!("Model"),
+            kind: PickerKind::Model,
             current: label,
             items,
             onpick: move |index: usize| {
@@ -240,6 +255,7 @@ pub fn EffortPicker(id: LiveSessionId) -> Element {
 #[component]
 pub fn EffortPickerView(levels: Vec<EffortLevel>, current: Option<EffortLevel>, onchange: EventHandler<Option<EffortLevel>>) -> Element {
     let mut open = use_signal(|| false);
+    use_picker_request(Some(PickerKind::Effort), open);
     if levels.is_empty() {
         return rsx! {};
     }
