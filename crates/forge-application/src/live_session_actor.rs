@@ -381,6 +381,12 @@ impl Actor {
                         forge_domain::RunningTask { seen_at: before.map_or(now, |task| task.seen_at), tokens: before.and_then(|task| task.tokens), info }
                     })
                     .collect();
+                // A task that is new to the set and has an old end is a resumed one: it runs again.
+                let resumed: Vec<String> = self.view.background_tasks.iter().filter(|task| !previous.iter().any(|old| old.info.id == task.info.id)).map(|task| task.info.id.clone()).collect();
+                for id in resumed {
+                    self.view.session.finished_tasks.retain(|item| item.task_id != id);
+                    self.vanished.remove(&id);
+                }
                 let gone: Vec<_> = previous.into_iter().filter(|old| !self.view.background_tasks.iter().any(|task| task.info.id == old.info.id)).collect();
                 for gone in gone {
                     if !self.fill_finished(&gone) {
@@ -399,7 +405,6 @@ impl Actor {
                     self.fill_finished(&task);
                 }
             }
-            SessionUpdate::PromptSuggestion(text) => self.view.suggestion = Some(text),
             SessionUpdate::PromptSuggestion(text) => self.view.suggestion = Some(text),
             SessionUpdate::ContextUsage(context) => self.view.context = Some(context),
             SessionUpdate::CommandsAvailable(commands) => self.view.commands = commands,

@@ -27,7 +27,7 @@ mod usage_view;
 
 pub use clipboard::copy_text;
 pub use card_view::{modal_title, CardView};
-pub use background::{background_ref, card_key, end_label, error_text, pill_label, task_cards, task_lists, TaskEnd, TaskLists, valid_output_path, BackgroundRef, TaskCard, WorkflowCard, TASK_OUTPUT_TAIL};
+pub use background::{background_ref, card_key, clear_key, end_label, error_text, pill_label, task_cards, task_lists, TaskEnd, TaskLists, valid_output_path, BackgroundRef, TaskCard, WorkflowCard, TASK_OUTPUT_TAIL};
 pub use command_menu::{command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};
 pub use csv_table::{parse_csv, CsvTable, CSV_ROW_LIMIT};
 pub use diff::{diff_for_tool, diff_for_tool_call, parse_unified_diff, DiffLine, DiffLineKind, FileDiff};

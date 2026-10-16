@@ -185,6 +185,15 @@ pub fn card_key(card: &TaskCard) -> String {
     format!("{}:{}:{}:{}", card.id, card.output_path.is_some(), card.workflow.is_some(), end)
 }
 
+/// The key of a finished card in the cleared set: the task id plus how this run ended, so a task
+/// that is resumed and ends again is not hidden by an earlier clear.
+pub fn clear_key(card: &TaskCard) -> String {
+    match &card.end {
+        Some(end) => format!("{}:{}:{:?}:{:?}", card.id, end.status.as_str(), end.tokens, end.duration_ms),
+        None => card.id.clone(),
+    }
+}
+
 /// The pill under the chat: `1 background task`, `2 background tasks`.
 pub fn pill_label(count: usize) -> String {
     if count == 1 { tr!("{count} background task", count = count) } else { tr!("{count} background tasks", count = count) }
@@ -419,6 +428,18 @@ mod tests {
         let before = task_cards(&[], &[running("b1", 0)]);
         let after = task_lists(&[], &[], &[finished("b1", TaskStatus::Stopped, "s")]);
         assert_ne!(card_key(&before[0]), card_key(&after.finished[0]));
+    }
+
+    #[test]
+    fn two_ends_of_one_task_have_different_clear_keys() {
+        let mut first = task_lists(&[], &[], &[finished("b1", TaskStatus::Failed, "s")]).finished.remove(0);
+        let mut second = first.clone();
+        second.end.as_mut().unwrap().tokens = Some(1);
+        second.end.as_mut().unwrap().duration_ms = Some(2);
+        assert_ne!(clear_key(&first), clear_key(&second));
+        assert_eq!(clear_key(&first), clear_key(&first.clone()));
+        first.end = None;
+        assert_eq!(clear_key(&first), "b1");
     }
 
     #[test]

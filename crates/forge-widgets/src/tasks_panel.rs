@@ -4,7 +4,7 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::TaskStatus;
-use forge_entities::{card_key, dot_class, elapsed_label, end_label, error_text, format_tokens, parse_journal, steps, task_lists, AgentState, Clock, RunningWorkflow, Step, TaskCard, TASK_OUTPUT_TAIL};
+use forge_entities::{card_key, clear_key, dot_class, elapsed_label, end_label, error_text, format_tokens, parse_journal, steps, task_lists, AgentState, Clock, RunningWorkflow, Step, TaskCard, TASK_OUTPUT_TAIL};
 use forge_features::{run_blocking, use_workspace, Panel};
 
 use crate::panel_frame::PanelFrame;
@@ -60,8 +60,8 @@ pub fn TasksPanel(id: LiveSessionId) -> Element {
     };
     let state = workspace.task_list_view(id);
     let running_empty = lists.running.is_empty();
-    let finished: Vec<TaskCard> = lists.finished.into_iter().filter(|card| !state.cleared.contains(&card.id)).collect();
-    let shown_ids: Vec<String> = finished.iter().map(|card| card.id.clone()).collect();
+    let finished: Vec<TaskCard> = lists.finished.into_iter().filter(|card| !state.cleared.contains(&clear_key(card))).collect();
+    let shown_ids: Vec<String> = finished.iter().map(clear_key).collect();
     let nothing_to_clear = finished.is_empty();
     rsx! {
         PanelFrame {
@@ -121,7 +121,9 @@ fn TaskCardView(id: LiveSessionId, card: TaskCard) -> Element {
                 div { class: "task-title",
                     div { class: "task-description", "{card.description}" }
                     div { class: "task-meta",
-                        span { "Bash" }
+                        if card.command.is_some() {
+                            span { "Bash" }
+                        }
                         span { class: "{class}", {end_label(end.status)} }
                         if let Some(ms) = end.duration_ms {
                             span { {elapsed_label(ms / 1000)} }
@@ -237,12 +239,14 @@ fn WorkflowCardView(id: LiveSessionId, card: TaskCard) -> Element {
                             Clock { started: Some(card.seen_at) }
                         }
                     }
-                    div { class: "task-meta",
-                        if !agents.is_empty() {
-                            span { {if agents.len() == 1 { tr!("{count} agent", count = 1) } else { tr!("{count} agents", count = agents.len()) }} }
-                        }
-                        if let Some(tokens) = tokens {
-                            span { {tr!("{amount} tokens", amount = format_tokens(tokens))} }
+                    if !agents.is_empty() || tokens.is_some() {
+                        div { class: "task-meta",
+                            if !agents.is_empty() {
+                                span { {if agents.len() == 1 { tr!("{count} agent", count = 1) } else { tr!("{count} agents", count = agents.len()) }} }
+                            }
+                            if let Some(tokens) = tokens {
+                                span { {tr!("{amount} tokens", amount = format_tokens(tokens))} }
+                            }
                         }
                     }
                 }

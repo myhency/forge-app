@@ -473,6 +473,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .sidebar-search:hover { border-color: var(--fg-muted); }
 .sidebar-search .keys { margin-left: auto; font-size: 12px; }
 .icon-button { flex: none; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--fg-muted); font: inherit; font-size: 15px; line-height: 1; cursor: pointer; }
+.icon-button:disabled { opacity: 0.4; cursor: default; }
 .icon-button:hover, .icon-button.open { background: var(--bg-hover); color: var(--fg); }
 .sidebar-new { display: flex; align-items: center; gap: 4px; }
 .sidebar-new .button { flex: 1; width: auto; }

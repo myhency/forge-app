@@ -1069,6 +1069,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_resumed_task_leaves_the_finished_list() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("go".to_string());
+
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![task("b1")] });
+        wait_for(&mut view, "one task", |v| v.background_tasks.len() == 1).await;
+        control.push(SidecarEvent::TaskFinished { task_id: "b1".to_string(), status: "completed".to_string(), summary: "s".to_string(), tokens: None, duration_ms: None });
+        wait_for(&mut view, "finished", |v| v.session.finished_tasks.len() == 1).await;
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![] });
+        wait_for(&mut view, "no tasks", |v| v.background_tasks.is_empty()).await;
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![task("b1")] });
+        let resumed = wait_for(&mut view, "resumed", |v| v.background_tasks.len() == 1 && v.session.finished_tasks.is_empty()).await;
+        assert_eq!(resumed.background_tasks[0].info.id, "b1");
+    }
+
+    #[tokio::test]
     async fn the_task_set_empties_when_the_sidecar_fails() {
         let (sidecar, control) = fake_sidecar();
         let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
