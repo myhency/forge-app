@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
-use forge_entities::{live_state, pill_label, task_lists, TranscriptView, Turns};
+use forge_entities::{clear_key, finished_pill_label, live_state, pill_label, task_lists, TranscriptView, Turns};
 use forge_features::{use_settings, use_workspace, Panel, SendMessageBox};
 
 use crate::composer_controls::{EffortPicker, ModePicker, ModelPicker};
@@ -97,15 +97,18 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     on_open_tasks: move |_| workspace.change_dock(id, |dock| if !dock.is_open(Panel::Tasks) { dock.toggle(Panel::Tasks) }),
                 }
                 {
-                    let count = task_lists(&view.session.messages, &view.background_tasks, &view.session.finished_tasks).running.len();
+                    let lists = task_lists(&view.session.messages, &view.background_tasks, &view.session.finished_tasks);
+                    let count = lists.running.len();
+                    let cleared = workspace.task_list_view(id).cleared;
+                    let finished_count = lists.finished.iter().filter(|card| !cleared.contains(&clear_key(card))).count();
                     let open = workspace.dock(id).is_open(Panel::Tasks);
                     rsx! {
-                        if count > 0 {
+                        if count > 0 || finished_count > 0 {
                             button {
                                 class: if open { "task-pill open" } else { "task-pill" },
                                 r#type: "button",
                                 onclick: move |_| workspace.change_dock(id, |dock| if !dock.is_open(Panel::Tasks) { dock.toggle(Panel::Tasks) }),
-                                "{pill_label(count)}"
+                                if count > 0 { "{pill_label(count)}" } else { "{finished_pill_label(finished_count)}" }
                             }
                         }
                     }

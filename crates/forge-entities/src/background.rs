@@ -199,6 +199,11 @@ pub fn pill_label(count: usize) -> String {
     if count == 1 { tr!("{count} background task", count = count) } else { tr!("{count} background tasks", count = count) }
 }
 
+/// The pill when nothing runs but finished tasks are listed: `1 task finished`.
+pub fn finished_pill_label(count: usize) -> String {
+    if count == 1 { tr!("{count} task finished", count = count) } else { tr!("{count} tasks finished", count = count) }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, UNIX_EPOCH};
@@ -372,6 +377,12 @@ mod tests {
         assert_eq!(pill_label(1), "1 background task");
         assert_eq!(pill_label(2), "2 background tasks");
         assert_eq!(pill_label(0), "0 background tasks");
+    }
+
+    #[test]
+    fn the_finished_pill_counts_the_tasks() {
+        assert_eq!(finished_pill_label(1), "1 task finished");
+        assert_eq!(finished_pill_label(2), "2 tasks finished");
     }
 
     #[test]

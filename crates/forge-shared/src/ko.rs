@@ -657,6 +657,8 @@ pub static KO: &[(&str, &str)] = &[
     ("{count} background task", "백그라운드 작업 {count}개"),
     ("{count} background tasks", "백그라운드 작업 {count}개"),
     ("{count} files edited", "파일 {count}개 편집됨"),
+    ("{count} task finished", "작업 {count}개 완료"),
+    ("{count} tasks finished", "작업 {count}개 완료"),
     ("{day}: {tokens} tokens", "{day}: 토큰 {tokens}"),
     ("{hour} AM", "오전 {hour}시"),
     ("{hour} PM", "오후 {hour}시"),
