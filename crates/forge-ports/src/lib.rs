@@ -17,8 +17,10 @@ mod skill_catalog_port;
 mod sidecar_port;
 mod terminal_port;
 mod usage_stats_port;
+mod webview_port;
 
 pub use browser_port::BrowserPort;
+pub use webview_port::{KeyForward, Surface, WebViewEvent, WebViewEventKind, WebViewPort, WebViewTabId};
 pub use config_port::{ConfigError, ConfigRepositoryPort};
 pub use connector_catalog_port::{ConnectorCatalogError, ConnectorCatalogPort};
 pub use mcp_log_port::McpLogPort;
@@ -45,6 +47,8 @@ pub use sidecar_port::{
 
 #[cfg(any(test, feature = "mocks"))]
 pub use browser_port::MockBrowserPort;
+#[cfg(any(test, feature = "mocks"))]
+pub use webview_port::MockWebViewPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use files_port::MockFilesPort;
 #[cfg(any(test, feature = "mocks"))]
