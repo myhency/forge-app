@@ -91,3 +91,28 @@ Agent states in `workflow_progress.rs` grow a third value, `Failed` (a journal l
 
 - The notification block format may change in a later Claude Code release; the parser is loose and a block it cannot read only means a missing card.
 - The probe may show `task_progress` is not sent for workflows; the fallback of section 2 covers it.
+
+## As built (2026-10-17)
+
+Built on `plan-45` in eight steps with a reviewer per step and a final whole-branch review (one Important found and fixed: a resumed workflow with the same task id showed as its old finished card).
+
+**Probe (real SDK, `sidecar/scripts/print_task_events.mjs`, one small workflow):** `task_progress` is sent for a `local_workflow` task with `usage.total_tokens`; the notification's `usage.total_tokens` equals the record's `<subagent_tokens>` (20,730 = 20,730); the notification comes before `background_tasks_changed: []`. So the spec's fallback (sum of the agents' last calls) was not needed. The SDK also sends `workflow_progress` (agents with labels) inside `task_progress`; Forge still reads the journal and does not use it.
+
+**Real window (Forge through the harness, `dynamic_workflows` switched on in its config, real Claude):**
+- A running workflow card shows `에이전트 2개  18.3k 토큰` and the number grows; the chat card shows no tokens.
+- A finished workflow card (`fa`): total time at the right, `워크플로우  완료됨`, `에이전트 3개  27.9k 토큰`, description, folded steps with grey dots; `완료 N` fold under `실행 중`, newest first, closed until opened.
+- A failed run (`fb`, script throws): `워크플로우  실패` (red), the pink `오류` box (`Error: fb boom` and its two `at` lines), chat line `워크플로 실행됨 fb 실패` with `실패` in red.
+- A Bash background task joins the fold as the small card (`Bash  완료됨  10s` live).
+- The trash icon clears the cards, greys out, and the chat lines stay.
+- After Forge was restarted and the session opened again the list was rebuilt from the record (3 cards, the failed one with its error and tokens) and no raw `<task-notification>` bubble showed.
+- Not checked: the stop button of a run (stopped state), a red dot for an agent that failed (the two agents whose requests were denied finished with a report instead of failing), Windows.
+
+**Differences from the design:**
+- A new pill under the chat: when nothing runs and finished cards are shown, it reads `작업 N개 완료` / `N tasks finished` and opens the panel. The design had no way to open the panel when nothing ran (found in the real window; after a restart the list was unreachable).
+- The trash `cleared` set holds a per-end key (`id:status:tokens:duration`), not the bare task id, so a resumed task that ends again shows after a click.
+- A task that is new to the running set (a resume) leaves the finished list at once.
+- The notification parser reads only the session record's user lines; the `queue-operation` duplicates are not parsed (the user line is always written too).
+- After a restart a finished Bash card has no time (its notification has no duration); a workflow card has it. A task the person stopped leaves no notification in the record, so its card is gone after a restart (live it shows `Stopped`).
+- Amber dots were left out as decided; dot colours are blue, grey, red and hollow (stopped).
+
+**Left:** per-agent token column, amber dots (not reproduced), a retry when a finished card's single journal read fails, deferred minors in the review ledger (parser hypotheticals, a duration slightly long for a task that vanished before its notification).
