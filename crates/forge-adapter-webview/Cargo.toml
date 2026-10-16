@@ -1,0 +1,12 @@
+[package]
+name = "forge-adapter-webview"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+forge-ports = { path = "../forge-ports" }
+forge-entities = { path = "../forge-entities" }
+tokio = { version = "1", features = ["sync"] }
+serde_json = "1"
+tao = "0.34"
+wry = "=0.53.5"
