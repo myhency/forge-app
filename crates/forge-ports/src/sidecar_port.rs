@@ -69,8 +69,19 @@ pub enum SidecarEvent {
     SettingFailed { message: String },
     /// The SDK's whole set of background tasks; each event replaces the earlier one.
     BackgroundTasks { tasks: Vec<forge_domain::BackgroundTaskInfo> },
-    /// A background task ended (informational: the set comes from `BackgroundTasks`).
-    TaskFinished { task_id: String, status: String, summary: String },
+    /// A background task ended. The set still comes from `BackgroundTasks`; this says how it ended.
+    /// `tokens` and `duration_ms` are what the SDK reported (a Bash command reports neither).
+    TaskFinished {
+        task_id: String,
+        status: String,
+        summary: String,
+        #[serde(default)]
+        tokens: Option<u64>,
+        #[serde(default)]
+        duration_ms: Option<u64>,
+    },
+    /// How many tokens a running background task has used so far.
+    TaskProgress { task_id: String, total_tokens: u64 },
     /// The SDK's guess at what the person will ask next.
     PromptSuggestion { text: String },
     Error { message: String },
@@ -246,7 +257,18 @@ mod tests {
         assert_eq!(none, SidecarEvent::BackgroundTasks { tasks: vec![] });
         let finished: SidecarEvent =
             serde_json::from_str(r#"{"type":"task_finished","task_id":"b1","status":"stopped","summary":"s"}"#).unwrap();
-        assert_eq!(finished, SidecarEvent::TaskFinished { task_id: "b1".to_string(), status: "stopped".to_string(), summary: "s".to_string() });
+        assert_eq!(
+            finished,
+            SidecarEvent::TaskFinished { task_id: "b1".to_string(), status: "stopped".to_string(), summary: "s".to_string(), tokens: None, duration_ms: None }
+        );
+        let timed: SidecarEvent =
+            serde_json::from_str(r#"{"type":"task_finished","task_id":"w1","status":"failed","summary":"x","tokens":157469,"duration_ms":70914}"#).unwrap();
+        assert_eq!(
+            timed,
+            SidecarEvent::TaskFinished { task_id: "w1".to_string(), status: "failed".to_string(), summary: "x".to_string(), tokens: Some(157_469), duration_ms: Some(70_914) }
+        );
+        let progress: SidecarEvent = serde_json::from_str(r#"{"type":"task_progress","task_id":"w1","total_tokens":99100}"#).unwrap();
+        assert_eq!(progress, SidecarEvent::TaskProgress { task_id: "w1".to_string(), total_tokens: 99_100 });
         let suggestion: SidecarEvent = serde_json::from_str(r#"{"type":"prompt_suggestion","text":"run it"}"#).unwrap();
         assert_eq!(suggestion, SidecarEvent::PromptSuggestion { text: "run it".to_string() });
     }

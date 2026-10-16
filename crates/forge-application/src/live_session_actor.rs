@@ -38,6 +38,9 @@ pub(crate) struct Actor {
     /// `last_error` holds the SDK's refusal of a mode, model or effort change. A later change that the SDK
     /// accepts clears it; any other message stays.
     refusal_shown: bool,
+    /// Tasks the task set dropped before their finish notification arrived; the notification takes
+    /// their tokens and time from here.
+    vanished: std::collections::HashMap<String, forge_domain::RunningTask>,
     /// The view changed since it was last published.
     dirty: bool,
 }
@@ -67,6 +70,7 @@ impl Actor {
             allowed_tools: Vec::new(),
             warm_only: false,
             refusal_shown: false,
+            vanished: Default::default(),
             dirty: false,
         }
     }
@@ -373,10 +377,27 @@ impl Actor {
                 self.view.background_tasks = tasks
                     .into_iter()
                     .map(|info| {
-                        let seen_at = previous.iter().find(|task| task.info.id == info.id).map_or(now, |task| task.seen_at);
-                        forge_domain::RunningTask { info, seen_at, tokens: None }
+                        let before = previous.iter().find(|task| task.info.id == info.id);
+                        forge_domain::RunningTask { seen_at: before.map_or(now, |task| task.seen_at), tokens: before.and_then(|task| task.tokens), info }
                     })
                     .collect();
+                let gone: Vec<_> = previous.into_iter().filter(|old| !self.view.background_tasks.iter().any(|task| task.info.id == old.info.id)).collect();
+                for gone in gone {
+                    if !self.fill_finished(&gone) {
+                        self.vanished.insert(gone.info.id.clone(), gone);
+                    }
+                }
+            }
+            SessionUpdate::TaskProgress { task_id, total_tokens } => {
+                if let Some(task) = self.view.background_tasks.iter_mut().find(|task| task.info.id == task_id) {
+                    task.tokens = Some(total_tokens);
+                }
+            }
+            SessionUpdate::TaskFinished { task_id } => {
+                let seen = self.view.background_tasks.iter().find(|task| task.info.id == task_id).cloned().or_else(|| self.vanished.remove(&task_id));
+                if let Some(task) = seen {
+                    self.fill_finished(&task);
+                }
             }
             SessionUpdate::PromptSuggestion(text) => self.view.suggestion = Some(text),
             SessionUpdate::PromptSuggestion(text) => self.view.suggestion = Some(text),
@@ -411,10 +432,22 @@ impl Actor {
             SessionUpdate::MessageDelta { .. }
             | SessionUpdate::ThinkingDelta { .. }
             | SessionUpdate::ToolCallStarted { .. }
-            | SessionUpdate::TaskFinished { .. }
             | SessionUpdate::ToolCallCompleted { .. } => {}
         }
         self.dirty = true;
+    }
+
+    /// What a finished task's notification left out (its tokens, its time) is taken from what the
+    /// view saw of it while it ran. False when no finished entry exists yet.
+    fn fill_finished(&mut self, task: &forge_domain::RunningTask) -> bool {
+        let Some(entry) = self.view.session.finished_tasks.iter_mut().find(|item| item.task_id == task.info.id) else { return false };
+        if entry.tokens.is_none() {
+            entry.tokens = task.tokens;
+        }
+        if entry.duration_ms.is_none() {
+            entry.duration_ms = task.seen_at.elapsed().ok().map(|elapsed| elapsed.as_millis() as u64);
+        }
+        true
     }
 
     fn clear_refusal(&mut self) {
@@ -439,6 +472,7 @@ impl Actor {
 
     async fn discard_sidecar(&mut self, shutdown: bool) {
         self.view.background_tasks.clear();
+        self.vanished.clear();
         if let Some(sidecar) = self.sidecar.take() {
             if shutdown {
                 let _ = sidecar.shutdown().await;

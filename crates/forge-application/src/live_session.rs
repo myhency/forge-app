@@ -1017,6 +1017,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_running_tasks_tokens_survive_a_new_task_set() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("go".to_string());
+
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![task("b1")] });
+        control.push(SidecarEvent::TaskProgress { task_id: "b1".to_string(), total_tokens: 1234 });
+        wait_for(&mut view, "tokens", |v| v.background_tasks.first().and_then(|t| t.tokens) == Some(1234)).await;
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![task("b1"), task("b2")] });
+        let second = wait_for(&mut view, "two tasks", |v| v.background_tasks.len() == 2).await;
+        assert_eq!(second.background_tasks[0].tokens, Some(1234));
+        assert_eq!(second.background_tasks[1].tokens, None);
+    }
+
+    #[tokio::test]
+    async fn a_finished_task_gets_the_tokens_and_time_its_notification_left_out() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("go".to_string());
+
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![task("b1")] });
+        control.push(SidecarEvent::TaskProgress { task_id: "b1".to_string(), total_tokens: 500 });
+        wait_for(&mut view, "tokens", |v| v.background_tasks.first().and_then(|t| t.tokens) == Some(500)).await;
+        control.push(SidecarEvent::TaskFinished { task_id: "b1".to_string(), status: "completed".to_string(), summary: "s".to_string(), tokens: None, duration_ms: None });
+        let done = wait_for(&mut view, "finished", |v| v.session.finished_tasks.len() == 1 && v.session.finished_tasks[0].tokens.is_some()).await;
+        assert_eq!(done.session.finished_tasks[0].tokens, Some(500));
+        assert!(done.session.finished_tasks[0].duration_ms.is_some());
+    }
+
+    #[tokio::test]
+    async fn the_task_set_may_drop_a_task_before_its_notification_arrives() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("go".to_string());
+
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![task("b1")] });
+        control.push(SidecarEvent::TaskProgress { task_id: "b1".to_string(), total_tokens: 500 });
+        wait_for(&mut view, "tokens", |v| v.background_tasks.first().and_then(|t| t.tokens) == Some(500)).await;
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![] });
+        wait_for(&mut view, "no tasks", |v| v.background_tasks.is_empty()).await;
+        control.push(SidecarEvent::TaskFinished { task_id: "b1".to_string(), status: "completed".to_string(), summary: "s".to_string(), tokens: None, duration_ms: None });
+        let done = wait_for(&mut view, "finished", |v| v.session.finished_tasks.len() == 1 && v.session.finished_tasks[0].tokens.is_some()).await;
+        assert_eq!(done.session.finished_tasks[0].tokens, Some(500));
+    }
+
+    #[tokio::test]
     async fn the_task_set_empties_when_the_sidecar_fails() {
         let (sidecar, control) = fake_sidecar();
         let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);

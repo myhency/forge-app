@@ -26,6 +26,7 @@ pub enum SessionUpdate {
     SettingFailed { message: String },
     BackgroundTasks(Vec<forge_domain::BackgroundTaskInfo>),
     TaskFinished { task_id: String },
+    TaskProgress { task_id: String, total_tokens: u64 },
     PromptSuggestion(String),
     Errored { message: String },
     SessionEnded,
@@ -134,7 +135,16 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
         SidecarEvent::ModelsAvailable { models } => SessionUpdate::ModelsAvailable(models.clone()),
         SidecarEvent::SettingFailed { message } => SessionUpdate::SettingFailed { message: message.clone() },
         SidecarEvent::BackgroundTasks { tasks } => SessionUpdate::BackgroundTasks(tasks.clone()),
-        SidecarEvent::TaskFinished { task_id, .. } => SessionUpdate::TaskFinished { task_id: task_id.clone() },
+        SidecarEvent::TaskFinished { task_id, status, summary, tokens, duration_ms } => {
+            if let Some(status) = forge_domain::TaskStatus::parse(status) {
+                forge_domain::record_finished(
+                    &mut session.finished_tasks,
+                    forge_domain::FinishedTask { task_id: task_id.clone(), status, summary: summary.clone(), tokens: *tokens, duration_ms: *duration_ms },
+                );
+            }
+            SessionUpdate::TaskFinished { task_id: task_id.clone() }
+        }
+        SidecarEvent::TaskProgress { task_id, total_tokens } => SessionUpdate::TaskProgress { task_id: task_id.clone(), total_tokens: *total_tokens },
         SidecarEvent::PromptSuggestion { text } => SessionUpdate::PromptSuggestion(text.clone()),
         SidecarEvent::Error { message } => SessionUpdate::Errored { message: message.clone() },
         SidecarEvent::SessionEnded => SessionUpdate::SessionEnded,
@@ -572,12 +582,32 @@ mod tests {
             SessionUpdate::BackgroundTasks(tasks)
         );
         assert_eq!(
-            apply_sidecar_event(&mut session, &SidecarEvent::TaskFinished { task_id: "b1".to_string(), status: "completed".to_string(), summary: "s".to_string() }),
+            apply_sidecar_event(&mut session, &SidecarEvent::TaskFinished { task_id: "b1".to_string(), status: "completed".to_string(), summary: "s".to_string(), tokens: None, duration_ms: None }),
             SessionUpdate::TaskFinished { task_id: "b1".to_string() }
         );
         assert_eq!(
             apply_sidecar_event(&mut session, &SidecarEvent::PromptSuggestion { text: "next".to_string() }),
             SessionUpdate::PromptSuggestion("next".to_string())
+        );
+    }
+
+    #[test]
+    fn a_finished_task_is_recorded_in_the_session_and_progress_becomes_an_update() {
+        let mut session = empty_session();
+        let update = apply_sidecar_event(
+            &mut session,
+            &SidecarEvent::TaskFinished { task_id: "w1".to_string(), status: "failed".to_string(), summary: "boom".to_string(), tokens: Some(5), duration_ms: Some(9) },
+        );
+        assert_eq!(update, SessionUpdate::TaskFinished { task_id: "w1".to_string() });
+        assert_eq!(
+            session.finished_tasks,
+            vec![forge_domain::FinishedTask { task_id: "w1".to_string(), status: forge_domain::TaskStatus::Failed, summary: "boom".to_string(), tokens: Some(5), duration_ms: Some(9) }]
+        );
+        apply_sidecar_event(&mut session, &SidecarEvent::TaskFinished { task_id: "w2".to_string(), status: "weird".to_string(), summary: String::new(), tokens: None, duration_ms: None });
+        assert_eq!(session.finished_tasks.len(), 1, "a status we do not know is not recorded");
+        assert_eq!(
+            apply_sidecar_event(&mut session, &SidecarEvent::TaskProgress { task_id: "w1".to_string(), total_tokens: 7 }),
+            SessionUpdate::TaskProgress { task_id: "w1".to_string(), total_tokens: 7 }
         );
     }
 }
