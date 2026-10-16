@@ -680,6 +680,8 @@ pub static KO: &[(&str, &str)] = &[
     ("{reason} Go on in the terminal above.", "{reason} 위의 터미널에서 이어서 진행하세요."),
     ("{routine} wants to use {tool}", "{routine}이(가) {tool}을(를) 사용하려고 합니다"),
     ("{size} • May not match the original formatting", "{size} • 원본 서식과 다를 수 있습니다"),
+    ("{size}KB • {count} line", "{size}KB • {count}줄"),
+    ("{size}KB • {count} lines", "{size}KB • {count}줄"),
     ("{text} ({failed} failed)", "{text} (실패 {failed})"),
     ("{time} AM", "오전 {time}"),
     ("{time} PM", "오후 {time}"),

@@ -83,8 +83,12 @@ impl Card {
     /// `0.02KB • 1 line`, shown in the excerpt modal.
     pub fn size_label(&self) -> String {
         let lines = self.range.len();
-        let noun = if lines == 1 { "line" } else { "lines" };
-        format!("{:.2}KB • {lines} {noun}", self.text.len() as f64 / 1024.0)
+        let size = format!("{:.2}", self.text.len() as f64 / 1024.0);
+        if lines == 1 {
+            crate::tr!("{size}KB • {count} line", size = size, count = lines)
+        } else {
+            crate::tr!("{size}KB • {count} lines", size = size, count = lines)
+        }
     }
 
     fn to_block(&self) -> String {
