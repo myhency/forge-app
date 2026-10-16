@@ -119,3 +119,13 @@ Cookie import and the keep-cookies modes (SET-13); allowed-sites list; element p
 ## Roadmap updates when done
 
 PNL-03 Plan column and notes (what is built and what is left), SET-13 note that the web view exists, `observations.md` with any difference found in the real window, and a memory file `plan-44-preview-webview.md`.
+
+## Spike result (2026-10-16, macOS)
+
+A throwaway child web view (`build_as_child` on the app window, wry 0.53.5) in `forge-app`, loading `http://localhost:8124`:
+
+1. **Loads and works: yes.** The page showed at the given rectangle over the main view; a click focused the text field and typing worked.
+2. **Forge keys after a click in the page: no.** ⌘K did not open the search palette. Key forwarding (Plan 44, Task 9) is needed.
+3. **Developer tools:** enabled by `with_devtools(true)`; not driven by hand in the spike.
+4. **Isolation: yes.** In the page `typeof window.dioxus` is `undefined` and `window.__TAURI__` is `undefined`. `window.ipc` is an object (wry defines it on macOS) but it is bound to the child view's own handler, never to the main view's; with no handler it goes nowhere.
+5. **Thread: yes.** The component code ran on the main thread (`ThreadId(1)`, the same as `main()`), so the port can be called from components. Bounds tracking was not exercised in the spike; it is checked in the real window (Plan 44, Task 10).
