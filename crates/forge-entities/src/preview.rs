@@ -83,52 +83,61 @@ pub fn page_address(url: &str) -> bool {
     allowed && !rest.is_empty()
 }
 
-/// The `file://` address of an absolute path. Characters that would end or change the path are
-/// percent-encoded; a Windows drive path gets forward slashes.
+/// Whether an address is a web page (`http` or `https`), the only kind a page may ask for.
+pub fn web_address(url: &str) -> bool {
+    let Some((scheme, _)) = url.split_once("://") else { return false };
+    (scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")) && page_address(url)
+}
+
+// What a path keeps as it is in a `file://` address; everything else (a space, `#`, `?`, `%`, any
+// non-ASCII byte) is written as `%XX`, the way a page reports its own address.
+fn kept_in_file_address(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"-._~/:!$&'()*+,;=@".contains(&byte)
+}
+
+/// The `file://` address of an absolute path. Characters that would end or change the path, and
+/// every non-ASCII byte, are percent-encoded; a Windows drive path gets forward slashes.
 pub fn file_address(absolute_path: &str) -> String {
     let slashed = absolute_path.replace('\\', "/");
     let mut out = String::from("file://");
     if !slashed.starts_with('/') {
         out.push('/');
     }
-    for ch in slashed.chars() {
-        match ch {
-            ' ' => out.push_str("%20"),
-            '#' => out.push_str("%23"),
-            '?' => out.push_str("%3F"),
-            '%' => out.push_str("%25"),
-            other => out.push(other),
+    for byte in slashed.bytes() {
+        if kept_in_file_address(byte) {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
         }
     }
     out
 }
 
 /// The path a `file://` address names (the reverse of `file_address`); `None` for another scheme
-/// or an address with no path. A Windows drive path loses the slash before the drive letter.
+/// or an address with no path. A Windows drive path loses the slash before the drive letter. A
+/// `%` that is not followed by two hex digits stays as it is.
 pub fn path_of_file_address(url: &str) -> Option<String> {
     let (scheme, rest) = url.split_once("://")?;
     if !scheme.eq_ignore_ascii_case("file") || rest.is_empty() {
         return None;
     }
-    let mut path = String::new();
-    let mut chars = rest.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '%' {
-            path.push(ch);
-            continue;
-        }
-        let code: String = chars.by_ref().take(2).collect();
-        match code.as_str() {
-            "20" => path.push(' '),
-            "23" => path.push('#'),
-            "3F" | "3f" => path.push('?'),
-            "25" => path.push('%'),
-            other => {
-                path.push('%');
-                path.push_str(other);
+    let bytes = rest.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let hex = |index: usize| bytes.get(index).and_then(|&digit| (digit as char).to_digit(16));
+        match (bytes[at], hex(at + 1), hex(at + 2)) {
+            (b'%', Some(high), Some(low)) => {
+                decoded.push((high * 16 + low) as u8);
+                at += 3;
+            }
+            (byte, _, _) => {
+                decoded.push(byte);
+                at += 1;
             }
         }
     }
+    let mut path = String::from_utf8_lossy(&decoded).into_owned();
     let bytes = path.as_bytes();
     if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
         path.remove(0);
@@ -248,6 +257,25 @@ mod tests {
         assert_eq!(path_of_file_address("file:///C:/work/a%20b.html").as_deref(), Some("C:/work/a b.html"));
         assert_eq!(path_of_file_address("http://localhost"), None);
         assert_eq!(path_of_file_address("file://"), None);
+    }
+
+    #[test]
+    fn a_web_address_is_http_or_https_only() {
+        for ok in ["http://localhost:3000", "HTTPS://example.com"] {
+            assert!(web_address(ok), "{ok}");
+        }
+        for bad in ["file:///tmp/a.html", "javascript:alert(1)", "data:text/html,hi", "ftp://x", "http://", ""] {
+            assert!(!web_address(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_file_address_encodes_non_ascii_names_the_way_a_page_reports_them_and_decodes_them_back() {
+        let path = "/tmp/한글/보고서 1.html";
+        assert_eq!(file_address(path), "file:///tmp/%ED%95%9C%EA%B8%80/%EB%B3%B4%EA%B3%A0%EC%84%9C%201.html");
+        assert_eq!(path_of_file_address(&file_address(path)).as_deref(), Some(path));
+        assert_eq!(path_of_file_address("file:///tmp/%ed%95%9c.html").as_deref(), Some("/tmp/한.html"), "lower case hex too");
+        assert_eq!(path_of_file_address("file:///tmp/%ZZ.html").as_deref(), Some("/tmp/%ZZ.html"), "a bad escape stays as it is");
     }
 
     #[test]
