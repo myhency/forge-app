@@ -295,6 +295,19 @@ fn push_user_message(session: &mut Session, text: String) {
     session.messages.push(message);
 }
 
+// A user line the SDK wrote for a task that ended is not something the person said: it goes into
+// the finished list. A line that says another origin (a person typed the block) stays a message.
+fn push_user_text(session: &mut Session, line: &Value, text: String) {
+    let origin = line.pointer("/origin/kind").and_then(Value::as_str);
+    if origin.is_none() || origin == Some("task-notification") {
+        if let Some(task) = forge_domain::parse_task_notification(&text) {
+            forge_domain::record_finished(&mut session.finished_tasks, task);
+            return;
+        }
+    }
+    push_user_message(session, text);
+}
+
 fn attach_tool_result(session: &mut Session, block: &Value) {
     let Some(tool_use_id) = block.get("tool_use_id").and_then(Value::as_str) else {
         return;
@@ -321,7 +334,7 @@ fn apply_user_line(session: &mut Session, line: &Value) {
         return;
     };
     match content {
-        Value::String(text) => push_user_message(session, text.clone()),
+        Value::String(text) => push_user_text(session, line, text.clone()),
         Value::Array(blocks) => {
             let mut texts: Vec<&str> = Vec::new();
             for block in blocks {
@@ -336,7 +349,7 @@ fn apply_user_line(session: &mut Session, line: &Value) {
                 }
             }
             if !texts.is_empty() {
-                push_user_message(session, texts.join("\n"));
+                push_user_text(session, line, texts.join("\n"));
             }
         }
         _ => {}
@@ -2016,6 +2029,68 @@ mod tests {
 
         let contents: Vec<String> = session.messages.iter().map(|m| m.text()).collect();
         assert_eq!(contents, vec!["real question", "second question", "real answer"]);
+    }
+
+    const NOTE_DONE: &str = "<task-notification>\n<task-id>wm0ok3aqh</task-id>\n<status>completed</status>\n<summary>Dynamic workflow \"x\" completed</summary>\n<usage><subagent_tokens>157385</subagent_tokens><duration_ms>77189</duration_ms></usage>\n</task-notification>";
+    const NOTE_FAILED: &str = "<task-notification>\n<task-id>w5r3hmkem</task-id>\n<status>failed</status>\n<summary>Dynamic workflow \"y\" failed: Error: boom</summary>\n</task-notification>";
+
+    fn note_line(text: &str, kind: Option<&str>) -> Value {
+        let mut line = json!({"type": "user", "isSidechain": false, "message": {"role": "user", "content": text}});
+        if let Some(kind) = kind {
+            line["origin"] = json!({"kind": kind});
+        }
+        line
+    }
+
+    #[tokio::test]
+    async fn load_session_turns_task_notifications_into_finished_tasks_and_no_message() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("run it"),
+                note_line(NOTE_DONE, Some("task-notification")),
+                note_line(NOTE_FAILED, Some("task-notification")),
+                note_line(NOTE_DONE, Some("task-notification")),
+                assistant_block(json!({"type": "text", "text": "done"})),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        let texts: Vec<String> = session.messages.iter().map(|m| m.text()).collect();
+        assert_eq!(texts, vec!["run it", "done"]);
+        let seen: Vec<(&str, forge_domain::TaskStatus)> = session.finished_tasks.iter().map(|t| (t.task_id.as_str(), t.status)).collect();
+        assert_eq!(seen, vec![("w5r3hmkem", forge_domain::TaskStatus::Failed), ("wm0ok3aqh", forge_domain::TaskStatus::Completed)], "the repeat of wm0ok3aqh moved to the end");
+        assert_eq!(session.finished_tasks[1].tokens, Some(157_385));
+    }
+
+    #[tokio::test]
+    async fn a_line_with_no_origin_is_still_read_as_a_notification_but_another_origin_is_not() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[note_line(NOTE_DONE, None), note_line(NOTE_FAILED, Some("human"))],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.finished_tasks.len(), 1);
+        assert_eq!(session.finished_tasks[0].task_id, "wm0ok3aqh");
+        assert_eq!(session.messages.len(), 1, "what a person typed stays a message");
+    }
+
+    #[tokio::test]
+    async fn a_workflow_with_no_notification_in_the_record_loads_with_no_finished_task() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[user_text("run it"), assistant_block(json!({"type": "text", "text": "started"}))]);
+        let session = load(home.path(), "s1").await.unwrap();
+        assert!(session.finished_tasks.is_empty());
+        assert_eq!(session.messages.len(), 2);
     }
 
     #[tokio::test]
