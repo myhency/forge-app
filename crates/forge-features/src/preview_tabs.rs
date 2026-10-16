@@ -178,12 +178,18 @@ impl PreviewTabs {
         self.tab(id).is_some_and(|tab| tab.position + 1 < tab.history.len())
     }
 
-    /// The page's title, else the host (and port) of its address, else "New tab".
+    /// The page's title, else the file name of a local file, else the host (and port) of its address, else "New tab".
     pub fn label(&self, id: PreviewTabId) -> String {
         if let Some(title) = self.title(id) {
             return title;
         }
         let Some(url) = self.current(id) else { return tr!("New tab").to_string() };
+        if let Some(path) = forge_entities::path_of_file_address(&url) {
+            let name = forge_domain::file_name(&path);
+            if !name.is_empty() {
+                return name.to_string();
+            }
+        }
         let rest = url.split_once("://").map_or(url.as_str(), |(_, rest)| rest);
         rest.split(['/', '?', '#']).next().unwrap_or(rest).to_string()
     }
@@ -308,6 +314,16 @@ mod tests {
         assert_eq!(tabs.label(tab), "My app");
         tabs.loaded(tab, "https://example.com".into());
         assert_eq!(tabs.label(tab), "example.com", "a new page forgets the old title");
+    }
+
+    #[test]
+    fn a_file_tab_is_named_by_its_file_when_the_page_has_no_title() {
+        let mut tabs = PreviewTabs::default();
+        let tab = tabs.open();
+        tabs.loaded(tab, "file:///tmp/my%20dir/page%231.html".into());
+        assert_eq!(tabs.label(tab), "page#1.html");
+        tabs.set_title(tab, "Hello".into());
+        assert_eq!(tabs.label(tab), "Hello");
     }
 
     #[test]
