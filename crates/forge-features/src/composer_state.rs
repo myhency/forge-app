@@ -4,7 +4,8 @@ use dioxus::prelude::*;
 use forge_domain::{with_cards, Attachment, AttachmentKind, Card};
 
 use crate::attachments::{add_attachments, check_attachments, folder_label, with_folder_hints};
-use crate::trust::{classify_added_folder, resolved, FolderAdd};
+use crate::blocking::run_blocking;
+use crate::trust::{answer_card, apply_pick, classify_added_folder, resolved, FolderAdd, TrustChoice};
 use crate::workspace::{use_workspace, Workspace, WorkspaceServices};
 use forge_shared::{tr, Button, ButtonKind};
 
@@ -23,13 +24,6 @@ pub fn plan_send(text: &str, attachments: &[Attachment], unannounced: &[PathBuf]
         return None;
     }
     Some(Outgoing { text: with_cards(cards, &with_folder_hints(text, unannounced)), attachments: attachments.to_vec() })
-}
-
-/// Adds a folder chip, once. A new chip has not been announced to the model yet.
-fn push_folder(folders: &mut Vec<(PathBuf, bool)>, path: PathBuf) {
-    if !folders.iter().any(|(existing, _)| *existing == path) {
-        folders.push((path, false));
-    }
 }
 
 /// What is in the composer besides what the text area owns: chips for attached files and added
@@ -158,11 +152,10 @@ impl ComposerState {
             // A list that cannot be read counts as empty: the person is asked, never waved through.
             let trusted = services.settings.load().await.map(|config| config.trusted_folders).unwrap_or_default();
             let added: Vec<PathBuf> = folders.peek().iter().map(|(existing, _)| existing.clone()).collect();
-            match classify_added_folder(&trusted, &added, &path, &resolved(&path)) {
-                FolderAdd::AlreadyAdded => {}
-                FolderAdd::Trusted => push_folder(&mut folders.write(), path),
-                FolderAdd::NeedsAsking => pending.set(Some(path)),
-            }
+            // `canonicalize` can stall on a slow share: off the UI thread.
+            let picked = path.clone();
+            let verdict = run_blocking(move || classify_added_folder(&trusted, &added, &picked, &resolved(&picked))).await.unwrap_or(FolderAdd::NeedsAsking);
+            apply_pick(&mut folders.write(), &mut pending.write(), verdict, path);
         });
     }
 
@@ -173,14 +166,13 @@ impl ComposerState {
     /// `Trust and add`: the chip now, and the folder on the trusted list. When the list cannot be
     /// saved the chip stays and a notice says so (the folder is then as for `Add this time`).
     pub fn trust_and_add(&self) {
-        let Some(path) = self.take_pending() else { return };
-        let mut folders = self.folders;
-        push_folder(&mut folders.write(), path.clone());
+        let Some(path) = self.answer(TrustChoice::TrustAndAdd) else { return };
         let services = (*self.services.peek()).clone();
         let workspace = self.workspace;
         // Root scope: the save must finish even if the composer goes away meanwhile.
         dioxus::core::spawn_forever(async move {
-            let folder = resolved(&path);
+            let folder = run_blocking(move || resolved(&path)).await;
+            let Some(folder) = folder else { return };
             let saved = services.settings.save_code_settings(|config| {
                 forge_domain::add_trusted(&mut config.trusted_folders, folder);
             });
@@ -188,27 +180,32 @@ impl ComposerState {
                 workspace.report(tr!("Could not save the trusted folder: {error}", error = error));
             }
         });
-        crate::refocus::refocus_composer();
     }
 
     /// `Add this time`: the chip only; nothing is saved.
     pub fn add_once(&self) {
-        let Some(path) = self.take_pending() else { return };
-        let mut folders = self.folders;
-        push_folder(&mut folders.write(), path);
-        crate::refocus::refocus_composer();
+        self.answer(TrustChoice::AddOnce);
     }
 
     /// `Cancel` and Esc: the card goes, no chip.
     pub fn cancel_trust(&self) {
-        self.take_pending();
-        crate::refocus::refocus_composer();
+        self.answer(TrustChoice::Cancel);
     }
 
-    fn take_pending(&self) -> Option<PathBuf> {
+    fn answer(&self, choice: TrustChoice) -> Option<PathBuf> {
+        let mut folders = self.folders;
         let mut pending = self.pending_trust;
-        let taken = pending.write().take();
-        taken
+        let to_save = answer_card(&mut folders.write(), &mut pending.write(), choice);
+        crate::refocus::refocus_composer();
+        to_save
+    }
+
+    // A message goes without the folder the card is still asking about, and the card goes with it.
+    fn drop_pending_trust(&self) {
+        let mut pending = self.pending_trust;
+        if pending.peek().is_some() {
+            pending.set(None);
+        }
     }
 
     /// Puts `/` in the text area (after a space when there is text) and asks it to open its
@@ -251,6 +248,7 @@ impl ComposerState {
         if !self.check_and_clear(&attachments) {
             return None;
         }
+        self.drop_pending_trust();
         Some(outgoing)
     }
 
@@ -277,6 +275,7 @@ impl ComposerState {
         for (_, told) in folders.write().iter_mut() {
             *told = true;
         }
+        self.drop_pending_trust();
         Some(outgoing)
     }
 }
@@ -332,6 +331,8 @@ pub fn TrustCard() -> Element {
     };
     rsx! {
         div {
+            // Keyed by the folder: a second pick remounts the card, so it takes the focus again.
+            key: "{path.display()}",
             class: "trust-card",
             tabindex: "0",
             onmounted: move |mounted| async move {
@@ -357,14 +358,6 @@ pub fn TrustCard() -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_folder_chip_is_added_once() {
-        let mut folders = vec![(PathBuf::from("/a"), true)];
-        push_folder(&mut folders, PathBuf::from("/a"));
-        push_folder(&mut folders, PathBuf::from("/b"));
-        assert_eq!(folders, vec![(PathBuf::from("/a"), true), (PathBuf::from("/b"), false)]);
-    }
 
     fn image() -> Attachment {
         Attachment { path: "/x/a.png".into(), kind: AttachmentKind::Image }

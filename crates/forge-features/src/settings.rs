@@ -127,6 +127,7 @@ pub struct Settings {
     server: Signal<Option<String>>,
     folder_picker: Signal<Arc<dyn FolderPickerPort>>,
     trusted_dialog: Signal<bool>,
+    trusted_picking: Signal<bool>,
 }
 
 /// Creates the settings state, provides it to every descendant and loads the saved config once.
@@ -149,6 +150,7 @@ pub fn use_settings_provider() -> Settings {
         server: Signal::new(None),
         folder_picker: Signal::new(services.folder_picker.clone()),
         trusted_dialog: Signal::new(false),
+        trusted_picking: Signal::new(false),
     });
     use_context_provider(move || settings);
     use_hook(move || settings.reload());
@@ -342,8 +344,9 @@ impl Settings {
         self.change_code(CodeChange::AttentionBounce(on));
     }
 
+    /// The trusted folders, each once (a hand-edited config can repeat one).
     pub fn trusted_folders(&self) -> Vec<PathBuf> {
-        self.saved.read().trusted_folders.clone()
+        crate::trust::dedup_paths(&self.saved.read().trusted_folders)
     }
 
     pub fn trusted_dialog_open(&self) -> bool {
@@ -363,12 +366,22 @@ impl Settings {
     /// Asks for a folder with the system dialog and puts it on the list (a folder below a listed
     /// one is not added again).
     pub fn add_trusted_folder(&self) {
+        if *self.trusted_picking.peek() {
+            return;
+        }
         let picker = (*self.folder_picker.peek()).clone();
         let this = *self;
+        let mut picking = self.trusted_picking;
+        picking.set(true);
         // Pinned to the root scope, like the other saves: the dialog may be closed while the system dialog is open.
         dioxus::core::spawn_forever(async move {
-            if let Some(picked) = picker.pick_folder().await {
-                this.change_code(CodeChange::TrustFolder(crate::trust::resolved(&picked)));
+            let picked = picker.pick_folder().await;
+            picking.set(false);
+            if let Some(picked) = picked {
+                // `canonicalize` can stall on a slow share: off the UI thread.
+                if let Some(folder) = crate::blocking::run_blocking(move || crate::trust::resolved(&picked)).await {
+                    this.change_code(CodeChange::TrustFolder(folder));
+                }
             }
         });
     }
