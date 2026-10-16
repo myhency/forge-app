@@ -275,6 +275,10 @@ pub struct AppConfig {
     /// The language the person chose; `None` follows the system language.
     #[serde(default, deserialize_with = "lenient")]
     pub language: Option<Language>,
+    /// Folders the person trusts: a folder on the list, and every folder below it, is added to a
+    /// session without a question. Absolute paths, as `forge_domain::add_trusted` keeps them.
+    #[serde(default, deserialize_with = "lenient")]
+    pub trusted_folders: Vec<std::path::PathBuf>,
 }
 
 fn default_true() -> bool {
@@ -315,6 +319,7 @@ impl Default for AppConfig {
             notifications: NotificationPrefs::default(),
             attention_bounce: false,
             language: None,
+            trusted_folders: Vec::new(),
         }
     }
 }
@@ -332,6 +337,28 @@ pub fn normalize_setting(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_config_without_trusted_folders_has_an_empty_list() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":"https://x","api_key":null}"#).unwrap();
+        assert!(config.trusted_folders.is_empty());
+    }
+
+    #[test]
+    fn trusted_folders_are_stored_and_read_back() {
+        let config = AppConfig { trusted_folders: vec!["/work/app".into(), "/other".into()], ..AppConfig::default() };
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(back.trusted_folders, config.trusted_folders);
+    }
+
+    #[test]
+    fn a_bad_trusted_folders_value_reads_as_empty_and_the_rest_still_loads() {
+        for text in [r#""trusted_folders": null"#, r#""trusted_folders": "/work""#, r#""trusted_folders": ["/work", 7]"#, r#""trusted_folders": 7"#] {
+            let config: AppConfig = serde_json::from_str(&format!(r#"{{"base_url":"https://x",{text}}}"#)).unwrap();
+            assert!(config.trusted_folders.is_empty(), "{text}");
+            assert_eq!(config.base_url.as_deref(), Some("https://x"), "{text}");
+        }
+    }
 
     #[test]
     fn a_config_without_a_language_follows_the_system() {
