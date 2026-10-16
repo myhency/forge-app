@@ -917,6 +917,42 @@ describe("SidecarSession", () => {
     expect(finished).toEqual([{ type: "task_finished", task_id: "b1", status: "completed", summary: "done" }]);
   });
 
+  it("forwards a running task's token count and drops progress without one", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      systemMessages(
+        { type: "system", subtype: "task_progress", task_id: "w1", description: "d", usage: { total_tokens: 99100, tool_uses: 1, duration_ms: 5000 } },
+        { type: "system", subtype: "task_progress", task_id: "w2", description: "d" },
+        { type: "system", subtype: "task_progress", description: "no id", usage: { total_tokens: 1, tool_uses: 0, duration_ms: 0 } },
+      );
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events.filter((e) => e.type === "task_progress")).toEqual([{ type: "task_progress", task_id: "w1", total_tokens: 99100 }]);
+  });
+
+  it("forwards a finished task's tokens and time when the SDK reports them", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      systemMessages(
+        {
+          type: "system",
+          subtype: "task_notification",
+          task_id: "w1",
+          status: "failed",
+          summary: "boom",
+          output_file: "/x",
+          usage: { total_tokens: 157469, tool_uses: 3, duration_ms: 70914 },
+        },
+      );
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events.filter((e) => e.type === "task_finished")).toEqual([
+      { type: "task_finished", task_id: "w1", status: "failed", summary: "boom", tokens: 157469, duration_ms: 70914 },
+    ]);
+  });
+
   it("forwards a prompt suggestion and drops an empty one", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>

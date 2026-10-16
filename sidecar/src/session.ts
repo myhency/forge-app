@@ -464,10 +464,23 @@ export class SidecarSession {
               task_type: typeof task.task_type === "string" ? task.task_type : "",
             }));
           this.emit({ type: "background_tasks", tasks });
+        } else if (message.subtype === "task_progress") {
+          const total = message.usage?.total_tokens;
+          if (typeof message.task_id === "string" && message.task_id !== "" && typeof total === "number") {
+            this.emit({ type: "task_progress", task_id: message.task_id, total_tokens: total });
+          }
         } else if (message.subtype === "task_notification") {
           const status = message.status;
           if (typeof message.task_id === "string" && (status === "completed" || status === "failed" || status === "stopped")) {
-            this.emit({ type: "task_finished", task_id: message.task_id, status, summary: typeof message.summary === "string" ? message.summary : "" });
+            const usage = message.usage;
+            this.emit({
+              type: "task_finished",
+              task_id: message.task_id,
+              status,
+              summary: typeof message.summary === "string" ? message.summary : "",
+              ...(typeof usage?.total_tokens === "number" ? { tokens: usage.total_tokens } : {}),
+              ...(typeof usage?.duration_ms === "number" ? { duration_ms: usage.duration_ms } : {}),
+            });
           }
         }
         return;

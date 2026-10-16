@@ -86,7 +86,16 @@ export type SidecarEvent =
   | { type: "effort_set"; effort: WireEffort | null }
   // The SDK's full set of background tasks (replace semantics), a finished one, and a predicted next prompt.
   | { type: "background_tasks"; tasks: WireBackgroundTask[] }
-  | { type: "task_finished"; task_id: string; status: "completed" | "failed" | "stopped"; summary: string }
+  | { type: "task_progress"; task_id: string; total_tokens: number }
+  | {
+      type: "task_finished";
+      task_id: string;
+      status: "completed" | "failed" | "stopped";
+      summary: string;
+      // What the SDK's notification reported; a Bash command reports neither.
+      tokens?: number;
+      duration_ms?: number;
+    }
   | { type: "prompt_suggestion"; text: string }
   // The models the SDK lists for this session and the effort levels each takes; sent once after the start.
   | { type: "models_available"; models: WireAvailableModel[] }
