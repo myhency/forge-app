@@ -21,11 +21,17 @@ pub enum FolderAdd {
 pub fn classify_added_folder(trusted: &[PathBuf], added: &[PathBuf], picked: &Path, resolved: &Path) -> FolderAdd {
     if added.iter().any(|existing| existing == picked) {
         FolderAdd::AlreadyAdded
-    } else if is_trusted(trusted, resolved) {
+    } else if is_trusted(&with_resolved_entries(trusted), resolved) {
         FolderAdd::Trusted
     } else {
         FolderAdd::NeedsAsking
     }
+}
+
+// The list as written plus each entry through `resolved()`, so an entry written through a symlink
+// (a hand edit, an older config) still matches the folder the picker resolved.
+fn with_resolved_entries(trusted: &[PathBuf]) -> Vec<PathBuf> {
+    trusted.iter().cloned().chain(trusted.iter().map(|entry| resolved(entry))).collect()
 }
 
 /// The folder through symlinks (`/tmp` is `/private/tmp` on macOS); the folder as given when it
@@ -37,6 +43,21 @@ pub fn resolved(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_listed_entry_written_through_a_symlink_still_matches_the_resolved_folder() {
+        let base = std::env::temp_dir().join(format!("forge-trust-link-{}", std::process::id()));
+        let real = base.join("real");
+        let link = base.join("link");
+        std::fs::create_dir_all(real.join("sub")).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let trusted = vec![link.clone()];
+        let picked = real.join("sub");
+        let verdict = classify_added_folder(&trusted, &[], &picked, &resolved(&picked));
+        std::fs::remove_dir_all(&base).unwrap();
+        assert_eq!(verdict, FolderAdd::Trusted);
+    }
 
     fn list(paths: &[&str]) -> Vec<PathBuf> {
         paths.iter().map(PathBuf::from).collect()
