@@ -1,62 +1,61 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{normalize_url, use_workspace, Panel, PreviewTabs, Workspace};
+use forge_features::{use_workspace, Panel};
 
 use crate::panel_frame::PanelFrame;
 use forge_shared::tr;
 
-// Hands the address to the system browser; the panel shows the reason when it cannot.
-fn open_url(workspace: Workspace, mut notice: Signal<Option<String>>, url: &str) {
-    match workspace.browser().open(url) {
-        Ok(()) => notice.set(None),
-        Err(message) => notice.set(Some(message)),
-    }
-}
-
-/// Tabs, back, forward, reload and an address bar. The page itself opens in the system browser:
-/// the window's web view opens every web address outside, so it cannot show a page inside the
-/// panel. Each tab keeps the addresses that were opened from it.
+/// Tabs, back, forward, reload and an address bar over a surface that the page's own web view
+/// covers (`WebViewHost` keeps the two in step). A tab that could not be reached shows a notice
+/// in the surface's place.
 #[component]
 pub fn PreviewPanel(id: LiveSessionId) -> Element {
     let workspace = use_workspace();
-    let mut tabs = use_signal(|| {
-        let mut tabs = PreviewTabs::default();
-        tabs.open();
-        tabs
+    // The panel never opens empty: a tab is there to type an address into.
+    use_hook(|| {
+        if workspace.previews(id).is_empty() {
+            workspace.change_previews(id, |tabs| {
+                tabs.open();
+            });
+        }
     });
     let mut input = use_signal(String::new);
     let mut notice = use_signal(|| None::<String>);
 
-    let mut submit = move || {
-        let Some(url) = normalize_url(&input()) else {
-            notice.set(Some(tr!("Enter a web address, such as localhost:3000").to_string()));
-            return;
-        };
-        let active = tabs.read().active();
-        let Some(tab) = active else { return };
-        tabs.write().loaded(tab, url.clone());
-        input.set(url.clone());
-        open_url(workspace, notice, &url);
-    };
-    let mut step = move |forward: bool| {
-        let active = tabs.read().active();
-        let Some(tab) = active else { return };
-        // Stepping moves with the page's own report now; this panel is rewritten with the web view.
-        let url: Option<String> = None;
-        let _ = (forward, tab);
-        if let Some(url) = url {
-            input.set(url.clone());
-            open_url(workspace, notice, &url);
-        }
-    };
-
-    let active = tabs.read().active();
-    let ids = tabs.read().ids();
-    let current = active.and_then(|tab| tabs.read().current(tab));
+    let tabs = workspace.previews(id);
+    let active = tabs.active();
+    let ids = tabs.ids();
+    let current = active.and_then(|tab| tabs.current(tab));
+    let failure = active.and_then(|tab| tabs.failure(tab));
     let (can_back, can_forward) = match active {
-        Some(tab) => (tabs.read().can_back(tab), tabs.read().can_forward(tab)),
+        Some(tab) => (tabs.can_back(tab), tabs.can_forward(tab)),
         None => (false, false),
     };
+    // The address field follows the page, and is only rewritten when the address itself changes.
+    let address = use_memo(move || {
+        let tabs = workspace.previews(id);
+        tabs.active().and_then(|tab| tabs.current(tab)).unwrap_or_default()
+    });
+    use_effect(move || {
+        input.set(address());
+        notice.set(None);
+    });
+
+    let mut submit = move || {
+        let Some(tab) = workspace.previews(id).active() else { return };
+        match workspace.preview_go(id, tab, &input()) {
+            Ok(()) => notice.set(None),
+            Err(message) => notice.set(Some(message)),
+        }
+    };
+    let mut retry = move || {
+        let Some(tab) = workspace.previews(id).active() else { return };
+        match workspace.preview_reload(id, tab) {
+            Ok(()) => notice.set(None),
+            Err(message) => notice.set(Some(message)),
+        }
+    };
+    let web_address = current.as_deref().is_some_and(|url| url.starts_with("http://") || url.starts_with("https://"));
 
     let tools = rsx! {
         for tab in ids.iter().copied() {
@@ -64,28 +63,15 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                 button {
                     class: "terminal-tab-label",
                     r#type: "button",
-                    onclick: move |_| {
-                        tabs.write().select(tab);
-                        let url = tabs.read().current(tab).unwrap_or_default();
-                        input.set(url);
-                        notice.set(None);
-                    },
-                    "{tabs.read().label(tab)}"
+                    onclick: move |_| workspace.change_previews(id, |tabs| tabs.select(tab)),
+                    "{tabs.label(tab)}"
                 }
                 button {
                     class: "terminal-tab-close",
                     r#type: "button",
                     title: tr!("Close tab"),
                     "aria-label": "Close tab",
-                    onclick: move |_| {
-                        tabs.write().close(tab);
-                        if tabs.read().is_empty() {
-                            workspace.change_dock(id, |dock| dock.close(Panel::Preview));
-                        } else {
-                            let url = tabs.read().active().and_then(|active| tabs.read().current(active)).unwrap_or_default();
-                            input.set(url);
-                        }
-                    },
+                    onclick: move |_| workspace.close_preview_tab(id, tab),
                     "×"
                 }
             }
@@ -95,11 +81,9 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
             r#type: "button",
             title: tr!("New tab"),
             "aria-label": "New tab",
-            onclick: move |_| {
-                tabs.write().open();
-                input.set(String::new());
-                notice.set(None);
-            },
+            onclick: move |_| workspace.change_previews(id, |tabs| {
+                tabs.open();
+            }),
             "+"
         }
     };
@@ -107,22 +91,39 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
     rsx! {
         PanelFrame { id, panel: Panel::Preview, tools,
             div { class: "preview-bar",
-                button { class: "icon-button", r#type: "button", title: tr!("Back|browser"), "aria-label": tr!("Back|browser"), disabled: !can_back, onclick: move |_| step(false), "‹" }
-                button { class: "icon-button", r#type: "button", title: tr!("Forward"), "aria-label": tr!("Forward"), disabled: !can_forward, onclick: move |_| step(true), "›" }
+                button {
+                    class: "icon-button",
+                    r#type: "button",
+                    title: tr!("Back|browser"),
+                    "aria-label": tr!("Back|browser"),
+                    disabled: !can_back,
+                    onclick: move |_| {
+                        if let Some(tab) = active {
+                            workspace.preview_back(tab);
+                        }
+                    },
+                    "‹"
+                }
+                button {
+                    class: "icon-button",
+                    r#type: "button",
+                    title: tr!("Forward"),
+                    "aria-label": tr!("Forward"),
+                    disabled: !can_forward,
+                    onclick: move |_| {
+                        if let Some(tab) = active {
+                            workspace.preview_forward(tab);
+                        }
+                    },
+                    "›"
+                }
                 button {
                     class: "icon-button",
                     r#type: "button",
                     title: tr!("Reload"),
                     "aria-label": "Reload",
                     disabled: current.is_none(),
-                    onclick: {
-                        let current = current.clone();
-                        move |_| {
-                            if let Some(url) = current.as_deref() {
-                                open_url(workspace, notice, url);
-                            }
-                        }
-                    },
+                    onclick: move |_| retry(),
                     "⟳"
                 }
                 input {
@@ -137,17 +138,40 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                         }
                     },
                 }
-                button { class: "preview-open", r#type: "button", onclick: move |_| submit(), {tr!("Open in browser")} }
+                button {
+                    class: "preview-open",
+                    r#type: "button",
+                    disabled: !web_address,
+                    onclick: {
+                        let current = current.clone();
+                        move |_| {
+                            if let Some(url) = current.as_deref() {
+                                if let Err(message) = workspace.browser().open(url) {
+                                    notice.set(Some(message));
+                                }
+                            }
+                        }
+                    },
+                    {tr!("Open in browser")}
+                }
             }
-            div { class: "dock-note",
-                if let Some(message) = notice() {
-                    span { class: "error", "{message}" }
-                } else if let Some(url) = current.clone() {
-                    span { "{url}" }
-                    br {}
-                    span { {tr!("This page is open in your browser.")} }
+            div { class: "preview-body",
+                if let Some((url, _reason)) = failure {
+                    div { class: "preview-failed",
+                        p { {tr!("Cannot connect to this address.")} }
+                        p { class: "preview-failed-url", "{url}" }
+                        button { class: "preview-open", r#type: "button", onclick: move |_| retry(), {tr!("Try again")} }
+                    }
                 } else {
-                    span { {tr!("Enter an address above. The page opens in your browser.")} }
+                    // The page's web view lies over this; the hint shows until it has an address.
+                    div { class: "preview-surface",
+                        if current.is_none() {
+                            div { class: "dock-note", {tr!("Enter an address above.")} }
+                        }
+                    }
+                }
+                if let Some(message) = notice() {
+                    div { class: "dock-note error", "{message}" }
                 }
             }
         }

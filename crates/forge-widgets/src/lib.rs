@@ -40,6 +40,7 @@ mod tasks_panel;
 mod terminal_panel;
 mod usage_card;
 mod usage_ring;
+mod web_view_host;
 
 pub use chat_window::ChatWindow;
 pub use customize_page::CustomizePage;
@@ -59,3 +60,4 @@ pub use settings_overlay::SettingsOverlay;
 pub use shortcuts_dialog::ShortcutsDialog;
 pub use sidebar::{project_label, project_labels, NavButtons, Sidebar};
 pub use usage_ring::UsageRing;
+pub use web_view_host::WebViewHost;

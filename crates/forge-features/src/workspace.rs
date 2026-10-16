@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use forge_application::{Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewEventKind, WebViewPort};
+use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewEventKind, WebViewPort, WebViewTabId};
 use forge_ports::{KeyForward, Surface};
 use time::OffsetDateTime;
 
@@ -581,6 +581,27 @@ impl Workspace {
     pub fn change_previews(&self, id: LiveSessionId, change: impl FnOnce(&mut PreviewTabs)) {
         let mut previews = self.previews;
         previews.write().change(id, change);
+        // Another tab may be on top now.
+        self.sync_web_views();
+    }
+
+    /// The page's own back, forward and reload. A tab whose address could not be reached tries it again.
+    pub fn preview_back(&self, tab: PreviewTabId) {
+        self.webviews().back(WebViewTabId(tab.0));
+    }
+
+    pub fn preview_forward(&self, tab: PreviewTabId) {
+        self.webviews().forward(WebViewTabId(tab.0));
+    }
+
+    pub fn preview_reload(&self, id: LiveSessionId, tab: PreviewTabId) -> Result<(), String> {
+        match self.previews(id).failure(tab) {
+            Some((url, _)) => self.preview_load(id, tab, &url),
+            None => {
+                self.webviews().reload(WebViewTabId(tab.0));
+                Ok(())
+            }
+        }
     }
 
     /// An address typed in the Preview bar: the tab shows it. The error is a message for the person.

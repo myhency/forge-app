@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, layout_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
 use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_width, use_workspace_provider, Active};
-use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, NavButtons, NewSessionPanel, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
+use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, WebViewHost, NavButtons, NewSessionPanel, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
 use forge_shared::tr;
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
@@ -168,6 +168,7 @@ pub fn WorkspacePage() -> Element {
             SearchPalette {}
             ShortcutsDialog {}
             Lightbox {}
+            WebViewHost {}
         }
     }
 }

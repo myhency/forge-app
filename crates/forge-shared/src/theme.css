@@ -612,6 +612,11 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .preview-url { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; font-size: 12px; }
 .preview-open { flex: none; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; }
 .preview-open:hover { background: var(--bg-hover); }
+.preview-open:disabled { opacity: 0.4; cursor: default; }
+.preview-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.preview-surface { flex: 1; min-height: 0; }
+.preview-failed { padding: 24px 16px; text-align: center; color: var(--fg-muted); font-size: 13px; }
+.preview-failed-url { word-break: break-all; font-size: 12px; }
 .dock-note .error { color: var(--danger); }
 
 /* New-session composer: chips above the box, the send icon inside it. */
