@@ -21,10 +21,18 @@ use forge_adapter_browser::SystemBrowser;
 use forge_adapter_files::LocalFiles;
 use forge_adapter_git::GitCli;
 use forge_adapter_terminal::PtyTerminal;
+use forge_adapter_webview::WryWebViews;
 use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, RegistryHost, RoutineRunner, RoutinesUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase};
 use forge_features::{RoutineServices, WorkspaceServices};
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
+
+// The one web view host: the services hold it as a port, `App` attaches the window to it.
+static WEBVIEWS: std::sync::OnceLock<Arc<WryWebViews>> = std::sync::OnceLock::new();
+
+fn webviews() -> Arc<WryWebViews> {
+    WEBVIEWS.get_or_init(|| Arc::new(WryWebViews::new())).clone()
+}
 
 // Development default: the sidecar built in this repository (`npm run build` in `sidecar/`).
 // Locating a bundled sidecar is packaging's job (spec §9), so `FORGE_SIDECAR_SCRIPT` overrides it.
@@ -210,6 +218,7 @@ fn build_services() -> WorkspaceServices {
         git: Arc::new(GitCli::new()),
         files: Arc::new(LocalFiles::new()),
         browser: Arc::new(SystemBrowser::new()),
+        webviews: webviews(),
         usage_stats: Arc::new(ClaudeUsageStatsAdapter::new(claude_home.clone())),
         mcp_logs: Arc::new(ClaudeMcpLogAdapter::new(default_cli_cache_dir(), claude_json)),
         routines: RoutineServices { routines, runner, host, starts: Arc::new(std::sync::Mutex::new(starts)), notify: notifier() },
@@ -248,6 +257,8 @@ fn notifier() -> Arc<dyn forge_ports::NotifyPort> {
 
 #[component]
 fn App() -> Element {
+    // The web views of the Preview panel are children of this window.
+    use_hook(|| webviews().attach(dioxus::desktop::window().window.clone()));
     #[cfg(target_os = "macos")]
     {
         // The window can only be touched from the UI thread: the notifier sends a request over a channel

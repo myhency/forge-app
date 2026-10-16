@@ -15,6 +15,7 @@ forge-adapter-git = { path = "../forge-adapter-git" }
 forge-adapter-notify = { path = "../forge-adapter-notify" }
 forge-adapter-sidecar = { path = "../forge-adapter-sidecar" }
 forge-adapter-terminal = { path = "../forge-adapter-terminal" }
+forge-adapter-webview = { path = "../forge-adapter-webview" }
 forge-application = { path = "../forge-application" }
 forge-domain = { path = "../forge-domain" }
 forge-features = { path = "../forge-features" }

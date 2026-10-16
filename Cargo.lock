@@ -1640,6 +1640,7 @@ dependencies = [
  "forge-adapter-notify",
  "forge-adapter-sidecar",
  "forge-adapter-terminal",
+ "forge-adapter-webview",
  "forge-application",
  "forge-domain",
  "forge-features",

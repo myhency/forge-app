@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use forge_application::{Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort};
+use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewPort};
 use time::OffsetDateTime;
 
 use crate::cards::{clamp_cards, Cards};
@@ -59,6 +59,7 @@ pub struct WorkspaceServices {
     pub git: Arc<dyn GitPort>,
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
+    pub webviews: Arc<dyn WebViewPort>,
     pub usage_stats: Arc<dyn UsageStatsPort>,
     pub mcp_logs: Arc<dyn McpLogPort>,
     pub routines: RoutineServices,
@@ -751,6 +752,10 @@ impl Workspace {
 
     pub fn browser(&self) -> Arc<dyn BrowserPort> {
         self.services.peek().browser.clone()
+    }
+
+    pub fn webviews(&self) -> Arc<dyn WebViewPort> {
+        self.services.peek().webviews.clone()
     }
 
     /// Shows a file in Finder; a failure becomes a notice.
