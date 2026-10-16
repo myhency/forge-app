@@ -36,10 +36,10 @@ A native view is always above the page's DOM, so any DOM overlay would be hidden
 | --- | --- |
 | `forge-ports` `WebViewPort` (with `MockWebViewPort`) | `create(tab, url)`, `destroy(tab)`, `navigate(tab, url)`, `back`, `forward`, `reload`, `set_bounds(tab, rect)`, `set_visible(tab, bool)`, and a stream of `WebViewEvent`: `Navigated { url, can_back, can_forward }`, `Title(text)`, `Loading(bool)`, `LoadFailed { url, reason }`, `NewWindow(url)` |
 | `forge-adapter-webview` (new crate) | Holds `TabId -> wry::WebView`. Depends on `wry = "=0.53.5"` directly. A web view is built and touched only on the main thread; calls from elsewhere go through the tao event loop proxy. Allows `http`, `https`, `file`; refuses everything else. No IPC handler. Denies downloads and permission requests |
-| `forge-features` `PreviewTabs` | Replaces the list of "addresses opened from the tab" with the real history reported by events (current address, title, can-go-back, can-go-forward). `normalize_url` stays |
+| `forge-features` `PreviewTabs` | Takes what the page reports (address, title, loading, failure). wry has no back/forward state, so it keeps a shadow history of the reported addresses: an address equal to the previous or next entry moves the position; `http://host` and `http://host/` are one page. `normalize_url` stays |
 | `forge-features` `BrowserHost` | Signals for the active session's active tab, the panel rectangle and whether an overlay is open. From them it decides each web view's `set_bounds` and `set_visible` |
 | `forge-features` open-path rule | One function that says where a clicked path goes: html, pdf, svg to Preview; csv and md to Files; png to the lightbox (the rule seen in rounds 11 and 12, now in one place with a table test) |
-| `forge-widgets` `preview_panel.rs` | Tabs, address bar and buttons as now. The body is one empty `div.preview-surface`; a small script reports its rectangle (`ResizeObserver` on it and on `window` resize). Shows the load-failed notice and the fallback notice |
+| `forge-widgets` `preview_panel.rs` | Tabs, address bar and buttons as before. The body is one `div.preview-surface`; `WebViewHost` reports its rectangle with a `requestAnimationFrame` loop that sends only on change (`ResizeObserver` does not fire when the sidebar moves the surface without resizing it). Shows the failed notice and the fallback notice |
 | `forge-shared` script | A `MutationObserver` that tells `BrowserHost` whether any element whose class contains `backdrop` exists (`picker-backdrop`, `menu-backdrop`, `settings-backdrop`, `palette-backdrop`, `lightbox-backdrop`, `usage-backdrop`, `trusted-backdrop`) |
 | `forge-app` | Builds the adapter with the window and the event loop proxy and puts it in the workspace; shuts every web view down at exit |
 
@@ -55,19 +55,19 @@ A native view is always above the page's DOM, so any DOM overlay would be hidden
 
 ## Errors and edge cases
 
-- **Load failed** (server off, host not found): the panel body shows "Cannot connect to `host`" with a `Try again` button, and the web view is hidden. Own wording, not the engine's error page.
+- **Load failed** (server off): wry has no failure callback. For an address on this computer (`localhost`, `127.0.0.1`, `[::1]`) the adapter first tries a TCP connect (1.5 s) and reports `LoadFailed`; the panel body shows "Cannot connect to this address.", the address and `Try again`, and the web view is hidden. Other hosts are not probed (a company proxy would give false failures); the engine's own error page shows.
 - **Address not allowed** (`javascript:`, `data:`, other schemes): nothing happens in the web view; the bar shows the existing "Enter a web address" notice. A link inside a page with such a scheme is ignored.
 - **A `file://` address** must name an existing file; a folder or a missing path is refused with a notice.
 - **Web view cannot be created** (for example WebView2 missing on Windows): the address opens in the system browser through `BrowserPort::open`, and the panel shows the reason in one line.
 - **New window** (`target=_blank`, `window.open`): opens as a new Preview tab. The real app's behaviour was not seen; this is an assumption.
-- **Downloads and permission requests** (camera, location, and the like): refused.
+- **Downloads** are refused. wry has no permission-request hook, so the engine's default prompt (camera, location, and the like) is kept.
 
 ## Focus and keyboard
 
 Clicking the page moves the keyboard to the web view, so Forge's keys (⌘K, ⌘/ and the others) may stop working. The spike checks this first.
 
-- Preferred: keys that are menu items of `app_menu()` already work while the web view has focus on macOS.
-- If a needed key does not reach Forge, a small page script sends `keydown` for those keys to Rust. This is the only place a script is injected; the message carries only a key code and modifiers, never page content, and no other IPC is offered to the page.
+- `app_menu()` has no ⌘K or ⌘/ items (those keys are read by the page root's `onkeydown`), so a click in the page really does stop them (the spike showed it). Built: a script in the page sends every chord with Command or Control to Rust; Forge replays it only when `forwarded_shortcut` says it is one of its shortcuts (copy, paste and the like stay with the page), gives the keyboard back to the app view (`focus_app`) and plays the key again as a `keydown` on `.workspace`.
+- Escape and Alt-only chords (⌥↓, ⌥↑) are not forwarded: an overlay hides the web view, and Alt chords belong to the page's text. This is the only place a script is injected; the message carries only a key code and modifiers.
 - Escape closes overlays as now; an open overlay hides the web view, so it keeps working.
 
 ## Lifetime
@@ -129,3 +129,11 @@ A throwaway child web view (`build_as_child` on the app window, wry 0.53.5) in `
 3. **Developer tools:** enabled by `with_devtools(true)`; not driven by hand in the spike.
 4. **Isolation: yes.** In the page `typeof window.dioxus` is `undefined` and `window.__TAURI__` is `undefined`. `window.ipc` is an object (wry defines it on macOS) but it is bound to the child view's own handler, never to the main view's; with no handler it goes nowhere.
 5. **Thread: yes.** The component code ran on the main thread (`ThreadId(1)`, the same as `main()`), so the port can be called from components. Bounds tracking was not exercised in the spike; it is checked in the real window (Plan 44, Task 10).
+
+## As built (Plan 44)
+
+Built as designed, with the corrections above. Pieces: `WebViewPort` and `MockWebViewPort` (`forge-ports`), `forge-adapter-webview` (`WryWebViews`, the loopback probe), `PreviewHost` (a signal-free holder of every session's tabs and the rules for creating, navigating, closing and showing web views; the `Workspace` methods are thin wrappers around it), `should_show`, `page_address`, `file_address`, `path_of_file_address`, `open_target`, `forwarded_shortcut`, `WebViewHost`, and the rewritten `PreviewPanel`.
+
+- The component code runs on the window thread (spike), so the port is called straight from the page code.
+- Checked in the real window on macOS (observations, round 17); two bugs found there were fixed: a typed address and the page's own spelling were two history entries, and a file tab had no name. Windows is covered by unit tests only: **Windows unchecked**.
+- Left: cookie import and keep-cookies modes (SET-13), the element picker, the layout icon, the panel `⋮`, a snapshot in place of the hidden web view, `pushState`-only address changes (the bar does not follow them), Alt-only shortcuts while the page has focus, the PDF toolbar of the desktop app (Forge shows WebKit's own view).
