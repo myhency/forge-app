@@ -31,29 +31,34 @@ pub fn normalize_url(input: &str) -> Option<String> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PreviewTabId(pub u64);
 
+// One counter for the whole process, so a tab id is unique across sessions and names its web view.
+static NEXT_TAB: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 #[derive(Debug, Clone, PartialEq)]
 struct PreviewTab {
     id: PreviewTabId,
     history: Vec<String>,
     // Index into `history` of the current address; meaningless while the history is empty.
     position: usize,
+    title: Option<String>,
+    loading: bool,
+    // The address that could not be reached and why.
+    failure: Option<(String, String)>,
 }
 
-/// The tabs of one Preview panel, each with its own history. The page itself opens in the
-/// system browser, so a history is only the addresses that were opened from the tab.
+/// The tabs of one Preview panel. The page owns its real history; this keeps a copy of the
+/// addresses it reported, so the back and forward buttons know when they can be used.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PreviewTabs {
     tabs: Vec<PreviewTab>,
     active: Option<PreviewTabId>,
-    next: u64,
 }
 
 impl PreviewTabs {
     /// Adds an empty tab at the right and makes it the active one.
     pub fn open(&mut self) -> PreviewTabId {
-        let id = PreviewTabId(self.next);
-        self.next += 1;
-        self.tabs.push(PreviewTab { id, history: Vec::new(), position: 0 });
+        let id = PreviewTabId(NEXT_TAB.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+        self.tabs.push(PreviewTab { id, history: Vec::new(), position: 0, title: None, loading: false, failure: None });
         self.active = Some(id);
         id
     }
@@ -67,9 +72,13 @@ impl PreviewTabs {
     }
 
     pub fn select(&mut self, id: PreviewTabId) {
-        if self.tabs.iter().any(|tab| tab.id == id) {
+        if self.contains(id) {
             self.active = Some(id);
         }
+    }
+
+    pub fn contains(&self, id: PreviewTabId) -> bool {
+        self.tabs.iter().any(|tab| tab.id == id)
     }
 
     pub fn ids(&self) -> Vec<PreviewTabId> {
@@ -92,11 +101,21 @@ impl PreviewTabs {
         self.tabs.iter_mut().find(|tab| tab.id == id)
     }
 
-    /// Makes `url` the tab's current address, dropping any forward pages. The address it already
-    /// has is not added again.
-    pub fn navigate(&mut self, id: PreviewTabId, url: String) {
+    /// A page started loading `url`. The address the page went back to or forward to moves the
+    /// position; the address it already has changes nothing; any other drops the forward pages
+    /// and is added.
+    pub fn loaded(&mut self, id: PreviewTabId, url: String) {
         let Some(tab) = self.tab_mut(id) else { return };
+        tab.failure = None;
         if tab.history.get(tab.position) == Some(&url) {
+            return;
+        }
+        if tab.position > 0 && tab.history.get(tab.position - 1) == Some(&url) {
+            tab.position -= 1;
+            return;
+        }
+        if tab.history.get(tab.position + 1) == Some(&url) {
+            tab.position += 1;
             return;
         }
         if !tab.history.is_empty() {
@@ -104,6 +123,39 @@ impl PreviewTabs {
         }
         tab.history.push(url);
         tab.position = tab.history.len() - 1;
+        tab.title = None;
+    }
+
+    pub fn set_title(&mut self, id: PreviewTabId, title: String) {
+        if let Some(tab) = self.tab_mut(id) {
+            tab.title = Some(title).filter(|text| !text.is_empty());
+        }
+    }
+
+    pub fn title(&self, id: PreviewTabId) -> Option<String> {
+        self.tab(id)?.title.clone()
+    }
+
+    pub fn set_loading(&mut self, id: PreviewTabId, loading: bool) {
+        if let Some(tab) = self.tab_mut(id) {
+            tab.loading = loading;
+        }
+    }
+
+    pub fn loading(&self, id: PreviewTabId) -> bool {
+        self.tab(id).is_some_and(|tab| tab.loading)
+    }
+
+    /// The address could not be reached.
+    pub fn fail(&mut self, id: PreviewTabId, url: String, reason: String) {
+        if let Some(tab) = self.tab_mut(id) {
+            tab.loading = false;
+            tab.failure = Some((url, reason));
+        }
+    }
+
+    pub fn failure(&self, id: PreviewTabId) -> Option<(String, String)> {
+        self.tab(id)?.failure.clone()
     }
 
     pub fn current(&self, id: PreviewTabId) -> Option<String> {
@@ -119,25 +171,11 @@ impl PreviewTabs {
         self.tab(id).is_some_and(|tab| tab.position + 1 < tab.history.len())
     }
 
-    /// Steps back and returns the address now current, or `None` at the start.
-    pub fn back(&mut self, id: PreviewTabId) -> Option<String> {
-        if !self.can_back(id) {
-            return None;
-        }
-        self.tab_mut(id)?.position -= 1;
-        self.current(id)
-    }
-
-    pub fn forward(&mut self, id: PreviewTabId) -> Option<String> {
-        if !self.can_forward(id) {
-            return None;
-        }
-        self.tab_mut(id)?.position += 1;
-        self.current(id)
-    }
-
-    /// The host (and port) of the current address, or "New tab".
+    /// The page's title, else the host (and port) of its address, else "New tab".
     pub fn label(&self, id: PreviewTabId) -> String {
+        if let Some(title) = self.title(id) {
+            return title;
+        }
         let Some(url) = self.current(id) else { return tr!("New tab").to_string() };
         let rest = url.split_once("://").map_or(url.as_str(), |(_, rest)| rest);
         rest.split(['/', '?', '#']).next().unwrap_or(rest).to_string()
@@ -183,45 +221,89 @@ mod tests {
     }
 
     #[test]
-    fn navigating_builds_a_history_that_back_and_forward_walk() {
+    fn a_new_address_is_pushed_and_drops_the_forward_pages() {
         let mut tabs = PreviewTabs::default();
         let tab = tabs.open();
-        tabs.navigate(tab, "http://a.test/".to_string());
-        tabs.navigate(tab, "http://b.test/".to_string());
-        assert_eq!(tabs.current(tab).as_deref(), Some("http://b.test/"));
-        assert!(tabs.can_back(tab) && !tabs.can_forward(tab));
-        assert_eq!(tabs.back(tab).as_deref(), Some("http://a.test/"));
-        assert!(!tabs.can_back(tab) && tabs.can_forward(tab));
-        assert_eq!(tabs.back(tab), None, "already at the start");
-        assert_eq!(tabs.forward(tab).as_deref(), Some("http://b.test/"));
-        assert_eq!(tabs.forward(tab), None, "already at the end");
-    }
-
-    #[test]
-    fn navigating_after_going_back_drops_the_forward_pages_and_the_same_address_twice_is_one_entry() {
-        let mut tabs = PreviewTabs::default();
-        let tab = tabs.open();
-        for url in ["http://a/", "http://b/", "http://c/"] {
-            tabs.navigate(tab, url.to_string());
-        }
-        tabs.back(tab);
-        tabs.back(tab);
-        tabs.navigate(tab, "http://d/".to_string());
+        tabs.loaded(tab, "http://a".into());
+        tabs.loaded(tab, "http://b".into());
+        tabs.loaded(tab, "http://c".into());
+        // The page goes back twice, then follows a different link.
+        tabs.loaded(tab, "http://b".into());
+        tabs.loaded(tab, "http://a".into());
+        assert_eq!(tabs.current(tab).as_deref(), Some("http://a"));
+        assert!(tabs.can_forward(tab));
+        tabs.loaded(tab, "http://d".into());
+        assert_eq!(tabs.current(tab).as_deref(), Some("http://d"));
         assert!(!tabs.can_forward(tab));
-        assert_eq!(tabs.back(tab).as_deref(), Some("http://a/"));
-        tabs.forward(tab);
-        tabs.navigate(tab, "http://d/".to_string());
-        assert_eq!(tabs.back(tab).as_deref(), Some("http://a/"), "no duplicate entry");
+        assert!(tabs.can_back(tab));
     }
 
     #[test]
-    fn the_label_is_the_host_of_the_current_address() {
+    fn going_forward_again_follows_the_next_entry() {
         let mut tabs = PreviewTabs::default();
         let tab = tabs.open();
-        tabs.navigate(tab, "http://localhost:3000/app?x=1".to_string());
+        for url in ["http://a", "http://b", "http://c"] {
+            tabs.loaded(tab, url.into());
+        }
+        tabs.loaded(tab, "http://b".into());
+        assert!(tabs.can_forward(tab));
+        tabs.loaded(tab, "http://c".into());
+        assert_eq!(tabs.current(tab).as_deref(), Some("http://c"));
+        assert!(!tabs.can_forward(tab));
+        assert!(tabs.can_back(tab));
+    }
+
+    #[test]
+    fn the_same_address_reported_twice_changes_nothing() {
+        let mut tabs = PreviewTabs::default();
+        let tab = tabs.open();
+        tabs.loaded(tab, "http://a".into());
+        tabs.loaded(tab, "http://a".into());
+        assert!(!tabs.can_back(tab));
+    }
+
+    #[test]
+    fn a_report_for_a_tab_that_is_gone_is_ignored() {
+        let mut tabs = PreviewTabs::default();
+        let tab = tabs.open();
+        tabs.close(tab);
+        tabs.loaded(tab, "http://a".into());
+        tabs.set_title(tab, "x".into());
+        tabs.set_loading(tab, true);
+        tabs.fail(tab, "http://a".into(), "no".into());
+        assert!(tabs.is_empty());
+        assert!(!tabs.contains(tab));
+    }
+
+    #[test]
+    fn the_label_is_the_title_then_the_host() {
+        let mut tabs = PreviewTabs::default();
+        let tab = tabs.open();
+        assert_eq!(tabs.label(tab), "New tab");
+        tabs.loaded(tab, "http://localhost:3000/x".into());
         assert_eq!(tabs.label(tab), "localhost:3000");
-        tabs.navigate(tab, "https://example.com".to_string());
-        assert_eq!(tabs.label(tab), "example.com");
+        tabs.set_title(tab, "My app".into());
+        assert_eq!(tabs.label(tab), "My app");
+        tabs.loaded(tab, "https://example.com".into());
+        assert_eq!(tabs.label(tab), "example.com", "a new page forgets the old title");
+    }
+
+    #[test]
+    fn a_failure_is_kept_until_the_next_page_loads() {
+        let mut tabs = PreviewTabs::default();
+        let tab = tabs.open();
+        tabs.set_loading(tab, true);
+        tabs.fail(tab, "http://localhost:9".into(), "refused".into());
+        assert_eq!(tabs.failure(tab), Some(("http://localhost:9".to_string(), "refused".to_string())));
+        assert!(!tabs.loading(tab), "a failed load is not loading");
+        tabs.loaded(tab, "http://localhost:3000".into());
+        assert_eq!(tabs.failure(tab), None);
+    }
+
+    #[test]
+    fn tab_ids_are_unique_across_panels() {
+        let (mut one, mut two) = (PreviewTabs::default(), PreviewTabs::default());
+        assert_ne!(one.open(), two.open());
     }
 
     #[test]
@@ -233,9 +315,8 @@ mod tests {
         assert_eq!(tabs.active(), Some(c));
         tabs.close(c);
         assert_eq!(tabs.active(), Some(a));
-        tabs.close(PreviewTabId(999));
-        tabs.navigate(PreviewTabId(999), "http://x/".to_string());
-        assert_eq!(tabs.back(PreviewTabId(999)), None);
+        tabs.close(PreviewTabId(u64::MAX));
+        tabs.loaded(PreviewTabId(u64::MAX), "http://x/".to_string());
         tabs.close(a);
         assert!(tabs.is_empty());
         assert_eq!(tabs.active(), None);

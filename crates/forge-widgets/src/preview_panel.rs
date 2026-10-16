@@ -34,14 +34,16 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
         };
         let active = tabs.read().active();
         let Some(tab) = active else { return };
-        tabs.write().navigate(tab, url.clone());
+        tabs.write().loaded(tab, url.clone());
         input.set(url.clone());
         open_url(workspace, notice, &url);
     };
     let mut step = move |forward: bool| {
         let active = tabs.read().active();
         let Some(tab) = active else { return };
-        let url = if forward { tabs.write().forward(tab) } else { tabs.write().back(tab) };
+        // Stepping moves with the page's own report now; this panel is rewritten with the web view.
+        let url: Option<String> = None;
+        let _ = (forward, tab);
         if let Some(url) = url {
             input.set(url.clone());
             open_url(workspace, notice, &url);
