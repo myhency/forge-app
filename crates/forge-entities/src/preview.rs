@@ -72,6 +72,86 @@ pub fn icon_of(path: &str) -> FileIcon {
     }
 }
 
+/// Whether a page may be loaded in a Preview web view: `http`, `https` or `file`, with something
+/// after the scheme and no whitespace.
+pub fn page_address(url: &str) -> bool {
+    if url.chars().any(char::is_whitespace) {
+        return false;
+    }
+    let Some((scheme, rest)) = url.split_once("://") else { return false };
+    let allowed = ["http", "https", "file"].iter().any(|name| scheme.eq_ignore_ascii_case(name));
+    allowed && !rest.is_empty()
+}
+
+/// The `file://` address of an absolute path. Characters that would end or change the path are
+/// percent-encoded; a Windows drive path gets forward slashes.
+pub fn file_address(absolute_path: &str) -> String {
+    let slashed = absolute_path.replace('\\', "/");
+    let mut out = String::from("file://");
+    if !slashed.starts_with('/') {
+        out.push('/');
+    }
+    for ch in slashed.chars() {
+        match ch {
+            ' ' => out.push_str("%20"),
+            '#' => out.push_str("%23"),
+            '?' => out.push_str("%3F"),
+            '%' => out.push_str("%25"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// The path a `file://` address names (the reverse of `file_address`); `None` for another scheme
+/// or an address with no path. A Windows drive path loses the slash before the drive letter.
+pub fn path_of_file_address(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    if !scheme.eq_ignore_ascii_case("file") || rest.is_empty() {
+        return None;
+    }
+    let mut path = String::new();
+    let mut chars = rest.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            path.push(ch);
+            continue;
+        }
+        let code: String = chars.by_ref().take(2).collect();
+        match code.as_str() {
+            "20" => path.push(' '),
+            "23" => path.push('#'),
+            "3F" | "3f" => path.push('?'),
+            "25" => path.push('%'),
+            other => {
+                path.push('%');
+                path.push_str(other);
+            }
+        }
+    }
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+        path.remove(0);
+    }
+    Some(path)
+}
+
+/// Where a click on a path in the chat goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenTarget {
+    Preview,
+    Files,
+    Lightbox,
+}
+
+pub fn open_target(path: &str) -> OpenTarget {
+    match preview_kind(path) {
+        PreviewKind::Html | PreviewKind::Pdf | PreviewKind::Svg => OpenTarget::Preview,
+        PreviewKind::Image => OpenTarget::Lightbox,
+        _ => OpenTarget::Files,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,6 +220,50 @@ mod tests {
         ];
         for (path, icon) in cases {
             assert_eq!(icon_of(path), icon, "{path}");
+        }
+    }
+
+    #[test]
+    fn only_web_and_file_addresses_are_pages() {
+        for ok in ["http://localhost:3000", "HTTPS://example.com/a", "file:///tmp/a.html"] {
+            assert!(page_address(ok), "{ok}");
+        }
+        for bad in ["javascript:alert(1)", "data:text/html,hi", "ftp://x", "http://", "file://", "http://a b", "about:blank", ""] {
+            assert!(!page_address(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_file_address_encodes_what_would_end_the_path() {
+        assert_eq!(file_address("/tmp/a b/c#1?.html"), "file:///tmp/a%20b/c%231%3F.html");
+        assert_eq!(file_address("/tmp/100%.html"), "file:///tmp/100%25.html");
+        assert_eq!(file_address(r"C:\work\a b.html"), "file:///C:/work/a%20b.html");
+    }
+
+    #[test]
+    fn a_file_address_gives_its_path_back() {
+        for path in ["/tmp/a b/c#1?.html", "/tmp/100%.html", "/tmp/plain.pdf"] {
+            assert_eq!(path_of_file_address(&file_address(path)).as_deref(), Some(path), "{path}");
+        }
+        assert_eq!(path_of_file_address("file:///C:/work/a%20b.html").as_deref(), Some("C:/work/a b.html"));
+        assert_eq!(path_of_file_address("http://localhost"), None);
+        assert_eq!(path_of_file_address("file://"), None);
+    }
+
+    #[test]
+    fn html_pdf_and_svg_open_in_preview_pictures_in_the_lightbox_the_rest_in_files() {
+        for (path, target) in [
+            ("a.html", OpenTarget::Preview),
+            ("A.HTM", OpenTarget::Preview),
+            ("doc.pdf", OpenTarget::Preview),
+            ("pic.svg", OpenTarget::Preview),
+            ("pic.png", OpenTarget::Lightbox),
+            ("data.csv", OpenTarget::Files),
+            ("README.md", OpenTarget::Files),
+            ("main.rs", OpenTarget::Files),
+            ("Makefile", OpenTarget::Files),
+        ] {
+            assert_eq!(open_target(path), target, "{path}");
         }
     }
 }
