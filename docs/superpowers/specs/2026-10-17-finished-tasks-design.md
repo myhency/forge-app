@@ -105,7 +105,9 @@ Built on `plan-45` in eight steps with a reviewer per step and a final whole-bra
 - A Bash background task joins the fold as the small card (`Bash  완료됨  10s` live).
 - The trash icon clears the cards, greys out, and the chat lines stay.
 - After Forge was restarted and the session opened again the list was rebuilt from the record (3 cards, the failed one with its error and tokens) and no raw `<task-notification>` bubble showed.
-- Not checked: the stop button of a run (stopped state), a red dot for an agent that failed (the two agents whose requests were denied finished with a report instead of failing), Windows.
+- A run stopped with the panel's stop button (checked in a later session, live): the chat line becomes `워크플로 실행됨 fs 중지됨`, the open permission card goes, the card moves to the fold as `워크플로우  중지됨` with `35s` at the right, `에이전트 2개  18.3k 토큰` (the last number kept), `Analyze 0/2` and two hollow dots.
+- A red dot for an agent that failed: Forge's two denied agents finished with a report instead of failing, so it was checked with a session record that points at the real failed journal of round 18 (`wf_db4ee8f7-68f`, one `failed` line): the step name `Analyze` is red and the dots are grey, red, grey with `2/3`.
+- Not checked: Windows.
 
 **Differences from the design:**
 - A new pill under the chat: when nothing runs and finished cards are shown, it reads `작업 N개 완료` / `N tasks finished` and opens the panel. The design had no way to open the panel when nothing ran (found in the real window; after a restart the list was unreachable).
