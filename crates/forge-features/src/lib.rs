@@ -49,6 +49,7 @@ mod terminal_tabs;
 mod terminal_tap;
 mod tool_activity;
 mod sidebar;
+mod task_list_views;
 mod transcript_views;
 mod workspace;
 
@@ -73,6 +74,7 @@ pub use attachments::{add_attachments, check_attachments, folder_label, kind_for
 pub use command_box::CommandTextArea;
 pub use editor_doc::{normalize_newlines, text_hash, Banner, TabDoc};
 pub use editor_tabs::{EditorTab, EditorTabs};
+pub use task_list_views::TaskListView;
 pub use dock::{Column, DockState, DockStates, Panel, DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH};
 pub use effort::{effort_button_label, effort_levels, slider_position, effort_help, slider_faster, slider_smarter};
 pub use composer_cards::ComposerCards;

@@ -23,6 +23,7 @@ use crate::preview_tabs::{normalize_url, PreviewTabId, PreviewTabs};
 use crate::new_session::ModelChoice;
 use crate::shortcut::{match_code, shortcut_allowed, shortcut_for, swallowed_behind_overlay, types_text, KeyPress, Shortcut};
 use crate::tool_activity::finished_tool_calls;
+use crate::task_list_views::{TaskListView, TaskListViews};
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange, open_session_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
@@ -109,6 +110,7 @@ pub struct Workspace {
     new_commands: Signal<Vec<SlashCommand>>,
     new_models: Signal<Vec<AvailableModel>>,
     transcript_views: Signal<TranscriptViews>,
+    task_list_views: Signal<TaskListViews>,
     prefs: Signal<SidebarPrefs>,
     editor: Signal<EditorPrefs>,
     archived: Signal<Vec<ArchivedRef>>,
@@ -165,6 +167,7 @@ pub fn use_workspace_provider() -> Workspace {
             new_commands,
             new_models,
             transcript_views: Signal::new(TranscriptViews::default()),
+            task_list_views: Signal::new(TaskListViews::default()),
             prefs: Signal::new(SidebarPrefs::default()),
             editor: Signal::new(EditorPrefs::default()),
             archived: Signal::new(Vec::new()),
@@ -559,6 +562,22 @@ impl Workspace {
     /// How much of the open session the chat shows: the person's choice for it, else `default`.
     pub fn transcript_view(&self, id: LiveSessionId, default: TranscriptView) -> TranscriptView {
         self.transcript_views.read().get(id, default)
+    }
+
+    /// The Background tasks panel's state for the open session.
+    pub fn task_list_view(&self, id: LiveSessionId) -> TaskListView {
+        self.task_list_views.read().get(id)
+    }
+
+    pub fn toggle_finished_tasks(&self, id: LiveSessionId) {
+        let mut views = self.task_list_views;
+        views.write().toggle_finished(id);
+    }
+
+    /// Hides the finished cards with these ids (the trash icon).
+    pub fn clear_finished_tasks(&self, id: LiveSessionId, task_ids: Vec<String>) {
+        let mut views = self.task_list_views;
+        views.write().clear(id, task_ids);
     }
 
     /// The dock of one session: which panels are open and how wide.
@@ -1342,6 +1361,8 @@ impl Workspace {
         live.write().retain(|entry| entry.handle.id() != id);
         let mut views = self.transcript_views;
         views.write().forget(id);
+        let mut task_lists = self.task_list_views;
+        task_lists.write().forget(id);
         let mut docks = self.docks;
         docks.write().forget(id);
         let webviews = self.webviews();
