@@ -45,7 +45,6 @@ impl PreviewHost {
             }
         }
         let first = self.tabs(id).current(tab).is_none();
-        self.change(id, |tabs| tabs.loaded(tab, url.to_string()));
         let view = WebViewTabId(tab.0);
         let result = if first {
             webviews.create(view, url, surface.unwrap_or(Surface { x: 0.0, y: 0.0, width: 1.0, height: 1.0 }))
@@ -56,6 +55,8 @@ impl PreviewHost {
             let _ = browser.open(url);
             return Err(format!("{} {reason}", tr!("The page could not be shown here, so it was opened in your browser.")));
         }
+        // Only a page that is there is recorded; a tab that failed to get one stays empty and tries again.
+        self.change(id, |tabs| tabs.loaded(tab, url.to_string()));
         Ok(())
     }
 
@@ -84,7 +85,8 @@ impl PreviewHost {
             WebViewEventKind::Title(text) => tabs.set_title(tab, text),
             WebViewEventKind::Loading(loading) => tabs.set_loading(tab, loading),
             WebViewEventKind::LoadFailed { url, reason } => tabs.fail(tab, url, reason),
-            WebViewEventKind::NewWindow(url) => return Some((session, url)),
+            // A page may only open a web address: a `file://` link would open a local file.
+            WebViewEventKind::NewWindow(url) => return forge_entities::web_address(&url).then_some((session, url)),
             WebViewEventKind::Key(_) => {}
         }
         None
@@ -210,6 +212,40 @@ mod tests {
         let error = host.go(SESSION, tab.unwrap(), "http://localhost:3000", Some(surface()), &views, &browser).unwrap_err();
 
         assert!(error.contains("WebView2 is missing"), "{error}");
+    }
+
+    #[test]
+    fn a_failed_create_leaves_the_tab_without_an_address_so_the_next_try_creates_again() {
+        let mut host = PreviewHost::default();
+        let mut tab = None;
+        host.change(SESSION, |tabs| tab = Some(tabs.open()));
+        let tab = tab.unwrap();
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = calls.clone();
+        let mut views = MockWebViewPort::new();
+        views.expect_create().times(2).returning(move |_, _, _| {
+            if counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 { Err("WebView2 is missing".to_string()) } else { Ok(()) }
+        });
+        views.expect_navigate().never();
+        let mut browser = MockBrowserPort::new();
+        browser.expect_open().times(1).returning(|_| Ok(()));
+
+        assert!(host.go(SESSION, tab, "http://localhost:3000", Some(surface()), &views, &browser).is_err());
+        assert_eq!(host.tabs(SESSION).current(tab), None, "nothing is recorded for a page that is not there");
+        host.go(SESSION, tab, "http://localhost:3000", Some(surface()), &views, &browser).unwrap();
+        assert_eq!(host.tabs(SESSION).current(tab).as_deref(), Some("http://localhost:3000"));
+    }
+
+    #[test]
+    fn a_page_may_only_ask_for_a_web_address_in_a_new_window() {
+        let mut host = PreviewHost::default();
+        let mut tab = None;
+        host.change(SESSION, |tabs| tab = Some(tabs.open()));
+        let id = WebViewTabId(tab.unwrap().0);
+        for refused in ["file:///Users/x/notes.html", "javascript:alert(1)", "data:text/html,hi"] {
+            assert_eq!(host.apply(WebViewEvent { tab: id, kind: WebViewEventKind::NewWindow(refused.to_string()) }), None, "{refused}");
+        }
+        assert!(host.apply(WebViewEvent { tab: id, kind: WebViewEventKind::NewWindow("https://example.com".to_string()) }).is_some());
     }
 
     #[test]
