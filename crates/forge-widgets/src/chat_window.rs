@@ -104,11 +104,13 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     let open = workspace.dock(id).is_open(Panel::Tasks);
                     rsx! {
                         if count > 0 || finished_count > 0 {
-                            button {
-                                class: if open { "task-pill open" } else { "task-pill" },
-                                r#type: "button",
-                                onclick: move |_| workspace.change_dock(id, |dock| if !dock.is_open(Panel::Tasks) { dock.toggle(Panel::Tasks) }),
-                                if count > 0 { "{pill_label(count)}" } else { "{finished_pill_label(finished_count)}" }
+                            div { class: "task-pill-row",
+                                button {
+                                    class: if open { "task-pill open" } else { "task-pill" },
+                                    r#type: "button",
+                                    onclick: move |_| workspace.change_dock(id, |dock| if !dock.is_open(Panel::Tasks) { dock.toggle(Panel::Tasks) }),
+                                    if count > 0 { "{pill_label(count)}" } else { "{finished_pill_label(finished_count)}" }
+                                }
                             }
                         }
                     }

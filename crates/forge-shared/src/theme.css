@@ -765,6 +765,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 
 .task-pill { appearance: none; align-self: flex-start; margin-top: 10px; padding: 4px 12px; border: none; border-radius: 999px; background: rgba(29, 95, 191, 0.12); color: var(--link); font: inherit; font-size: 13px; cursor: pointer; }
 .task-pill.open { background: var(--link); color: #fff; }
+/* The pill sits in the same centred column as the turns, so it lines up with the text at any width. */
+.task-pill-row { display: flex; max-width: var(--chat-column); margin: 0 auto; }
 .tasks-body { display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow-y: auto; }
 .tasks-heading { color: var(--fg-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
 .task-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
