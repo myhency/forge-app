@@ -105,11 +105,21 @@ fn line_row(line: &PatchLine, spans: &[Span], highlight: bool) -> Element {
     }
 }
 
-fn cell(line: Option<&PatchLine>, spans: &[Span], highlight: bool) -> Element {
+// The number a side by side half shows: the left half the old line number, the right half the new
+// one (a context row is in both halves and must not show the old number on the right).
+fn cell_number(line: &PatchLine, right: bool) -> Option<u32> {
+    if right {
+        line.new_no
+    } else {
+        line.old_no
+    }
+}
+
+fn cell(line: Option<&PatchLine>, right: bool, spans: &[Span], highlight: bool) -> Element {
     match line {
         Some(line) => {
             let pieces = if highlight && !spans.is_empty() { split_by_spans(&line.text, spans) } else { vec![(line.text.clone(), false)] };
-            let number = if line.kind == DiffLineKind::Added { line.new_no } else { line.old_no.or(line.new_no) };
+            let number = cell_number(line, right);
             rsx! {
                 div { class: "diff-line {line_class(line.kind)}",
                     span { class: "cd-no", "{self::number(number)}" }
@@ -135,8 +145,8 @@ fn hunk_view(hunk: &PatchHunk, prefs: &ChangesViewPrefs) -> Element {
         rsx! {
             div { class: "cd-hunk cd-sbs",
                 for (left , right) in rows {
-                    {cell(left.map(|i| &hunk.lines[i]), left.map(spans_of).unwrap_or(&none), prefs.highlight_words)}
-                    {cell(right.map(|i| &hunk.lines[i]), right.map(spans_of).unwrap_or(&none), prefs.highlight_words)}
+                    {cell(left.map(|i| &hunk.lines[i]), false, left.map(spans_of).unwrap_or(&none), prefs.highlight_words)}
+                    {cell(right.map(|i| &hunk.lines[i]), true, right.map(spans_of).unwrap_or(&none), prefs.highlight_words)}
                 }
             }
         }
@@ -293,5 +303,32 @@ fn FileSection(
             }
             {body}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(kind: DiffLineKind, old_no: Option<u32>, new_no: Option<u32>) -> PatchLine {
+        PatchLine { kind, text: String::new(), old_no, new_no }
+    }
+
+    #[test]
+    fn each_half_shows_its_own_line_numbers() {
+        // @@ -10,3 +10,5 @@: context, two added lines, context.
+        let rows = [
+            line(DiffLineKind::Context, Some(10), Some(10)),
+            line(DiffLineKind::Added, None, Some(11)),
+            line(DiffLineKind::Added, None, Some(12)),
+            line(DiffLineKind::Context, Some(11), Some(13)),
+        ];
+        let right: Vec<_> = rows.iter().map(|row| cell_number(row, true)).collect();
+        assert_eq!(right, vec![Some(10), Some(11), Some(12), Some(13)]);
+        let left: Vec<_> = rows.iter().map(|row| cell_number(row, false)).collect();
+        assert_eq!(left, vec![Some(10), None, None, Some(11)]);
+        let removed = line(DiffLineKind::Removed, Some(5), None);
+        assert_eq!(cell_number(&removed, false), Some(5));
+        assert_eq!(cell_number(&removed, true), None);
     }
 }
