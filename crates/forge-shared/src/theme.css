@@ -909,7 +909,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .files-hit-text mark { background: var(--accent-soft); color: inherit; border-radius: 2px; }
 
 /* The file context menu with submenus */
-.context-menu { position: fixed; bottom: auto; right: auto; min-width: 230px; }
+.context-menu { position: fixed; bottom: auto; right: auto; min-width: 230px; box-sizing: border-box; }
 .context-sub { position: relative; }
 .context-submenu { position: absolute; top: -4px; bottom: auto; left: 100%; right: auto; min-width: 180px; }
 .context-submenu.left { left: auto; right: 100%; }
