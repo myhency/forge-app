@@ -7,7 +7,7 @@ use forge_ports::{BranchInfo, ChangeSource, CommitInfo, DiffOptions, FileChange,
 
 use crate::changes_header::{BranchButton, FileSearch};
 use crate::changes_stack::{scroll_to_diff, DiffStack};
-use crate::changes_tree::ChangesTree;
+use crate::changes_tree::{ChangesTree, CommitsSection};
 use crate::context_menu::ContextMenu;
 use crate::files_state::{absolute, copy_text_for};
 use crate::panel_frame::PanelFrame;
@@ -134,6 +134,11 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let mut menu = use_signal(|| None::<(String, bool, f64, f64)>);
     let mut searching = use_signal(|| false);
 
+    let commits_section = match commits() {
+        Some(list) => rsx! { CommitsSection { id, commits: list, view: session.view.clone() } },
+        None => rsx! {},
+    };
+
     let tools = rsx! {
         BranchButton {
             id,
@@ -234,7 +239,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                             closed: session.closed_folders.clone(),
                             on_pick: move |path: String| scroll_to_diff(&path),
                             on_menu: move |target| menu.set(Some(target)),
-                            commits: rsx! {},
+                            commits: commits_section,
                         }
                     }
                 }

@@ -4,9 +4,11 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::ChangesViewPrefs;
 use forge_entities::icon_of;
-use forge_features::{tree_rows, use_workspace, ChangeTreeRow, ROW_LIMIT};
-use forge_ports::{ChangeStatus, ChangedFile};
+use forge_features::{tree_rows, use_workspace, ChangeTreeRow, ChangeView, ROW_LIMIT};
+use forge_ports::{ChangeStatus, ChangedFile, CommitInfo};
 use forge_shared::tr;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 use crate::files_icons::FileTypeIcon;
 
@@ -96,5 +98,74 @@ pub fn ChangesTree(
             }
             {commits}
         }
+    }
+}
+
+/// `d5bfbad · author · 4m ago`.
+pub(crate) fn commit_meta(commit: &CommitInfo, now: OffsetDateTime) -> String {
+    let ago = OffsetDateTime::from_unix_timestamp(commit.time)
+        .ok()
+        .and_then(|then| then.format(&Rfc3339).ok())
+        .map(|text| forge_entities::relative_time(&text, now))
+        .unwrap_or_default();
+    format!("{} · {} · {}", &commit.sha[..commit.sha.len().min(7)], commit.author, ago)
+}
+
+/// `Commits N ⌄`: the two modes and one row per commit of the branch.
+#[component]
+pub fn CommitsSection(id: LiveSessionId, commits: Vec<CommitInfo>, view: ChangeView) -> Element {
+    let workspace = use_workspace();
+    let mut open = use_signal(|| true);
+    let now = OffsetDateTime::now_utc();
+    rsx! {
+        div { class: "cd-commits",
+            div { class: "cd-commits-title", onclick: move |_| open.set(!open()),
+                span { class: "cd-chevron", if open() { "▾" } else { "▸" } }
+                span { {tr!("Commits")} }
+                span { style: "margin-left: auto;", "{commits.len()}" }
+            }
+            if open() {
+                button {
+                    class: if view == ChangeView::All { "cd-commit selected" } else { "cd-commit" },
+                    r#type: "button",
+                    onclick: move |_| workspace.update_changes_session(id, |session| session.view = ChangeView::All),
+                    span { class: "subject", {tr!("All changes")} }
+                }
+                button {
+                    class: if view == ChangeView::Uncommitted { "cd-commit selected" } else { "cd-commit" },
+                    r#type: "button",
+                    onclick: move |_| workspace.update_changes_session(id, |session| session.view = ChangeView::Uncommitted),
+                    span { class: "subject", {tr!("Uncommitted changes")} }
+                }
+                for commit in commits.iter() {
+                    button {
+                        key: "{commit.sha}",
+                        class: if view == ChangeView::Commit(commit.sha.clone()) { "cd-commit selected" } else { "cd-commit" },
+                        r#type: "button",
+                        title: "{commit.subject}",
+                        onclick: {
+                            let sha = commit.sha.clone();
+                            move |_| workspace.update_changes_session(id, |session| session.view = ChangeView::Commit(sha.clone()))
+                        },
+                        span { class: "subject", "{commit.subject}" }
+                        span { class: "meta", "{commit_meta(commit, now)}" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use forge_ports::CommitInfo;
+    use time::OffsetDateTime;
+
+    #[test]
+    fn the_meta_line_has_the_short_sha_the_author_and_the_age() {
+        let commit = CommitInfo { sha: "d5bfbad1234567".to_string(), subject: "s".to_string(), author: "myhency".to_string(), time: 1_000_000 };
+        let now = OffsetDateTime::from_unix_timestamp(1_000_000 + 4 * 60).unwrap();
+        assert_eq!(commit_meta(&commit, now), format!("d5bfbad · myhency · {}", tr!("{n}m ago", n = 4)));
     }
 }

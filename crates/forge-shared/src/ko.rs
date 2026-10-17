@@ -129,6 +129,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Command", "명령"),
     ("Command, e.g. npx", "명령, 예: npx"),
     ("Comment", "코멘트"),
+    ("Commits", "커밋"),
     ("Compare to", "비교 대상"),
     ("Completed", "완료됨"),
     ("Composer", "작성기"),
