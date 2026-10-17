@@ -18,9 +18,11 @@ mod sidecar_port;
 mod terminal_port;
 mod usage_stats_port;
 mod webview_port;
+mod worktree_port;
 
 pub use browser_port::BrowserPort;
 pub use webview_port::{KeyForward, Surface, WebViewEvent, WebViewEventKind, WebViewPort, WebViewTabId};
+pub use worktree_port::{BranchList, WorktreeError, WorktreePort, WorktreeState};
 pub use config_port::{ConfigError, ConfigRepositoryPort};
 pub use connector_catalog_port::{ConnectorCatalogError, ConnectorCatalogPort};
 pub use mcp_log_port::McpLogPort;
@@ -86,3 +88,5 @@ pub use sidecar_factory_port::MockSidecarFactoryPort;
 pub use sidecar_port::MockSidecarPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use skill_catalog_port::MockSkillCatalogPort;
+#[cfg(any(test, feature = "mocks"))]
+pub use worktree_port::MockWorktreePort;
