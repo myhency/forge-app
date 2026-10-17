@@ -23,6 +23,7 @@ mod session_defaults;
 mod transcript_view;
 mod usage;
 mod usage_stats;
+mod worktree;
 
 pub use attachment::{Attachment, AttachmentKind};
 pub use card::{split_cards, with_cards, Card, CardKind, LineRange};
@@ -61,6 +62,7 @@ pub use session::{
     Block, Message, MessageRole, PermissionRequest, Session, SessionId, SessionSummary, ToolCall,
     ToolResult,
 };
+pub use worktree::{branch_name, first_line, main_repo_of, origin_of, slug, suffix, worktree_dir, worktree_name, WorktreeLocation, WorktreeRecord};
 pub use usage::{ContextUsage, Cost, CostSummary, PriceTable, Rates, SessionUsage, TokenUsage};
 pub use usage_stats::{
     all_tokens, Day, ModelTotals, RangeStats, SessionStats, StatsRange, StatsRow, UsageStats, HEATMAP_WEEKS, NO_MODEL,

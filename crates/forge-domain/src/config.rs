@@ -279,6 +279,15 @@ pub struct AppConfig {
     /// session without a question. Absolute paths, as `forge_domain::add_trusted` keeps them.
     #[serde(default, deserialize_with = "lenient")]
     pub trusted_folders: Vec<std::path::PathBuf>,
+    /// The worktrees Forge made for sessions.
+    #[serde(default, deserialize_with = "lenient")]
+    pub worktrees: Vec<crate::WorktreeRecord>,
+    /// Where new worktrees are kept.
+    #[serde(default, deserialize_with = "lenient")]
+    pub worktree_location: crate::WorktreeLocation,
+    /// Sessions with no activity for this many days are archived; `None` is off.
+    #[serde(default, deserialize_with = "lenient")]
+    pub auto_archive_days: Option<u32>,
 }
 
 fn default_true() -> bool {
@@ -320,6 +329,9 @@ impl Default for AppConfig {
             attention_bounce: false,
             language: None,
             trusted_folders: Vec::new(),
+            worktrees: Vec::new(),
+            worktree_location: crate::WorktreeLocation::Project,
+            auto_archive_days: None,
         }
     }
 }
@@ -678,5 +690,42 @@ mod tests {
             serde_json::from_str(r#"{"base_url":null,"api_key":null,"output_style":"poetic","default_transcript_view":"loud"}"#).unwrap();
         assert_eq!(config.output_style, None);
         assert_eq!(config.default_transcript_view, crate::TranscriptView::Normal);
+    }
+
+    #[test]
+    fn a_config_from_an_older_forge_loads_with_no_worktrees_and_no_auto_archive() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":null,"api_key":null}"#).unwrap();
+        assert!(config.worktrees.is_empty());
+        assert_eq!(config.worktree_location, crate::WorktreeLocation::Project);
+        assert_eq!(config.auto_archive_days, None);
+    }
+
+    #[test]
+    fn a_broken_worktree_setting_reads_as_the_default_and_keeps_the_rest() {
+        let text = r#"{"base_url":"https://x.test","api_key":null,"worktree_location":{"kind":"nonsense"},"worktrees":"oops","auto_archive_days":"soon"}"#;
+        let config: AppConfig = serde_json::from_str(text).unwrap();
+        assert_eq!(config.base_url.as_deref(), Some("https://x.test"));
+        assert_eq!(config.worktree_location, crate::WorktreeLocation::Project);
+        assert!(config.worktrees.is_empty());
+        assert_eq!(config.auto_archive_days, None);
+    }
+
+    #[test]
+    fn worktree_records_and_the_settings_are_saved_and_read_back() {
+        let config = AppConfig {
+            worktrees: vec![crate::WorktreeRecord {
+                name: "x-1".to_string(),
+                path: "/w/.claude/worktrees/x-1".into(),
+                repo: "/w".into(),
+                branch: "claude/x-1".to_string(),
+                base_branch: "master".to_string(),
+                created_at: 5,
+            }],
+            worktree_location: crate::WorktreeLocation::Folder("/trees".into()),
+            auto_archive_days: Some(7),
+            ..AppConfig::default()
+        };
+        let text = serde_json::to_string(&config).unwrap();
+        assert_eq!(serde_json::from_str::<AppConfig>(&text).unwrap(), config);
     }
 }

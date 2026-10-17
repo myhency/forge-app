@@ -85,6 +85,15 @@ The worktree of a session that is open and live is only removed after the sessio
 - `Workspace` runs it once when the project lists have loaded and then every hour (a timer in the root scope, the way the routines tick runs). Each due row goes through `archive_session`, so a worktree follows the stage B rule. One notice per run ("N sessions archived") when anything was archived. Off → the timer does nothing.
 - A session that is closed but whose `updated_at` is old is archived without being opened. Forge being closed means nothing runs; the next start catches up.
 
+### Changes made while planning (2026-10-17)
+
+- The branch row and the worktree switch of the desktop folder menu are a **Branch chip** beside the folder chip (a normal picker list, shown only for a repository with the switch on) and a checkable **`Worktree` row** in the folder menu; the existing picker has no submenu or switch.
+- `WorktreeRecord.created_at` is epoch milliseconds.
+- Removal on archive only applies to worktrees Forge recorded; one the desktop app made still groups under its repository (path rule) and gets the `Worktree` tag, without a branch. `main_repo_of` reads the path only.
+- A worktree is kept while another session (open, or not archived) uses the same folder (a fork keeps its folder).
+- When creation fails the typed text comes back into the box; attachments and extra folders do not.
+- The search palette and the Date grouping label a worktree session's row with the worktree's folder name.
+
 ## Out of scope
 
 - The `환경` side panel (environment, context, connectors, Remote Control).
