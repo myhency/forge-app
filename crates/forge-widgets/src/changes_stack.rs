@@ -6,12 +6,17 @@ use std::path::PathBuf;
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::ChangesViewPrefs;
-use forge_entities::{gap_after, gap_lines, icon_of, paired_spans, parse_patch, side_by_side, split_by_spans, DiffLineKind, PatchHunk, PatchLine, Span};
+use forge_entities::{cap_lines, gap_after, gap_lines, icon_of, paired_spans, parse_patch, side_by_side, split_by_spans, DiffLineKind, PatchHunk, PatchLine, Span};
 use forge_features::{is_folded, run_blocking, split_folder, toggle_fold, use_workspace, ChangesSession};
 use forge_ports::{ChangeSource, ChangeStatus, DiffOptions, FileChange, PatchState};
 use forge_shared::tr;
 
 use crate::files_icons::FileTypeIcon;
+
+// How many lines of one file are drawn at first and added by each `Show N more lines`, and the
+// most that are ever drawn: the web view stops laying out a list near 65,536 children.
+const LINE_STEP: usize = 2_000;
+const LINE_MAX: usize = 20_000;
 
 /// Scrolls the stack to a file's section.
 pub(crate) fn scroll_to_diff(path: &str) {
@@ -164,12 +169,14 @@ fn FileSection(
     let mut loaded = use_signal(|| None::<Result<String, String>>);
     // The unchanged lines a click on a gap row read, by the hunk before the gap.
     let mut gaps = use_signal(HashMap::<usize, Vec<PatchLine>>::new);
+    let mut limit = use_signal(|| LINE_STEP);
     let text: Option<String> = match (&change.patch, loaded()) {
         (PatchState::Text(text), _) => Some(text.clone()),
         (_, Some(Ok(text))) => Some(text),
         _ => None,
     };
     let hunks = text.as_deref().map(parse_patch).unwrap_or_default();
+    let (shown, hidden) = cap_lines(&hunks, limit());
     let (added, removed) = (change.file.added.unwrap_or(0), change.file.removed.unwrap_or(0));
     // A file that did not exist before is all in its one hunk: nothing follows it.
     let created = hunks.first().is_some_and(|hunk| hunk.old_start == 0 && hunk.lines.iter().all(|line| line.kind == DiffLineKind::Added));
@@ -205,9 +212,11 @@ fn FileSection(
             _ if hunks.is_empty() => rsx! { div { class: "cd-note", {tr!("No textual changes to show")} } },
             _ => rsx! {
                 div { class: "{wrap_class}",
-                    for (index , hunk) in hunks.iter().enumerate() {
+                    for (index , hunk) in shown.iter().enumerate() {
                         {hunk_view(hunk, &prefs)}
-                        if let Some(lines) = gaps.read().get(&index) {
+                        if hidden > 0 && index + 1 == shown.len() {
+                            // The lines after the cut are not drawn, so there is no gap to open.
+                        } else if let Some(lines) = gaps.read().get(&index) {
                             div { class: "cd-hunk",
                                 for line in lines.iter() {
                                     {line_row(line, &[], false)}
@@ -235,6 +244,17 @@ fn FileSection(
                                 }
                             }
                         }
+                    }
+                    if hidden > 0 && limit() < LINE_MAX {
+                        button {
+                            class: "cd-gap",
+                            r#type: "button",
+                            onclick: move |_| limit += LINE_STEP,
+                            span { class: "cd-chevron", "⌄" }
+                            {tr!("Show {count} more lines", count = hidden.min(LINE_STEP))}
+                        }
+                    } else if hidden > 0 {
+                        div { class: "cd-note", {tr!("{count} more lines are not shown", count = hidden)} }
                     }
                 }
             },

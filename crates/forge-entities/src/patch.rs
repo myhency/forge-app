@@ -122,6 +122,24 @@ pub fn gap_lines(hunks: &[PatchHunk], index: usize, file: &[String]) -> Vec<Patc
         .collect()
 }
 
+/// The hunks cut to their first `limit` lines in all (a hunk cut in the middle keeps its first
+/// lines; the hunks after the cut are dropped) and how many lines were left out. A web view stops
+/// laying out lines past about 65,536 children, so a very large diff is drawn a part at a time.
+pub fn cap_lines(hunks: &[PatchHunk], limit: usize) -> (Vec<PatchHunk>, usize) {
+    let mut left = limit;
+    let mut shown = Vec::new();
+    let mut hidden = 0;
+    for hunk in hunks {
+        let take = hunk.lines.len().min(left);
+        hidden += hunk.lines.len() - take;
+        if take > 0 {
+            left -= take;
+            shown.push(PatchHunk { old_start: hunk.old_start, new_start: hunk.new_start, lines: hunk.lines[..take].to_vec() });
+        }
+    }
+    (shown, hidden)
+}
+
 /// Rows of two columns: a context line on both sides; a run of removed lines beside the run of
 /// added lines that follows it. Indexes into `lines`.
 pub fn side_by_side(lines: &[PatchLine]) -> Vec<(Option<usize>, Option<usize>)> {
@@ -295,6 +313,20 @@ mod tests {
     fn the_last_hunk_has_an_open_ended_gap() {
         let hunks = parse_patch(PATCH);
         assert_eq!(gap_after(&hunks, 1), Some((23, u32::MAX)));
+    }
+
+    #[test]
+    fn a_line_cap_cuts_inside_a_hunk_and_counts_what_it_left_out() {
+        let hunks = parse_patch(PATCH);
+        // 5 + 3 lines; a cap of 6 keeps hunk 0 and the first line of hunk 1.
+        let (shown, hidden) = cap_lines(&hunks, 6);
+        assert_eq!(shown.len(), 2);
+        assert_eq!(shown[1].lines.len(), 1);
+        assert_eq!(shown[1].new_start, 21);
+        assert_eq!(hidden, 2);
+        let (shown, hidden) = cap_lines(&hunks, 3);
+        assert_eq!((shown.len(), shown[0].lines.len(), hidden), (1, 3, 5));
+        assert_eq!(cap_lines(&hunks, 100), (hunks.clone(), 0));
     }
 
     #[test]

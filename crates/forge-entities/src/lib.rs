@@ -33,7 +33,7 @@ pub use command_menu::{command_query, filter_commands, insert_text, menu_action,
 pub use csv_table::{parse_csv, CsvTable, CSV_ROW_LIMIT};
 pub use diff::{diff_for_tool, diff_for_tool_call, parse_unified_diff, DiffLine, DiffLineKind, FileDiff};
 pub use diff_view::DiffView;
-pub use patch::{gap_after, gap_lines, paired_spans, parse_patch, side_by_side, split_by_spans, word_spans, PatchHunk, PatchLine, Span};
+pub use patch::{cap_lines, gap_after, gap_lines, paired_spans, parse_patch, side_by_side, split_by_spans, word_spans, PatchHunk, PatchLine, Span};
 pub use file_open::{is_markdown, relative_to_folder};
 pub use links::{known_paths, render_markdown_linked};
 pub use highlight::{code_html, language_of};
