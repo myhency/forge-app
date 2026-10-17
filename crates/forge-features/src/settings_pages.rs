@@ -24,7 +24,7 @@ fn row_titles(section: SettingsSection) -> Vec<&'static str> {
             tr!("Appearance"), tr!("Theme"), tr!("Font"), tr!("Text size"), tr!("Chat width"), tr!("Reduce motion"), tr!("Work"), tr!("Trusted folders"), tr!("Manage"), tr!("Notifications"), tr!("Reply done"),
             tr!("Scheduled task"), tr!("Code notice"), tr!("Permission request"),
         ],
-        SettingsSection::Code => vec![tr!("Default transcript view"), tr!("Output style"), tr!("Prompt suggestions"), tr!("Allow bypass permissions mode"), tr!("Bounce the Dock icon")],
+        SettingsSection::Code => vec![tr!("Default transcript view"), tr!("Worktree location"), tr!("Output style"), tr!("Prompt suggestions"), tr!("Allow bypass permissions mode"), tr!("Bounce the Dock icon")],
         SettingsSection::Connection => vec![tr!("Base URL"), tr!("API key")],
         SettingsSection::Model => vec![tr!("Default model"), tr!("Other model ID")],
         SettingsSection::Developer => vec![tr!("Local MCP servers"), tr!("Edit config"), tr!("View logs")],

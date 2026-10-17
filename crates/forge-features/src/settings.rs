@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, SettingsUseCase};
-use forge_domain::{AppConfig, Appearance, ChatWidth, FontChoice, Language, McpServerDefinition, MotionPref, NotificationPrefs, OutputStyle, PluginDefinition, SkillDefinition, TextSize, Theme, TranscriptView};
+use forge_domain::{AppConfig, Appearance, ChatWidth, FontChoice, Language, McpServerDefinition, MotionPref, NotificationPrefs, OutputStyle, PluginDefinition, SkillDefinition, TextSize, Theme, TranscriptView, WorktreeLocation};
 use forge_ports::FolderPickerPort;
 use forge_entities::{mcp_rows, plugin_rows, project_label, skill_rows, ExtensionRow};
 
@@ -53,6 +53,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::PromptSuggestions(on) => config.prompt_suggestions = on,
         CodeChange::AllowBypass(on) => config.allow_bypass_mode = on,
         CodeChange::DynamicWorkflows(on) => config.dynamic_workflows = on,
+        CodeChange::WorktreeLocation(value) => config.worktree_location = value,
         CodeChange::Theme(value) => config.appearance.theme = value,
         CodeChange::Font(value) => config.appearance.font = value,
         CodeChange::TextSize(value) => config.appearance.text_size = value,
@@ -80,6 +81,7 @@ pub(crate) enum CodeChange {
     PromptSuggestions(bool),
     AllowBypass(bool),
     DynamicWorkflows(bool),
+    WorktreeLocation(WorktreeLocation),
     Theme(Theme),
     Font(FontChoice),
     TextSize(TextSize),
@@ -128,6 +130,7 @@ pub struct Settings {
     folder_picker: Signal<Arc<dyn FolderPickerPort>>,
     trusted_dialog: Signal<bool>,
     trusted_picking: Signal<bool>,
+    location_nonce: Signal<u32>,
 }
 
 /// Creates the settings state, provides it to every descendant and loads the saved config once.
@@ -151,6 +154,7 @@ pub fn use_settings_provider() -> Settings {
         folder_picker: Signal::new(services.folder_picker.clone()),
         trusted_dialog: Signal::new(false),
         trusted_picking: Signal::new(false),
+        location_nonce: Signal::new(0),
     });
     use_context_provider(move || settings);
     use_hook(move || settings.reload());
@@ -285,6 +289,44 @@ impl Settings {
 
     pub fn set_dynamic_workflows(&self, on: bool) {
         self.change_code(CodeChange::DynamicWorkflows(on));
+    }
+
+    pub fn worktree_location(&self) -> WorktreeLocation {
+        self.saved.read().worktree_location.clone()
+    }
+
+    pub fn set_worktree_location(&self, location: WorktreeLocation) {
+        self.change_code(CodeChange::WorktreeLocation(location));
+    }
+
+    /// Changes whenever the folder dialog closes without a choice, so the menu that opened it is drawn again.
+    pub fn location_nonce(&self) -> u32 {
+        *self.location_nonce.read()
+    }
+
+    /// Asks for a folder with the system dialog and keeps worktrees there from now on. A cancelled
+    /// dialog changes nothing.
+    pub fn choose_worktree_folder(&self) {
+        if *self.trusted_picking.peek() {
+            return;
+        }
+        let picker = (*self.folder_picker.peek()).clone();
+        let this = *self;
+        let mut picking = self.trusted_picking;
+        picking.set(true);
+        // Root scope, like the other saves: the dialog may outlive the page.
+        dioxus::core::spawn_forever(async move {
+            let picked = picker.pick_folder().await;
+            picking.set(false);
+            match picked {
+                Some(folder) => this.set_worktree_location(WorktreeLocation::Folder(folder)),
+                None => {
+                    let mut nonce = this.location_nonce;
+                    let next = *nonce.peek() + 1;
+                    nonce.set(next);
+                }
+            }
+        });
     }
 
     /// The language on screen.
@@ -607,6 +649,8 @@ impl Settings {
             current.prompt_suggestions = config.prompt_suggestions;
             current.allow_bypass_mode = config.allow_bypass_mode;
             current.dynamic_workflows = config.dynamic_workflows;
+            current.worktree_location = config.worktree_location;
+            current.auto_archive_days = config.auto_archive_days;
             current.appearance = config.appearance;
             current.notifications = config.notifications;
             current.attention_bounce = config.attention_bounce;
@@ -671,6 +715,22 @@ mod tests {
         apply_code_change(&mut config, CodeChange::Language(forge_domain::Language::Korean));
         assert_eq!(config.language, Some(forge_domain::Language::Korean));
         assert_eq!(config.model.as_deref(), Some("m"));
+    }
+
+    #[test]
+    fn the_worktree_location_change_sets_only_the_location() {
+        let mut config = AppConfig { auto_archive_days: Some(7), ..AppConfig::default() };
+        apply_code_change(&mut config, CodeChange::WorktreeLocation(forge_domain::WorktreeLocation::Folder("/trees".into())));
+        assert_eq!(config.worktree_location, forge_domain::WorktreeLocation::Folder("/trees".into()));
+        assert_eq!(config.auto_archive_days, Some(7));
+        apply_code_change(&mut config, CodeChange::WorktreeLocation(forge_domain::WorktreeLocation::Project));
+        assert_eq!(config.worktree_location, forge_domain::WorktreeLocation::Project);
+    }
+
+    #[test]
+    fn the_search_finds_the_worktree_location_row_on_the_code_page() {
+        let pages = crate::settings_pages::filter_pages("worktree");
+        assert!(pages.contains(&SettingsSection::Code), "{pages:?}");
     }
 
     #[test]

@@ -222,11 +222,20 @@ fn TrustedFoldersDialog() -> Element {
 }
 
 const DEFAULT_STYLE_VALUE: &str = "default";
+const PROJECT_LOCATION: &str = "\u{0}project";
+const CUSTOM_LOCATION: &str = "\u{0}custom";
 
 #[component]
 fn CodeSection() -> Element {
     let settings = use_settings();
     let view = settings.default_transcript_view();
+    let location = settings.worktree_location();
+    let (location_value, mut location_options) = match &location {
+        forge_domain::WorktreeLocation::Project => (PROJECT_LOCATION.to_string(), Vec::new()),
+        forge_domain::WorktreeLocation::Folder(folder) => (folder.display().to_string(), vec![(folder.display().to_string(), folder.display().to_string())]),
+    };
+    location_options.insert(0, (PROJECT_LOCATION.to_string(), tr!("Inside the project (.claude/worktrees)").to_string()));
+    location_options.push((CUSTOM_LOCATION.to_string(), tr!("Custom…").to_string()));
     let style_value = settings.output_style().map_or(DEFAULT_STYLE_VALUE, OutputStyle::name).to_string();
     let mut style_options = vec![(DEFAULT_STYLE_VALUE.to_string(), tr!("Default").to_string())];
     style_options.extend(OutputStyle::ALL.iter().map(|style| (style.name().to_string(), forge_shared::i18n::text(style.label()).to_string())));
@@ -243,6 +252,20 @@ fn CodeSection() -> Element {
                     if let Some(option) = TranscriptView::ALL.iter().copied().find(|option| option.label() == value) {
                         settings.set_default_transcript_view(option);
                     }
+                },
+            }
+        }
+        SettingRow {
+            title: tr!("Worktree location"),
+            description: tr!("Where the Git worktrees of isolated sessions on this computer are kept. A folder inside the project is not used."),
+            Select {
+                key: "{settings.location_nonce()}",
+                value: location_value,
+                options: location_options,
+                onchange: move |value: String| match value.as_str() {
+                    PROJECT_LOCATION => settings.set_worktree_location(forge_domain::WorktreeLocation::Project),
+                    CUSTOM_LOCATION => settings.choose_worktree_folder(),
+                    folder => settings.set_worktree_location(forge_domain::WorktreeLocation::Folder(folder.into())),
                 },
             }
         }
