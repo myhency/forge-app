@@ -5,6 +5,7 @@ use forge_application::LiveSessionId;
 use forge_features::{fallback_source, run_blocking, source_for, stack_order, use_workspace, FileAction, MenuTarget, Panel};
 use forge_ports::{BranchInfo, ChangeSource, CommitInfo, DiffOptions, FileChange, GitError};
 
+use crate::changes_header::{BranchButton, FileSearch};
 use crate::changes_stack::{scroll_to_diff, DiffStack};
 use crate::changes_tree::ChangesTree;
 use crate::context_menu::ContextMenu;
@@ -131,8 +132,24 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     }
 
     let mut menu = use_signal(|| None::<(String, bool, f64, f64)>);
+    let mut searching = use_signal(|| false);
 
     let tools = rsx! {
+        BranchButton {
+            id,
+            info: info().and_then(|read| read.ok()),
+            base: base_memo(),
+            commits: commits().unwrap_or_default(),
+            view: session.view.clone(),
+        }
+        button {
+            class: "icon-button",
+            r#type: "button",
+            title: tr!("Search changed files"),
+            "aria-label": "Search changed files",
+            onclick: move |_| searching.set(true),
+            "⌕"
+        }
         button {
             class: if list_open() { "icon-button active" } else { "icon-button" },
             r#type: "button",
@@ -228,6 +245,15 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     rsx! {
         PanelFrame { id, panel: Panel::Changes, tools,
             {menu_view}
+            if searching() {
+                if let Some((_, Ok(files))) = result() {
+                    FileSearch {
+                        files: files.iter().map(|change| change.file.clone()).collect::<Vec<_>>(),
+                        on_pick: move |path: String| scroll_to_diff(&path),
+                        on_close: move |_| searching.set(false),
+                    }
+                }
+            }
             {body}
         }
     }
