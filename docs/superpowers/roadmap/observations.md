@@ -665,3 +665,14 @@ Same session and worktree as round 19 (clean tree, one commit `d5bfbad`). Nothin
 - **`커밋 N ›` submenu** (opens beside the row): a field `커밋 검색` with the caret in it, then one row per commit: the subject cut with `…` at the left and the short sha in grey at the right (`d5bfbad`). Not clicked.
 - **File row right click > `복사 ›`**: `절대 경로`, `상대 경로`, `파일 이름`.
 - **A diff line shows a round blue `+` in the left margin while the pointer is over it.** Clicking it opens a comment box under that line (the rest of the diff moves down): a grey title `2번 줄`, the placeholder `Claude에게 변경할 내용을 알려주세요`, a round icon at the bottom right; blue border while editing. Escape closed it with nothing saved. Not seen: sending a comment, where it goes, a range, a comment on a removed line.
+
+### Round 20b: `테스트, 빌드, 생성된 파일 분리` (2026-10-17, Plan 50)
+
+Throwaway files (uncommitted, removed again with `git clean`) were put in the worktree of `/private/tmp/forge-observe-git`; the switch was on, then off again. Nothing was sent or committed.
+
+- **With the switch on**, the right column shows the normal files first (folders grouped as usual), then two sections, each a row with a chevron, the name and a count at the right, a thin rule between: `테스트 파일 N` and `생성된 파일 N`. A section is COLLAPSED when it first appears. Opened, it holds its own folder tree (`src`, `tests`, … with files indented). The stacked diffs at the left follow the same order: normal files, then test files, then generated files. With the switch off the list is one tree, all mixed.
+- **Test files (7 of 7 probes)**: a folder `tests/`, `spec/` or `__tests__/` (any file in it), a name `*.test.*` or `*.spec.*`, `*_test.go`, `test_*.py` (also at the repository root: `test_root.py`).
+- **Generated files (9 of 9 probes)**: a folder `dist/` or `.next/`, a name `*.generated.*`, `*.min.js`, `*.js.map`, `*.lock` (`Cargo.lock`, `yarn.lock`), `package-lock.json`, `pnpm-lock.yaml`.
+- **NOT separated** (stay in the normal list): `build/*`, `out/*`, `target/*` (a Rust file in `target/`), `bundle.d.ts`, `main.py`, `a.txt`.
+- A folder row inside a section is named by its own folder (`src` holds `x.test.ts` under the test section while `src/c.txt` stays in the normal tree).
+- **Not seen**: whether the collapsed state is remembered, whether a section's counts change with the search, a section with no match (presumably hidden).
