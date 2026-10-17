@@ -29,7 +29,7 @@ pub use mcp_log_port::McpLogPort;
 pub use mcp_manager_port::{McpManagerError, McpManagerPort};
 pub use notify_port::{ClickHandler, NotifyPort};
 pub use files_port::{ContentHit, SearchOptions, DirEntry, FileContent, FileVersion, FilesError, FilesPort, WriteError, READ_LIMIT};
-pub use git_port::{ChangeStatus, ChangedFile, GitError, GitPort};
+pub use git_port::{BranchInfo, ChangeSource, ChangeStatus, ChangedFile, CommitInfo, DiffOptions, FileChange, GitError, GitPort, PatchState};
 pub use extension_ports::{
     McpRegistryError, McpRegistryPort, PluginRepositoryError, PluginRepositoryPort,
     SkillRepositoryError, SkillRepositoryPort,
