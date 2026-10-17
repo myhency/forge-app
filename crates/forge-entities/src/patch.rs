@@ -87,8 +87,8 @@ pub fn parse_patch(text: &str) -> Vec<PatchHunk> {
 }
 
 /// The new-side lines (inclusive) after hunk `index` and before the next hunk; for the last hunk
-/// up to the end of the file (`u32::MAX`, the file decides). `None` when nothing lies between, and
-/// for a file that was removed.
+/// up to the end of the file (`u32::MAX`, the file decides) unless the hunk already reaches it. `None`
+/// when nothing lies between, and for a file that was removed.
 pub fn gap_after(hunks: &[PatchHunk], index: usize) -> Option<(u32, u32)> {
     let hunk = hunks.get(index)?;
     if hunk.new_start == 0 {
@@ -100,7 +100,13 @@ pub fn gap_after(hunks: &[PatchHunk], index: usize) -> Option<(u32, u32)> {
             let to = next.new_start.saturating_sub(1);
             (from <= to).then_some((from, to))
         }
-        None => Some((from, u32::MAX)),
+        // The diff is made with 3 lines of context (`-U3`, the git adapter's context size): a last
+        // hunk with fewer trailing context lines has reached the end of the file, so nothing is
+        // left to show below it.
+        None => {
+            let trailing = hunk.lines.iter().rev().take_while(|line| line.kind == DiffLineKind::Context).count();
+            (trailing >= 3).then_some((from, u32::MAX))
+        }
     }
 }
 
@@ -260,6 +266,9 @@ mod tests {
 
     const PATCH: &str = "diff --git a/a.txt b/a.txt\nindex 1..2 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -2,3 +2,4 @@ fn x\n b\n-c\n+C\n+d\n e\n@@ -20,2 +21,2 @@\n y\n-z\n+Z\n";
 
+    // The same, but the last hunk keeps 3 lines of context after its change: the file goes on.
+    const PATCH_MORE: &str = "@@ -2,3 +2,4 @@\n b\n-c\n+C\n+d\n e\n@@ -20,5 +21,5 @@\n y\n-z\n+Z\n t1\n t2\n t3\n";
+
     fn kinds(hunk: &PatchHunk) -> Vec<(DiffLineKind, Option<u32>, Option<u32>)> {
         hunk.lines.iter().map(|line| (line.kind, line.old_no, line.new_no)).collect()
     }
@@ -311,8 +320,20 @@ mod tests {
 
     #[test]
     fn the_last_hunk_has_an_open_ended_gap() {
-        let hunks = parse_patch(PATCH);
-        assert_eq!(gap_after(&hunks, 1), Some((23, u32::MAX)));
+        let hunks = parse_patch(PATCH_MORE);
+        assert_eq!(gap_after(&hunks, 1), Some((26, u32::MAX)));
+    }
+
+    #[test]
+    fn a_last_hunk_that_reaches_the_end_has_no_gap() {
+        // No trailing context, and two lines of it: the change is at the end of the file.
+        assert_eq!(gap_after(&parse_patch(PATCH), 1), None);
+        let hunks = parse_patch("@@ -20,4 +21,4 @@\n y\n-z\n+Z\n t1\n t2\n");
+        assert_eq!(gap_after(&hunks, 0), None);
+        let created = parse_patch("@@ -0,0 +1,2 @@\n+one\n+two\n");
+        assert_eq!(gap_after(&created, 0), None);
+        let three = parse_patch("@@ -20,5 +21,5 @@\n y\n-z\n+Z\n t1\n t2\n t3\n");
+        assert_eq!(gap_after(&three, 0), Some((26, u32::MAX)));
     }
 
     #[test]
@@ -355,12 +376,12 @@ mod tests {
 
     #[test]
     fn the_open_ended_gap_stops_at_the_end_of_the_file() {
-        let hunks = parse_patch(PATCH);
-        let file: Vec<String> = (1..=24).map(|n| format!("line {n}")).collect();
+        let hunks = parse_patch(PATCH_MORE);
+        let file: Vec<String> = (1..=27).map(|n| format!("line {n}")).collect();
         let lines = gap_lines(&hunks, 1, &file);
-        assert_eq!(lines.iter().map(|l| l.new_no.unwrap()).collect::<Vec<_>>(), vec![23, 24]);
+        assert_eq!(lines.iter().map(|l| l.new_no.unwrap()).collect::<Vec<_>>(), vec![26, 27]);
         // A file that ends inside the hunk has no more lines.
-        let short: Vec<String> = (1..=22).map(|n| format!("line {n}")).collect();
+        let short: Vec<String> = (1..=24).map(|n| format!("line {n}")).collect();
         assert!(gap_lines(&hunks, 1, &short).is_empty());
     }
 
