@@ -11,7 +11,6 @@ Success:
 - `File list position ›` offers Auto, Left, Right and the right column moves.
 - With `Separate test, build and generated files` on, the file list and the stacked diffs show normal files first, then `Test files N` and `Generated files N` sections, using the rules seen in the app (round 20b).
 - The branch button's menu has `Commits N ›` (a search field and one row per commit); on a clean tree there is no `Uncommitted changes` row there or in the `Commits` section.
-- `Copy ›` offers Absolute path, Relative path, File name.
 - A diff line that has a new-side number shows a `+` on hover; it opens a comment box; a saved comment is a card in the composer and goes with the next message, the same cards the Files panel makes (Plan 25B).
 - The unified view has one number column and a coloured bar at the left of changed lines.
 - The chosen view and base of a session survive a restart.
@@ -21,6 +20,7 @@ Success:
 - Scope is all of it (menus, state, inline comments, look, minors), in three stages that are built and checked one after the other: **50A** menus and state, **50B** diff comments, **50C** look and minors.
 - Observe the desktop app first for the split (done, round 20b), then build.
 - No stage, unstage, revert or commit control (the app has none; commit is Plan 49).
+- 2026-10-17, while planning 50A: `Copy ›` and the deleted file's `Open in` were already built in Plan 48; they leave the scope.
 
 ## 50A: menus and state
 
@@ -60,7 +60,7 @@ Rules from round 20b (path uses `/`, matched case-sensitively on the lower-case 
 
 ### File row menu
 
-`Copy ›` becomes `Absolute path`, `Relative path`, `File name`. `Open in ›` is disabled for a deleted file (as `Open file` and `Attach as context` already are).
+Nothing to build: `Copy ›` already offers `Absolute path`, `Relative path` and `File name`, and a deleted file's menu already offers only `Copy ›` (`file_menu(MenuTarget::Change { deleted: true })`). Plan 48 listed both as left out before the desktop app's submenu was seen; round 20 showed the same three items.
 
 ### Mode across a restart
 
@@ -107,7 +107,7 @@ Not fixed (stay deferred): `numstat` counts ignore `-w`, `GitCli::branches` name
 
 ## Not built after this plan
 
-`Open in` for a deleted file beyond disabling it, a range comment, a comment on a removed line, a comment in a `Commit` view, the app's own wording of the comment send (not seen), `Commits ›` item keyboard navigation, Windows real-window checks.
+a range comment, a comment on a removed line, a comment in a `Commit` view, the app's own wording of the comment send (not seen), `Commits ›` item keyboard navigation, Windows real-window checks.
 
 ## Testing
 
