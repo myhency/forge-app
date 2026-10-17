@@ -60,8 +60,17 @@ pub fn absolute(cwd: &std::path::Path, path: &str) -> PathBuf {
 
 /// The folder the paths of the Changes panel are relative to: git prints them relative to the
 /// repository root, which is the session folder only when the session was opened at the root.
+///
+/// The root keeps the session folder's own spelling (a symlink such as `/tmp` stays `/tmp`): it is
+/// found by walking up from the session folder as many levels as the resolved folder lies below
+/// the resolved root. Without a root, or when the two cannot be compared, the git root is used.
 pub fn menu_root(info_root: Option<&std::path::Path>, cwd: &std::path::Path) -> PathBuf {
-    info_root.map(std::path::Path::to_path_buf).unwrap_or_else(|| cwd.to_path_buf())
+    let Some(root) = info_root else { return cwd.to_path_buf() };
+    let depth = match (cwd.canonicalize(), root.canonicalize()) {
+        (Ok(real_cwd), Ok(real_root)) => real_cwd.strip_prefix(&real_root).ok().map(|rel| rel.components().count()),
+        _ => None,
+    };
+    depth.and_then(|up| cwd.ancestors().nth(up)).map(std::path::Path::to_path_buf).unwrap_or_else(|| root.to_path_buf())
 }
 
 /// The text a copy action puts on the clipboard, `None` for any other action.
@@ -780,15 +789,40 @@ mod tests {
         assert_eq!(absolute(std::path::Path::new("/p"), "src/a.py"), PathBuf::from("/p/src/a.py"));
     }
 
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("forge-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
     #[test]
     fn a_changes_menu_resolves_against_the_repository_root() {
-        let root = std::path::Path::new("/repo");
-        let session = std::path::Path::new("/repo/packages/app");
-        assert_eq!(menu_root(None, session), PathBuf::from("/repo/packages/app"));
-        assert_eq!(menu_root(Some(root), session), PathBuf::from("/repo"));
-        let base = menu_root(Some(root), session);
-        assert_eq!(absolute(&base, "packages/app/src/x.ts"), PathBuf::from("/repo/packages/app/src/x.ts"));
-        assert_eq!(copy_text_for(FileAction::CopyAbsolute, &base, "packages/app/src/x.ts"), Some("/repo/packages/app/src/x.ts".to_string()));
+        let base_dir = scratch("menu-root-plain");
+        let root = base_dir.canonicalize().unwrap();
+        let session = root.join("packages/app");
+        std::fs::create_dir_all(&session).unwrap();
+        assert_eq!(menu_root(None, &session), session);
+        assert_eq!(menu_root(Some(&root), &session), root);
+        let base = menu_root(Some(&root), &session);
+        assert_eq!(absolute(&base, "packages/app/src/x.ts"), session.join("src/x.ts"));
+        assert_eq!(copy_text_for(FileAction::CopyAbsolute, &base, "packages/app/src/x.ts"), Some(session.join("src/x.ts").to_string_lossy().to_string()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_changes_menu_keeps_the_session_folders_spelling_through_a_symlink() {
+        let base_dir = scratch("menu-root-link").canonicalize().unwrap();
+        let real = base_dir.join("real");
+        std::fs::create_dir_all(real.join("packages/app")).unwrap();
+        let link = base_dir.join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let session = link.join("packages/app");
+        // git reports the resolved root; the menu root must stay under the symlink spelling.
+        assert_eq!(menu_root(Some(&real), &session), link);
+        assert_eq!(menu_root(Some(&real), &link), link);
+        // an unrelated root cannot be walked to, so the git root is used.
+        assert_eq!(menu_root(Some(std::path::Path::new("/nonexistent-root")), &session), PathBuf::from("/nonexistent-root"));
     }
 
     #[test]
