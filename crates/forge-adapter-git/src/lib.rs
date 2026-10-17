@@ -135,8 +135,10 @@ impl GitCli {
         if let Some(to) = to {
             args.push(to);
         }
+        // The `--` always ends the revisions, so a file named `HEAD` or `main` is not ambiguous.
+        args.push("--");
         if let Some(path) = only {
-            args.extend(["--", path]);
+            args.push(path);
         }
         self.run(root, &args)
     }
@@ -314,7 +316,7 @@ impl GitPort for GitCli {
             return Ok(Vec::new());
         }
         let range = format!("{base}..HEAD");
-        let output = self.checked(self.run(&root, &["log", "-z", "-n", "200", "--format=%H%x1f%an%x1f%at%x1f%s", &range])?)?;
+        let output = self.checked(self.run(&root, &["log", "-z", "-n", "200", "--format=%H%x1f%an%x1f%at%x1f%s", &range, "--"])?)?;
         let text = String::from_utf8_lossy(&output.stdout);
         Ok(text
             .split('\0')
@@ -913,6 +915,25 @@ mod tests {
         fs::create_dir_all(dir.path().join("packages/app")).unwrap();
         let info = GitPort::branches(&GitCli::new(), &dir.path().join("packages/app")).unwrap();
         assert_eq!(info.root.canonicalize().unwrap(), dir.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn a_file_named_like_a_revision_does_not_break_the_diff_or_the_log() {
+        let dir = repo();
+        git(dir.path(), &["branch", "-M", "main"]);
+        fs::write(dir.path().join("HEAD"), "1\n").unwrap();
+        git(dir.path(), &["add", "HEAD"]);
+        git(dir.path(), &["commit", "-q", "-m", "add HEAD"]);
+        fs::write(dir.path().join("HEAD"), "2\n").unwrap();
+        fs::write(dir.path().join("main"), "x\n").unwrap();
+        let files = uncommitted(dir.path());
+        assert_eq!(named(&files, "HEAD").file.status, ChangeStatus::Modified);
+        assert_eq!(named(&files, "main").file.status, ChangeStatus::Untracked);
+        assert_eq!(list(dir.path(), &all("main")).len(), 2);
+        assert_eq!(GitCli::new().commits(dir.path(), "main").unwrap().len(), 0);
+        let head = head(dir.path());
+        assert_eq!(list(dir.path(), &ChangeSource::Commit { sha: head }).len(), 1);
+        assert_eq!(GitCli::new().commits(dir.path(), "HEAD~1").unwrap().len(), 1);
     }
 
     #[test]
