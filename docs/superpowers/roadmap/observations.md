@@ -641,3 +641,16 @@ After the commit of round 19b, with two more changed files (`a.txt`, `b.txt` mod
 - **Choosing a commit row** shows that commit's own diff and file list, and the header becomes `d5bfbad Update a.txt and add b.txt and src/c.txt ⌄` (the menu button now names the commit; the base arrow is gone).
 - **Search icon**: a popover under the header with a field `변경된 파일 검색` and the changed files (icon, name, grey folder, `+N -M`); click on a row is the likely jump (not clicked).
 - Not seen: `복사 ›` and `파일 목록 위치 ›` submenus, a click on a file row or a diff header, the `커밋 1 ›` submenu of the menu, the card with a clean tree and commits ahead.
+
+### Round 19d: the desktop app beside Forge's built Changes panel (2026-10-17, Plan 48)
+
+The desktop app's Changes panel was opened (and closed again) on the worktree session of `/private/tmp/forge-observe-git` (clean tree, one commit `d5bfbad` on the branch: `a.txt` changed, `b.txt` and `src/c.txt` new); capture `/private/tmp/p48-desktop-02.png`. Nothing was sent. Forge was looked at in the harness on a fixture repository with the same shape (`main`, `claude/x` with two commits, edits, untracked, binary and large files). What differs:
+
+- **Header**: the desktop app has no title; the branch button is the first thing in the header. Forge keeps the panel title `변경 사항` and puts the branch button beside it.
+- **Line numbers**: the desktop app draws ONE number column (a removed line shows its old number, an added line its new number, a context line its new number). Forge draws two columns (old and new) in the unified view.
+- **Changed lines** have a coloured bar at their left edge in the desktop app (green for added, red for removed); Forge has the row fill only.
+- **Fold chevron**: the desktop app uses `⌄` / `›` outline chevrons; Forge uses `▾` / `▸`.
+- **The `Commits` section with a clean tree**: the desktop app lists `모든 변경사항` and the commits, with no `커밋되지 않은 변경사항` row (it had one in round 19c, when the tree was dirty). Forge always shows the `커밋되지 않은 변경사항` row.
+- **Search popover rows**: round 19c saw `+N -M` on each row of the desktop app's search list; Forge's rows show the name and the grey folder only.
+- **Branch menu**: the desktop app has a third row `커밋 N ›` when the branch has commits; Forge leaves it out (spec: the right column's list has the same content).
+- Same in both: stacked sections with sticky headers, the grey folder after the name, `+N -M` coloured counts, `더 많은 줄 보기` after the last hunk, the tree at the right with `커밋 N` at its foot and rows `subject` / `sha · author · age`.

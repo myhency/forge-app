@@ -83,6 +83,7 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 31 | Routines (built) | PG-01 | Spec `2026-10-09-routines-design.md`; observation round 14; a timer inside Forge, run history, approval wait, Forge's own storage |
 | 43 | Trusted folders (built, checked in the real window) | SET-15 | Spec `2026-10-16-trusted-folders-design.md`; the list in Settings, a question when an unknown folder is added to a session; the default browser row is left out |
 | 45 | Finished tasks, tokens and failed workflows (built, checked in the real window) | OTH-10 | Spec `2026-10-17-finished-tasks-design.md`; observation round 18; `Finished N` fold from the session record, tokens, red dots, stopped and failed lines, a pill that reopens the panel; amber dots left out |
+| 48 | Changes panel parity (built) | PNL-02 | Spec 2026-10-17-changes-panel-design.md |
 | 24 | Home dashboard and new-session composer (built) | PG-05, CMP-06 | Needed a new port `UsageStatsPort`; observation round 6 |
 | 25A | Files panel as an editor (built, checked in the real window) | PNL-04 | CodeMirror bundle, auto save and conflict banner, tabs; 25B line comments and 25C search and right click items next |
 | 26 | Responsive layout (built) | UI-01 | The user asked for it before any new feature; observation round 10 |
