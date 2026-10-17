@@ -608,3 +608,36 @@ The user allowed one short message in a throwaway git repo (`/private/tmp/forge-
   - the Claude transcript is under `~/.claude/projects/-private-tmp-forge-observe-git--claude-worktrees-acknowledge-instruction-75511b/`, and every line's `cwd` is the worktree path (the main repo's project folder has none).
   - the desktop app keeps `~/Library/Application Support/Claude/git-worktrees.json` (`worktrees.<name>`: `name`, `path`, `leasedBy` = the app's session id, `baseRepo`, `branch`, `sourceBranch`, `createdAt`, `originTopLevel`, `anchors` with `trustedAt`, `autoTrusted`) and its session file (`claude-code-sessions/.../local_<id>.json`) has `cwd` = the worktree, `originCwd` = the main repo, `worktreePath`, `worktreeName`, `branch`, `sourceBranch`, `spawnSeed.worktreeHookBased = false`.
 - **Not done on purpose:** archive (the observe script forbids it) and turning the switch off. Not seen: what archive does to the worktree, what the row looks like while the repo has uncommitted changes, the switch off.
+
+## Round 19: Changes panel with real changes (2026-10-17)
+
+Same app and window, on the session in the worktree of `/private/tmp/forge-observe-git` (`a.txt` modified, `b.txt` new). Nothing was sent and nothing was staged or committed: there is no such control. Menus were opened and closed with Escape; the panel's mode was set back to `모든 변경사항`.
+
+- **No stage, unstage or revert control anywhere**, and no commit control inside the Changes panel: not on a file row, not in the diff headers, not in the panel `⋮`, not in the file row menu, not in the `커밋되지 않은 변경사항` mode. The panel is a viewer. (Corrected in round 19b below: commit lives in the `환경` side panel.)
+- **Header**: a branch button `master → claude/<branch> ⌄` (base, then the session's branch); at the right a search icon, the file list toggle, `⋮`, expand, close.
+- **Branch button menu**: `모든 변경사항` (check, `master 대비`), `커밋되지 않은 변경사항`, a rule, `비교 대상 <base> ›` (submenu, not opened). Choosing the second mode replaces the button text with `커밋되지 않은 변경사항 ⌄`.
+- **Body**: one stacked diff for every file, each with a header (chevron, file icon, name, `+N -M`) that folds it; line numbers, `-` rows in red and `+` rows in green with the changed words darker; a fold row `더 많은 줄 보기` for the unchanged lines after the hunk. The file list is a column at the RIGHT (about 25% wide), name and `+N -M` per row.
+- **Panel `⋮`**: `파일 표시` (check, ⇧⌘Y), `파일 목록 위치` (`자동 ›`), `폴더별 파일 그룹화` (check), `테스트, 빌드, 생성된 파일 분리`; `모든 파일 접기`, `모든 파일 펼치기`; `나란히`, `자동 줄 바꿈` (check), `변경된 단어 강조` (check), `공백 변경 숨기기`; `새로고침`.
+- **File row right click**: `컨텍스트로 첨부`, `복사 ›`, `파일 열기` (⌘↵), `다음에서 열기 ›`, `Finder에서 보기`.
+- **Not seen**: the search icon, the `비교 대상` and `복사` submenus, a click on a file row, the file list position submenu, a commit or PR button with a clean tree or with commits ahead.
+
+### Round 19b: the `변경 사항` card of the side panel (2026-10-17)
+
+The user allowed stage and commit in the throwaway repo. The first toolbar icon opens the side panel (cards `환경`, `컨텍스트`, `커넥터`); with a dirty tree it also shows a card `변경 사항 ⌄`: a Changes icon, `+5 -1` (counts of all uncommitted changes) and a button `변경 사항 커밋`. The chevron folds the card (folded: only the title and a grip icon). With a clean tree the card is gone.
+
+- **The button sends a normal chat message**: `Commit the working tree changes with a sensible message.` (English in a Korean UI). Claude then ran 3 commands (`실행된 명령 3개`) and answered `I committed everything as d5bfbad on claude/...`. Result on disk: one commit with every change, tracked and untracked, message written by Claude. The button turns grey while the turn runs; the composer shows the stop button.
+- So the desktop app has NO git code for commit: stage and commit are a prompt. Nothing was seen for stage, unstage or revert; no revert exists.
+- This cost one real message of the user's account in the throwaway repo (allowed as a commit; the message itself was not asked about separately).
+- Not seen: the `+5 -1` or the icon as a click target, a PR button (clean tree with commits ahead), the `환경` card's rows as menus, the card with a long file list.
+
+### Round 19c: the Changes panel with a commit on the branch (2026-10-17)
+
+After the commit of round 19b, with two more changed files (`a.txt`, `b.txt` modified and `src/d.txt`, `src/e.txt` new).
+
+- **Branch button menu has a third row**: `커밋  1 ›` (the number of commits of the branch beyond the base; submenu not opened). The first row is `모든 변경사항 ✓ master 대비`, the second `커밋되지 않은 변경사항`.
+- **`비교 대상 <base> ›` submenu**: a field `브랜치 검색` and a list of branches, the chosen one ticked, the default with the grey badge `기본값`.
+- **File list is a tree** (`폴더별 그룹화` on): a folder row `src` with a chevron and its files indented; loose files after it. A diff header shows the folder as grey text after the name (`e.txt src`) when the file is in a folder.
+- **A `커밋 N ⌄` section sits at the bottom of the right column** (separated by a rule): rows `모든 변경사항`, `커밋되지 않은 변경사항` (the same two modes as the menu) and one row per commit: the subject on one line (cut with `…`), under it `d5bfbad · <author> · 4분 전` in grey. The chosen row has a grey fill.
+- **Choosing a commit row** shows that commit's own diff and file list, and the header becomes `d5bfbad Update a.txt and add b.txt and src/c.txt ⌄` (the menu button now names the commit; the base arrow is gone).
+- **Search icon**: a popover under the header with a field `변경된 파일 검색` and the changed files (icon, name, grey folder, `+N -M`); click on a row is the likely jump (not clicked).
+- Not seen: `복사 ›` and `파일 목록 위치 ›` submenus, a click on a file row or a diff header, the `커밋 1 ›` submenu of the menu, the card with a clean tree and commits ahead.
