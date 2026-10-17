@@ -54,6 +54,11 @@ pub(crate) fn parse_counts(bytes: &[u8]) -> HashMap<String, Count> {
     counts
 }
 
+/// Whether git writes this name in quotes in a diff header (even with `core.quotepath=off`).
+pub(crate) fn is_quoted_name(path: &str) -> bool {
+    path.chars().any(|c| c == '"' || c == '\\' || c.is_control())
+}
+
 // `P b/P` of a `diff --git a/P b/P` line; the diff is made with --no-renames so both names agree.
 fn header_path(rest: &str) -> Option<String> {
     let names = rest.len().checked_sub(3)?;
@@ -71,11 +76,15 @@ pub(crate) fn split_patch(text: &str) -> HashMap<String, String> {
     let mut current: Option<(String, String)> = None;
     for line in text.split_inclusive('\n') {
         // A body line starts with space, `+`, `-` or `\`, so this only ever matches a header.
-        if let Some(rest) = line.strip_prefix("diff --git a/") {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
             if let Some((path, chunk)) = current.take() {
                 parts.insert(path, chunk);
             }
-            current = header_path(rest.trim_end_matches('\n')).map(|path| (path, String::new()));
+            // A quoted name (`"a/..."`) does not parse: its chunk is dropped, not glued to the last file.
+            current = rest
+                .strip_prefix("a/")
+                .and_then(|rest| header_path(rest.trim_end_matches('\n')))
+                .map(|path| (path, String::new()));
         }
         if let Some((_, chunk)) = current.as_mut() {
             chunk.push_str(line);
@@ -142,6 +151,22 @@ mod tests {
         assert!(parts["a b.txt"].starts_with("diff --git a/a b.txt b/a b.txt\n"));
         assert!(parts["a b.txt"].ends_with("+y\n"));
         assert!(parts["한글.txt"].contains("+2"));
+    }
+
+    #[test]
+    fn a_quoted_header_ends_the_previous_patch() {
+        let text = "diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-x\n+y\ndiff --git \"a/q\\\"t.txt\" \"b/q\\\"t.txt\"\n@@ -1 +1 @@\n-1\n+2\n";
+        let parts = split_patch(text);
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts["a.txt"], "diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-x\n+y\n");
+    }
+
+    #[test]
+    fn names_git_quotes_are_recognised() {
+        assert!(is_quoted_name("q\"t.txt"));
+        assert!(is_quoted_name("a\\b"));
+        assert!(is_quoted_name("a\tb"));
+        assert!(!is_quoted_name("한글 이름.txt"));
     }
 
     #[test]

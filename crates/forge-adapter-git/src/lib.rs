@@ -9,7 +9,7 @@ use forge_domain::WorktreeRecord;
 use forge_ports::{BranchInfo, BranchList, ChangeSource, ChangeStatus, ChangedFile, CommitInfo, DiffOptions, FileChange, GitError, GitPort, PatchState, WorktreeError, WorktreePort, WorktreeState};
 
 mod changes;
-use changes::{parse_counts, parse_name_status, split_patch, safe_ref, untracked_patch, Count, EMPTY_TREE, PATCH_BUDGET};
+use changes::{is_quoted_name, parse_counts, parse_name_status, split_patch, safe_ref, untracked_patch, Count, EMPTY_TREE, PATCH_BUDGET};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const CREATE_TIMEOUT: Duration = Duration::from_secs(120);
@@ -203,6 +203,8 @@ impl GitCli {
                     }
                     Some(_) => PatchState::TooLarge,
                     // `-w` leaves out a file whose only change is whitespace.
+                    // A name git quotes has no readable chunk, so it is not a whitespace-only file.
+                    None if is_quoted_name(&path) => PatchState::Binary,
                     None if options.ignore_whitespace => continue,
                     None => PatchState::Text(String::new()),
                 }
@@ -218,15 +220,20 @@ impl GitCli {
             let mut paths: Vec<String> = String::from_utf8_lossy(&others.stdout).split('\0').filter(|path| !path.is_empty()).map(str::to_string).collect();
             paths.sort();
             for path in paths {
-                // A link to a folder or a file that went away between the two commands reads as binary.
-                let (state, added) = match std::fs::read(root.join(&path)) {
-                    Ok(bytes) => untracked_patch(&bytes, budget),
-                    Err(_) => (PatchState::Binary, 0),
+                // Only a regular file is read, never followed: a link, a FIFO or a folder reads as binary,
+                // and a file over the budget is not read at all.
+                let (state, added) = match std::fs::symlink_metadata(root.join(&path)) {
+                    Ok(meta) if meta.is_file() && meta.len() > budget as u64 => (PatchState::TooLarge, 0),
+                    Ok(meta) if meta.is_file() => match std::fs::read(root.join(&path)) {
+                        Ok(bytes) => untracked_patch(&bytes, budget),
+                        Err(_) => (PatchState::Binary, 0),
+                    },
+                    _ => (PatchState::Binary, 0),
                 };
                 if let PatchState::Text(text) = &state {
                     budget -= text.len();
                 }
-                let counts = (!matches!(state, PatchState::Binary)).then_some((added, 0));
+                let counts = (!matches!(state, PatchState::Binary | PatchState::TooLarge)).then_some((added, 0));
                 files.push(FileChange {
                     file: ChangedFile { path, status: ChangeStatus::Untracked, added: counts.map(|c| c.0), removed: counts.map(|c| c.1) },
                     patch: state,
@@ -417,7 +424,11 @@ impl GitPort for GitCli {
     }
 
     fn file_lines(&self, cwd: &Path, source: &ChangeSource, path: &str) -> Result<Vec<String>, GitError> {
-        if path.split('/').any(|part| part == "..") {
+        // Only a plain relative path inside the repository: no root, drive prefix or `..`.
+        let escapes = std::path::Path::new(path).components().any(|part| {
+            matches!(part, std::path::Component::ParentDir | std::path::Component::Prefix(_) | std::path::Component::RootDir)
+        });
+        if escapes || path.split('/').any(|part| part == "..") {
             return Err(GitError::Failed("Path is outside the repository".to_string()));
         }
         let root = self.root(cwd)?;
@@ -957,7 +968,8 @@ mod tests {
         let files = list(dir.path(), &ChangeSource::Uncommitted);
         let big = named(&files, "big.txt");
         assert_eq!(big.patch, PatchState::TooLarge);
-        assert_eq!(big.file.added, Some(400_000));
+        // Too big to be read for a count.
+        assert_eq!(big.file.added, None);
         let patch = GitCli::new().file_patch(dir.path(), &ChangeSource::Uncommitted, &DiffOptions::default(), "big.txt").unwrap();
         assert!(patch.len() > 2 * 1024 * 1024);
     }
@@ -1038,6 +1050,8 @@ mod tests {
         let then = GitCli::new().file_lines(dir.path(), &ChangeSource::Commit { sha: second }, "b.txt").unwrap();
         assert_eq!(then, vec!["one".to_string()]);
         assert!(GitCli::new().file_lines(dir.path(), &ChangeSource::Uncommitted, "../x").is_err());
+        assert!(GitCli::new().file_lines(dir.path(), &ChangeSource::Uncommitted, "/etc/hosts").is_err());
+        assert!(GitCli::new().file_lines(dir.path(), &ChangeSource::Uncommitted, "a/../../x").is_err());
     }
 
     #[test]
@@ -1052,5 +1066,43 @@ mod tests {
         let cli = GitCli::with_program("forge-no-such-git", Duration::from_secs(5));
         let error = cli.changes(dir.path(), &ChangeSource::Uncommitted, &DiffOptions::default()).unwrap_err();
         assert_eq!(error, GitError::Failed("git is not installed".to_string()));
+    }
+
+    #[test]
+    fn a_quoted_file_name_does_not_corrupt_the_previous_patch() {
+        let dir = repo();
+        write(dir.path(), "a.txt", "a\nB\nc\n");
+        write(dir.path(), "q\"t.txt", "x\n");
+        git(dir.path(), &["add", "-N", "q\"t.txt"]);
+        let files = list(dir.path(), &ChangeSource::Uncommitted);
+        assert!(matches!(&named(&files, "a.txt").patch, PatchState::Text(text) if !text.contains("q\\\"t") && !text.contains("+x")));
+        assert_eq!(named(&files, "q\"t.txt").patch, PatchState::Binary);
+        let hidden = GitCli::new().changes(dir.path(), &ChangeSource::Uncommitted, &DiffOptions { ignore_whitespace: true }).unwrap();
+        assert!(hidden.iter().any(|c| c.file.path == "q\"t.txt"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_untracked_symlink_is_never_followed() {
+        let dir = repo();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("secret.txt"), "SECRET\n").unwrap();
+        std::os::unix::fs::symlink(outside.path().join("secret.txt"), dir.path().join("link.txt")).unwrap();
+        let files = list(dir.path(), &ChangeSource::Uncommitted);
+        let link = named(&files, "link.txt");
+        assert_eq!(link.patch, PatchState::Binary);
+        assert_eq!((link.file.added, link.file.removed), (None, None));
+        assert_eq!(link.file.status, ChangeStatus::Untracked);
+    }
+
+    #[test]
+    fn an_untracked_file_over_the_budget_is_not_read() {
+        let dir = repo();
+        write(dir.path(), "big.txt", &"abcdef\n".repeat(400_000));
+        let files = list(dir.path(), &ChangeSource::Uncommitted);
+        let big = named(&files, "big.txt");
+        assert_eq!(big.patch, PatchState::TooLarge);
+        assert_eq!(big.file.added, None);
+        assert_eq!(big.file.status, ChangeStatus::Untracked);
     }
 }
