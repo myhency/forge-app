@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::ChangesViewPrefs;
-use forge_entities::icon_of;
-use forge_features::{tree_rows, use_workspace, ChangeTreeRow, ChangeView, ROW_LIMIT};
+use forge_entities::{icon_of, FileClass};
+use forge_features::{toggle_section, tree_rows, use_workspace, ChangeTreeRow, ChangeView, ROW_LIMIT};
 use forge_ports::{ChangeStatus, ChangedFile, CommitInfo};
 use forge_shared::tr;
 use time::format_description::well_known::Rfc3339;
@@ -53,7 +53,18 @@ pub fn ChangesTree(
                                 }
                             }
                         },
-                        ChangeTreeRow::Section { .. } => rsx! {},
+                        ChangeTreeRow::Section { kind, count, open } => rsx! {
+                            li { key: "section:{count}:{kind:?}", class: "cd-section",
+                                button {
+                                    class: "cd-row",
+                                    r#type: "button",
+                                    onclick: move |_| workspace.update_changes_session(id, |session| toggle_section(session, kind)),
+                                    span { class: "cd-chevron", if open { "▾" } else { "▸" } }
+                                    span { class: "cd-name", "{section_title(kind)}" }
+                                    span { class: "cd-counts", "{count}" }
+                                }
+                            }
+                        },
                         ChangeTreeRow::File { path, name, depth, added, removed, status, .. } => {
                             let deleted = status == ChangeStatus::Deleted;
                             let counts = match (added, removed) {
@@ -111,6 +122,14 @@ pub(crate) fn commit_meta(commit: &CommitInfo, now: OffsetDateTime) -> String {
         .map(|text| forge_entities::relative_time(&text, now))
         .unwrap_or_default();
     format!("{} · {} · {}", &commit.sha[..commit.sha.len().min(7)], commit.author, ago)
+}
+
+fn section_title(kind: FileClass) -> &'static str {
+    match kind {
+        FileClass::Test => tr!("Test files"),
+        FileClass::Generated => tr!("Generated files"),
+        FileClass::Normal => "",
+    }
 }
 
 /// `Commits N ⌄`: the two modes and one row per commit of the branch.

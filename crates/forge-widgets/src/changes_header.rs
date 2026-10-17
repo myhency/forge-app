@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_domain::ChangesViewPrefs;
+use forge_domain::{ChangesViewPrefs, FileListPosition};
 use forge_features::{filter_files, fold_all, unfold_all, use_workspace, ChangeView};
 use forge_ports::{BranchInfo, ChangedFile, CommitInfo};
 use forge_shared::tr;
@@ -221,6 +221,63 @@ pub fn FileSearch(files: Vec<ChangedFile>, on_pick: EventHandler<String>, on_clo
     }
 }
 
+pub(crate) fn position_label(position: FileListPosition) -> &'static str {
+    match position {
+        FileListPosition::Auto => tr!("Auto"),
+        FileListPosition::Left => tr!("Left"),
+        FileListPosition::Right => tr!("Right"),
+    }
+}
+
+/// The class on `.changes-body` that places the file list.
+pub(crate) fn position_class(position: FileListPosition) -> &'static str {
+    match position {
+        FileListPosition::Auto => "pos-auto",
+        FileListPosition::Left => "pos-left",
+        FileListPosition::Right => "pos-right",
+    }
+}
+
+/// `File list position  Auto ›`: a flyout opens at the left of the row (the menu sits at the
+/// panel's right edge) while the pointer is on the row or the flyout.
+#[component]
+fn PositionRow(current: FileListPosition) -> Element {
+    let workspace = use_workspace();
+    let mut flyout = use_signal(|| false);
+    rsx! {
+        div {
+            class: "context-sub",
+            onmouseenter: move |_| flyout.set(true),
+            onmouseleave: move |_| flyout.set(false),
+            button { class: "picker-item", r#type: "button", role: "menuitem", "aria-haspopup": "menu",
+                span { class: "picker-text", {tr!("File list position")} }
+                span { class: "picker-hint", "{position_label(current)} ›" }
+            }
+            if flyout() {
+                div { class: "picker-menu context-submenu left", role: "menu",
+                    for option in [FileListPosition::Auto, FileListPosition::Left, FileListPosition::Right] {
+                        button {
+                            key: "{position_class(option)}",
+                            class: "picker-item",
+                            r#type: "button",
+                            role: "menuitemradio",
+                            "aria-checked": "{current == option}",
+                            onclick: move |_| {
+                                workspace.update_changes_view_prefs(|p| p.file_list_position = option);
+                                flyout.set(false);
+                            },
+                            span { class: "picker-text", "{position_label(option)}" }
+                            if current == option {
+                                span { class: "picker-hint", "✓" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn check_item(label: &'static str, on: bool, onclick: impl FnMut(MouseEvent) + 'static) -> Element {
     rsx! {
         button { class: "picker-item", r#type: "button", role: "menuitemcheckbox", "aria-checked": "{on}", onclick,
@@ -263,7 +320,7 @@ pub fn ViewMenu(id: LiveSessionId, prefs: ChangesViewPrefs, paths: Vec<String>, 
             if open() {
                 div { class: "picker-backdrop", onclick: move |_| open.set(false) }
                 div {
-                    class: "picker-menu cd-menu",
+                    class: "picker-menu cd-menu flyout",
                     role: "menu",
                     // Right edges line up with the button's.
                     style: "position: fixed; left: {corner().0 + corner().2}px; top: {corner().1}px; bottom: auto; transform: translateX(-100%);",
@@ -278,7 +335,9 @@ pub fn ViewMenu(id: LiveSessionId, prefs: ChangesViewPrefs, paths: Vec<String>, 
                         }
                     },
                     {check_item(tr!("Show files"), list_open, move |_| on_toggle_list.call(()))}
+                    PositionRow { current: prefs.file_list_position }
                     {check_item(tr!("Group files by folder"), prefs.group_by_folder, move |_| workspace.update_changes_view_prefs(|p| p.group_by_folder = !p.group_by_folder))}
+                    {check_item(tr!("Separate test, build and generated files"), prefs.separate_special, move |_| workspace.update_changes_view_prefs(|p| p.separate_special = !p.separate_special))}
                     div { class: "picker-divider" }
                     button {
                         class: "picker-item",
@@ -348,5 +407,15 @@ mod tests {
     fn a_commit_is_named_by_its_short_sha_and_subject() {
         let commits = vec![commit("d5bfbad1234", "Update a")];
         assert_eq!(button_label(&ChangeView::Commit("d5bfbad1234".to_string()), None, None, &commits), "d5bfbad Update a");
+    }
+
+    #[test]
+    fn each_position_has_its_label_and_its_css_class() {
+        assert_eq!(position_label(FileListPosition::Auto), tr!("Auto"));
+        assert_eq!(position_label(FileListPosition::Left), tr!("Left"));
+        assert_eq!(position_label(FileListPosition::Right), tr!("Right"));
+        assert_eq!(position_class(FileListPosition::Auto), "pos-auto");
+        assert_eq!(position_class(FileListPosition::Left), "pos-left");
+        assert_eq!(position_class(FileListPosition::Right), "pos-right");
     }
 }

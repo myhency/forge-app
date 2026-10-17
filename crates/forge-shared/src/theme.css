@@ -584,7 +584,17 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 /* Panels that show files: a note, a list at the left and the content at the right. */
 .dock-note { padding: 12px; color: var(--fg-muted); font-size: 13px; }
 .dock-note.error { color: var(--danger); }
-.changes-body { flex: 1; min-height: 0; display: flex; }
+.changes-wrap { flex: 1; min-height: 0; min-width: 0; display: flex; container-type: inline-size; }
+.changes-body { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.cd-menu.flyout { max-height: none; overflow: visible; }
+.changes-body.pos-left { flex-direction: row-reverse; }
+.changes-body.pos-left .cd-side { border-left: none; border-right: 1px solid var(--border); }
+/* A narrow panel puts the list under the diffs; a container query on the wrapper, because a
+   container cannot restyle itself. */
+@container (max-width: 559px) {
+  .changes-body.pos-auto { flex-direction: column; }
+  .changes-body.pos-auto .cd-side { width: auto; min-width: 0; max-height: 40%; border-left: none; border-top: 1px solid var(--border); }
+}
 .cd-main { flex: 1; min-width: 0; overflow: auto; }
 .cd-side { flex: none; width: 26%; min-width: 180px; display: flex; flex-direction: column; border-left: 1px solid var(--border); box-sizing: border-box; min-height: 0; }
 .cd-tree { flex: 1; min-height: 0; margin: 0; padding: 4px; list-style: none; overflow-y: auto; }

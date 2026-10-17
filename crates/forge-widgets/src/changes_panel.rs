@@ -5,7 +5,7 @@ use forge_application::LiveSessionId;
 use forge_features::{fallback_source, run_blocking, source_for, stack_order, use_workspace, vanished_commit, ChangeView, FileAction, MenuTarget, Panel};
 use forge_ports::{BranchInfo, ChangeSource, CommitInfo, DiffOptions, FileChange, GitError};
 
-use crate::changes_header::{BranchButton, FileSearch, ViewMenu};
+use crate::changes_header::{position_class, BranchButton, FileSearch, ViewMenu};
 use crate::changes_stack::{scroll_to_diff, DiffStack};
 use crate::changes_tree::{ChangesTree, CommitsSection};
 use crate::context_menu::ContextMenu;
@@ -212,17 +212,19 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let with_commits = |note: Element| -> Element {
         if list_open() && commits().is_some() {
             rsx! {
-                div { class: "changes-body",
-                    div { class: "cd-main", {note} }
-                    ChangesTree {
-                        id,
-                        files: Vec::new(),
-                        prefs: prefs.clone(),
-                        closed: session.closed_folders.clone(),
-                        open_sections: session.open_sections.clone(),
-                        on_pick: move |_: String| {},
-                        on_menu: move |target| menu.set(Some(target)),
-                        commits: commits_section.clone(),
+                div { class: "changes-wrap",
+                    div { class: "changes-body {position_class(prefs.file_list_position)}",
+                        div { class: "cd-main", {note} }
+                        ChangesTree {
+                            id,
+                            files: Vec::new(),
+                            prefs: prefs.clone(),
+                            closed: session.closed_folders.clone(),
+                            open_sections: session.open_sections.clone(),
+                            on_pick: move |_: String| {},
+                            on_menu: move |target| menu.set(Some(target)),
+                            commits: commits_section.clone(),
+                        }
                     }
                 }
             }
@@ -241,32 +243,34 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             let order = stack_order(&listed, prefs.group_by_folder, prefs.separate_special);
             let notice = missing_base().map(|name| tr!("Base branch {name} was not found; showing uncommitted changes", name = name));
             rsx! {
-                div { class: "changes-body",
-                    div { class: "cd-main",
-                        if let Some(text) = notice {
-                            div { class: "cd-note", "{text}" }
+                div { class: "changes-wrap",
+                    div { class: "changes-body {position_class(prefs.file_list_position)}",
+                        div { class: "cd-main",
+                            if let Some(text) = notice {
+                                div { class: "cd-note", "{text}" }
+                            }
+                            DiffStack {
+                                id,
+                                cwd: cwd.clone(),
+                                source: used,
+                                files: files.clone(),
+                                order,
+                                prefs: prefs.clone(),
+                                session: session.clone(),
+                                on_menu: move |target| menu.set(Some(target)),
+                            }
                         }
-                        DiffStack {
-                            id,
-                            cwd: cwd.clone(),
-                            source: used,
-                            files: files.clone(),
-                            order,
-                            prefs: prefs.clone(),
-                            session: session.clone(),
-                            on_menu: move |target| menu.set(Some(target)),
-                        }
-                    }
-                    if list_open() {
-                        ChangesTree {
-                            id,
-                            files: listed,
-                            prefs: prefs.clone(),
-                            closed: session.closed_folders.clone(),
-                            open_sections: session.open_sections.clone(),
-                            on_pick: move |path: String| scroll_to_diff(&path),
-                            on_menu: move |target| menu.set(Some(target)),
-                            commits: commits_section,
+                        if list_open() {
+                            ChangesTree {
+                                id,
+                                files: listed,
+                                prefs: prefs.clone(),
+                                closed: session.closed_folders.clone(),
+                                open_sections: session.open_sections.clone(),
+                                on_pick: move |path: String| scroll_to_diff(&path),
+                                on_menu: move |target| menu.set(Some(target)),
+                                commits: commits_section,
+                            }
                         }
                     }
                 }
