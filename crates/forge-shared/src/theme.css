@@ -362,6 +362,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
   --hl-type: #0f766e;
   --diff-added-bg: rgba(22, 163, 74, 0.14);
   --diff-removed-bg: rgba(220, 38, 38, 0.14);
+  --diff-word-bg: rgba(87, 83, 78, 0.22);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -375,6 +376,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
     --hl-type: #5eead4;
     --diff-added-bg: rgba(74, 222, 128, 0.16);
     --diff-removed-bg: rgba(248, 113, 113, 0.18);
+    --diff-word-bg: rgba(231, 229, 228, 0.24);
   }
 }
 :root[data-theme="dark"] {
@@ -388,6 +390,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
   --hl-type: #5eead4;
   --diff-added-bg: rgba(74, 222, 128, 0.16);
   --diff-removed-bg: rgba(248, 113, 113, 0.18);
+  --diff-word-bg: rgba(231, 229, 228, 0.24);
 }
 
 .markdown > :first-child { margin-top: 0; }
@@ -582,15 +585,46 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .dock-note { padding: 12px; color: var(--fg-muted); font-size: 13px; }
 .dock-note.error { color: var(--danger); }
 .changes-body { flex: 1; min-height: 0; display: flex; }
-.changes-list { flex: none; width: 40%; margin: 0; padding: 4px; list-style: none; overflow-y: auto; border-right: 1px solid var(--border); box-sizing: border-box; }
-.changes-row { display: flex; align-items: baseline; gap: 6px; width: 100%; padding: 4px 6px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
-.changes-row:hover { background: var(--bg-hover); }
-.changes-row.selected { background: var(--bg-hover); }
-.change-letter { flex: none; width: 1.2em; font-family: var(--mono); font-weight: 600; color: var(--fg-muted); }
-.change-letter.change-A, .change-letter.change-U { color: var(--hl-string); }
-.change-letter.change-D, .change-letter.change-C { color: var(--danger); }
-.change-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
-.change-counts { flex: none; color: var(--fg-muted); font-size: 11px; }
+.cd-main { flex: 1; min-width: 0; overflow: auto; }
+.cd-side { flex: none; width: 26%; min-width: 180px; display: flex; flex-direction: column; border-left: 1px solid var(--border); box-sizing: border-box; min-height: 0; }
+.cd-tree { flex: 1; min-height: 0; margin: 0; padding: 4px; list-style: none; overflow-y: auto; }
+.cd-row { display: flex; align-items: center; gap: 6px; width: 100%; padding: 3px 6px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.cd-row:hover { background: var(--bg-hover); }
+.cd-row .cd-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-chevron { flex: none; width: 1.2em; color: var(--fg-muted); user-select: none; }
+.cd-add { color: var(--hl-string); }
+.cd-del { color: var(--danger); }
+.cd-counts { flex: none; font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
+.cd-note { padding: 8px 10px; color: var(--fg-muted); font-size: 12px; }
+.cd-stack { padding: 0 0 12px; }
+.cd-file { border-bottom: 1px solid var(--border); }
+.cd-file-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--bg-card); font-size: 12px; cursor: pointer; user-select: none; }
+.cd-file-head .cd-name { color: var(--fg); }
+.cd-folder { color: var(--fg-muted); }
+.cd-file-head .cd-counts { margin-left: 4px; }
+.cd-lines { font-family: var(--mono); font-size: 12px; }
+.cd-lines .diff-line { min-height: 1.5em; }
+.cd-lines.nowrap .diff-text { white-space: pre; overflow-wrap: normal; }
+.cd-no { flex: none; width: 4ch; padding-right: 6px; text-align: right; color: var(--fg-muted); user-select: none; }
+.cd-word { background: var(--diff-word-bg, rgba(127, 127, 127, 0.28)); border-radius: 2px; }
+.cd-gap { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 10px; border: none; background: transparent; color: var(--fg-muted); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+.cd-gap:hover { background: var(--bg-hover); }
+.cd-hunk + .cd-hunk { border-top: 1px dashed var(--border); }
+.cd-sbs { display: grid; grid-template-columns: 1fr 1fr; }
+.cd-sbs .diff-line { min-width: 0; }
+.cd-sbs .empty { background: var(--bg-card); }
+.cd-head-button { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 8px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cd-head-button:hover { background: var(--bg-hover); }
+.cd-commits { flex: none; max-height: 40%; overflow-y: auto; border-top: 1px solid var(--border); padding: 4px; }
+.cd-commits-title { display: flex; align-items: center; gap: 6px; padding: 4px 6px; color: var(--fg-muted); font-size: 12px; cursor: pointer; user-select: none; }
+.cd-commit { display: block; width: 100%; padding: 4px 6px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.cd-commit:hover, .cd-commit.selected { background: var(--bg-hover); }
+.cd-commit .subject { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-commit .meta { display: block; color: var(--fg-muted); font-size: 11px; }
+.cd-search { position: absolute; z-index: 5; right: 8px; top: 40px; width: 320px; max-width: calc(100% - 16px); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); }
+.cd-search input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: none; border-bottom: 1px solid var(--border); background: transparent; color: var(--fg); font: inherit; font-size: 12px; outline: none; }
+.cd-search-list { max-height: 260px; overflow-y: auto; padding: 4px; }
+/* The Files panel's text viewers still use this scroll box. */
 .changes-diff { flex: 1; min-width: 0; overflow: auto; padding: 8px; }
 .changes-diff .diff { max-width: none; margin: 0; }
 
