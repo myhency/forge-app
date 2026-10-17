@@ -2,24 +2,23 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_entities::{parse_unified_diff, DiffView};
-use forge_features::{run_blocking, use_workspace, Panel};
-use forge_ports::{ChangedFile, GitError};
+use forge_features::{run_blocking, source_for, stack_order, use_workspace, FileAction, MenuTarget, Panel};
+use forge_ports::{BranchInfo, ChangeSource, CommitInfo, DiffOptions, FileChange, GitError};
 
+use crate::changes_stack::{scroll_to_diff, DiffStack};
+use crate::changes_tree::ChangesTree;
+use crate::context_menu::ContextMenu;
+use crate::files_state::{absolute, copy_text_for};
 use crate::panel_frame::PanelFrame;
 use forge_shared::tr;
 
-// A repository can have thousands of changed files (an untracked `node_modules`); only this many
-// rows are drawn.
-const ROW_LIMIT: usize = 500;
-
-/// The files git says changed in the session's repository, with the diff of the one picked. Read
-/// only. It reloads when "Refresh" is pressed and whenever a tool call of the session finishes.
+/// The Changes panel: every changed file as a stacked diff and a folder tree of the files at the
+/// right. It is a viewer; it reloads on Refresh, when a tool call of the session finishes, and when
+/// what is compared changes. See the spec `2026-10-17-changes-panel-design.md`.
 #[component]
 pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let workspace = use_workspace();
     let mut refresh = use_signal(|| 0u32);
-    let mut selected = use_signal(|| None::<String>);
     let mut list_open = use_signal(|| true);
     // ⇧⌘Y shows or hides the list.
     use_effect(move || {
@@ -29,36 +28,51 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             list_open.set(!shown);
         }
     });
-    let mut status = use_signal(|| None::<Result<Vec<ChangedFile>, GitError>>);
-    let mut diff = use_signal(|| None::<(String, Result<String, GitError>)>);
+    let mut info = use_signal(|| None::<Result<BranchInfo, GitError>>);
+    let mut commits = use_signal(|| None::<Vec<CommitInfo>>);
+    let mut result = use_signal(|| None::<Result<Vec<FileChange>, GitError>>);
+    // The base that was asked for and was not there; the list then shows the uncommitted changes.
+    let mut missing_base = use_signal(|| None::<String>);
     // The count changes only when a tool call finishes; reading the session's view directly in an
     // effect would rerun it on every streamed chunk of a reply.
     let finished = use_memo(move || workspace.finished_tool_calls(id));
     // Each run takes a ticket; a result is kept only if no later run started meanwhile.
-    let mut status_ticket = use_signal(|| 0u64);
-    let mut diff_ticket = use_signal(|| 0u64);
+    let mut info_ticket = use_signal(|| 0u64);
+    let mut changes_ticket = use_signal(|| 0u64);
+    let mut commits_ticket = use_signal(|| 0u64);
+
+    let session = workspace.changes_session(id);
+    let prefs = workspace.changes_view_prefs();
+    // What the loaders compare with, as memos: an effect reads them so it reruns when they change
+    // (the branch list arriving with the default base, a picked base or view, the whitespace
+    // option) and not when anything else in the session's state changes (a folded file).
+    let base_memo = {
+        let cwd = cwd.clone();
+        use_memo(move || {
+            workspace
+                .changes_session(id)
+                .base
+                .or_else(|| workspace.worktree_base(&cwd))
+                .or_else(|| info().and_then(|read| read.ok()).and_then(|branches| branches.default_base))
+        })
+    };
+    let source_memo = use_memo(move || source_for(&workspace.changes_session(id).view, base_memo().as_deref()));
+    let hide_memo = use_memo(move || workspace.changes_view_prefs().hide_whitespace);
+    let source = source_memo();
 
     {
         let cwd = cwd.clone();
         use_effect(move || {
             let _ = refresh();
             let _ = finished();
-            let ticket = status_ticket.peek().wrapping_add(1);
-            status_ticket.set(ticket);
+            let ticket = info_ticket.peek().wrapping_add(1);
+            info_ticket.set(ticket);
             let (git, cwd) = (workspace.git(), cwd.clone());
             spawn(async move {
-                let Some(result) = run_blocking(move || git.status(&cwd)).await else { return };
-                if *status_ticket.peek() != ticket {
-                    return;
+                let Some(read) = run_blocking(move || git.branches(&cwd)).await else { return };
+                if *info_ticket.peek() == ticket {
+                    info.set(Some(read));
                 }
-                if let Ok(files) = &result {
-                    // Keep the picked file while it is still changed, else pick the first one.
-                    let keep = selected.peek().as_ref().is_some_and(|path| files.iter().any(|file| &file.path == path));
-                    if !keep {
-                        selected.set(files.first().map(|file| file.path.clone()));
-                    }
-                }
-                status.set(Some(result));
             });
         });
     }
@@ -67,23 +81,51 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         use_effect(move || {
             let _ = refresh();
             let _ = finished();
-            let ticket = diff_ticket.peek().wrapping_add(1);
-            diff_ticket.set(ticket);
-            let Some(path) = selected() else {
-                diff.set(None);
+            let (source, hide) = (source_memo(), hide_memo());
+            let ticket = changes_ticket.peek().wrapping_add(1);
+            changes_ticket.set(ticket);
+            let (git, cwd) = (workspace.git(), cwd.clone());
+            let options = DiffOptions { ignore_whitespace: hide };
+            spawn(async move {
+                let Some((read, missing)) = run_blocking(move || match git.changes(&cwd, &source, &options) {
+                    Err(GitError::BaseNotFound(base)) if !matches!(source, ChangeSource::Commit { .. }) => {
+                        (git.changes(&cwd, &ChangeSource::Uncommitted, &options), Some(base))
+                    }
+                    other => (other, None),
+                })
+                .await
+                else {
+                    return;
+                };
+                if *changes_ticket.peek() == ticket {
+                    missing_base.set(missing);
+                    result.set(Some(read));
+                }
+            });
+        });
+    }
+    {
+        let cwd = cwd.clone();
+        use_effect(move || {
+            let _ = refresh();
+            let _ = finished();
+            let ticket = commits_ticket.peek().wrapping_add(1);
+            commits_ticket.set(ticket);
+            let Some(base) = base_memo() else {
+                commits.set(None);
                 return;
             };
             let (git, cwd) = (workspace.git(), cwd.clone());
             spawn(async move {
-                let shown = path.clone();
-                let Some(result) = run_blocking(move || git.diff(&cwd, &path)).await else { return };
-                if *diff_ticket.peek() != ticket {
-                    return;
+                let Some(read) = run_blocking(move || git.commits(&cwd, &base)).await else { return };
+                if *commits_ticket.peek() == ticket {
+                    commits.set(read.ok());
                 }
-                diff.set(Some((shown, result)));
             });
         });
     }
+
+    let mut menu = use_signal(|| None::<(String, bool, f64, f64)>);
 
     let tools = rsx! {
         button {
@@ -105,68 +147,83 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         }
     };
 
-    let body = match status() {
+    let menu_view = match menu() {
+        Some((path, deleted, x, y)) => {
+            let (cwd, run_path) = (cwd.clone(), path.clone());
+            rsx! {
+                ContextMenu {
+                    entries: forge_features::file_menu(MenuTarget::Change { deleted }),
+                    x,
+                    y,
+                    on_close: move |_| menu.set(None),
+                    on_select: move |action: FileAction| {
+                        menu.set(None);
+                        if let Some(text) = copy_text_for(action, &cwd, &run_path) {
+                            forge_entities::copy_text(&text);
+                            return;
+                        }
+                        let full = absolute(&cwd, &run_path);
+                        match action {
+                            FileAction::Attach => workspace.queue_file(id, full),
+                            FileAction::OpenFile => workspace.open_file(id, full.to_string_lossy().to_string()),
+                            FileAction::OpenVsCode => workspace.open_with_app(&full, Some("Visual Studio Code")),
+                            FileAction::OpenDefault => workspace.open_with_app(&full, None),
+                            FileAction::Reveal => workspace.reveal(&full),
+                            _ => {}
+                        }
+                    },
+                }
+            }
+        }
+        None => rsx! {},
+    };
+
+    let body = match result() {
         None => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
         Some(Err(GitError::NotARepository)) => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
         Some(Err(error)) => rsx! { div { class: "dock-note error", "{error}" } },
         Some(Ok(files)) if files.is_empty() => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
         Some(Ok(files)) => {
-            let picked = selected();
-            let hidden = files.len().saturating_sub(ROW_LIMIT);
-            let shown = match diff() {
-                Some((path, Ok(text))) if Some(&path) == picked.as_ref() => {
-                    let parsed = parse_unified_diff(&path, &text);
-                    if parsed.hunks.is_empty() {
-                        rsx! { div { class: "dock-note", {tr!("No textual changes to show")} } }
-                    } else {
-                        rsx! { DiffView { diff: parsed } }
-                    }
-                }
-                Some((path, Err(error))) if Some(&path) == picked.as_ref() => rsx! { div { class: "dock-note error", "{error}" } },
-                _ => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
-            };
+            let listed: Vec<_> = files.iter().map(|change| change.file.clone()).collect();
+            let order = stack_order(&listed, prefs.group_by_folder);
+            let notice = missing_base().map(|name| tr!("Base branch {name} was not found; showing uncommitted changes", name = name));
             rsx! {
                 div { class: "changes-body",
-                    if list_open() {
-                        ul { class: "changes-list",
-                            for file in files.iter().take(ROW_LIMIT) {
-                                {
-                                    let path = file.path.clone();
-                                    let letter = file.status.letter();
-                                    let counts = match (file.added, file.removed) {
-                                        (Some(added), Some(removed)) => format!("+{added} −{removed}"),
-                                        _ => String::new(),
-                                    };
-                                    rsx! {
-                                        li { key: "{file.path}",
-                                            button {
-                                                class: if picked.as_deref() == Some(file.path.as_str()) { "changes-row selected" } else { "changes-row" },
-                                                r#type: "button",
-                                                title: "{file.path}",
-                                                onclick: {
-                                                    let path = path.clone();
-                                                    move |_| selected.set(Some(path.clone()))
-                                                },
-                                                span { class: "change-letter change-{letter}", "{letter}" }
-                                                span { class: "change-path", "{file.path}" }
-                                                span { class: "change-counts", "{counts}" }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            if hidden > 0 {
-                                li { class: "dock-note", {tr!("… {count} more files", count = hidden)} }
-                            }
+                    div { class: "cd-main",
+                        if let Some(text) = notice {
+                            div { class: "cd-note", "{text}" }
+                        }
+                        DiffStack {
+                            id,
+                            cwd: cwd.clone(),
+                            source: source.clone(),
+                            files: files.clone(),
+                            order,
+                            prefs: prefs.clone(),
+                            session: session.clone(),
+                            on_menu: move |target| menu.set(Some(target)),
                         }
                     }
-                    div { class: "changes-diff", {shown} }
+                    if list_open() {
+                        ChangesTree {
+                            id,
+                            files: listed,
+                            prefs: prefs.clone(),
+                            closed: session.closed_folders.clone(),
+                            on_pick: move |path: String| scroll_to_diff(&path),
+                            on_menu: move |target| menu.set(Some(target)),
+                            commits: rsx! {},
+                        }
+                    }
                 }
             }
         }
     };
 
     rsx! {
-        PanelFrame { id, panel: Panel::Changes, tools, {body} }
+        PanelFrame { id, panel: Panel::Changes, tools,
+            {menu_view}
+            {body}
+        }
     }
 }

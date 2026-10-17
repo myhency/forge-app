@@ -1,5 +1,7 @@
 mod account_menu;
 mod changes_panel;
+mod changes_stack;
+mod changes_tree;
 mod chat_window;
 mod composer_controls;
 mod context_menu;
