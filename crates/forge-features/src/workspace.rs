@@ -28,7 +28,7 @@ use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange_with_origins, open_session_order_with_origins, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
 use crate::sidebar::{archive_key_plan, cycle_target, ArchiveKey, SidebarEntry, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
-use crate::worktree_view::{folder_choices, RepoInfo, WorktreeTag};
+use crate::worktree_view::{folder_choices, NewWorktree, RepoInfo, WorktreeTag};
 use forge_shared::tr;
 
 // Typing waits this long before the transcripts are scanned.
@@ -1187,6 +1187,46 @@ impl Workspace {
         slot.set_folder(project.as_ref());
     }
 
+    /// The branches of the chosen folder when it is a git repository (and the probe has answered).
+    pub fn new_repo(&self) -> Option<RepoInfo> {
+        let chosen = self.chosen_new_folder()?;
+        self.new_repo.read().clone().filter(|info| info.folder == chosen)
+    }
+
+    /// Reads the branches of `folder` for the new-session panel; `None` forgets them. The same
+    /// folder keeps its answer.
+    pub fn probe_new_repo(&self, folder: Option<PathBuf>) {
+        let mut repo = self.new_repo;
+        let Some(folder) = folder else {
+            repo.set(None);
+            return;
+        };
+        if repo.peek().as_ref().is_some_and(|info| info.folder == folder) {
+            return;
+        }
+        repo.set(None);
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        spawn(async move {
+            let found = services.worktrees.branches(folder.clone()).await.ok();
+            // The person may have chosen another folder while git ran.
+            if this.chosen_new_folder().as_deref() != Some(folder.as_path()) {
+                return;
+            }
+            repo.set(found.map(|branches| RepoInfo { folder, branches }));
+        });
+    }
+
+    /// The message of a send whose worktree could not be made, until the panel takes it back.
+    pub fn new_unsent(&self) -> Option<String> {
+        self.new_unsent.read().clone()
+    }
+
+    pub fn clear_new_unsent(&self) {
+        let mut unsent = self.new_unsent;
+        unsent.set(None);
+    }
+
     /// The slash commands of the probed folder; empty until the probe answers.
     pub fn new_commands(&self) -> Vec<SlashCommand> {
         self.new_commands.read().clone()
@@ -1338,6 +1378,7 @@ impl Workspace {
         text: String,
         attachments: Vec<Attachment>,
         folders: Vec<PathBuf>,
+        worktree: Option<NewWorktree>,
     ) {
         let this = *self;
         let services = (*self.services.peek()).clone();
@@ -1345,6 +1386,26 @@ impl Workspace {
         // Pinned to the root scope: `NewSessionComposer` unmounts if the person clicks elsewhere
         // while the saved model is being read, which would cancel a plain `spawn`.
         dioxus::core::spawn_forever(async move {
+            let project = match worktree {
+                None => project,
+                Some(request) => {
+                    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_nanos() as u64).unwrap_or(0);
+                    let created_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis() as i64).unwrap_or(0);
+                    match services.worktrees.create(&project.path, request.base, &text, seed, created_at).await {
+                        Ok(record) => {
+                            let mut records = this.worktrees;
+                            records.write().push(record.clone());
+                            ProjectSummary { path: record.path, last_active: String::new(), session_count: 0, exists: true }
+                        }
+                        Err(error) => {
+                            this.report(tr!("Could not create the worktree: {error}", error = error));
+                            let mut unsent = this.new_unsent;
+                            unsent.set(Some(text));
+                            return;
+                        }
+                    }
+                }
+            };
             let model = match model {
                 Some(chosen) => chosen,
                 None => match services.settings.saved_model().await {

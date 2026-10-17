@@ -122,6 +122,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .main-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .pane-header { display: flex; align-items: center; gap: 12px; padding: 12px 28px; font-weight: 600; }
 .pane-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pane-tag { flex: none; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--bg-hover); color: var(--fg-muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
 .view-switch { display: flex; flex: none; padding: 2px; gap: 2px; border: 1px solid var(--border); border-radius: 8px; font-weight: 400; }
 .view-option { appearance: none; border: none; background: none; color: var(--fg-muted); font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
 .view-option:hover { background: var(--bg-hover); }

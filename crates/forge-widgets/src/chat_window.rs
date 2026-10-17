@@ -64,14 +64,21 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
     let dock_expanded = workspace.dock(id).expanded.is_some() && !archived;
     let heading = format!(
         "{} · {}",
-        project_label(&view.project_path),
+        project_label(&workspace.origin_of(&view.project_path)),
         view.session.title.as_deref().unwrap_or(tr!("Session"))
     );
+    let tag = workspace.worktree_tag(&view.project_path).map(|tag| match tag.branch {
+        Some(branch) => format!("{} · {}", tr!("Worktree"), branch),
+        None => tr!("Worktree").to_string(),
+    });
 
     rsx! {
         div { class: if dock_expanded { "main-pane dock-expanded" } else { "main-pane" },
             div { class: "pane-header",
                 span { class: "pane-title", "{heading}" }
+                if let Some(tag) = tag {
+                    span { class: "pane-tag", "{tag}" }
+                }
                 div { class: "view-switch", role: "radiogroup", "aria-label": tr!("Transcript view"),
                     for option in TranscriptView::ALL {
                         button {

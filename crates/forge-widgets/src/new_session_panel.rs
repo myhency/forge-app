@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_features::{use_workspace, NewSessionComposer};
 
-use crate::new_session_controls::{AddFolderButton, FolderChip, NewEffortPicker, NewModePicker, NewModelPicker};
+use crate::new_session_controls::{AddFolderButton, BranchChip, FolderChip, NewEffortPicker, NewModePicker, NewModelPicker};
 use crate::plus_menu::PlusMenu;
 use crate::usage_card::UsageCard;
 use forge_shared::tr;
@@ -18,6 +18,7 @@ pub fn NewSessionPanel() -> Element {
             NewSessionComposer {
                 chips: rsx! {
                     FolderChip {}
+                    BranchChip {}
                     AddFolderButton {}
                 },
                 PlusMenu { project: workspace.chosen_new_folder(), add_folder_enabled: true }

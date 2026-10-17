@@ -15,7 +15,12 @@ pub fn FolderChip() -> Element {
         .iter()
         .map(|row| PickerItem { label: row.label.clone(), description: None, key: None, checked: row.checked, divider_before: false })
         .collect();
+    let mut draft = use_new_session_draft();
+    let repo = workspace.new_repo();
     items.push(PickerItem { label: tr!("Open folder…").to_string(), description: None, key: None, checked: false, divider_before: true });
+    if repo.is_some() {
+        items.push(PickerItem { label: tr!("Worktree").to_string(), description: None, key: None, checked: *draft.worktree.read(), divider_before: true });
+    }
     let current_label = rows.iter().find(|row| row.checked).map_or_else(|| tr!("Choose a folder").to_string(), |row| row.label.clone());
     let paths: Vec<_> = rows.iter().map(|row| row.path.clone()).collect();
     rsx! {
@@ -27,7 +32,45 @@ pub fn FolderChip() -> Element {
             onpick: move |index: usize| {
                 match paths.get(index) {
                     Some(path) => workspace.set_new_folder(Some(path.clone())),
-                    None => workspace.open_folder(),
+                    None if index == paths.len() => workspace.open_folder(),
+                    None => {
+                        let on = *draft.worktree.peek();
+                        draft.worktree.set(!on);
+                    }
+                }
+                refocus_composer();
+            },
+        }
+    }
+}
+
+/// The branch a worktree starts from; shown only for a git folder with the worktree row on.
+#[component]
+pub fn BranchChip() -> Element {
+    let workspace = use_workspace();
+    let mut draft = use_new_session_draft();
+    let Some(info) = workspace.new_repo() else { return rsx! {} };
+    if !*draft.worktree.read() {
+        return rsx! {};
+    }
+    let chosen = draft.branch.read().clone().or_else(|| info.branches.current.clone());
+    let items: Vec<PickerItem> = info
+        .branches
+        .local
+        .iter()
+        .map(|name| PickerItem { label: name.clone(), description: None, key: None, checked: chosen.as_deref() == Some(name.as_str()), divider_before: false })
+        .collect();
+    let names = info.branches.local.clone();
+    let label = chosen.unwrap_or_else(|| tr!("Detached HEAD").to_string());
+    rsx! {
+        Picker {
+            title: tr!("Branch"),
+            heading: tr!("Branches"),
+            current: label,
+            items,
+            onpick: move |index: usize| {
+                if let Some(name) = names.get(index) {
+                    draft.branch.set(Some(name.clone()));
                 }
                 refocus_composer();
             },

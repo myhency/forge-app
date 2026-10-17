@@ -1,9 +1,12 @@
+use std::path::Path;
+
 use dioxus::prelude::*;
 use forge_domain::{EffortLevel, PermissionMode};
 
 use crate::command_box::CommandTextArea;
 use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCard};
 use crate::workspace::use_workspace;
+use crate::worktree_view::{NewWorktree, RepoInfo};
 use forge_shared::tr;
 
 /// What was chosen for the new session before it exists: `None` follows the saved default model,
@@ -17,6 +20,8 @@ pub struct NewSessionDraft {
     pub mode: Signal<PermissionMode>,
     pub model: Signal<ModelChoice>,
     pub effort: Signal<Option<EffortLevel>>,
+    pub worktree: Signal<bool>,
+    pub branch: Signal<Option<String>>,
 }
 
 pub fn use_new_session_draft() -> NewSessionDraft {
@@ -28,12 +33,18 @@ pub fn send_ready(text: &str, attachments: usize) -> bool {
     !text.trim().is_empty() || attachments > 0
 }
 
+/// The worktree a send asks for: only when the switch is on and the folder being started in is the
+/// repository the panel probed.
+pub fn worktree_request(on: bool, branch: Option<String>, repo: Option<RepoInfo>, folder: &Path) -> Option<NewWorktree> {
+    (on && repo.is_some_and(|info| info.folder == folder)).then_some(NewWorktree { base: branch })
+}
+
 /// The new-session panel: the folder and other chips (`chips`), the first message, and a row of controls
 /// (`children`). The session is only created when that message is sent.
 #[component]
 pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
     let workspace = use_workspace();
-    let draft = use_context_provider(|| NewSessionDraft { mode: Signal::new(PermissionMode::Default), model: Signal::new(None), effort: Signal::new(None) });
+    let draft = use_context_provider(|| NewSessionDraft { mode: Signal::new(PermissionMode::Default), model: Signal::new(None), effort: Signal::new(None), worktree: Signal::new(true), branch: Signal::new(None) });
     let text = use_signal(String::new);
     let composer = use_composer_state_provider(text);
     let mut text = text;
@@ -42,9 +53,23 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
     // not, and ended when this panel goes away (send, another session, the settings).
     use_effect(move || {
         let folder = workspace.chosen_new_folder();
-        spawn(async move { workspace.probe_new_folder(folder) });
+        // Another folder starts from its own current branch.
+        let mut branch = draft.branch;
+        branch.set(None);
+        spawn(async move {
+            workspace.probe_new_folder(folder.clone());
+            workspace.probe_new_repo(folder);
+        });
     });
     use_drop(move || workspace.probe_new_folder(None));
+
+    // A message whose worktree could not be made comes back into the text box.
+    use_effect(move || {
+        if let Some(back) = workspace.new_unsent() {
+            workspace.clear_new_unsent();
+            text.set(back);
+        }
+    });
 
     let has_folder = !workspace.new_session_projects().is_empty();
 
@@ -65,6 +90,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
         let Some(outgoing) = composer.take_for_new_session(&text.read()) else {
             return;
         };
+        let worktree = worktree_request(*draft.worktree.peek(), draft.branch.peek().clone(), workspace.new_repo(), &project.path);
         workspace.start_new(
             project,
             *draft.mode.peek(),
@@ -73,6 +99,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
             outgoing.text,
             outgoing.attachments,
             composer.take_folders(),
+            worktree,
         );
         text.set(String::new());
     };
@@ -123,5 +150,31 @@ mod tests {
         assert!(!send_ready("  \n ", 0));
         assert!(send_ready("hi", 0));
         assert!(send_ready("", 1));
+    }
+}
+
+#[cfg(test)]
+mod worktree_request_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    use crate::worktree_view::RepoInfo;
+    use forge_ports::BranchList;
+
+    fn repo(folder: &str) -> Option<RepoInfo> {
+        Some(RepoInfo { folder: PathBuf::from(folder), branches: BranchList::default() })
+    }
+
+    #[test]
+    fn a_repository_with_the_switch_on_asks_for_a_worktree_from_the_chosen_branch() {
+        let asked = worktree_request(true, Some("dev".to_string()), repo("/a"), std::path::Path::new("/a"));
+        assert_eq!(asked, Some(NewWorktree { base: Some("dev".to_string()) }));
+    }
+
+    #[test]
+    fn no_worktree_when_the_switch_is_off_or_the_folder_is_not_the_probed_repository() {
+        assert_eq!(worktree_request(false, None, repo("/a"), std::path::Path::new("/a")), None);
+        assert_eq!(worktree_request(true, None, repo("/a"), std::path::Path::new("/b")), None);
+        assert_eq!(worktree_request(true, None, None, std::path::Path::new("/a")), None);
     }
 }
