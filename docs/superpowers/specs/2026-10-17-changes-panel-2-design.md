@@ -130,3 +130,6 @@ a range comment, a comment on a removed line, a comment in a `Commit` view, the 
 - The commit list replaces the menu content (inline, like the base list) instead of opening a flyout.
 - Folders inside the Test and Generated sections have namespaced folder keys (`test:src`, `generated:src`), so the same folder among the normal files stays a separate row and closes separately.
 - A mode chosen before the config has loaded is not saved.
+
+**Checked in the real window:** NOT YET. The Mac's screen was locked during the build (`CGSSessionScreenIsLocked`), so the capture tools could not see the window. Unchecked and to be checked next: the `File list position` flyout (hover, clipping), `Auto` going under the diffs below 560 px (and `max-height: 40%`), `Left`, the sections in the tree (open and closed, counts), the `Commits N ›` list (ellipsis, search focus, the check), the `Uncommitted changes` row on a clean tree, persistence after closing and reopening a session, dark mode and the Korean labels. Unit tests: 241 domain, 290 entities, 498 features, 34 widgets, 61 shared.
+
