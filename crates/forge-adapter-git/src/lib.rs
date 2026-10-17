@@ -5,9 +5,11 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use forge_ports::{ChangeStatus, ChangedFile, GitError, GitPort};
+use forge_domain::WorktreeRecord;
+use forge_ports::{BranchList, ChangeStatus, ChangedFile, GitError, GitPort, WorktreeError, WorktreePort, WorktreeState};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+const CREATE_TIMEOUT: Duration = Duration::from_secs(120);
 
 struct Output {
     code: Option<i32>,
@@ -38,6 +40,10 @@ impl GitCli {
     }
 
     fn run(&self, cwd: &Path, args: &[&str]) -> Result<Output, GitError> {
+        self.run_for(cwd, args, self.timeout)
+    }
+
+    fn run_for(&self, cwd: &Path, args: &[&str], timeout: Duration) -> Result<Output, GitError> {
         // A folder that is gone also makes the spawn fail with "not found", which must not read
         // as a missing git.
         if !cwd.is_dir() {
@@ -76,7 +82,7 @@ impl GitCli {
             let _ = stderr.read_to_end(&mut bytes);
             bytes
         });
-        let deadline = Instant::now() + self.timeout;
+        let deadline = Instant::now() + timeout;
         let status = loop {
             match child.try_wait() {
                 Ok(Some(status)) => break status,
@@ -118,6 +124,21 @@ fn failure(stderr: &str) -> GitError {
     } else {
         GitError::Failed(stderr.lines().next().unwrap_or("git failed").to_string())
     }
+}
+
+fn worktree_error(error: GitError) -> WorktreeError {
+    match error {
+        GitError::NotARepository => WorktreeError::NotARepository,
+        GitError::Failed(message) => WorktreeError::Failed(message),
+    }
+}
+
+fn worktree_failure(stderr: &str) -> WorktreeError {
+    worktree_error(failure(stderr))
+}
+
+fn lines_of(bytes: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(bytes).lines().map(str::trim).filter(|line| !line.is_empty()).map(str::to_string).collect()
 }
 
 fn status_of(x: u8, y: u8) -> ChangeStatus {
@@ -210,6 +231,67 @@ impl GitPort for GitCli {
     }
 }
 
+impl WorktreePort for GitCli {
+    fn branches(&self, repo: &Path) -> Result<BranchList, WorktreeError> {
+        let listed = self.run(repo, &["branch", "--format=%(refname:short)"]).map_err(worktree_error)?;
+        if !listed.success() {
+            return Err(worktree_failure(&listed.stderr));
+        }
+        // A detached HEAD is listed as "(HEAD detached at ...)": not a branch.
+        let local: Vec<String> = lines_of(&listed.stdout).into_iter().filter(|name| !name.starts_with('(')).collect();
+        let head = self.run(repo, &["symbolic-ref", "--short", "-q", "HEAD"]).map_err(worktree_error)?;
+        let current = if head.success() { lines_of(&head.stdout).into_iter().next() } else { None };
+        Ok(BranchList { current, local })
+    }
+
+    fn create(&self, repo: &Path, dir: &Path, branch: &str, base: &str) -> Result<(), WorktreeError> {
+        if dir.exists() {
+            return Err(WorktreeError::NameTaken);
+        }
+        let exists = self.run(repo, &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")]).map_err(worktree_error)?;
+        if exists.success() {
+            return Err(WorktreeError::NameTaken);
+        }
+        if let Some(parent) = dir.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| WorktreeError::Failed(error.to_string()))?;
+        }
+        let target = dir.to_string_lossy();
+        let output = self
+            .run_for(repo, &["worktree", "add", "-b", branch, "--", &target, base], CREATE_TIMEOUT)
+            .map_err(worktree_error)?;
+        if output.success() {
+            Ok(())
+        } else {
+            Err(worktree_failure(&output.stderr))
+        }
+    }
+
+    fn inspect(&self, record: &WorktreeRecord) -> Result<WorktreeState, WorktreeError> {
+        let status = self.run(&record.path, &["status", "--porcelain"]).map_err(worktree_error)?;
+        if !status.success() {
+            return Err(worktree_failure(&status.stderr));
+        }
+        let range = format!("{}..{}", record.base_branch, record.branch);
+        let counted = self.run(&record.repo, &["rev-list", "--count", &range]).map_err(worktree_error)?;
+        if !counted.success() {
+            return Err(worktree_failure(&counted.stderr));
+        }
+        let count: u64 = String::from_utf8_lossy(&counted.stdout).trim().parse().map_err(|_| WorktreeError::Failed("git rev-list gave no count".to_string()))?;
+        Ok(WorktreeState { dirty: !status.stdout.is_empty(), own_commits: count > 0 })
+    }
+
+    fn remove(&self, record: &WorktreeRecord) -> Result<(), WorktreeError> {
+        let target = record.path.to_string_lossy();
+        let removed = self.run(&record.repo, &["worktree", "remove", "--", &target]).map_err(worktree_error)?;
+        if !removed.success() {
+            return Err(worktree_failure(&removed.stderr));
+        }
+        // `-d` only: a branch that is not merged stays, which loses nothing.
+        let _ = self.run(&record.repo, &["branch", "-d", "--", &record.branch]);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -217,7 +299,8 @@ mod tests {
     use std::process::Command;
     use std::time::Duration;
 
-    use forge_ports::{ChangeStatus, ChangedFile, GitError, GitPort};
+    use forge_domain::WorktreeRecord;
+    use forge_ports::{ChangeStatus, ChangedFile, GitError, GitPort, WorktreeError, WorktreePort};
     use tempfile::TempDir;
 
     use super::*;
@@ -391,5 +474,123 @@ mod tests {
         let text = GitCli::new().diff(dir.path(), "app/[id]/page.tsx").unwrap();
         assert!(text.contains("+ONE"), "{text}");
         assert!(!text.contains("TWO"), "the other file leaked into the diff: {text}");
+    }
+
+    // A worktree of `repo` made the way the use case makes it.
+    fn worktree_of(repo: &TempDir, name: &str) -> WorktreeRecord {
+        let cli = GitCli::new();
+        let base = cli.branches(repo.path()).unwrap().current.unwrap();
+        let dir = repo.path().join(".claude").join("worktrees").join(name);
+        let branch = format!("claude/{name}");
+        cli.create(repo.path(), &dir, &branch, &base).unwrap();
+        WorktreeRecord {
+            name: name.to_string(),
+            path: dir,
+            repo: repo.path().to_path_buf(),
+            branch,
+            base_branch: base,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn the_branches_of_a_repository_are_listed_with_the_current_one() {
+        let repo = repo();
+        git(repo.path(), &["branch", "feature"]);
+        let list = GitCli::new().branches(repo.path()).unwrap();
+        assert!(list.current.is_some());
+        assert!(list.local.contains(&"feature".to_string()));
+        assert!(list.local.contains(list.current.as_ref().unwrap()));
+    }
+
+    #[test]
+    fn a_detached_head_has_no_current_branch_and_no_entry_in_the_list() {
+        let repo = repo();
+        git(repo.path(), &["checkout", "-q", "--detach"]);
+        let list = GitCli::new().branches(repo.path()).unwrap();
+        assert_eq!(list.current, None);
+        assert!(list.local.iter().all(|name| !name.starts_with('(')), "{list:?}");
+    }
+
+    #[test]
+    fn a_folder_that_is_not_a_repository_has_no_branches() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(GitCli::new().branches(dir.path()), Err(WorktreeError::NotARepository));
+    }
+
+    #[test]
+    fn creating_a_worktree_makes_the_folder_and_the_branch_from_the_base() {
+        let repo = repo();
+        let record = worktree_of(&repo, "fix-1a2b3c");
+        assert!(record.path.join("a.txt").is_file());
+        let branches = GitCli::new().branches(repo.path()).unwrap();
+        assert!(branches.local.contains(&"claude/fix-1a2b3c".to_string()));
+    }
+
+    #[test]
+    fn a_name_whose_folder_or_branch_exists_is_taken() {
+        let repo = repo();
+        let record = worktree_of(&repo, "fix-1a2b3c");
+        let cli = GitCli::new();
+        let again = cli.create(repo.path(), &record.path, &record.branch, &record.base_branch);
+        assert_eq!(again, Err(WorktreeError::NameTaken));
+        let other_dir = repo.path().join(".claude").join("worktrees").join("other");
+        let same_branch = cli.create(repo.path(), &other_dir, &record.branch, &record.base_branch);
+        assert_eq!(same_branch, Err(WorktreeError::NameTaken));
+        assert!(!other_dir.exists());
+    }
+
+    #[test]
+    fn a_repository_with_no_commit_cannot_have_a_worktree() {
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q"]);
+        let target = dir.path().join(".claude").join("worktrees").join("x");
+        let result = GitCli::new().create(dir.path(), &target, "claude/x", "master");
+        assert!(matches!(result, Err(WorktreeError::Failed(_))), "{result:?}");
+    }
+
+    #[test]
+    fn a_new_worktree_is_clean_with_no_commits_of_its_own() {
+        let repo = repo();
+        let record = worktree_of(&repo, "clean-000001");
+        let state = GitCli::new().inspect(&record).unwrap();
+        assert_eq!((state.dirty, state.own_commits), (false, false));
+    }
+
+    #[test]
+    fn an_untracked_file_makes_a_worktree_dirty() {
+        let repo = repo();
+        let record = worktree_of(&repo, "dirty-000002");
+        fs::write(record.path.join("new.txt"), "x").unwrap();
+        assert!(GitCli::new().inspect(&record).unwrap().dirty);
+    }
+
+    #[test]
+    fn a_commit_on_the_branch_is_its_own_commit() {
+        let repo = repo();
+        let record = worktree_of(&repo, "commit-000003");
+        fs::write(record.path.join("b.txt"), "b").unwrap();
+        git(&record.path, &["add", "."]);
+        git(&record.path, &["commit", "-q", "-m", "second"]);
+        let state = GitCli::new().inspect(&record).unwrap();
+        assert_eq!((state.dirty, state.own_commits), (false, true));
+    }
+
+    #[test]
+    fn removing_a_clean_worktree_deletes_its_folder_and_its_branch() {
+        let repo = repo();
+        let record = worktree_of(&repo, "gone-000004");
+        GitCli::new().remove(&record).unwrap();
+        assert!(!record.path.exists());
+        assert!(!GitCli::new().branches(repo.path()).unwrap().local.contains(&record.branch));
+    }
+
+    #[test]
+    fn a_worktree_with_changes_is_not_removed() {
+        let repo = repo();
+        let record = worktree_of(&repo, "kept-000005");
+        fs::write(record.path.join("a.txt"), "changed").unwrap();
+        assert!(GitCli::new().remove(&record).is_err());
+        assert!(record.path.join("a.txt").is_file());
     }
 }

@@ -1576,6 +1576,7 @@ dependencies = [
 name = "forge-adapter-git"
 version = "0.1.0"
 dependencies = [
+ "forge-domain",
  "forge-ports",
  "tempfile",
 ]
