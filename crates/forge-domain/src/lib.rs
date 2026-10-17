@@ -1,4 +1,5 @@
 mod attachment;
+mod auto_archive;
 mod card;
 mod background;
 mod command;
@@ -26,6 +27,7 @@ mod usage_stats;
 mod worktree;
 
 pub use attachment::{Attachment, AttachmentKind};
+pub use auto_archive::{sessions_to_archive, ArchiveCandidate, AUTO_ARCHIVE_CHOICES};
 pub use card::{split_cards, with_cards, Card, CardKind, LineRange};
 mod msg;
 pub mod i18n;
