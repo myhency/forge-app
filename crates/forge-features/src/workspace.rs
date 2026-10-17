@@ -121,6 +121,9 @@ pub struct Workspace {
     changes_view: Signal<ChangesViewPrefs>,
     changes_sessions: Signal<HashMap<LiveSessionId, ChangesSession>>,
     changes_modes: Signal<Vec<ChangeModeRef>>,
+    /// False until the startup `reload_prefs` has set `changes_modes`: saving before that would
+    /// write a list that holds only the new entry and drop the others.
+    changes_modes_loaded: Signal<bool>,
     archived: Signal<Vec<ArchivedRef>>,
     worktrees: Signal<Vec<WorktreeRecord>>,
     new_repo: Signal<Option<RepoInfo>>,
@@ -186,6 +189,7 @@ pub fn use_workspace_provider() -> Workspace {
             changes_view: Signal::new(ChangesViewPrefs::default()),
             changes_sessions: Signal::new(HashMap::new()),
             changes_modes: Signal::new(Vec::new()),
+            changes_modes_loaded: Signal::new(false),
             archived: Signal::new(Vec::new()),
             worktrees: Signal::new(Vec::new()),
             new_repo: Signal::new(None),
@@ -372,19 +376,29 @@ impl Workspace {
         change(sessions.write().entry(id).or_default());
     }
 
-    /// The project folder and Claude session id of an open session; `None` before its first message.
+    /// The project folder and Claude session id of an open session; `None` before its first
+    /// message. Reads without subscribing, so a streamed chunk does not rerun the caller.
     fn session_ref(&self, id: LiveSessionId) -> Option<(PathBuf, String)> {
-        self.live.read().iter().find(|entry| entry.handle.id() == id).and_then(|entry| {
-            let view = entry.view.read();
+        self.live.peek().iter().find(|entry| entry.handle.id() == id).and_then(|entry| {
+            let view = entry.view.peek();
             view.claude_session_id.as_ref().map(|session| (view.project_path.clone(), session.0.clone()))
         })
     }
 
+    /// The Claude session id of an open session, subscribing to it: the Changes panel watches this
+    /// so a mode chosen before the first message is saved once the id exists.
+    pub fn claude_session_key(&self, id: LiveSessionId) -> Option<String> {
+        self.live.read().iter().find(|entry| entry.handle.id() == id).and_then(|entry| entry.view.read().claude_session_id.as_ref().map(|session| session.0.clone()))
+    }
+
     /// Puts back the view and base this session had when Forge last saved them, unless the person
-    /// has already changed them in this run.
+    /// has already changed them in this run. Does nothing until the saved modes have loaded.
     pub fn restore_change_mode(&self, id: LiveSessionId) {
+        if !*self.changes_modes_loaded.peek() {
+            return;
+        }
         let Some((project, session)) = self.session_ref(id) else { return };
-        let Some((view, base)) = crate::change_rows::mode_of(&self.changes_modes.read(), &project, &session) else { return };
+        let Some((view, base)) = crate::change_rows::mode_of(&self.changes_modes.peek(), &project, &session) else { return };
         self.update_changes_session(id, |state| {
             if state.view == ChangeView::All && state.base.is_none() {
                 state.view = view;
@@ -393,13 +407,18 @@ impl Workspace {
         });
     }
 
-    /// Saves this session's view and base (a no-op when they are what is already saved).
+    /// Saves this session's view and base (a no-op when they are what is already saved, and until
+    /// the saved modes have loaded).
     pub fn remember_change_mode(&self, id: LiveSessionId) {
+        if !*self.changes_modes_loaded.peek() {
+            return;
+        }
         let Some((project, session)) = self.session_ref(id) else { return };
-        let state = self.changes_session(id);
-        let mut modes = self.changes_modes;
-        let changed = crate::change_rows::upsert_mode(&mut modes.write(), &project, &session, &state.view, state.base.as_deref());
-        if changed {
+        let state = self.changes_sessions.peek().get(&id).cloned().unwrap_or_default();
+        let mut list = self.changes_modes.peek().clone();
+        if crate::change_rows::upsert_mode(&mut list, &project, &session, &state.view, state.base.as_deref()) {
+            let mut modes = self.changes_modes;
+            modes.set(list);
             self.save_change_modes();
         }
     }
@@ -429,6 +448,7 @@ impl Workspace {
         let mut editor = self.editor;
         let mut changes_view = self.changes_view;
         let mut changes_modes = self.changes_modes;
+        let mut changes_modes_loaded = self.changes_modes_loaded;
         spawn(async move {
             if let Ok(config) = services.settings.load().await {
                 prefs.set(config.sidebar);
@@ -436,6 +456,7 @@ impl Workspace {
                 changes_view.set(config.changes_view);
                 archived.set(config.archived);
                 changes_modes.set(config.changes_modes);
+                changes_modes_loaded.set(true);
                 worktrees.set(config.worktrees);
             }
         });

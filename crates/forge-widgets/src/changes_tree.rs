@@ -54,7 +54,7 @@ pub fn ChangesTree(
                             }
                         },
                         ChangeTreeRow::Section { kind, count, open } => rsx! {
-                            li { key: "section:{count}:{kind:?}", class: "cd-section",
+                            li { key: "section:{kind:?}", class: "cd-section",
                                 button {
                                     class: "cd-row",
                                     r#type: "button",

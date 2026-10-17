@@ -122,3 +122,11 @@ a range comment, a comment on a removed line, a comment in a `Commit` view, the 
 ## As built
 
 (Filled in after each stage.)
+
+### Stage 50A (built on branch plan-50)
+
+- Git status is read with `--untracked-files=normal` instead of `all`.
+- `changes_modes` is a Vec keyed by project path and Claude session id (like `archived`), not a HashMap keyed by transcript id; closing a session keeps its entry, only deleting drops it.
+- The commit list replaces the menu content (inline, like the base list) instead of opening a flyout.
+- Folders inside the Test and Generated sections have namespaced folder keys (`test:src`, `generated:src`), so the same folder among the normal files stays a separate row and closes separately.
+- A mode chosen before the config has loaded is not saved.

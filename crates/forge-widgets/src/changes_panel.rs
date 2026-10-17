@@ -25,8 +25,11 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         let state = workspace.changes_session(id);
         (state.view, state.base)
     });
+    // The Claude session id appears with the first message; a mode chosen before then is saved then.
+    let key_memo = use_memo(move || workspace.claude_session_key(id));
     use_effect(move || {
         let _ = mode_memo();
+        let _ = key_memo();
         workspace.remember_change_mode(id);
     });
     let mut refresh = use_signal(|| 0u32);

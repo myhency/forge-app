@@ -149,7 +149,10 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                                         open.set(false);
                                     }
                                 },
-                                span { class: "picker-text", "{commit.subject}" }
+                                span { class: "picker-text cd-pick-subject", "{commit.subject}" }
+                                if view == ChangeView::Commit(commit.sha.clone()) {
+                                    span { class: "picker-hint", "✓" }
+                                }
                                 span { class: "picker-hint", "{&commit.sha[..commit.sha.len().min(7)]}" }
                             }
                         }
@@ -296,7 +299,12 @@ fn PositionRow(current: FileListPosition) -> Element {
             class: "context-sub",
             onmouseenter: move |_| flyout.set(true),
             onmouseleave: move |_| flyout.set(false),
-            button { class: "picker-item", r#type: "button", role: "menuitem", "aria-haspopup": "menu",
+            button {
+                class: "picker-item",
+                r#type: "button",
+                role: "menuitem",
+                "aria-haspopup": "menu",
+                onclick: move |_| flyout.set(!flyout()),
                 span { class: "picker-text", {tr!("File list position")} }
                 span { class: "picker-hint", "{position_label(current)} ›" }
             }

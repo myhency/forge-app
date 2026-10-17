@@ -91,13 +91,25 @@ fn file_row(files: &[ChangedFile], index: usize, depth: usize) -> TreeRow {
     TreeRow::File { index, path: file.path.clone(), name, folder, depth, added: file.added, removed: file.removed, status: file.status }
 }
 
-fn walk(node: &Node, prefix: &str, depth: usize, files: &[ChangedFile], closed: &HashSet<String>, respect_closed: bool, rows: &mut Vec<TreeRow>) {
+/// How `build` walks: whether closed folders hide their children, and the namespace put before a
+/// folder's key ("" for the normal files, "test" or "generated" inside a section) so one folder
+/// path in two groups is two keys.
+struct Walk<'a> {
+    files: &'a [ChangedFile],
+    closed: &'a HashSet<String>,
+    respect_closed: bool,
+    namespace: &'a str,
+}
+
+fn walk(node: &Node, prefix: &str, depth: usize, ctx: &Walk, rows: &mut Vec<TreeRow>) {
+    let files = ctx.files;
     for (name, child) in &node.folders {
         let path = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
-        let open = !closed.contains(&path);
-        rows.push(TreeRow::Folder { path: path.clone(), name: name.clone(), depth, open });
-        if open || !respect_closed {
-            walk(child, &path, depth + 1, files, closed, respect_closed, rows);
+        let key = if ctx.namespace.is_empty() { path.clone() } else { format!("{}:{path}", ctx.namespace) };
+        let open = !ctx.closed.contains(&key);
+        rows.push(TreeRow::Folder { path: key, name: name.clone(), depth, open });
+        if open || !ctx.respect_closed {
+            walk(child, &path, depth + 1, ctx, rows);
         }
     }
     let mut ids = node.files.clone();
@@ -106,7 +118,7 @@ fn walk(node: &Node, prefix: &str, depth: usize, files: &[ChangedFile], closed: 
 }
 
 /// The rows for `ids` (indexes into `files`), starting `depth0` levels in.
-fn build(files: &[ChangedFile], ids: &[usize], group: bool, closed: &HashSet<String>, respect_closed: bool, depth0: usize) -> Vec<TreeRow> {
+fn build(files: &[ChangedFile], ids: &[usize], group: bool, closed: &HashSet<String>, respect_closed: bool, depth0: usize, namespace: &str) -> Vec<TreeRow> {
     if !group {
         let mut order = ids.to_vec();
         order.sort_by(|a, b| files[*a].path.cmp(&files[*b].path));
@@ -123,7 +135,7 @@ fn build(files: &[ChangedFile], ids: &[usize], group: bool, closed: &HashSet<Str
         node.files.push(index);
     }
     let mut rows = Vec::new();
-    walk(&root, "", depth0, files, closed, respect_closed, &mut rows);
+    walk(&root, "", depth0, &Walk { files, closed, respect_closed, namespace }, &mut rows);
     rows
 }
 
@@ -134,13 +146,15 @@ fn ids_of(files: &[ChangedFile], class: FileClass) -> Vec<usize> {
 /// The rows of the right column: folders (folders first, then files, each by name) or a flat list.
 /// With `separate`, the normal files come first; the test files and the generated files follow,
 /// each group under a `Section` row, and are listed only while their section is in `open_sections`.
-/// A section with no file has no row.
+/// A section with no file has no row. A `Folder` row's `path` is its key and the `closed` entry;
+/// inside a section it is namespaced (`test:src`, `generated:src`) so it differs from the same
+/// folder among the normal files.
 pub fn tree_rows(files: &[ChangedFile], group: bool, closed: &HashSet<String>, separate: bool, open_sections: &HashSet<FileClass>) -> Vec<TreeRow> {
     if !separate {
         let all: Vec<usize> = (0..files.len()).collect();
-        return build(files, &all, group, closed, true, 0);
+        return build(files, &all, group, closed, true, 0, "");
     }
-    let mut rows = build(files, &ids_of(files, FileClass::Normal), group, closed, true, 0);
+    let mut rows = build(files, &ids_of(files, FileClass::Normal), group, closed, true, 0, "");
     for kind in [FileClass::Test, FileClass::Generated] {
         let ids = ids_of(files, kind);
         if ids.is_empty() {
@@ -149,7 +163,8 @@ pub fn tree_rows(files: &[ChangedFile], group: bool, closed: &HashSet<String>, s
         let open = open_sections.contains(&kind);
         rows.push(TreeRow::Section { kind, count: ids.len(), open });
         if open {
-            rows.extend(build(files, &ids, group, closed, true, 1));
+            let namespace = if kind == FileClass::Test { "test" } else { "generated" };
+            rows.extend(build(files, &ids, group, closed, true, 1, namespace));
         }
     }
     rows
@@ -165,7 +180,7 @@ pub fn stack_order(files: &[ChangedFile], group: bool, separate: bool) -> Vec<us
     };
     groups
         .iter()
-        .flat_map(|ids| build(files, ids, group, &HashSet::new(), false, 0))
+        .flat_map(|ids| build(files, ids, group, &HashSet::new(), false, 0, ""))
         .filter_map(|row| match row {
             TreeRow::File { index, .. } => Some(index),
             TreeRow::Folder { .. } | TreeRow::Section { .. } => None,
@@ -520,7 +535,7 @@ mod tests {
         let rows = tree_rows(&files, true, &HashSet::new(), true, &open(&[FileClass::Test]));
         assert_eq!(
             paths(&rows),
-            vec!["b.txt", "section:Test:2:open", " src/", "  src/x.test.ts", " tests/", "  tests/a.rs", "section:Generated:1:closed"]
+            vec!["b.txt", "section:Test:2:open", " test:src/", "  src/x.test.ts", " test:tests/", "  tests/a.rs", "section:Generated:1:closed"]
         );
     }
 
@@ -553,5 +568,39 @@ mod tests {
         assert!(session.open_sections.contains(&FileClass::Test));
         toggle_section(&mut session, FileClass::Test);
         assert!(session.open_sections.is_empty());
+    }
+
+    #[test]
+    fn folders_shared_by_the_normal_files_and_a_section_have_distinct_keys() {
+        let files = vec![file("src/a.ts"), file("src/a.test.ts"), file("styles/app.css"), file("styles/app.min.css")];
+        let rows = tree_rows(&files, true, &HashSet::new(), true, &open(&[FileClass::Test, FileClass::Generated]));
+        let mut keys: Vec<String> = rows
+            .iter()
+            .map(|row| match row {
+                TreeRow::Folder { path, .. } => format!("dir:{path}"),
+                TreeRow::File { path, .. } => format!("file:{path}"),
+                TreeRow::Section { kind, .. } => format!("section:{kind:?}"),
+            })
+            .collect();
+        let total = keys.len();
+        keys.sort();
+        keys.dedup();
+        assert_eq!(keys.len(), total, "{keys:?}");
+        let names: Vec<String> = rows
+            .iter()
+            .filter_map(|row| match row {
+                TreeRow::Folder { path, name, .. } => Some(format!("{path}={name}")),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(names, vec!["src=src", "styles=styles", "test:src=src", "generated:styles=styles"]);
+    }
+
+    #[test]
+    fn closing_a_section_folder_leaves_the_normal_folder_open() {
+        let files = vec![file("src/a.ts"), file("src/a.test.ts")];
+        let closed: HashSet<String> = ["test:src".to_string()].into();
+        let rows = tree_rows(&files, true, &closed, true, &open(&[FileClass::Test]));
+        assert_eq!(paths(&rows), vec!["src/", " src/a.ts", "section:Test:1:open", " test:src/"]);
     }
 }
