@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 
-use forge_ports::{ChangeSource, ChangeStatus, ChangedFile, GitError};
+use forge_ports::{ChangeSource, ChangeStatus, ChangedFile, CommitInfo, GitError};
 
 /// Only this many stack sections start unfolded: a thousand open diffs would freeze the window.
 pub const OPEN_SECTIONS: usize = 50;
@@ -51,6 +51,16 @@ pub fn fallback_source(asked: &ChangeSource, error: &GitError) -> Option<(Change
 }
 
 /// The folder (no trailing slash, empty at the top) and the name of a path.
+/// True when the view picks a commit that a loaded commit list no longer holds (a reset or a
+/// rebase). The list must have been loaded: an empty list from a successful load means the commit
+/// is gone too, so the panel calls this only once its commits are `Some`, never while they load.
+pub fn vanished_commit(view: &ChangeView, commits: &[CommitInfo]) -> bool {
+    match view {
+        ChangeView::Commit(sha) => !commits.iter().any(|commit| &commit.sha == sha),
+        ChangeView::All | ChangeView::Uncommitted => false,
+    }
+}
+
 pub fn split_folder(path: &str) -> (String, String) {
     match path.rsplit_once('/') {
         Some((folder, name)) => (folder.to_string(), name.to_string()),
@@ -160,6 +170,17 @@ pub fn unfold_all(session: &mut ChangesSession, paths: &[String]) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_commit_missing_from_the_loaded_list_has_vanished() {
+        let commit = |sha: &str| CommitInfo { sha: sha.to_string(), subject: String::new(), author: String::new(), time: 0 };
+        let list = vec![commit("aaa"), commit("bbb")];
+        assert!(vanished_commit(&ChangeView::Commit("ccc".to_string()), &list));
+        assert!(vanished_commit(&ChangeView::Commit("ccc".to_string()), &[]));
+        assert!(!vanished_commit(&ChangeView::Commit("bbb".to_string()), &list));
+        assert!(!vanished_commit(&ChangeView::All, &[]));
+        assert!(!vanished_commit(&ChangeView::Uncommitted, &list));
+    }
+
     use super::*;
 
     #[test]

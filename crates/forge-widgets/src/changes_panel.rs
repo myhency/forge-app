@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{fallback_source, run_blocking, source_for, stack_order, use_workspace, FileAction, MenuTarget, Panel};
+use forge_features::{fallback_source, run_blocking, source_for, stack_order, use_workspace, vanished_commit, ChangeView, FileAction, MenuTarget, Panel};
 use forge_ports::{BranchInfo, ChangeSource, CommitInfo, DiffOptions, FileChange, GitError};
 
 use crate::changes_header::{BranchButton, FileSearch};
@@ -125,7 +125,13 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             spawn(async move {
                 let Some(read) = run_blocking(move || git.commits(&cwd, &base)).await else { return };
                 if *commits_ticket.peek() == ticket {
-                    commits.set(read.ok());
+                    let read = read.ok();
+                    if let Some(list) = &read {
+                        if vanished_commit(&workspace.changes_session(id).view, list) {
+                            workspace.update_changes_session(id, |session| session.view = ChangeView::All);
+                        }
+                    }
+                    commits.set(read);
                 }
             });
         });
@@ -205,11 +211,34 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         None => rsx! {},
     };
 
+    // With no files to list (an error, a commit with an empty diff, a clean tree) the right column
+    // still offers the commits, so the person can pick another row.
+    let with_commits = |note: Element| -> Element {
+        if list_open() && commits().is_some() {
+            rsx! {
+                div { class: "changes-body",
+                    div { class: "cd-main", {note} }
+                    ChangesTree {
+                        id,
+                        files: Vec::new(),
+                        prefs: prefs.clone(),
+                        closed: session.closed_folders.clone(),
+                        on_pick: move |_: String| {},
+                        on_menu: move |target| menu.set(Some(target)),
+                        commits: commits_section.clone(),
+                    }
+                }
+            }
+        } else {
+            note
+        }
+    };
+
     let body = match result() {
         None => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
         Some((_, Err(GitError::NotARepository))) => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
-        Some((_, Err(error))) => rsx! { div { class: "dock-note error", "{error}" } },
-        Some((_, Ok(files))) if files.is_empty() => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
+        Some((_, Err(error))) => with_commits(rsx! { div { class: "dock-note error", "{error}" } }),
+        Some((_, Ok(files))) if files.is_empty() => with_commits(rsx! { div { class: "dock-note", {tr!("No changes to show")} } }),
         Some((used, Ok(files))) => {
             let listed: Vec<_> = files.iter().map(|change| change.file.clone()).collect();
             let order = stack_order(&listed, prefs.group_by_folder);
