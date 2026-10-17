@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 
-use forge_ports::{ChangeSource, ChangeStatus, ChangedFile};
+use forge_ports::{ChangeSource, ChangeStatus, ChangedFile, GitError};
 
 /// Only this many stack sections start unfolded: a thousand open diffs would freeze the window.
 pub const OPEN_SECTIONS: usize = 50;
@@ -35,6 +35,18 @@ pub fn source_for(view: &ChangeView, base: Option<&str>) -> ChangeSource {
         (ChangeView::All, Some(base)) => ChangeSource::All { base: base.to_string() },
         (ChangeView::All, None) | (ChangeView::Uncommitted, _) => ChangeSource::Uncommitted,
         (ChangeView::Commit(sha), _) => ChangeSource::Commit { sha: sha.clone() },
+    }
+}
+
+/// What to load instead when loading `asked` failed with `error`: a base branch that is not there
+/// falls back to the uncommitted changes (with the missing name, for the notice). A commit view
+/// and any other error have no fallback. The panel keeps the source it really loaded with the
+/// files, so a section reads more lines against that source.
+pub fn fallback_source(asked: &ChangeSource, error: &GitError) -> Option<(ChangeSource, String)> {
+    match (asked, error) {
+        (ChangeSource::Commit { .. }, _) => None,
+        (_, GitError::BaseNotFound(base)) => Some((ChangeSource::Uncommitted, base.clone())),
+        _ => None,
     }
 }
 
@@ -149,6 +161,23 @@ pub fn unfold_all(session: &mut ChangesSession, paths: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_base_falls_back_to_the_uncommitted_changes_and_names_the_base() {
+        let asked = ChangeSource::All { base: "main".to_string() };
+        assert_eq!(
+            fallback_source(&asked, &GitError::BaseNotFound("main".to_string())),
+            Some((ChangeSource::Uncommitted, "main".to_string()))
+        );
+    }
+
+    #[test]
+    fn a_commit_view_and_other_errors_have_no_fallback() {
+        let commit = ChangeSource::Commit { sha: "abc".to_string() };
+        assert_eq!(fallback_source(&commit, &GitError::BaseNotFound("main".to_string())), None);
+        let all = ChangeSource::All { base: "main".to_string() };
+        assert_eq!(fallback_source(&all, &GitError::NotARepository), None);
+    }
 
     fn file(path: &str) -> ChangedFile {
         ChangedFile { path: path.to_string(), status: ChangeStatus::Modified, added: Some(1), removed: Some(0) }

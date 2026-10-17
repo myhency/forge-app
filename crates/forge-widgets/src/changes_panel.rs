@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{run_blocking, source_for, stack_order, use_workspace, FileAction, MenuTarget, Panel};
+use forge_features::{fallback_source, run_blocking, source_for, stack_order, use_workspace, FileAction, MenuTarget, Panel};
 use forge_ports::{BranchInfo, ChangeSource, CommitInfo, DiffOptions, FileChange, GitError};
 
 use crate::changes_stack::{scroll_to_diff, DiffStack};
@@ -30,7 +30,9 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     });
     let mut info = use_signal(|| None::<Result<BranchInfo, GitError>>);
     let mut commits = use_signal(|| None::<Vec<CommitInfo>>);
-    let mut result = use_signal(|| None::<Result<Vec<FileChange>, GitError>>);
+    // The files with the source they were really loaded with (the uncommitted changes after a
+    // missing base): the sections read more lines and large diffs against that source.
+    let mut result = use_signal(|| None::<(ChangeSource, Result<Vec<FileChange>, GitError>)>);
     // The base that was asked for and was not there; the list then shows the uncommitted changes.
     let mut missing_base = use_signal(|| None::<String>);
     // The count changes only when a tool call finishes; reading the session's view directly in an
@@ -58,7 +60,6 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     };
     let source_memo = use_memo(move || source_for(&workspace.changes_session(id).view, base_memo().as_deref()));
     let hide_memo = use_memo(move || workspace.changes_view_prefs().hide_whitespace);
-    let source = source_memo();
 
     {
         let cwd = cwd.clone();
@@ -87,11 +88,15 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             let (git, cwd) = (workspace.git(), cwd.clone());
             let options = DiffOptions { ignore_whitespace: hide };
             spawn(async move {
-                let Some((read, missing)) = run_blocking(move || match git.changes(&cwd, &source, &options) {
-                    Err(GitError::BaseNotFound(base)) if !matches!(source, ChangeSource::Commit { .. }) => {
-                        (git.changes(&cwd, &ChangeSource::Uncommitted, &options), Some(base))
+                let Some((used, read, missing)) = run_blocking(move || {
+                    let read = git.changes(&cwd, &source, &options);
+                    match read.as_ref().err().and_then(|error| fallback_source(&source, error)) {
+                        Some((instead, base)) => {
+                            let read = git.changes(&cwd, &instead, &options);
+                            (instead, read, Some(base))
+                        }
+                        None => (source, read, None),
                     }
-                    other => (other, None),
                 })
                 .await
                 else {
@@ -99,7 +104,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 };
                 if *changes_ticket.peek() == ticket {
                     missing_base.set(missing);
-                    result.set(Some(read));
+                    result.set(Some((used, read)));
                 }
             });
         });
@@ -180,10 +185,10 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
 
     let body = match result() {
         None => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
-        Some(Err(GitError::NotARepository)) => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
-        Some(Err(error)) => rsx! { div { class: "dock-note error", "{error}" } },
-        Some(Ok(files)) if files.is_empty() => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
-        Some(Ok(files)) => {
+        Some((_, Err(GitError::NotARepository))) => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
+        Some((_, Err(error))) => rsx! { div { class: "dock-note error", "{error}" } },
+        Some((_, Ok(files))) if files.is_empty() => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
+        Some((used, Ok(files))) => {
             let listed: Vec<_> = files.iter().map(|change| change.file.clone()).collect();
             let order = stack_order(&listed, prefs.group_by_folder);
             let notice = missing_base().map(|name| tr!("Base branch {name} was not found; showing uncommitted changes", name = name));
@@ -196,7 +201,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                         DiffStack {
                             id,
                             cwd: cwd.clone(),
-                            source: source.clone(),
+                            source: used,
                             files: files.clone(),
                             order,
                             prefs: prefs.clone(),
