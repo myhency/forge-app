@@ -1,4 +1,5 @@
 mod appearance;
+mod change_rows;
 mod session_notices;
 mod developer;
 mod settings_pages;
@@ -116,3 +117,5 @@ pub use settings_pages::{filter_pages, nav_groups, NavGroup};
 pub use session_notices::{notice_between, should_send, use_session_notices, Notice, NoticeTarget, Snapshot};
 pub use appearance::{apply_appearance, apply_appearance_script};
 pub use window_width::use_window_width;
+
+pub use change_rows::{filter_files, fold_all, is_folded, source_for, split_folder, stack_order, toggle_fold, tree_rows, unfold_all, ChangeView, ChangesSession, TreeRow as ChangeTreeRow, OPEN_SECTIONS, ROW_LIMIT};
