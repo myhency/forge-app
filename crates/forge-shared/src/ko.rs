@@ -259,6 +259,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Hour", "시"),
     ("Hourly", "매시간"),
     ("How wide the conversation column is.", "대화 영역의 너비입니다."),
+    ("Inactive sessions archived: {count}", "비활성 세션을 보관했습니다: {count}"),
     ("Indent guides", "들여쓰기 가이드"),
     ("Input", "입력"),
     ("Input needed", "입력 필요"),

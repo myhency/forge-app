@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use forge_domain::{ArchivedRef, ProjectSummary, SessionId, SessionSummary};
+use forge_domain::{ArchiveCandidate, ArchivedRef, ProjectSummary, SessionId, SessionSummary};
 use forge_ports::BranchList;
 
 /// What the new-session panel knows about the chosen folder when it is a git repository.
@@ -65,6 +65,22 @@ pub fn worktree_in_use(
     listed || open
 }
 
+/// Every listed session as the auto archive sees it. `busy` holds the Claude session ids of the open
+/// sessions that are running, waiting for an approval or have background work.
+pub fn candidates(past: &[(ProjectSummary, Vec<SessionSummary>)], archived: &[ArchivedRef], busy: &[SessionId]) -> Vec<ArchiveCandidate> {
+    past.iter()
+        .flat_map(|(project, sessions)| {
+            sessions.iter().map(|session| ArchiveCandidate {
+                project: project.path.clone(),
+                session_id: session.id.0.clone(),
+                updated_at: session.updated_at.clone(),
+                busy: busy.contains(&session.id),
+                archived: archived.iter().any(|item| item.project == project.path && item.session_id == session.id.0),
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,6 +91,19 @@ mod tests {
 
     fn session(id: &str) -> SessionSummary {
         SessionSummary { id: SessionId(id.to_string()), title: None, updated_at: String::new(), created_at: String::new() }
+    }
+
+    #[test]
+    fn candidates_list_every_past_session_with_its_state() {
+        let past = vec![(project("/w/x", true), vec![SessionSummary { updated_at: "2026-01-01T00:00:00Z".to_string(), ..session("a") }, session("b")])];
+        let archived = vec![ArchivedRef { project: PathBuf::from("/w/x"), session_id: "b".to_string() }];
+        let busy = vec![SessionId("a".to_string())];
+        let rows = candidates(&past, &archived, &busy);
+        assert_eq!(rows.len(), 2);
+        assert_eq!((rows[0].session_id.as_str(), rows[0].busy, rows[0].archived), ("a", true, false));
+        assert_eq!((rows[1].session_id.as_str(), rows[1].busy, rows[1].archived), ("b", false, true));
+        assert_eq!(rows[0].updated_at, "2026-01-01T00:00:00Z");
+        assert_eq!(rows[0].project, PathBuf::from("/w/x"));
     }
 
     #[test]

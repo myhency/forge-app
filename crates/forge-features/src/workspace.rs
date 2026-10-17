@@ -31,6 +31,8 @@ use crate::sidebar::{archive_key_plan, cycle_target, ArchiveKey, SidebarEntry, n
 use crate::worktree_view::{folder_choices, NewWorktree, RepoInfo, WorktreeTag};
 use forge_shared::tr;
 
+const AUTO_ARCHIVE_EVERY: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
 // Typing waits this long before the transcripts are scanned.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
 const SEARCH_LIMIT: usize = 50;
@@ -205,6 +207,7 @@ pub fn use_workspace_provider() -> Workspace {
     use_context_provider(move || workspace);
     use_hook(move || workspace.reload_past());
     use_hook(move || workspace.reload_prefs());
+    use_hook(move || workspace.start_auto_archive());
     workspace
 }
 
@@ -292,6 +295,54 @@ impl Workspace {
 
     // A config that cannot be read keeps the defaults; the settings screen reports that file's
     // problems, so the sidebar does not repeat them.
+    /// Archives the sessions that have been idle longer than the setting says; nothing when it is off.
+    /// Each one goes through `archive_session`, so a worktree follows the same rule as a hand archive.
+    pub fn auto_archive_now(&self, now_ms: i64) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        dioxus::core::spawn_forever(async move {
+            let Ok(config) = services.settings.load().await else { return };
+            let Some(days) = config.auto_archive_days else { return };
+            let busy: Vec<SessionId> = this
+                .live
+                .peek()
+                .iter()
+                .filter_map(|entry| {
+                    let view = entry.view.peek();
+                    let working = view.phase == Phase::Running || !view.pending_permissions.is_empty() || !view.background_tasks.is_empty();
+                    working.then(|| view.claude_session_id.clone()).flatten()
+                })
+                .collect();
+            let rows = crate::worktree_view::candidates(&this.past.peek(), &this.archived.peek(), &busy);
+            let due: Vec<(PathBuf, SessionId)> = forge_domain::sessions_to_archive(now_ms, days, &rows)
+                .into_iter()
+                .map(|row| (row.project.clone(), SessionId(row.session_id.clone())))
+                .collect();
+            if due.is_empty() {
+                return;
+            }
+            let count = due.len();
+            for (project, session) in due {
+                this.archive_session(project, session);
+            }
+            this.report(tr!("Inactive sessions archived: {count}", count = count));
+        });
+    }
+
+    // Once the lists have loaded, and then every hour while Forge is open.
+    fn start_auto_archive(&self) {
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            // The sidebar lists load first (`reload_past`); a first pass over an empty list does nothing.
+            tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+            loop {
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis() as i64).unwrap_or(0);
+                this.auto_archive_now(now);
+                tokio::time::sleep(AUTO_ARCHIVE_EVERY).await;
+            }
+        });
+    }
+
     fn reload_prefs(&self) {
         let services = (*self.services.peek()).clone();
         let mut prefs = self.prefs;
