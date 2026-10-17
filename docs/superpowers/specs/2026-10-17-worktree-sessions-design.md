@@ -72,7 +72,7 @@ The worktree of a session that is open and live is only removed after the sessio
 
 **6. Setting `Worktree location` (SET-08)**
 
-- `AppConfig.worktree_location: WorktreeLocation` = `Project` (default) or `Folder(PathBuf)`; Settings > Code has a row under the model-switch rows in the desktop app's order (after `관련 없는 작업을 요청할 때`, before `메시지가 플래그 지정되면 모델 전환`; that row is not in Forge, so it sits after the existing `Inactive session` row from stage C and before `Output style`).
+- `AppConfig.worktree_location: WorktreeLocation` = `Project` (default) or `Folder(PathBuf)`; Settings > Code has a row right after the `Archive inactive sessions` row of stage C (the desktop app's order is archive, unrelated tasks, worktree location; Forge has no unrelated-tasks row).
 - The row is a menu: `Inside the project` with the grey path `.claude/worktrees` (checked when `Project`), the chosen folder's path and name as a second row when `Folder`, and `Custom…`, which opens the same folder dialog the Settings page already uses (`FolderPickerPort`). A cancelled dialog changes nothing.
 - `worktree_dir(repo, name, location)`: `Project` → `<repo>/.claude/worktrees/<name>`; `Folder(f)` → `<f>/<repo folder name>/<name>`, except that an `f` that is the repository or inside it is ignored and `Project` is used (the docs' rule). The folder is made when it is missing. Changing the setting never moves a worktree that exists.
 
