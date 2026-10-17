@@ -364,6 +364,13 @@ impl GitPort for GitCli {
             _ => String::new(),
         })
     }
+
+    fn is_dirty(&self, cwd: &Path) -> Result<bool, GitError> {
+        let root = self.root(cwd)?;
+        // `normal` lists an untracked folder as one entry, which is all a yes or no needs.
+        let output = self.checked(self.run(&root, &["status", "--porcelain=v1", "-z", "--untracked-files=normal"])?)?;
+        Ok(!output.stdout.is_empty())
+    }
 }
 
 impl WorktreePort for GitCli {
@@ -1007,5 +1014,50 @@ mod tests {
         assert_eq!(big.patch, PatchState::TooLarge);
         assert_eq!(big.file.added, None);
         assert_eq!(big.file.status, ChangeStatus::Untracked);
+    }
+
+    #[test]
+    fn a_clean_repository_is_not_dirty() {
+        assert!(!GitCli::new().is_dirty(repo().path()).unwrap());
+    }
+
+    #[test]
+    fn a_modified_file_makes_the_tree_dirty() {
+        let dir = repo();
+        fs::write(dir.path().join("a.txt"), "changed\n").unwrap();
+        assert!(GitCli::new().is_dirty(dir.path()).unwrap());
+    }
+
+    #[test]
+    fn an_untracked_file_makes_the_tree_dirty() {
+        let dir = repo();
+        fs::write(dir.path().join("new.txt"), "x\n").unwrap();
+        assert!(GitCli::new().is_dirty(dir.path()).unwrap());
+    }
+
+    #[test]
+    fn an_ignored_file_does_not_make_the_tree_dirty() {
+        let dir = repo();
+        fs::write(dir.path().join(".gitignore"), "*.log\n").unwrap();
+        git(dir.path(), &["add", ".gitignore"]);
+        git(dir.path(), &["commit", "-q", "-m", "ignore logs"]);
+        fs::write(dir.path().join("x.log"), "noise\n").unwrap();
+        assert!(!GitCli::new().is_dirty(dir.path()).unwrap());
+    }
+
+    #[test]
+    fn is_dirty_works_from_a_subfolder_and_a_repository_with_no_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q"]);
+        assert!(!GitCli::new().is_dirty(dir.path()).unwrap());
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("sub/a.txt"), "x\n").unwrap();
+        assert!(GitCli::new().is_dirty(&dir.path().join("sub")).unwrap());
+    }
+
+    #[test]
+    fn is_dirty_reports_a_missing_repository_as_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(GitCli::new().is_dirty(dir.path()), Err(GitError::NotARepository));
     }
 }

@@ -118,6 +118,9 @@ pub trait GitPort: Send + Sync {
     fn file_lines(&self, cwd: &Path, source: &ChangeSource, path: &str) -> Result<Vec<String>, GitError>;
     /// The patch of one file with no size budget, for a file `changes` called `TooLarge`.
     fn file_patch(&self, cwd: &Path, source: &ChangeSource, options: &DiffOptions, path: &str) -> Result<String, GitError>;
+    /// Whether the working tree has a change or an untracked file (an ignored file is neither). The
+    /// panel hides its `Uncommitted changes` row when this is false.
+    fn is_dirty(&self, cwd: &Path) -> Result<bool, GitError>;
 }
 
 #[cfg(test)]
