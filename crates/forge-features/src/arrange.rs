@@ -284,6 +284,7 @@ fn arrange_filtered(
 
 /// The open sessions in the order the sidebar draws them, with no row hidden: a collapsed group or
 /// the status filter hides rows, not sessions, and Ctrl+Tab must still reach them.
+#[cfg(test)]
 pub fn open_session_order(groups: &[SidebarGroup], prefs: &SidebarPrefs, now: OffsetDateTime) -> Vec<LiveSessionId> {
     open_session_order_with_origins(groups, prefs, now, &|path: &Path| path.to_path_buf())
 }

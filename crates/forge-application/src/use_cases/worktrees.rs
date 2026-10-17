@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use forge_domain::{branch_name, worktree_dir, worktree_name, WorktreeRecord};
 use forge_ports::{BranchList, ConfigError, WorktreeError, WorktreePort};
@@ -40,6 +41,22 @@ pub enum Kept {
 pub struct WorktreesUseCase {
     git: Arc<dyn WorktreePort>,
     settings: Arc<SettingsUseCase>,
+    /// Worktrees a `release` is working on; a second release of one of them has nothing left to do.
+    releasing: Mutex<HashSet<PathBuf>>,
+}
+
+/// Marks a path as being released until it is dropped, on every return path.
+struct Releasing<'a> {
+    set: &'a Mutex<HashSet<PathBuf>>,
+    path: PathBuf,
+}
+
+impl Drop for Releasing<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut set) = self.set.lock() {
+            set.remove(&self.path);
+        }
+    }
 }
 
 // Git runs as a process: off the async threads.
@@ -49,7 +66,7 @@ async fn blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T, WorktreeEr
 
 impl WorktreesUseCase {
     pub fn new(git: Arc<dyn WorktreePort>, settings: Arc<SettingsUseCase>) -> Self {
-        Self { git, settings }
+        Self { git, settings, releasing: Mutex::new(HashSet::new()) }
     }
 
     /// The local branches of `repo`; `NotARepository` when it is not one.
@@ -72,7 +89,7 @@ impl WorktreesUseCase {
         let listed = self.branches(repo.to_path_buf()).await?;
         let base = base
             .or(listed.current)
-            .ok_or_else(|| WorktreeError::Failed("HEAD is detached: choose a branch first".to_string()))?;
+            .ok_or(WorktreeError::Detached)?;
         for attempt in 0..MAX_ATTEMPTS {
             let name = worktree_name(message, seed, attempt);
             let dir = worktree_dir(repo, &name, &config.worktree_location);
@@ -94,7 +111,15 @@ impl WorktreesUseCase {
     }
 
     /// Archiving the last session of the worktree at `path`: removes it when it holds no work.
+    /// A path another call is already releasing answers `NotTracked` at once.
     pub async fn release(&self, path: &Path) -> Result<Release, WorktreeUseCaseError> {
+        let _releasing = {
+            let mut set = self.releasing.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if !set.insert(path.to_path_buf()) {
+                return Ok(Release::NotTracked);
+            }
+            Releasing { set: &self.releasing, path: path.to_path_buf() }
+        };
         let config = self.settings.load().await?;
         let Some(record) = config.worktrees.iter().find(|record| record.path == path).cloned() else {
             return Ok(Release::NotTracked);
@@ -213,7 +238,7 @@ mod tests {
         git.expect_branches().returning(|_| Ok(BranchList { current: None, local: vec!["dev".to_string()] }));
         let usecase = usecase(git, AppConfig::default(), Arc::new(Mutex::new(Vec::new())));
         let result = usecase.create(Path::new("/work/app"), None, "x", 1, 0).await;
-        assert!(matches!(result, Err(WorktreeUseCaseError::Git(WorktreeError::Failed(_)))), "{result:?}");
+        assert!(matches!(result, Err(WorktreeUseCaseError::Git(WorktreeError::Detached))), "{result:?}");
     }
 
     #[tokio::test]
@@ -261,6 +286,41 @@ mod tests {
             assert_eq!(usecase.release(Path::new(&path)).await.unwrap(), Release::Kept(expected));
             assert!(saved.lock().unwrap().is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn a_second_release_of_the_same_worktree_at_once_has_nothing_to_do() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let here = tempfile::tempdir().unwrap();
+        let path = here.path().to_path_buf();
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel::<()>();
+        let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+        let (entered_tx, go_rx) = (Mutex::new(entered_tx), Mutex::new(go_rx));
+        let calls = AtomicUsize::new(0);
+        let mut git = MockWorktreePort::new();
+        git.expect_inspect().returning(move |_| {
+            // Only the first inspection waits for the test to let it go.
+            if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                entered_tx.lock().unwrap().send(()).unwrap();
+                go_rx.lock().unwrap().recv().unwrap();
+            }
+            Ok(WorktreeState { dirty: false, own_commits: false })
+        });
+        git.expect_remove().returning(|_| Ok(()));
+        let config = AppConfig { worktrees: vec![record(&path.to_string_lossy())], ..AppConfig::default() };
+        let usecase = Arc::new(usecase(git, config, Arc::new(Mutex::new(Vec::new()))));
+
+        let first = tokio::spawn({
+            let (usecase, path) = (usecase.clone(), path.clone());
+            async move { usecase.release(&path).await.unwrap() }
+        });
+        tokio::task::spawn_blocking(move || entered_rx.recv().unwrap()).await.unwrap();
+
+        assert_eq!(usecase.release(&path).await.unwrap(), Release::NotTracked, "the first release is still running");
+        go_tx.send(()).unwrap();
+        assert_eq!(first.await.unwrap(), Release::Removed);
+        // The mark is gone: a later release works again.
+        assert_eq!(usecase.release(&path).await.unwrap(), Release::Removed);
     }
 
     #[tokio::test]

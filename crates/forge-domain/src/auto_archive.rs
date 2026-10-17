@@ -18,7 +18,11 @@ pub struct ArchiveCandidate {
 }
 
 /// The sessions to archive now: not archived, not busy, and idle for at least `days` days.
+/// `days == 0` (a hand-edited config) means off: nothing is due.
 pub fn sessions_to_archive(now_ms: i64, days: u32, rows: &[ArchiveCandidate]) -> Vec<&ArchiveCandidate> {
+    if days == 0 {
+        return Vec::new();
+    }
     let limit = i64::from(days) * DAY_MS;
     rows.iter()
         .filter(|row| !row.archived && !row.busy)
@@ -60,6 +64,11 @@ mod tests {
         let busy = ArchiveCandidate { busy: true, ..row("2020-01-01T00:00:00Z") };
         let archived = ArchiveCandidate { archived: true, ..row("2020-01-01T00:00:00Z") };
         assert!(sessions_to_archive(NOW, 30, &[busy, archived]).is_empty());
+    }
+
+    #[test]
+    fn zero_days_means_off() {
+        assert!(sessions_to_archive(NOW, 0, &[row("2020-01-01T00:00:00Z")]).is_empty());
     }
 
     #[test]

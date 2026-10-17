@@ -29,6 +29,9 @@ pub enum WorktreeError {
     /// The folder or the branch for that name exists already.
     #[error("A worktree with that name already exists")]
     NameTaken,
+    /// No branch is checked out and none was chosen.
+    #[error("HEAD is detached: choose a branch first")]
+    Detached,
     #[error("{0}")]
     Failed(String),
 }
@@ -54,6 +57,7 @@ mod tests {
     fn errors_read_as_messages() {
         assert_eq!(WorktreeError::NotARepository.to_string(), "Not a git repository");
         assert_eq!(WorktreeError::NameTaken.to_string(), "A worktree with that name already exists");
+        assert_eq!(WorktreeError::Detached.to_string(), "HEAD is detached: choose a branch first");
         assert_eq!(WorktreeError::Failed("boom".to_string()).to_string(), "boom");
     }
 

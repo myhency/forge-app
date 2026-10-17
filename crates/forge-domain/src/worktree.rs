@@ -85,7 +85,7 @@ pub fn worktree_dir(repo: &Path, name: &str, location: &WorktreeLocation) -> Pat
     let in_project = || repo.join(".claude").join("worktrees").join(name);
     match location {
         WorktreeLocation::Project => in_project(),
-        WorktreeLocation::Folder(folder) if folder.starts_with(repo) => in_project(),
+        WorktreeLocation::Folder(folder) if folder.starts_with(repo) || repo.starts_with(folder) => in_project(),
         WorktreeLocation::Folder(folder) => folder.join(repo.file_name().unwrap_or_default()).join(name),
     }
 }
@@ -186,6 +186,12 @@ mod tests {
         let expected = PathBuf::from("/work/app/.claude/worktrees/x-000000");
         assert_eq!(worktree_dir(Path::new("/work/app"), "x-000000", &inside), expected);
         assert_eq!(worktree_dir(Path::new("/work/app"), "x-000000", &same), expected);
+    }
+
+    #[test]
+    fn a_custom_folder_that_contains_the_repository_is_ignored() {
+        let parent = WorktreeLocation::Folder(PathBuf::from("/work"));
+        assert_eq!(worktree_dir(Path::new("/work/app"), "x-000000", &parent), PathBuf::from("/work/app/.claude/worktrees/x-000000"));
     }
 
     #[test]
