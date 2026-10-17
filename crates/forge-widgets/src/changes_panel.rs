@@ -9,7 +9,7 @@ use crate::changes_header::{BranchButton, FileSearch, ViewMenu};
 use crate::changes_stack::{scroll_to_diff, DiffStack};
 use crate::changes_tree::{ChangesTree, CommitsSection};
 use crate::context_menu::ContextMenu;
-use crate::files_state::{absolute, copy_text_for};
+use crate::files_state::{absolute, copy_text_for, menu_root};
 use crate::panel_frame::PanelFrame;
 use forge_shared::tr;
 
@@ -176,7 +176,9 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
 
     let menu_view = match menu() {
         Some((path, deleted, x, y)) => {
-            let (cwd, run_path) = (cwd.clone(), path.clone());
+            // Git paths are relative to the repository root, which may be above the session folder.
+            let root = menu_root(info().and_then(|read| read.ok()).map(|branches| branches.root).as_deref(), &cwd);
+            let (cwd, run_path) = (root, path.clone());
             rsx! {
                 ContextMenu {
                     entries: forge_features::file_menu(MenuTarget::Change { deleted }),

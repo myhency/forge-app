@@ -75,6 +75,8 @@ pub struct BranchInfo {
     /// `origin/HEAD`'s branch, else `main`, else `master`, if there is one.
     pub default_base: Option<String>,
     pub branches: Vec<String>,
+    /// The repository root. Git prints paths relative to it, which is not always the session folder.
+    pub root: std::path::PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

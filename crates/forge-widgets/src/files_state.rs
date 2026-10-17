@@ -58,6 +58,12 @@ pub fn absolute(cwd: &std::path::Path, path: &str) -> PathBuf {
     cwd.join(path)
 }
 
+/// The folder the paths of the Changes panel are relative to: git prints them relative to the
+/// repository root, which is the session folder only when the session was opened at the root.
+pub fn menu_root(info_root: Option<&std::path::Path>, cwd: &std::path::Path) -> PathBuf {
+    info_root.map(std::path::Path::to_path_buf).unwrap_or_else(|| cwd.to_path_buf())
+}
+
 /// The text a copy action puts on the clipboard, `None` for any other action.
 pub fn copy_text_for(action: FileAction, cwd: &std::path::Path, path: &str) -> Option<String> {
     match action {
@@ -772,6 +778,17 @@ mod tests {
     #[test]
     fn a_tree_or_tab_path_is_taken_from_the_session_folder() {
         assert_eq!(absolute(std::path::Path::new("/p"), "src/a.py"), PathBuf::from("/p/src/a.py"));
+    }
+
+    #[test]
+    fn a_changes_menu_resolves_against_the_repository_root() {
+        let root = std::path::Path::new("/repo");
+        let session = std::path::Path::new("/repo/packages/app");
+        assert_eq!(menu_root(None, session), PathBuf::from("/repo/packages/app"));
+        assert_eq!(menu_root(Some(root), session), PathBuf::from("/repo"));
+        let base = menu_root(Some(root), session);
+        assert_eq!(absolute(&base, "packages/app/src/x.ts"), PathBuf::from("/repo/packages/app/src/x.ts"));
+        assert_eq!(copy_text_for(FileAction::CopyAbsolute, &base, "packages/app/src/x.ts"), Some("/repo/packages/app/src/x.ts".to_string()));
     }
 
     #[test]

@@ -302,7 +302,7 @@ impl GitPort for GitCli {
             .map(|name| name.strip_prefix("origin/").filter(|local| branches.iter().any(|b| b == local)).map(str::to_string).unwrap_or(name))
             .filter(|name| !name.is_empty());
         let default_base = remote_head.or_else(|| ["main", "master"].into_iter().find(|name| branches.iter().any(|b| b == name)).map(str::to_string));
-        Ok(BranchInfo { current, head_label, default_base, branches })
+        Ok(BranchInfo { current, head_label, default_base, branches, root })
     }
 
     fn commits(&self, cwd: &Path, base: &str) -> Result<Vec<CommitInfo>, GitError> {
@@ -904,6 +904,15 @@ mod tests {
         assert_eq!(info.head_label, "feature");
         assert_eq!(info.default_base.as_deref(), Some("main"));
         assert_eq!(info.branches, vec!["feature".to_string(), "main".to_string()]);
+        assert_eq!(info.root.canonicalize().unwrap(), dir.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn branches_called_from_a_subfolder_give_the_repository_root() {
+        let (dir, _) = feature_repo();
+        fs::create_dir_all(dir.path().join("packages/app")).unwrap();
+        let info = GitPort::branches(&GitCli::new(), &dir.path().join("packages/app")).unwrap();
+        assert_eq!(info.root.canonicalize().unwrap(), dir.path().canonicalize().unwrap());
     }
 
     #[test]

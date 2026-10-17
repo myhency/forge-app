@@ -327,7 +327,7 @@ mod tests {
     use super::*;
 
     fn info() -> BranchInfo {
-        BranchInfo { current: Some("feature".to_string()), head_label: "feature".to_string(), default_base: Some("main".to_string()), branches: vec![] }
+        BranchInfo { current: Some("feature".to_string()), head_label: "feature".to_string(), default_base: Some("main".to_string()), branches: vec![], ..Default::default() }
     }
 
     fn commit(sha: &str, subject: &str) -> CommitInfo {
