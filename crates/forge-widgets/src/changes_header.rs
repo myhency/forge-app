@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{filter_files, use_workspace, ChangeView};
+use forge_domain::ChangesViewPrefs;
+use forge_features::{filter_files, fold_all, unfold_all, use_workspace, ChangeView};
 use forge_ports::{BranchInfo, ChangedFile, CommitInfo};
 use forge_shared::tr;
 
@@ -19,15 +20,29 @@ pub(crate) fn button_label(view: &ChangeView, info: Option<&BranchInfo>, base: O
     }
 }
 
+/// Opens a menu under its button. The tools row scrolls sideways and would clip a menu below the
+/// button, so the menu is fixed at the button's measured box: (left, bottom + 6, width).
+fn open_below(button_box: Signal<Option<std::rc::Rc<MountedData>>>, mut corner: Signal<(f64, f64, f64)>, mut open: Signal<bool>) {
+    spawn(async move {
+        let rect = match button_box() {
+            Some(mounted) => mounted.get_client_rect().await.ok(),
+            None => None,
+        };
+        if let Some(rect) = rect {
+            corner.set((rect.origin.x, rect.origin.y + rect.size.height + 6.0, rect.size.width));
+        }
+        open.set(true);
+    });
+}
+
 /// `base → branch ⌄`: a menu of the two modes and the base list. A pick is kept in the session.
 #[component]
 pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<String>, commits: Vec<CommitInfo>, view: ChangeView) -> Element {
     let workspace = use_workspace();
     let mut open = use_signal(|| false);
     let mut choosing_base = use_signal(|| false);
-    // The tools row scrolls sideways and would clip a menu below the button, so the menu is fixed at the button's corner.
     let mut button_box = use_signal(|| None::<std::rc::Rc<MountedData>>);
-    let mut corner = use_signal(|| (0.0f64, 0.0f64));
+    let corner = use_signal(|| (0.0f64, 0.0f64, 0.0f64));
     let mut query = use_signal(String::new);
     let label = button_label(&view, info.as_ref(), base.as_deref(), &commits);
     let branches: Vec<String> = info
@@ -49,16 +64,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                         open.set(false);
                         return;
                     }
-                    spawn(async move {
-                        let rect = match button_box() {
-                            Some(mounted) => mounted.get_client_rect().await.ok(),
-                            None => None,
-                        };
-                        if let Some(rect) = rect {
-                            corner.set((rect.origin.x, rect.origin.y + rect.size.height + 6.0));
-                        }
-                        open.set(true);
-                    });
+                    open_below(button_box, corner, open);
                 },
                 span { "{label}" }
                 span { class: "cd-chevron", "⌄" }
@@ -208,6 +214,107 @@ pub fn FileSearch(files: Vec<ChangedFile>, on_pick: EventHandler<String>, on_clo
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn check_item(label: &'static str, on: bool, onclick: impl FnMut(MouseEvent) + 'static) -> Element {
+    rsx! {
+        button { class: "picker-item", r#type: "button", role: "menuitemcheckbox", "aria-checked": "{on}", onclick,
+            span { class: "picker-text", "{label}" }
+            if on {
+                span { class: "picker-hint", "✓" }
+            }
+        }
+    }
+}
+
+/// The panel's `⋮`: what the diff looks like, fold all, refresh. A click on a check item does not
+/// close the menu, as in the desktop app.
+#[component]
+pub fn ViewMenu(id: LiveSessionId, prefs: ChangesViewPrefs, paths: Vec<String>, list_open: bool, on_toggle_list: EventHandler<()>, on_refresh: EventHandler<()>) -> Element {
+    let workspace = use_workspace();
+    let mut open = use_signal(|| false);
+    let mut button_box = use_signal(|| None::<std::rc::Rc<MountedData>>);
+    let corner = use_signal(|| (0.0f64, 0.0f64, 0.0f64));
+    let (fold_paths, unfold_paths) = (paths.clone(), paths);
+    rsx! {
+        div { class: "cd-branch",
+            button {
+                class: "icon-button",
+                r#type: "button",
+                title: tr!("More"),
+                "aria-label": "More",
+                "aria-haspopup": "menu",
+                "aria-expanded": "{open()}",
+                onmounted: move |mounted| button_box.set(Some(mounted.data())),
+                onclick: move |_| {
+                    if open() {
+                        open.set(false);
+                    } else {
+                        open_below(button_box, corner, open);
+                    }
+                },
+                "⋮"
+            }
+            if open() {
+                div { class: "picker-backdrop", onclick: move |_| open.set(false) }
+                div {
+                    class: "picker-menu cd-menu",
+                    role: "menu",
+                    // Right edges line up with the button's.
+                    style: "position: fixed; left: {corner().0 + corner().2}px; top: {corner().1}px; bottom: auto; transform: translateX(-100%);",
+                    tabindex: "0",
+                    onmounted: move |mounted| async move {
+                        let _ = mounted.set_focus(true).await;
+                    },
+                    onkeydown: move |event: KeyboardEvent| {
+                        if event.key() == Key::Escape {
+                            event.stop_propagation();
+                            open.set(false);
+                        }
+                    },
+                    {check_item(tr!("Show files"), list_open, move |_| on_toggle_list.call(()))}
+                    {check_item(tr!("Group files by folder"), prefs.group_by_folder, move |_| workspace.update_changes_view_prefs(|p| p.group_by_folder = !p.group_by_folder))}
+                    div { class: "picker-divider" }
+                    button {
+                        class: "picker-item",
+                        r#type: "button",
+                        role: "menuitem",
+                        onclick: move |_| {
+                            workspace.update_changes_session(id, |session| fold_all(session, &fold_paths));
+                            open.set(false);
+                        },
+                        span { class: "picker-text", {tr!("Collapse all files")} }
+                    }
+                    button {
+                        class: "picker-item",
+                        r#type: "button",
+                        role: "menuitem",
+                        onclick: move |_| {
+                            workspace.update_changes_session(id, |session| unfold_all(session, &unfold_paths));
+                            open.set(false);
+                        },
+                        span { class: "picker-text", {tr!("Expand all files")} }
+                    }
+                    div { class: "picker-divider" }
+                    {check_item(tr!("Side by side"), prefs.side_by_side, move |_| workspace.update_changes_view_prefs(|p| p.side_by_side = !p.side_by_side))}
+                    {check_item(tr!("Wrap lines"), prefs.wrap, move |_| workspace.update_changes_view_prefs(|p| p.wrap = !p.wrap))}
+                    {check_item(tr!("Highlight changed words"), prefs.highlight_words, move |_| workspace.update_changes_view_prefs(|p| p.highlight_words = !p.highlight_words))}
+                    {check_item(tr!("Hide whitespace changes"), prefs.hide_whitespace, move |_| workspace.update_changes_view_prefs(|p| p.hide_whitespace = !p.hide_whitespace))}
+                    div { class: "picker-divider" }
+                    button {
+                        class: "picker-item",
+                        r#type: "button",
+                        role: "menuitem",
+                        onclick: move |_| {
+                            on_refresh.call(());
+                            open.set(false);
+                        },
+                        span { class: "picker-text", {tr!("Refresh")} }
                     }
                 }
             }

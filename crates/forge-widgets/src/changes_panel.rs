@@ -5,7 +5,7 @@ use forge_application::LiveSessionId;
 use forge_features::{fallback_source, run_blocking, source_for, stack_order, use_workspace, vanished_commit, ChangeView, FileAction, MenuTarget, Panel};
 use forge_ports::{BranchInfo, ChangeSource, CommitInfo, DiffOptions, FileChange, GitError};
 
-use crate::changes_header::{BranchButton, FileSearch};
+use crate::changes_header::{BranchButton, FileSearch, ViewMenu};
 use crate::changes_stack::{scroll_to_diff, DiffStack};
 use crate::changes_tree::{ChangesTree, CommitsSection};
 use crate::context_menu::ContextMenu;
@@ -161,22 +161,16 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             onclick: move |_| searching.set(true),
             "⌕"
         }
-        button {
-            class: if list_open() { "icon-button active" } else { "icon-button" },
-            r#type: "button",
-            title: tr!("File list"),
-            "aria-label": "File list",
-            "aria-pressed": "{list_open()}",
-            onclick: move |_| list_open.set(!list_open()),
-            "☰"
-        }
-        button {
-            class: "icon-button",
-            r#type: "button",
-            title: tr!("Refresh"),
-            "aria-label": "Refresh",
-            onclick: move |_| refresh.set(refresh() + 1),
-            "⟳"
+        ViewMenu {
+            id,
+            prefs: prefs.clone(),
+            paths: match result() {
+                Some((_, Ok(files))) => files.iter().map(|change| change.file.path.clone()).collect(),
+                _ => Vec::new(),
+            },
+            list_open: list_open(),
+            on_toggle_list: move |_| list_open.set(!list_open()),
+            on_refresh: move |_| refresh.set(refresh() + 1),
         }
     };
 
