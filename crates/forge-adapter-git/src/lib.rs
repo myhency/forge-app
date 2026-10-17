@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -275,95 +274,7 @@ fn lines_of(bytes: &[u8]) -> Vec<String> {
     String::from_utf8_lossy(bytes).lines().map(str::trim).filter(|line| !line.is_empty()).map(str::to_string).collect()
 }
 
-fn status_of(x: u8, y: u8) -> ChangeStatus {
-    match (x, y) {
-        (b'?', b'?') => ChangeStatus::Untracked,
-        (b'U', _) | (_, b'U') | (b'A', b'A') | (b'D', b'D') => ChangeStatus::Conflicted,
-        (b'R', _) | (_, b'R') | (b'C', _) | (_, b'C') => ChangeStatus::Renamed,
-        (b'A', _) | (_, b'A') => ChangeStatus::Added,
-        (b'D', _) | (_, b'D') => ChangeStatus::Deleted,
-        _ => ChangeStatus::Modified,
-    }
-}
-
-// `git status --porcelain=v1 -z`: entries `XY path`, each ended by a NUL; a rename or copy is
-// followed by one more NUL-ended entry, the old name.
-fn parse_status(bytes: &[u8]) -> Vec<ChangedFile> {
-    let text = String::from_utf8_lossy(bytes);
-    let mut parts = text.split('\0');
-    let mut files = Vec::new();
-    while let Some(entry) = parts.next() {
-        let (Some(codes), Some(path)) = (entry.get(..3), entry.get(3..)) else { continue };
-        let codes = codes.as_bytes();
-        let (x, y) = (codes[0], codes[1]);
-        if matches!(x, b'R' | b'C') || matches!(y, b'R' | b'C') {
-            parts.next();
-        }
-        files.push(ChangedFile { path: path.to_string(), status: status_of(x, y), added: None, removed: None });
-    }
-    files
-}
-
-// `git diff --numstat -z --no-renames`: `added<TAB>removed<TAB>path` ended by a NUL; a binary
-// file has `-` for both counts and is left out.
-fn parse_numstat(bytes: &[u8]) -> HashMap<String, (usize, usize)> {
-    let text = String::from_utf8_lossy(bytes);
-    let mut counts = HashMap::new();
-    for entry in text.split('\0') {
-        let mut fields = entry.splitn(3, '\t');
-        let (Some(added), Some(removed), Some(path)) = (fields.next(), fields.next(), fields.next()) else { continue };
-        if let (Ok(added), Ok(removed)) = (added.parse(), removed.parse()) {
-            counts.insert(path.to_string(), (added, removed));
-        }
-    }
-    counts
-}
-
 impl GitPort for GitCli {
-    fn status(&self, cwd: &Path) -> Result<Vec<ChangedFile>, GitError> {
-        let root = self.root(cwd)?;
-        let output = self.run(&root, &["status", "--porcelain=v1", "-z", "-uall"])?;
-        if !output.success() {
-            return Err(failure(&output.stderr));
-        }
-        let mut files = parse_status(&output.stdout);
-        // A repository with no commit has no HEAD: the counts are then simply missing.
-        let counts = match self.run(&root, &["diff", "HEAD", "--numstat", "-z", "--no-renames"]) {
-            Ok(output) if output.success() => parse_numstat(&output.stdout),
-            _ => HashMap::new(),
-        };
-        for file in &mut files {
-            if let Some((added, removed)) = counts.get(&file.path) {
-                file.added = Some(*added);
-                file.removed = Some(*removed);
-            }
-        }
-        Ok(files)
-    }
-
-    fn diff(&self, cwd: &Path, path: &str) -> Result<String, GitError> {
-        let root = self.root(cwd)?;
-        let options = ["--no-color", "--no-ext-diff", "--no-renames", "-U3"];
-        let mut tracked = self.run(&root, &[&["diff", "HEAD"][..], &options, &["--", path]].concat())?;
-        if !tracked.success() {
-            // No HEAD yet: what is staged is the change.
-            tracked = self.run(&root, &[&["diff", "--cached"][..], &options, &["--", path]].concat())?;
-        }
-        if tracked.success() && !tracked.stdout.is_empty() {
-            return Ok(String::from_utf8_lossy(&tracked.stdout).into_owned());
-        }
-        // An untracked file is shown as all added; `--no-index` exits with 1 when it differs.
-        let others = self.run(&root, &["ls-files", "--others", "--exclude-standard", "-z", "--", path])?;
-        if others.success() && !others.stdout.is_empty() {
-            let shown = self.run(&root, &[&["diff", "--no-index"][..], &options, &["--", "/dev/null", path]].concat())?;
-            if matches!(shown.code, Some(0 | 1)) {
-                return Ok(String::from_utf8_lossy(&shown.stdout).into_owned());
-            }
-            return Err(failure(&shown.stderr));
-        }
-        Ok(String::new())
-    }
-
     fn branches(&self, cwd: &Path) -> Result<BranchInfo, GitError> {
         let root = self.root(cwd)?;
         let refs = self.checked(self.run(&root, &["for-each-ref", "--format=%(refname:short)", "--sort=refname", "refs/heads"])?)?;
@@ -530,7 +441,7 @@ mod tests {
     use std::time::Duration;
 
     use forge_domain::WorktreeRecord;
-    use forge_ports::{ChangeSource, ChangeStatus, ChangedFile, DiffOptions, FileChange, GitError, GitPort, PatchState, WorktreeError, WorktreePort};
+    use forge_ports::{ChangeSource, ChangeStatus, DiffOptions, FileChange, GitError, GitPort, PatchState, WorktreeError, WorktreePort};
     use tempfile::TempDir;
 
     use super::*;
@@ -555,13 +466,13 @@ mod tests {
         dir
     }
 
-    fn find<'a>(files: &'a [ChangedFile], path: &str) -> &'a ChangedFile {
-        files.iter().find(|file| file.path == path).unwrap_or_else(|| panic!("{path} in {files:?}"))
+    fn uncommitted(dir: &Path) -> Vec<FileChange> {
+        GitCli::new().changes(dir, &ChangeSource::Uncommitted, &DiffOptions::default()).unwrap()
     }
 
     #[test]
     fn a_clean_repository_has_no_changes() {
-        assert_eq!(GitCli::new().status(repo().path()).unwrap(), vec![]);
+        assert_eq!(uncommitted(repo().path()), vec![]);
     }
 
     #[test]
@@ -571,29 +482,38 @@ mod tests {
         fs::write(dir.path().join("new.txt"), "x\n").unwrap();
         git(dir.path(), &["add", "new.txt"]);
         fs::write(dir.path().join("loose.txt"), "y\n").unwrap();
-        let files = GitCli::new().status(dir.path()).unwrap();
-        let modified = find(&files, "a.txt");
+        let files = uncommitted(dir.path());
+        let modified = &named(&files, "a.txt").file;
         assert_eq!((modified.status, modified.added, modified.removed), (ChangeStatus::Modified, Some(2), Some(1)));
-        assert_eq!(find(&files, "new.txt").status, ChangeStatus::Added);
-        assert_eq!(find(&files, "loose.txt").status, ChangeStatus::Untracked);
-        assert_eq!(find(&files, "loose.txt").added, None);
+        assert_eq!(named(&files, "new.txt").file.status, ChangeStatus::Added);
+        assert_eq!(named(&files, "loose.txt").file.status, ChangeStatus::Untracked);
 
         fs::remove_file(dir.path().join("a.txt")).unwrap();
-        let files = GitCli::new().status(dir.path()).unwrap();
-        assert_eq!(find(&files, "a.txt").status, ChangeStatus::Deleted);
+        let files = uncommitted(dir.path());
+        assert_eq!(named(&files, "a.txt").file.status, ChangeStatus::Deleted);
     }
 
     #[test]
-    fn names_with_spaces_and_non_ascii_characters_and_renames_are_read() {
+    fn names_with_spaces_and_non_ascii_characters_are_read_and_a_rename_shows_as_a_deleted_and_an_added_file() {
         let dir = repo();
         fs::write(dir.path().join("my file.txt"), "1\n").unwrap();
         fs::write(dir.path().join("한글.txt"), "2\n").unwrap();
         git(dir.path(), &["mv", "a.txt", "renamed.txt"]);
-        let files = GitCli::new().status(dir.path()).unwrap();
-        assert_eq!(find(&files, "my file.txt").status, ChangeStatus::Untracked);
-        assert_eq!(find(&files, "한글.txt").status, ChangeStatus::Untracked);
-        assert_eq!(find(&files, "renamed.txt").status, ChangeStatus::Renamed);
-        assert!(files.iter().all(|file| file.path != "a.txt"), "the old name is not a row: {files:?}");
+        let files = uncommitted(dir.path());
+        assert_eq!(named(&files, "my file.txt").file.status, ChangeStatus::Untracked);
+        assert_eq!(named(&files, "한글.txt").file.status, ChangeStatus::Untracked);
+        assert_eq!(named(&files, "renamed.txt").file.status, ChangeStatus::Added);
+        assert_eq!(named(&files, "a.txt").file.status, ChangeStatus::Deleted);
+    }
+
+    #[test]
+    fn a_rename_shows_as_a_deleted_and_an_added_file() {
+        let dir = repo();
+        git(dir.path(), &["mv", "a.txt", "renamed.txt"]);
+        let files = uncommitted(dir.path());
+        assert_eq!(files.len(), 2, "{files:?}");
+        assert_eq!(named(&files, "renamed.txt").file.status, ChangeStatus::Added);
+        assert_eq!(named(&files, "a.txt").file.status, ChangeStatus::Deleted);
     }
 
     #[test]
@@ -601,71 +521,13 @@ mod tests {
         let dir = repo();
         fs::create_dir(dir.path().join("sub")).unwrap();
         fs::write(dir.path().join("sub/one.txt"), "1\n").unwrap();
-        let files = GitCli::new().status(dir.path()).unwrap();
-        assert_eq!(find(&files, "sub/one.txt").status, ChangeStatus::Untracked);
-    }
-
-    #[test]
-    fn a_repository_with_no_commit_lists_its_files() {
-        let dir = tempfile::tempdir().unwrap();
-        git(dir.path(), &["init", "-q"]);
-        fs::write(dir.path().join("f.txt"), "1\n").unwrap();
-        let files = GitCli::new().status(dir.path()).unwrap();
-        assert_eq!(find(&files, "f.txt").status, ChangeStatus::Untracked);
-        assert!(GitCli::new().diff(dir.path(), "f.txt").unwrap().contains("+1"));
-    }
-
-    #[test]
-    fn a_folder_that_is_not_a_repository_says_so() {
-        let dir = tempfile::tempdir().unwrap();
-        assert_eq!(GitCli::new().status(dir.path()), Err(GitError::NotARepository));
-        assert_eq!(GitCli::new().diff(dir.path(), "x"), Err(GitError::NotARepository));
-    }
-
-    #[test]
-    fn a_subfolder_of_the_repository_sees_root_relative_paths_and_their_diffs() {
-        let dir = repo();
-        fs::create_dir(dir.path().join("sub")).unwrap();
-        fs::write(dir.path().join("a.txt"), "a\nB\nc\n").unwrap();
-        let sub = dir.path().join("sub");
-        let files = GitCli::new().status(&sub).unwrap();
-        assert_eq!(find(&files, "a.txt").status, ChangeStatus::Modified);
-        assert!(GitCli::new().diff(&sub, "a.txt").unwrap().contains("+B"));
-    }
-
-    #[test]
-    fn the_diff_of_a_modified_file_is_a_unified_diff() {
-        let dir = repo();
-        fs::write(dir.path().join("a.txt"), "a\nB\nc\n").unwrap();
-        let text = GitCli::new().diff(dir.path(), "a.txt").unwrap();
-        assert!(text.contains("@@"), "{text}");
-        assert!(text.contains("-b") && text.contains("+B"), "{text}");
-    }
-
-    #[test]
-    fn the_diff_of_an_untracked_file_is_all_added() {
-        let dir = repo();
-        fs::write(dir.path().join("new.txt"), "one\ntwo\n").unwrap();
-        let text = GitCli::new().diff(dir.path(), "new.txt").unwrap();
-        assert!(text.contains("new file mode"), "{text}");
-        assert!(text.contains("+one") && text.contains("+two"), "{text}");
-    }
-
-    #[test]
-    fn the_diff_of_an_unchanged_file_is_empty() {
-        assert_eq!(GitCli::new().diff(repo().path(), "a.txt").unwrap(), "");
-    }
-
-    #[test]
-    fn a_path_that_looks_like_an_option_is_only_a_path() {
-        let dir = repo();
-        assert_eq!(GitCli::new().diff(dir.path(), "--output=/tmp/forge-should-not-exist").unwrap(), "");
-        assert!(!Path::new("/tmp/forge-should-not-exist").exists());
+        let files = uncommitted(dir.path());
+        assert_eq!(named(&files, "sub/one.txt").file.status, ChangeStatus::Untracked);
     }
 
     #[test]
     fn a_missing_git_program_is_reported_as_a_message() {
-        let error = GitCli::with_program("forge-no-such-git", Duration::from_secs(1)).status(Path::new("/tmp")).unwrap_err();
+        let error = GitCli::with_program("forge-no-such-git", Duration::from_secs(1)).changes(Path::new("/tmp"), &ChangeSource::Uncommitted, &DiffOptions::default()).unwrap_err();
         assert!(error.to_string().contains("not installed"), "{error}");
     }
 
@@ -676,7 +538,9 @@ mod tests {
         fs::write(&script, "#!/bin/sh\nsleep 5\n").unwrap();
         Command::new("chmod").args(["+x"]).arg(&script).status().unwrap();
         let started = std::time::Instant::now();
-        let error = GitCli::with_program(script.to_string_lossy(), Duration::from_millis(200)).status(dir.path()).unwrap_err();
+        let error = GitCli::with_program(script.to_string_lossy(), Duration::from_millis(200))
+            .changes(dir.path(), &ChangeSource::Uncommitted, &DiffOptions::default())
+            .unwrap_err();
         assert!(error.to_string().contains("timed out"), "{error}");
         assert!(started.elapsed() < Duration::from_secs(3));
     }
@@ -685,7 +549,7 @@ mod tests {
     fn a_folder_that_is_gone_is_not_reported_as_a_missing_git() {
         let dir = tempfile::tempdir().unwrap();
         let gone = dir.path().join("gone");
-        let error = GitCli::new().status(&gone).unwrap_err();
+        let error = GitCli::new().changes(&gone, &ChangeSource::Uncommitted, &DiffOptions::default()).unwrap_err();
         assert!(!error.to_string().contains("not installed"), "{error}");
         assert!(error.to_string().contains("gone"), "{error}");
     }
@@ -701,9 +565,18 @@ mod tests {
         git(dir.path(), &["commit", "-q", "-m", "pages"]);
         fs::write(dir.path().join("app/[id]/page.tsx"), "ONE\n").unwrap();
         fs::write(dir.path().join("app/i/page.tsx"), "TWO\n").unwrap();
-        let text = GitCli::new().diff(dir.path(), "app/[id]/page.tsx").unwrap();
-        assert!(text.contains("+ONE"), "{text}");
-        assert!(!text.contains("TWO"), "the other file leaked into the diff: {text}");
+        let files = uncommitted(dir.path());
+        assert_eq!(files.len(), 2, "{files:?}");
+        assert!(matches!(&named(&files, "app/[id]/page.tsx").patch, PatchState::Text(text) if text.contains("+ONE") && !text.contains("TWO")));
+        assert!(matches!(&named(&files, "app/i/page.tsx").patch, PatchState::Text(text) if text.contains("+TWO") && !text.contains("ONE")));
+    }
+
+    #[test]
+    fn a_file_patch_of_an_option_like_name_is_only_a_patch() {
+        let dir = repo();
+        write(dir.path(), "-n.txt", "x\n");
+        let patch = GitCli::new().file_patch(dir.path(), &ChangeSource::Uncommitted, &DiffOptions::default(), "-n.txt").unwrap();
+        assert!(patch.contains("+x"));
     }
 
     // A worktree of `repo` made the way the use case makes it.

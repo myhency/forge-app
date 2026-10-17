@@ -104,12 +104,6 @@ pub struct FileChange {
 /// Reads the state of a git working tree. It never changes it.
 #[cfg_attr(any(test, feature = "mocks"), automock)]
 pub trait GitPort: Send + Sync {
-    /// The changed files of the repository that holds `cwd`, against `HEAD`, untracked files included.
-    fn status(&self, cwd: &Path) -> Result<Vec<ChangedFile>, GitError>;
-    /// The unified diff of one file (a path from `status`) against `HEAD`; an untracked file is
-    /// all added. Empty text when there is nothing to show.
-    fn diff(&self, cwd: &Path, path: &str) -> Result<String, GitError>;
-
     /// The local branches, the checked-out one and the default base of the repository holding `cwd`.
     fn branches(&self, cwd: &Path) -> Result<BranchInfo, GitError>;
     /// The commits of `base..HEAD`, newest first, at most 200. Empty when there is no commit yet.
