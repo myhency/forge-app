@@ -133,6 +133,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Could not create the worktree: {error}", "워크트리를 만들 수 없습니다: {error}"),
     ("Could not read the connectors: {error}", "커넥터를 읽지 못했습니다: {error}"),
     ("Could not read the skills: {error}", "스킬을 읽지 못했습니다: {error}"),
+    ("Could not remove the worktree {name}: {error}", "워크트리 {name}을(를) 제거할 수 없습니다: {error}"),
     ("Could not save the trusted folder: {error}", "신뢰한 폴더를 저장하지 못했습니다: {error}"),
     ("Could not save: {reason}", "저장하지 못했습니다: {reason}"),
     ("Could not start the shell", "셸을 시작할 수 없습니다"),

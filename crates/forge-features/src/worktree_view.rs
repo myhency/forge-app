@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use forge_domain::ProjectSummary;
+use forge_domain::{ArchivedRef, ProjectSummary, SessionId, SessionSummary};
 use forge_ports::BranchList;
 
 /// What the new-session panel knows about the chosen folder when it is a git repository.
@@ -46,12 +46,68 @@ pub fn folder_choices(projects: Vec<ProjectSummary>, origin: &dyn Fn(&Path) -> P
     out
 }
 
+/// Whether a session other than `except` still uses the folder `path`: one that is listed and not
+/// archived, or one that is open (`live` holds each open session's folder and Claude session id;
+/// a new session has no id yet and counts).
+pub fn worktree_in_use(
+    path: &Path,
+    except: &SessionId,
+    past: &[(ProjectSummary, Vec<SessionSummary>)],
+    archived: &[ArchivedRef],
+    live: &[(PathBuf, Option<SessionId>)],
+) -> bool {
+    let listed = past
+        .iter()
+        .filter(|(project, _)| project.path == path)
+        .flat_map(|(_, sessions)| sessions)
+        .any(|session| session.id != *except && !archived.iter().any(|item| item.project == path && item.session_id == session.id.0));
+    let open = live.iter().any(|(folder, id)| folder == path && id.as_ref() != Some(except));
+    listed || open
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn project(path: &str, exists: bool) -> ProjectSummary {
         ProjectSummary { path: PathBuf::from(path), last_active: "2026-10-17T00:00:00Z".to_string(), session_count: 2, exists }
+    }
+
+    fn session(id: &str) -> SessionSummary {
+        SessionSummary { id: SessionId(id.to_string()), title: None, updated_at: String::new(), created_at: String::new() }
+    }
+
+    #[test]
+    fn a_worktree_with_no_other_session_is_not_in_use() {
+        let past = vec![(project("/w/x", true), vec![session("a")])];
+        assert!(!worktree_in_use(Path::new("/w/x"), &SessionId("a".to_string()), &past, &[], &[]));
+    }
+
+    #[test]
+    fn another_session_that_is_not_archived_keeps_the_worktree_in_use() {
+        let past = vec![(project("/w/x", true), vec![session("a"), session("b")])];
+        assert!(worktree_in_use(Path::new("/w/x"), &SessionId("a".to_string()), &past, &[], &[]));
+    }
+
+    #[test]
+    fn an_archived_sibling_does_not_keep_it_in_use() {
+        let past = vec![(project("/w/x", true), vec![session("a"), session("b")])];
+        let archived = vec![ArchivedRef { project: PathBuf::from("/w/x"), session_id: "b".to_string() }];
+        assert!(!worktree_in_use(Path::new("/w/x"), &SessionId("a".to_string()), &past, &archived, &[]));
+    }
+
+    #[test]
+    fn a_sibling_in_another_folder_does_not_count() {
+        let past = vec![(project("/w/x", true), vec![session("a")]), (project("/w/y", true), vec![session("b")])];
+        assert!(!worktree_in_use(Path::new("/w/x"), &SessionId("a".to_string()), &past, &[], &[]));
+    }
+
+    #[test]
+    fn an_open_session_of_the_folder_keeps_it_in_use_unless_it_is_the_archived_one() {
+        let live = vec![(PathBuf::from("/w/x"), Some(SessionId("a".to_string()))), (PathBuf::from("/w/x"), None)];
+        assert!(worktree_in_use(Path::new("/w/x"), &SessionId("a".to_string()), &[], &[], &live), "a new session with no id yet counts");
+        let only_itself = vec![(PathBuf::from("/w/x"), Some(SessionId("a".to_string())))];
+        assert!(!worktree_in_use(Path::new("/w/x"), &SessionId("a".to_string()), &[], &[], &only_itself));
     }
 
     fn same(path: &Path) -> PathBuf {

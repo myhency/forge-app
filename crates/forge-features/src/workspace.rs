@@ -510,9 +510,44 @@ impl Workspace {
             .any(|item| item.project == project && item.session_id == session.0)
     }
 
-    /// Hides a session from the default list. Nothing on disk changes.
+    /// Hides a session from the default list. Nothing of the transcript changes; when it was the last
+    /// session of a worktree Forge made, the worktree is removed if it holds no work.
     pub fn archive_session(&self, project: PathBuf, session: SessionId) {
-        self.set_archived(project, session, true);
+        self.set_archived(project.clone(), session.clone(), true);
+        self.release_worktree(project, session);
+    }
+
+    fn release_worktree(&self, path: PathBuf, session: SessionId) {
+        if !self.worktrees.peek().iter().any(|record| record.path == path) {
+            return;
+        }
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        // Root scope: the removal must finish even if the row that asked for it unmounts. It starts
+        // after the caller returns, so a session the caller closes right after archiving is closed by then.
+        dioxus::core::spawn_forever(async move {
+            let live: Vec<(PathBuf, Option<SessionId>)> = this
+                .live
+                .peek()
+                .iter()
+                .map(|entry| {
+                    let view = entry.view.peek();
+                    (view.project_path.clone(), view.claude_session_id.clone())
+                })
+                .collect();
+            if crate::worktree_view::worktree_in_use(&path, &session, &this.past.peek(), &this.archived.peek(), &live) {
+                return;
+            }
+            let name = path.file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_default();
+            match services.worktrees.release(&path).await {
+                Ok(forge_application::Release::Removed) => {
+                    let mut records = this.worktrees;
+                    records.write().retain(|record| record.path != path);
+                }
+                Ok(_) => {}
+                Err(error) => this.report(tr!("Could not remove the worktree {name}: {error}", name = name, error = error)),
+            }
+        });
     }
 
     /// Puts an archived session back in the default list.
