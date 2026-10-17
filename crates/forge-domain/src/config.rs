@@ -142,6 +142,17 @@ impl EditorPrefs {
     }
 }
 
+/// Where the Changes panel puts its file list. `Auto` is the right column, under the diffs when
+/// the panel is narrow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileListPosition {
+    #[default]
+    Auto,
+    Left,
+    Right,
+}
+
 /// How the Changes panel draws a diff (its `⋮` menu).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -154,11 +165,22 @@ pub struct ChangesViewPrefs {
     pub highlight_words: bool,
     /// Whether git leaves out whitespace-only changes (`-w`).
     pub hide_whitespace: bool,
+    pub file_list_position: FileListPosition,
+    /// Whether test files and generated files are listed apart from the others.
+    pub separate_special: bool,
 }
 
 impl Default for ChangesViewPrefs {
     fn default() -> Self {
-        Self { group_by_folder: true, side_by_side: false, wrap: true, highlight_words: true, hide_whitespace: false }
+        Self {
+            group_by_folder: true,
+            side_by_side: false,
+            wrap: true,
+            highlight_words: true,
+            hide_whitespace: false,
+            file_list_position: FileListPosition::Auto,
+            separate_special: false,
+        }
     }
 }
 
@@ -687,12 +709,33 @@ mod tests {
         let config: AppConfig = serde_json::from_str("{}").unwrap();
         assert_eq!(
             config.changes_view,
-            ChangesViewPrefs { group_by_folder: true, side_by_side: false, wrap: true, highlight_words: true, hide_whitespace: false }
+            ChangesViewPrefs {
+                group_by_folder: true,
+                side_by_side: false,
+                wrap: true,
+                highlight_words: true,
+                hide_whitespace: false,
+                file_list_position: FileListPosition::Auto,
+                separate_special: false,
+            }
         );
-        let prefs = ChangesViewPrefs { side_by_side: true, hide_whitespace: true, ..ChangesViewPrefs::default() };
+        let prefs = ChangesViewPrefs {
+            side_by_side: true,
+            hide_whitespace: true,
+            file_list_position: FileListPosition::Left,
+            separate_special: true,
+            ..ChangesViewPrefs::default()
+        };
         let config = AppConfig { changes_view: prefs.clone(), ..AppConfig::default() };
         let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
         assert_eq!(back.changes_view, prefs);
+    }
+
+    #[test]
+    fn the_file_list_position_is_written_in_snake_case() {
+        let config: AppConfig = serde_json::from_str(r#"{"changes_view":{"file_list_position":"right"}}"#).unwrap();
+        assert_eq!(config.changes_view.file_list_position, FileListPosition::Right);
+        assert!(!config.changes_view.separate_special);
     }
 
     #[test]
