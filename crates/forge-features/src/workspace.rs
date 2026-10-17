@@ -6,11 +6,12 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::{WorktreesUseCase, Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{ChangesViewPrefs, WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
 use forge_ports::Surface;
 use time::OffsetDateTime;
 
+use crate::change_rows::ChangesSession;
 use crate::cards::{clamp_cards, Cards};
 use crate::closed_sessions::ClosedSessions;
 use crate::editor_tabs::EditorTabs;
@@ -117,6 +118,8 @@ pub struct Workspace {
     task_list_views: Signal<TaskListViews>,
     prefs: Signal<SidebarPrefs>,
     editor: Signal<EditorPrefs>,
+    changes_view: Signal<ChangesViewPrefs>,
+    changes_sessions: Signal<HashMap<LiveSessionId, ChangesSession>>,
     archived: Signal<Vec<ArchivedRef>>,
     worktrees: Signal<Vec<WorktreeRecord>>,
     new_repo: Signal<Option<RepoInfo>>,
@@ -179,6 +182,8 @@ pub fn use_workspace_provider() -> Workspace {
             task_list_views: Signal::new(TaskListViews::default()),
             prefs: Signal::new(SidebarPrefs::default()),
             editor: Signal::new(EditorPrefs::default()),
+            changes_view: Signal::new(ChangesViewPrefs::default()),
+            changes_sessions: Signal::new(HashMap::new()),
             archived: Signal::new(Vec::new()),
             worktrees: Signal::new(Vec::new()),
             new_repo: Signal::new(None),
@@ -335,16 +340,53 @@ impl Workspace {
 
     // A config that cannot be read keeps the defaults; the settings screen reports that file's
     // problems, so the sidebar does not repeat them.
+    /// How the Changes panel draws a diff (its `⋮` menu).
+    pub fn changes_view_prefs(&self) -> ChangesViewPrefs {
+        self.changes_view.read().clone()
+    }
+
+    /// Changes the Changes panel options and saves them.
+    pub fn update_changes_view_prefs(&self, change: impl FnOnce(&mut ChangesViewPrefs)) {
+        let mut view = self.changes_view;
+        change(&mut view.write());
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let prefs = self.changes_view_prefs();
+        // Root scope: the save must finish even if the menu that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
+            if let Err(error) = services.settings.save_code_settings(move |config| config.changes_view = prefs).await {
+                this.report(tr!("failed to save the changes view settings: {error}", error = error));
+            }
+        });
+    }
+
+    /// What the person chose in one session's Changes panel.
+    pub fn changes_session(&self, id: LiveSessionId) -> ChangesSession {
+        self.changes_sessions.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    pub fn update_changes_session(&self, id: LiveSessionId, change: impl FnOnce(&mut ChangesSession)) {
+        let mut sessions = self.changes_sessions;
+        change(sessions.write().entry(id).or_default());
+    }
+
+    /// The branch a worktree of Forge's record started from; `None` for any other folder.
+    pub fn worktree_base(&self, path: &Path) -> Option<String> {
+        self.worktrees.read().iter().find(|record| record.path == path).map(|record| record.base_branch.clone())
+    }
+
     fn reload_prefs(&self) {
         let services = (*self.services.peek()).clone();
         let mut prefs = self.prefs;
         let mut archived = self.archived;
         let mut worktrees = self.worktrees;
         let mut editor = self.editor;
+        let mut changes_view = self.changes_view;
         spawn(async move {
             if let Ok(config) = services.settings.load().await {
                 prefs.set(config.sidebar);
                 editor.set(config.editor);
+                changes_view.set(config.changes_view);
                 archived.set(config.archived);
                 worktrees.set(config.worktrees);
             }

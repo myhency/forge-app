@@ -171,6 +171,7 @@ impl FilesCtx {
                     self.open(path.to_string());
                 }
             }
+            FileAction::OpenFile => self.workspace.open_file(self.id, absolute(&self.cwd, path).to_string_lossy().to_string()),
             FileAction::Close => self.close(path.to_string()),
             FileAction::KeepOpen => self.keep(path),
             FileAction::CloseOthers => self.close_others(path.to_string()),

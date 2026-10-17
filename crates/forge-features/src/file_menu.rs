@@ -9,6 +9,7 @@ pub enum FileAction {
     OpenVsCode,
     OpenDefault,
     Reveal,
+    OpenFile,
     ShowInTree,
     FindInFile,
     CopyContents,
@@ -24,6 +25,7 @@ pub enum FileAction {
 pub enum MenuTarget {
     Tree,
     Tab { preview: bool },
+    Change { deleted: bool },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +69,18 @@ pub fn file_menu(target: MenuTarget) -> Vec<MenuEntry> {
             item(tr!("Reload file"), FileAction::Reload),
             MenuEntry::Divider,
             item(tr!("Close file"), FileAction::Close),
+        ],
+        MenuTarget::Change { deleted: true } => vec![copy_menu()],
+        MenuTarget::Change { deleted: false } => vec![
+            item(tr!("Attach as context"), FileAction::Attach),
+            copy_menu(),
+            MenuEntry::Divider,
+            item(tr!("Open file"), FileAction::OpenFile),
+            MenuEntry::Submenu {
+                label: tr!("Open in"),
+                entries: vec![item(tr!("VS Code"), FileAction::OpenVsCode), MenuEntry::Divider, item(tr!("Default app"), FileAction::OpenDefault)],
+            },
+            item(forge_domain::SHOW_IN_FILE_MANAGER, FileAction::Reveal),
         ],
         MenuTarget::Tab { preview } => vec![
             item(tr!("Attach as context"), FileAction::Attach),
@@ -188,5 +202,28 @@ mod tests {
         // 9 entries and 4 dividers in the tree menu.
         assert_eq!(tree, 9.0 * MENU_ITEM_HEIGHT + 4.0 * MENU_DIVIDER_HEIGHT + MENU_PADDING);
         assert_eq!(menu_height(&[]), MENU_PADDING);
+    }
+
+    #[test]
+    fn a_changed_file_menu_offers_attach_copy_open_and_reveal() {
+        let labels: Vec<_> = file_menu(MenuTarget::Change { deleted: false })
+            .into_iter()
+            .filter_map(|entry| match entry {
+                MenuEntry::Action { label, enabled, .. } => Some((label, enabled)),
+                MenuEntry::Submenu { label, .. } => Some((label, true)),
+                MenuEntry::Divider => None,
+            })
+            .collect();
+        assert_eq!(labels.first(), Some(&(tr!("Attach as context"), true)));
+        assert!(labels.iter().any(|(label, _)| *label == tr!("Open file")));
+        assert!(labels.iter().any(|(label, _)| *label == tr!("Copy")));
+        assert!(labels.iter().any(|(label, _)| *label == tr!("Open in")));
+    }
+
+    #[test]
+    fn a_deleted_file_can_only_be_copied_by_name() {
+        let entries = file_menu(MenuTarget::Change { deleted: true });
+        assert!(entries.iter().all(|entry| matches!(entry, MenuEntry::Submenu { .. } | MenuEntry::Divider)));
+        assert!(entries.iter().any(|entry| matches!(entry, MenuEntry::Submenu { label, .. } if *label == tr!("Copy"))));
     }
 }
