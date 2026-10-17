@@ -19,12 +19,13 @@ pub fn ChangesTree(
     files: Vec<ChangedFile>,
     prefs: ChangesViewPrefs,
     closed: HashSet<String>,
+    open_sections: HashSet<forge_entities::FileClass>,
     on_pick: EventHandler<String>,
     on_menu: EventHandler<(String, bool, f64, f64)>,
     commits: Element,
 ) -> Element {
     let workspace = use_workspace();
-    let rows = tree_rows(&files, prefs.group_by_folder, &closed);
+    let rows = tree_rows(&files, prefs.group_by_folder, &closed, prefs.separate_special, &open_sections);
     let hidden = rows.len().saturating_sub(ROW_LIMIT);
     rsx! {
         div { class: "cd-side",
@@ -52,6 +53,7 @@ pub fn ChangesTree(
                                 }
                             }
                         },
+                        ChangeTreeRow::Section { .. } => rsx! {},
                         ChangeTreeRow::File { path, name, depth, added, removed, status, .. } => {
                             let deleted = status == ChangeStatus::Deleted;
                             let counts = match (added, removed) {

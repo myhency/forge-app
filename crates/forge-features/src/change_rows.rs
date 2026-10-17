@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 
+use forge_entities::{file_class, FileClass};
 use forge_ports::{ChangeSource, ChangeStatus, ChangedFile, CommitInfo, GitError};
 
 /// Only this many stack sections start unfolded: a thousand open diffs would freeze the window.
@@ -27,6 +28,8 @@ pub struct ChangesSession {
     /// Files past `OPEN_SECTIONS` opened by hand.
     pub expanded_files: HashSet<String>,
     pub closed_folders: HashSet<String>,
+    /// The `Test files` and `Generated files` sections opened by hand (they start closed).
+    pub open_sections: HashSet<FileClass>,
 }
 
 /// All changes with no base to compare with are the uncommitted changes.
@@ -71,6 +74,8 @@ pub fn split_folder(path: &str) -> (String, String) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TreeRow {
     Folder { path: String, name: String, depth: usize, open: bool },
+    /// The head of the `Test files` or `Generated files` section.
+    Section { kind: FileClass, count: usize, open: bool },
     File { index: usize, path: String, name: String, folder: String, depth: usize, added: Option<usize>, removed: Option<usize>, status: ChangeStatus },
 }
 
@@ -100,16 +105,17 @@ fn walk(node: &Node, prefix: &str, depth: usize, files: &[ChangedFile], closed: 
     rows.extend(ids.into_iter().map(|index| file_row(files, index, depth)));
 }
 
-fn build(files: &[ChangedFile], group: bool, closed: &HashSet<String>, respect_closed: bool) -> Vec<TreeRow> {
+/// The rows for `ids` (indexes into `files`), starting `depth0` levels in.
+fn build(files: &[ChangedFile], ids: &[usize], group: bool, closed: &HashSet<String>, respect_closed: bool, depth0: usize) -> Vec<TreeRow> {
     if !group {
-        let mut order: Vec<usize> = (0..files.len()).collect();
+        let mut order = ids.to_vec();
         order.sort_by(|a, b| files[*a].path.cmp(&files[*b].path));
-        return order.into_iter().map(|index| file_row(files, index, 0)).collect();
+        return order.into_iter().map(|index| file_row(files, index, depth0)).collect();
     }
     let mut root = Node::default();
-    for (index, file) in files.iter().enumerate() {
+    for &index in ids {
         let mut node = &mut root;
-        let mut parts: Vec<&str> = file.path.split('/').collect();
+        let mut parts: Vec<&str> = files[index].path.split('/').collect();
         parts.pop();
         for part in parts {
             node = node.folders.entry(part.to_string()).or_default();
@@ -117,24 +123,61 @@ fn build(files: &[ChangedFile], group: bool, closed: &HashSet<String>, respect_c
         node.files.push(index);
     }
     let mut rows = Vec::new();
-    walk(&root, "", 0, files, closed, respect_closed, &mut rows);
+    walk(&root, "", depth0, files, closed, respect_closed, &mut rows);
     rows
 }
 
-/// The rows of the right column: folders (folders first, then files, each by name) or a flat list.
-pub fn tree_rows(files: &[ChangedFile], group: bool, closed: &HashSet<String>) -> Vec<TreeRow> {
-    build(files, group, closed, true)
+fn ids_of(files: &[ChangedFile], class: FileClass) -> Vec<usize> {
+    (0..files.len()).filter(|index| file_class(&files[*index].path) == class).collect()
 }
 
-/// The order of the stacked diffs: the tree's order with every folder open.
-pub fn stack_order(files: &[ChangedFile], group: bool) -> Vec<usize> {
-    build(files, group, &HashSet::new(), false)
-        .into_iter()
+/// The rows of the right column: folders (folders first, then files, each by name) or a flat list.
+/// With `separate`, the normal files come first; the test files and the generated files follow,
+/// each group under a `Section` row, and are listed only while their section is in `open_sections`.
+/// A section with no file has no row.
+pub fn tree_rows(files: &[ChangedFile], group: bool, closed: &HashSet<String>, separate: bool, open_sections: &HashSet<FileClass>) -> Vec<TreeRow> {
+    if !separate {
+        let all: Vec<usize> = (0..files.len()).collect();
+        return build(files, &all, group, closed, true, 0);
+    }
+    let mut rows = build(files, &ids_of(files, FileClass::Normal), group, closed, true, 0);
+    for kind in [FileClass::Test, FileClass::Generated] {
+        let ids = ids_of(files, kind);
+        if ids.is_empty() {
+            continue;
+        }
+        let open = open_sections.contains(&kind);
+        rows.push(TreeRow::Section { kind, count: ids.len(), open });
+        if open {
+            rows.extend(build(files, &ids, group, closed, true, 1));
+        }
+    }
+    rows
+}
+
+/// The order of the stacked diffs: the tree's order with every folder open and every section
+/// open (a closed section does not hide its diffs, as in the desktop app).
+pub fn stack_order(files: &[ChangedFile], group: bool, separate: bool) -> Vec<usize> {
+    let groups: Vec<Vec<usize>> = if separate {
+        [FileClass::Normal, FileClass::Test, FileClass::Generated].into_iter().map(|class| ids_of(files, class)).collect()
+    } else {
+        vec![(0..files.len()).collect()]
+    };
+    groups
+        .iter()
+        .flat_map(|ids| build(files, ids, group, &HashSet::new(), false, 0))
         .filter_map(|row| match row {
             TreeRow::File { index, .. } => Some(index),
-            TreeRow::Folder { .. } => None,
+            TreeRow::Folder { .. } | TreeRow::Section { .. } => None,
         })
         .collect()
+}
+
+/// A click on a section row: opens a closed section, closes an open one.
+pub fn toggle_section(session: &mut ChangesSession, kind: FileClass) {
+    if !session.open_sections.remove(&kind) {
+        session.open_sections.insert(kind);
+    }
 }
 
 /// The files whose path holds `query` (no case); every file for an empty query.
@@ -209,6 +252,7 @@ mod tests {
             .map(|row| match row {
                 TreeRow::Folder { path, depth, .. } => format!("{}{path}/", " ".repeat(*depth)),
                 TreeRow::File { path, depth, .. } => format!("{}{path}", " ".repeat(*depth)),
+                TreeRow::Section { kind, count, open } => format!("section:{kind:?}:{count}:{}", if *open { "open" } else { "closed" }),
             })
             .collect()
     }
@@ -216,14 +260,14 @@ mod tests {
     #[test]
     fn a_grouped_tree_lists_folders_first_then_files() {
         let files = vec![file("b.txt"), file("src/z.rs"), file("a.txt"), file("src/a.rs"), file("docs/x/y.md")];
-        let rows = tree_rows(&files, true, &HashSet::new());
+        let rows = tree_rows(&files, true, &HashSet::new(), false, &HashSet::new());
         assert_eq!(paths(&rows), vec!["docs/", " docs/x/", "  docs/x/y.md", "src/", " src/a.rs", " src/z.rs", "a.txt", "b.txt"]);
     }
 
     #[test]
     fn a_flat_list_is_by_path() {
         let files = vec![file("b.txt"), file("src/a.rs"), file("a.txt")];
-        let rows = tree_rows(&files, false, &HashSet::new());
+        let rows = tree_rows(&files, false, &HashSet::new(), false, &HashSet::new());
         assert_eq!(paths(&rows), vec!["a.txt", "b.txt", "src/a.rs"]);
     }
 
@@ -231,19 +275,19 @@ mod tests {
     fn a_closed_folder_hides_what_is_inside_it() {
         let files = vec![file("src/a.rs"), file("a.txt")];
         let closed: HashSet<String> = ["src".to_string()].into();
-        assert_eq!(paths(&tree_rows(&files, true, &closed)), vec!["src/", "a.txt"]);
+        assert_eq!(paths(&tree_rows(&files, true, &closed, false, &HashSet::new())), vec!["src/", "a.txt"]);
     }
 
     #[test]
     fn the_stack_follows_the_tree_order_even_when_a_folder_is_closed() {
         let files = vec![file("b.txt"), file("src/a.rs"), file("a.txt")];
-        assert_eq!(stack_order(&files, true), vec![1, 2, 0]);
-        assert_eq!(stack_order(&files, false), vec![2, 0, 1]);
+        assert_eq!(stack_order(&files, true, false), vec![1, 2, 0]);
+        assert_eq!(stack_order(&files, false, false), vec![2, 0, 1]);
     }
 
     #[test]
     fn a_file_row_knows_its_folder_and_name() {
-        let rows = tree_rows(&[file("src/deep/a.rs")], false, &HashSet::new());
+        let rows = tree_rows(&[file("src/deep/a.rs")], false, &HashSet::new(), false, &HashSet::new());
         match &rows[0] {
             TreeRow::File { folder, name, .. } => assert_eq!((folder.as_str(), name.as_str()), ("src/deep", "a.rs")),
             other => panic!("{other:?}"),
@@ -296,5 +340,64 @@ mod tests {
         assert!(is_folded(&session, "a", 0) && is_folded(&session, "b", 1));
         unfold_all(&mut session, &all);
         assert!(!is_folded(&session, "a", 0) && !is_folded(&session, "b", OPEN_SECTIONS + 9));
+    }
+
+    fn open(kinds: &[FileClass]) -> HashSet<FileClass> {
+        kinds.iter().copied().collect()
+    }
+
+    #[test]
+    fn with_the_split_off_the_rows_are_as_before() {
+        let files = vec![file("b.txt"), file("tests/a.rs"), file("dist/x.js")];
+        let off = tree_rows(&files, true, &HashSet::new(), false, &HashSet::new());
+        assert_eq!(paths(&off), vec!["dist/", " dist/x.js", "tests/", " tests/a.rs", "b.txt"]);
+    }
+
+    #[test]
+    fn the_split_lists_normal_files_then_a_closed_section_per_group() {
+        let files = vec![file("b.txt"), file("tests/a.rs"), file("dist/x.js"), file("src/c.txt")];
+        let rows = tree_rows(&files, true, &HashSet::new(), true, &HashSet::new());
+        assert_eq!(paths(&rows), vec!["src/", " src/c.txt", "b.txt", "section:Test:1:closed", "section:Generated:1:closed"]);
+    }
+
+    #[test]
+    fn an_open_section_lists_its_own_folder_tree_one_level_in() {
+        let files = vec![file("b.txt"), file("tests/a.rs"), file("src/x.test.ts"), file("dist/x.js")];
+        let rows = tree_rows(&files, true, &HashSet::new(), true, &open(&[FileClass::Test]));
+        assert_eq!(
+            paths(&rows),
+            vec!["b.txt", "section:Test:2:open", " src/", "  src/x.test.ts", " tests/", "  tests/a.rs", "section:Generated:1:closed"]
+        );
+    }
+
+    #[test]
+    fn an_empty_section_has_no_row() {
+        let files = vec![file("a.txt"), file("b.txt")];
+        let rows = tree_rows(&files, true, &HashSet::new(), true, &open(&[FileClass::Test, FileClass::Generated]));
+        assert_eq!(paths(&rows), vec!["a.txt", "b.txt"]);
+    }
+
+    #[test]
+    fn a_flat_list_splits_too() {
+        let files = vec![file("z.txt"), file("a_test.go"), file("a.txt")];
+        let rows = tree_rows(&files, false, &HashSet::new(), true, &open(&[FileClass::Test]));
+        assert_eq!(paths(&rows), vec!["a.txt", "z.txt", "section:Test:1:open", " a_test.go"]);
+    }
+
+    #[test]
+    fn the_stack_shows_every_file_normal_then_test_then_generated() {
+        let files = vec![file("dist/x.js"), file("tests/a.rs"), file("b.txt"), file("src/c.txt")];
+        // Indexes: 0 dist, 1 tests, 2 b, 3 src/c. Grouped tree order inside each group.
+        assert_eq!(stack_order(&files, true, true), vec![3, 2, 1, 0]);
+        assert_eq!(stack_order(&files, true, false), vec![0, 3, 1, 2]);
+    }
+
+    #[test]
+    fn a_click_on_a_section_row_opens_and_closes_it() {
+        let mut session = ChangesSession::default();
+        toggle_section(&mut session, FileClass::Test);
+        assert!(session.open_sections.contains(&FileClass::Test));
+        toggle_section(&mut session, FileClass::Test);
+        assert!(session.open_sections.is_empty());
     }
 }

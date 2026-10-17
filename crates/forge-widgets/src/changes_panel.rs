@@ -219,6 +219,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                         files: Vec::new(),
                         prefs: prefs.clone(),
                         closed: session.closed_folders.clone(),
+                        open_sections: session.open_sections.clone(),
                         on_pick: move |_: String| {},
                         on_menu: move |target| menu.set(Some(target)),
                         commits: commits_section.clone(),
@@ -237,7 +238,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         Some((_, Ok(files))) if files.is_empty() => with_commits(rsx! { div { class: "dock-note", {tr!("No changes to show")} } }),
         Some((used, Ok(files))) => {
             let listed: Vec<_> = files.iter().map(|change| change.file.clone()).collect();
-            let order = stack_order(&listed, prefs.group_by_folder);
+            let order = stack_order(&listed, prefs.group_by_folder, prefs.separate_special);
             let notice = missing_base().map(|name| tr!("Base branch {name} was not found; showing uncommitted changes", name = name));
             rsx! {
                 div { class: "changes-body",
@@ -262,6 +263,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                             files: listed,
                             prefs: prefs.clone(),
                             closed: session.closed_folders.clone(),
+                            open_sections: session.open_sections.clone(),
                             on_pick: move |path: String| scroll_to_diff(&path),
                             on_menu: move |target| menu.set(Some(target)),
                             commits: commits_section,
