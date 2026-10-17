@@ -583,3 +583,28 @@ Same session. obs-c: Analyze with three agents (a, b, c) and a script that throw
 - The chat showed no `워크플로 실행됨` line for the Bash task; only workflows have it.
 
 Still not seen: the finished fold's expanded steps of a failed run (the `Analyze 2/3 ›` fold was not opened), and the per-agent token column of the expanded panel.
+
+## Round 17 (2026-10-17): worktree, from the new-session screen and Settings
+
+Desktop app, nothing sent. Looked for the way to start a session in a worktree (SET-08 needs it).
+
+- **New-session screen, folder = a git repo (`forge`):** the row under the composer is `이 컴퓨터` (environment chip), the folder chip, and the permission mode (`자동`). **No branch chip and no worktree toggle** was visible. The environment menu: 로컬 (`이 컴퓨터` ⌥⌘1, recent folders ⌥⌘2…, `더 보기`), 클라우드, Remote Control, `새 환경` ⌥⌘0. The folder menu: search, `폴더 없음`, `최근` list, `폴더 열기…`. The `+` menu: 파일 또는 사진 추가 ⌘U, 폴더 추가, GitHub 이슈 가져오기 (greyed: "이 폴더에는 GitHub 원격 저장소가 없습니다"), 슬래시 명령어, 커넥터 >, 플러그인 >. The permission menu: 자동, 수동, 편집 자동 수락, 계획, 권한 무시 (greyed "Claude Code 설정에서 활성화").
+- **Docs say** (code.claude.com/docs/en/desktop and /worktrees): select the **worktree** option next to the branch name when starting a session; default place `<project>/.claude/worktrees/<name>` on branch `worktree-<name>`; `Branch prefix` is prepended to the branch name; a folder inside the project is ignored (default used); new worktrees branch from the default branch (`origin/HEAD`); `.worktreeinclude` copies gitignored files; archive removes the worktree; project settings, hooks, skills and `.mcp.json` are read from the main checkout.
+- **Settings > Claude Code** (the settings search for "워크트리" jumps to the row):
+  - `비활성 세션 보관` — "일정 기간 활동이 없으면 로컬 세션을 자동으로 보관합니다. 실행 중이거나 백그라운드 작업이 있는 세션은 보관되지 않으며, 커밋되지 않은 변경사항이 있는 워크트리는 디스크에 유지됩니다." Menu (with a search field on top): 없음 (default), 1일, 2일, 7일, 14일, 30일.
+  - `관련 없는 작업을 요청할 때` — menu, default `질문하기`.
+  - `워크트리 위치` — "이 컴퓨터에서 격리된 코딩 세션에 사용할 Git 워크트리를 저장할 위치입니다. SSH 세션은 각 SSH 연결의 워크트리 폴더 설정을 사용합니다." Menu: `프로젝트 내부` with the path `.claude/worktrees` (checked) and `사용자 설정…`, which opens the system folder dialog ("열기", starts in Downloads); cancelled, the value stays.
+- **Not seen:** where the worktree option sits in a running session; what a worktree session looks like in the sidebar and header; what `사용자 설정…` shows after a folder is picked.
+
+### Round 17, part 2 (2026-10-17): the worktree switch and a worktree session
+
+The user allowed one short message in a throwaway git repo (`/private/tmp/forge-observe-git`, made for this; one commit, `a.txt`). Added through the folder menu's `폴더 열기…` (system dialog, `⇧⌘G` types a path). The app first asked "이 워크스페이스를 신뢰하시겠습니까?" ("Claude Code가 이 폴더의 파일을 읽거나, 쓰거나, 실행할 수 있습니다. 이 작업 공간을 신뢰하는 경우에만 계속하세요." with the path, `취소` / `작업 공간 신뢰`); trusted.
+
+- **Where the option is:** the **folder chip's menu** on the new-session screen. For a git folder it ends with two rows under the recent list and `폴더 열기…`: `브랜치  master >` (a submenu: search field `브랜치 검색…`, the local branches, the current one checked) and `워크트리` (a switch). For a folder that is not a git repo both rows are missing. The switch was **on** for both git folders tried (`forge`, the new repo), so a worktree is the default for a git folder.
+- **Sent** "Reply with just the word ok. Do not use any tools." in mode `자동`, branch `master`, switch on. The session started at once and replied "ok"; the title became "Acknowledge instruction" (auto).
+- **Session screen:** a grey line above the first message: `시작 위치: 이 컴퓨터 · forge-observe-git · 환경으로 저장`. The right panel has a `환경` card: `이 컴퓨터` (with `저장`), the folder (`forge-observe-git · /private/tmp`), a branch row `claude/acknowl…ion-75511b` with a tag `워크트리`, and a `Remote Control` switch; then `컨텍스트 72.2k` and `커넥터` cards. The sidebar row is plain (no worktree mark) under the project group of the main repo (`forge-observe-git`).
+- **On disk:**
+  - the worktree is `<repo>/.claude/worktrees/acknowledge-instruction-75511b` on a new branch `claude/acknowledge-instruction-75511b` made from `master` (`git worktree list` shows it); the name is a slug of the title plus six hex digits. `.gitignore` was not touched.
+  - the Claude transcript is under `~/.claude/projects/-private-tmp-forge-observe-git--claude-worktrees-acknowledge-instruction-75511b/`, and every line's `cwd` is the worktree path (the main repo's project folder has none).
+  - the desktop app keeps `~/Library/Application Support/Claude/git-worktrees.json` (`worktrees.<name>`: `name`, `path`, `leasedBy` = the app's session id, `baseRepo`, `branch`, `sourceBranch`, `createdAt`, `originTopLevel`, `anchors` with `trustedAt`, `autoTrusted`) and its session file (`claude-code-sessions/.../local_<id>.json`) has `cwd` = the worktree, `originCwd` = the main repo, `worktreePath`, `worktreeName`, `branch`, `sourceBranch`, `spawnSeed.worktreeHookBased = false`.
+- **Not done on purpose:** archive (the observe script forbids it) and turning the switch off. Not seen: what archive does to the worktree, what the row looks like while the repo has uncommitted changes, the switch off.
