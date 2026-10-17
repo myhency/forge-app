@@ -25,7 +25,7 @@ use crate::shortcut::{match_code, shortcut_allowed, shortcut_for, swallowed_behi
 use crate::tool_activity::finished_tool_calls;
 use crate::task_list_views::{TaskListView, TaskListViews};
 use crate::transcript_views::TranscriptViews;
-use crate::arrange::{arrange_with_origins, open_session_order, ArrangedGroup};
+use crate::arrange::{arrange_with_origins, open_session_order_with_origins, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
 use crate::sidebar::{archive_key_plan, cycle_target, ArchiveKey, SidebarEntry, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
 use crate::worktree_view::{folder_choices, RepoInfo, WorktreeTag};
@@ -1437,7 +1437,8 @@ impl Workspace {
     /// Focuses the next (or previous) open session in the order the sidebar draws them; `false` when
     /// no session is open, so the key press can be left to the page.
     pub fn cycle(&self, forward: bool) -> bool {
-        let order = open_session_order(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local());
+        let records = self.worktrees.read().clone();
+        let order = open_session_order_with_origins(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local(), &|path| forge_domain::origin_of(&records, path));
         let current = match self.active() {
             Active::Live(id) => Some(id),
             Active::NewSession | Active::Customize | Active::Routines => None,
@@ -1456,7 +1457,8 @@ impl Workspace {
     /// Focuses the n-th open session (from 0), in the order the sidebar draws them. Nothing when
     /// fewer are open.
     pub fn go_to_session(&self, index: usize) {
-        let order = open_session_order(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local());
+        let records = self.worktrees.read().clone();
+        let order = open_session_order_with_origins(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local(), &|path| forge_domain::origin_of(&records, path));
         if let Some(id) = nth_session(&order, index) {
             self.select(id);
         }

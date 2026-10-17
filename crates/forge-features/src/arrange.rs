@@ -285,10 +285,20 @@ fn arrange_filtered(
 /// The open sessions in the order the sidebar draws them, with no row hidden: a collapsed group or
 /// the status filter hides rows, not sessions, and Ctrl+Tab must still reach them.
 pub fn open_session_order(groups: &[SidebarGroup], prefs: &SidebarPrefs, now: OffsetDateTime) -> Vec<LiveSessionId> {
+    open_session_order_with_origins(groups, prefs, now, &|path: &Path| path.to_path_buf())
+}
+
+/// `open_session_order` with the same `origin` the drawn sidebar uses, so the order matches it.
+pub fn open_session_order_with_origins(
+    groups: &[SidebarGroup],
+    prefs: &SidebarPrefs,
+    now: OffsetDateTime,
+    origin: &dyn Fn(&Path) -> PathBuf,
+) -> Vec<LiveSessionId> {
     let mut prefs = prefs.clone();
     prefs.collapsed.clear();
     prefs.status = StatusFilter::All;
-    arranged_open_order(&arrange(groups, &prefs, now, None))
+    arranged_open_order(&arrange_with_origins(groups, &prefs, now, None, origin))
 }
 
 /// The open sessions in the order the sidebar draws them; Ctrl+Tab cycles through this. Pass
@@ -713,5 +723,25 @@ mod tests {
         let arranged = arrange_with_origins(&groups, &SidebarPrefs::default(), now(), None, &origin);
         assert!(matches!(&arranged[0].heading, Heading::Project(project) if project.path == PathBuf::from("/app")));
         assert_eq!(arranged[0].id, folder_group_id(std::path::Path::new("/app")));
+    }
+
+    #[test]
+    fn the_open_order_follows_the_sidebar_when_a_worktree_joins_its_repository() {
+        let open = |title: &str, id: u64| SidebarEntry {
+            key: EntryKey::Live(LiveSessionId(id)),
+            ..entry(title, None, Some("2026-09-29T00:00:00Z"))
+        };
+        let groups = vec![
+            SidebarGroup { project: worktree_project("/app"), entries: vec![open("app", 1)] },
+            SidebarGroup { project: worktree_project("/other"), entries: vec![open("other", 2)] },
+            SidebarGroup { project: worktree_project("/app/.claude/worktrees/x-1"), entries: vec![open("tree", 3)] },
+        ];
+        let origin = |path: &std::path::Path| match path.to_str().unwrap() {
+            "/app/.claude/worktrees/x-1" => PathBuf::from("/app"),
+            other => PathBuf::from(other),
+        };
+        let prefs = SidebarPrefs { sort_by: SortBy::Name, ..SidebarPrefs::default() };
+        let order = open_session_order_with_origins(&groups, &prefs, now(), &origin);
+        assert_eq!(order, vec![LiveSessionId(1), LiveSessionId(3), LiveSessionId(2)]);
     }
 }
