@@ -625,7 +625,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .cd-commit:hover, .cd-commit.selected { background: var(--bg-hover); }
 .cd-commit .subject { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cd-commit .meta { display: block; color: var(--fg-muted); font-size: 11px; }
-.cd-search { position: absolute; z-index: 5; right: 8px; top: 40px; width: 320px; max-width: calc(100% - 16px); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); }
+.cd-search { position: absolute; z-index: 10; right: 8px; top: 40px; width: 320px; max-width: calc(100% - 16px); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); }
 .cd-search input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: none; border-bottom: 1px solid var(--border); background: transparent; color: var(--fg); font: inherit; font-size: 12px; outline: none; }
 .cd-search-list { max-height: 260px; overflow-y: auto; padding: 4px; }
 .cd-branch { position: relative; min-width: 0; }
