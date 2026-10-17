@@ -271,12 +271,10 @@ impl WorktreePort for GitCli {
         if !status.success() {
             return Err(worktree_failure(&status.stderr));
         }
-        let range = format!("{}..{}", record.base_branch, record.branch);
-        let counted = self.run(&record.repo, &["rev-list", "--count", &range]).map_err(worktree_error)?;
-        if !counted.success() {
-            return Err(worktree_failure(&counted.stderr));
-        }
-        let count: u64 = String::from_utf8_lossy(&counted.stdout).trim().parse().map_err(|_| WorktreeError::Failed("git rev-list gave no count".to_string()))?;
+        // Commits of the branch, and commits made on a detached HEAD inside the worktree.
+        let on_branch = self.commits_beyond(&record.repo, &format!("{}..{}", record.base_branch, record.branch))?;
+        let on_head = self.commits_beyond(&record.path, &format!("{}..HEAD", record.base_branch))?;
+        let count = on_branch.max(on_head);
         Ok(WorktreeState { dirty: !status.stdout.is_empty(), own_commits: count > 0 })
     }
 
@@ -289,6 +287,16 @@ impl WorktreePort for GitCli {
         // `-d` only: a branch that is not merged stays, which loses nothing.
         let _ = self.run(&record.repo, &["branch", "-d", "--", &record.branch]);
         Ok(())
+    }
+}
+
+impl GitCli {
+    fn commits_beyond(&self, dir: &Path, range: &str) -> Result<u64, WorktreeError> {
+        let counted = self.run(dir, &["rev-list", "--count", range]).map_err(worktree_error)?;
+        if !counted.success() {
+            return Err(worktree_failure(&counted.stderr));
+        }
+        String::from_utf8_lossy(&counted.stdout).trim().parse().map_err(|_| WorktreeError::Failed("git rev-list gave no count".to_string()))
     }
 }
 
@@ -572,6 +580,18 @@ mod tests {
         fs::write(record.path.join("b.txt"), "b").unwrap();
         git(&record.path, &["add", "."]);
         git(&record.path, &["commit", "-q", "-m", "second"]);
+        let state = GitCli::new().inspect(&record).unwrap();
+        assert_eq!((state.dirty, state.own_commits), (false, true));
+    }
+
+    #[test]
+    fn a_commit_on_a_detached_head_in_the_worktree_is_its_own_commit() {
+        let repo = repo();
+        let record = worktree_of(&repo, "detached-000009");
+        git(&record.path, &["checkout", "-q", "--detach"]);
+        fs::write(record.path.join("d.txt"), "d").unwrap();
+        git(&record.path, &["add", "."]);
+        git(&record.path, &["commit", "-q", "-m", "detached"]);
         let state = GitCli::new().inspect(&record).unwrap();
         assert_eq!((state.dirty, state.own_commits), (false, true));
     }

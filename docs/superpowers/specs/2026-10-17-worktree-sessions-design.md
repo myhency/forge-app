@@ -93,6 +93,7 @@ The worktree of a session that is open and live is only removed after the sessio
 - A worktree is kept while another session (open, or not archived) uses the same folder (a fork keeps its folder).
 - When creation fails the typed text comes back into the box; attachments and extra folders do not.
 - The search palette and the Date grouping label a worktree session's row with the worktree's folder name.
+- `git worktree remove` (without --force) also deletes ignored files such as `.env` and build output in the worktree; `status --porcelain` does not list them. The desktop app and git document the same behaviour.
 
 ## Out of scope
 
