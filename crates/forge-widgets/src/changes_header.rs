@@ -37,10 +37,11 @@ fn open_below(button_box: Signal<Option<std::rc::Rc<MountedData>>>, mut corner: 
 
 /// `base → branch ⌄`: a menu of the two modes and the base list. A pick is kept in the session.
 #[component]
-pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<String>, commits: Vec<CommitInfo>, view: ChangeView) -> Element {
+pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<String>, commits: Vec<CommitInfo>, view: ChangeView, dirty: bool) -> Element {
     let workspace = use_workspace();
     let mut open = use_signal(|| false);
     let mut choosing_base = use_signal(|| false);
+    let mut choosing_commit = use_signal(|| false);
     let mut button_box = use_signal(|| None::<std::rc::Rc<MountedData>>);
     let corner = use_signal(|| (0.0f64, 0.0f64, 0.0f64));
     let mut query = use_signal(String::new);
@@ -49,6 +50,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
         .as_ref()
         .map(|info| info.branches.iter().filter(|name| query().is_empty() || name.to_lowercase().contains(&query().to_lowercase())).cloned().collect())
         .unwrap_or_default();
+    let shown_commits: Vec<CommitInfo> = forge_features::filter_commits(&commits, &query()).into_iter().map(|index| commits[index].clone()).collect();
     let default_base = info.as_ref().and_then(|info| info.default_base.clone());
     rsx! {
         div { class: "cd-branch",
@@ -60,6 +62,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                 onmounted: move |mounted| button_box.set(Some(mounted.data())),
                 onclick: move |_| {
                     choosing_base.set(false);
+                    choosing_commit.set(false);
                     if open() {
                         open.set(false);
                         return;
@@ -121,6 +124,35 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                                 }
                             }
                         }
+                    } else if choosing_commit() {
+                        input {
+                            class: "cd-menu-search",
+                            r#type: "text",
+                            placeholder: tr!("Search commits"),
+                            value: "{query}",
+                            oninput: move |event| query.set(event.value()),
+                            onmounted: move |mounted| async move {
+                                let _ = mounted.set_focus(true).await;
+                            },
+                        }
+                        for commit in shown_commits {
+                            button {
+                                key: "{commit.sha}",
+                                class: "picker-item",
+                                r#type: "button",
+                                role: "menuitem",
+                                title: "{commit.subject}",
+                                onclick: {
+                                    let sha = commit.sha.clone();
+                                    move |_| {
+                                        workspace.update_changes_session(id, |session| session.view = ChangeView::Commit(sha.clone()));
+                                        open.set(false);
+                                    }
+                                },
+                                span { class: "picker-text", "{commit.subject}" }
+                                span { class: "picker-hint", "{&commit.sha[..commit.sha.len().min(7)]}" }
+                            }
+                        }
                     } else {
                         button {
                             class: "picker-item",
@@ -138,17 +170,19 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                                 span { class: "picker-hint", {tr!("vs {base}", base = name)} }
                             }
                         }
-                        button {
-                            class: "picker-item",
-                            r#type: "button",
-                            role: "menuitem",
-                            onclick: move |_| {
-                                workspace.update_changes_session(id, |session| session.view = ChangeView::Uncommitted);
-                                open.set(false);
-                            },
-                            span { class: "picker-text", {tr!("Uncommitted changes")} }
-                            if view == ChangeView::Uncommitted {
-                                span { class: "picker-hint", "✓" }
+                        if forge_features::show_uncommitted(dirty, &view) {
+                            button {
+                                class: "picker-item",
+                                r#type: "button",
+                                role: "menuitem",
+                                onclick: move |_| {
+                                    workspace.update_changes_session(id, |session| session.view = ChangeView::Uncommitted);
+                                    open.set(false);
+                                },
+                                span { class: "picker-text", {tr!("Uncommitted changes")} }
+                                if view == ChangeView::Uncommitted {
+                                    span { class: "picker-hint", "✓" }
+                                }
                             }
                         }
                         div { class: "picker-divider" }
@@ -162,6 +196,19 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                             },
                             span { class: "picker-text", {tr!("Compare to")} }
                             span { class: "picker-hint", "{base.clone().unwrap_or_default()} ›" }
+                        }
+                        if !commits.is_empty() {
+                            button {
+                                class: "picker-item",
+                                r#type: "button",
+                                role: "menuitem",
+                                onclick: move |_| {
+                                    query.set(String::new());
+                                    choosing_commit.set(true);
+                                },
+                                span { class: "picker-text", {tr!("Commits")} }
+                                span { class: "picker-hint", "{commits.len()} ›" }
+                            }
                         }
                     }
                 }

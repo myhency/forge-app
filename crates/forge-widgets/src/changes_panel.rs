@@ -43,6 +43,8 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let mut info_ticket = use_signal(|| 0u64);
     let mut changes_ticket = use_signal(|| 0u64);
     let mut commits_ticket = use_signal(|| 0u64);
+    let mut dirty = use_signal(|| true);
+    let mut dirty_ticket = use_signal(|| 0u64);
 
     let session = workspace.changes_session(id);
     let prefs = workspace.changes_view_prefs();
@@ -74,6 +76,23 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 let Some(read) = run_blocking(move || git.branches(&cwd)).await else { return };
                 if *info_ticket.peek() == ticket {
                     info.set(Some(read));
+                }
+            });
+        });
+    }
+    {
+        let cwd = cwd.clone();
+        use_effect(move || {
+            let _ = refresh();
+            let _ = finished();
+            let ticket = dirty_ticket.peek().wrapping_add(1);
+            dirty_ticket.set(ticket);
+            let (git, cwd) = (workspace.git(), cwd.clone());
+            spawn(async move {
+                let Some(read) = run_blocking(move || git.is_dirty(&cwd)).await else { return };
+                if *dirty_ticket.peek() == ticket {
+                    // An error (not a repository, git missing) keeps the row: showing more is safer.
+                    dirty.set(read.unwrap_or(true));
                 }
             });
         });
@@ -141,7 +160,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let mut searching = use_signal(|| false);
 
     let commits_section = match commits() {
-        Some(list) => rsx! { CommitsSection { id, commits: list, view: session.view.clone() } },
+        Some(list) => rsx! { CommitsSection { id, commits: list, view: session.view.clone(), dirty: dirty() } },
         None => rsx! {},
     };
 
@@ -152,6 +171,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             base: base_memo(),
             commits: commits().unwrap_or_default(),
             view: session.view.clone(),
+            dirty: dirty(),
         }
         button {
             class: "icon-button",

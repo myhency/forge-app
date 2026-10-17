@@ -186,6 +186,27 @@ pub fn filter_files(files: &[ChangedFile], query: &str) -> Vec<usize> {
     (0..files.len()).filter(|index| query.is_empty() || files[*index].path.to_lowercase().contains(&query)).collect()
 }
 
+/// The commits whose subject, short or full sha or author holds `query` (no case); every commit
+/// for an empty query.
+pub fn filter_commits(commits: &[CommitInfo], query: &str) -> Vec<usize> {
+    let query = query.to_lowercase();
+    (0..commits.len())
+        .filter(|index| {
+            let commit = &commits[*index];
+            query.is_empty()
+                || commit.subject.to_lowercase().contains(&query)
+                || commit.sha.to_lowercase().contains(&query)
+                || commit.author.to_lowercase().contains(&query)
+        })
+        .collect()
+}
+
+/// Whether the `Uncommitted changes` row is offered: not on a clean tree (the desktop app hides it
+/// there), except while it is the chosen view, so the person can still see which view this is.
+pub fn show_uncommitted(dirty: bool, view: &ChangeView) -> bool {
+    dirty || *view == ChangeView::Uncommitted
+}
+
 pub fn is_folded(session: &ChangesSession, path: &str, position: usize) -> bool {
     session.folded_files.contains(path) || (position >= OPEN_SECTIONS && !session.expanded_files.contains(path))
 }
@@ -302,6 +323,34 @@ mod tests {
         assert_eq!(filter_files(&files, "한글"), vec![2]);
         assert_eq!(filter_files(&files, ""), vec![0, 1, 2]);
         assert!(filter_files(&files, "zzz").is_empty());
+    }
+
+    fn commit(sha: &str, subject: &str, author: &str) -> CommitInfo {
+        CommitInfo { sha: sha.to_string(), subject: subject.to_string(), author: author.to_string(), time: 0 }
+    }
+
+    #[test]
+    fn the_commit_filter_matches_subject_sha_and_author_without_case() {
+        let list = vec![
+            commit("d5bfbad1234", "Update a.txt", "myhency"),
+            commit("0aa11bb2233", "한글 제목 수정", "Kim"),
+            commit("77cc88dd991", "Fix Build", "Lee"),
+        ];
+        assert_eq!(filter_commits(&list, ""), vec![0, 1, 2]);
+        assert_eq!(filter_commits(&list, "UPDATE"), vec![0]);
+        assert_eq!(filter_commits(&list, "d5bf"), vec![0]);
+        assert_eq!(filter_commits(&list, "kim"), vec![1]);
+        assert_eq!(filter_commits(&list, "한글"), vec![1]);
+        assert_eq!(filter_commits(&list, "build"), vec![2]);
+        assert!(filter_commits(&list, "zzz").is_empty());
+    }
+
+    #[test]
+    fn a_clean_tree_hides_the_uncommitted_row_unless_it_is_the_chosen_view() {
+        assert!(show_uncommitted(true, &ChangeView::All));
+        assert!(!show_uncommitted(false, &ChangeView::All));
+        assert!(!show_uncommitted(false, &ChangeView::Commit("abc".to_string())));
+        assert!(show_uncommitted(false, &ChangeView::Uncommitted));
     }
 
     #[test]

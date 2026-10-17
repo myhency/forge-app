@@ -134,7 +134,7 @@ fn section_title(kind: FileClass) -> &'static str {
 
 /// `Commits N ⌄`: the two modes and one row per commit of the branch.
 #[component]
-pub fn CommitsSection(id: LiveSessionId, commits: Vec<CommitInfo>, view: ChangeView) -> Element {
+pub fn CommitsSection(id: LiveSessionId, commits: Vec<CommitInfo>, view: ChangeView, dirty: bool) -> Element {
     let workspace = use_workspace();
     let mut open = use_signal(|| true);
     let now = OffsetDateTime::now_utc();
@@ -152,11 +152,13 @@ pub fn CommitsSection(id: LiveSessionId, commits: Vec<CommitInfo>, view: ChangeV
                     onclick: move |_| workspace.update_changes_session(id, |session| session.view = ChangeView::All),
                     span { class: "subject", {tr!("All changes")} }
                 }
-                button {
-                    class: if view == ChangeView::Uncommitted { "cd-commit selected" } else { "cd-commit" },
-                    r#type: "button",
-                    onclick: move |_| workspace.update_changes_session(id, |session| session.view = ChangeView::Uncommitted),
-                    span { class: "subject", {tr!("Uncommitted changes")} }
+                if forge_features::show_uncommitted(dirty, &view) {
+                    button {
+                        class: if view == ChangeView::Uncommitted { "cd-commit selected" } else { "cd-commit" },
+                        r#type: "button",
+                        onclick: move |_| workspace.update_changes_session(id, |session| session.view = ChangeView::Uncommitted),
+                        span { class: "subject", {tr!("Uncommitted changes")} }
+                    }
                 }
                 for commit in commits.iter() {
                     button {

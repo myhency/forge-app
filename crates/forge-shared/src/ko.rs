@@ -488,6 +488,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Search", "검색"),
     ("Search branches", "브랜치 검색"),
     ("Search changed files", "변경된 파일 검색"),
+    ("Search commits", "커밋 검색"),
     ("Search sessions", "세션 검색"),
     ("Search sessions ({key})", "세션 검색 ({key})"),
     ("Searching", "검색 중"),
