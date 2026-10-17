@@ -126,3 +126,14 @@ The worktree of a session that is open and live is only removed after the sessio
 2. Stage B: archive rule, `worktree_location` and its row. Review and real-window check.
 3. Stage C: `auto_archive_days`, `sessions_to_archive`, the timer and its notice, the row. Review and real-window check.
 4. Roadmap rows SET-07, SET-08 and a new row for worktree sessions marked built; the memory file; this spec's "As built".
+
+## As built (2026-10-17)
+
+Plan: `docs/superpowers/plans/2026-10-17-worktree-sessions.md`; branch `plan-47`, built with subagents (14 tasks, a review after each, a whole-branch review and one fix wave).
+
+- **Stage A** as in the plan and the "Changes made while planning" list: `WorktreePort` on `GitCli`, `WorktreesUseCase`, `AppConfig.worktrees`/`worktree_location`/`auto_archive_days`, `arrange_with_origins` and `open_session_order_with_origins`, the `Branch` chip and `Worktree` row, the header tag.
+- **Stage B**: archive releases the worktree. The final review changed the rule from the plan: any OPEN session in the folder (including the archived one) keeps the worktree, the check also looks at commits made on a detached HEAD inside the worktree, and a second release of the same folder while one runs answers "not tracked".
+- **Stage C**: the timer skips every open session (the plan skipped only busy ones; the listed time of an open session is stale), and `auto_archive_days == 0` reads as off.
+- Also from the final review: ⌘⇧N from a worktree session opens the repository; the chosen branch resets only when the folder changes; creation errors are translated (`WorktreeError::Detached`); a custom folder that contains the repository falls back to the default; `reload_past` after a removal.
+- **Checked in the real window** (Korean UI, harness, throwaway repos): the folder menu rows, a first message creating the worktree, the group and header tag, the switch off, a non-git folder, a detached HEAD (notice, text back), the Worktree location row with a custom folder and a cancelled dialog, archive of clean / untracked / committed / forked / hand-deleted / desktop-style worktrees, ⌥⌘A on an open session, the row menu with an open session, the hourly pass after a restart, ⌘⇧N. **Not checked:** a long branch list that runs off the screen, a running session during an auto pass, Windows, dark mode, the English UI.
+- **Left (deferred minors):** a stale cached branch list; after a custom-location worktree is removed its Archived-group heading is the worktree folder name; no `git worktree prune`/branch cleanup after a hand delete; the informational archive notice uses the error style; the `Custom…` dialog starts in the last used folder; `folder_choices` stats the repository folder during render.
