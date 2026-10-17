@@ -47,8 +47,8 @@ pub fn folder_choices(projects: Vec<ProjectSummary>, origin: &dyn Fn(&Path) -> P
 }
 
 /// Whether a session other than `except` still uses the folder `path`: one that is listed and not
-/// archived, or one that is open (`live` holds each open session's folder and Claude session id;
-/// a new session has no id yet and counts).
+/// archived, or any one that is open (`live` holds each open session's folder and Claude session id;
+/// a new session has no id yet; the archived session itself counts while it is still open).
 pub fn worktree_in_use(
     path: &Path,
     except: &SessionId,
@@ -61,7 +61,7 @@ pub fn worktree_in_use(
         .filter(|(project, _)| project.path == path)
         .flat_map(|(_, sessions)| sessions)
         .any(|session| session.id != *except && !archived.iter().any(|item| item.project == path && item.session_id == session.id.0));
-    let open = live.iter().any(|(folder, id)| folder == path && id.as_ref() != Some(except));
+    let open = live.iter().any(|(folder, _)| folder == path);
     listed || open
 }
 
@@ -132,11 +132,20 @@ mod tests {
     }
 
     #[test]
-    fn an_open_session_of_the_folder_keeps_it_in_use_unless_it_is_the_archived_one() {
-        let live = vec![(PathBuf::from("/w/x"), Some(SessionId("a".to_string()))), (PathBuf::from("/w/x"), None)];
-        assert!(worktree_in_use(Path::new("/w/x"), &SessionId("a".to_string()), &[], &[], &live), "a new session with no id yet counts");
-        let only_itself = vec![(PathBuf::from("/w/x"), Some(SessionId("a".to_string())))];
-        assert!(!worktree_in_use(Path::new("/w/x"), &SessionId("a".to_string()), &[], &[], &only_itself));
+    fn any_open_session_of_the_folder_keeps_it_in_use() {
+        let a = SessionId("a".to_string());
+        assert!(worktree_in_use(Path::new("/w/x"), &a, &[], &[], &[(PathBuf::from("/w/x"), None)]), "a new session with no id yet counts");
+        assert!(worktree_in_use(Path::new("/w/x"), &a, &[], &[], &[(PathBuf::from("/w/x"), Some(SessionId("b".to_string())))]));
+        assert!(worktree_in_use(Path::new("/w/x"), &a, &[], &[], &[(PathBuf::from("/w/x"), Some(a.clone()))]), "the archived session still open counts");
+        assert!(!worktree_in_use(Path::new("/w/x"), &a, &[], &[], &[(PathBuf::from("/w/y"), None)]));
+    }
+
+    #[test]
+    fn an_open_idle_session_is_never_due() {
+        let past = vec![(project("/w/x", true), vec![session("a"), session("b")])];
+        let rows = candidates(&past, &[], &[SessionId("a".to_string())]);
+        assert!(rows.iter().find(|row| row.session_id == "a").unwrap().busy);
+        assert!(!rows.iter().find(|row| row.session_id == "b").unwrap().busy);
     }
 
     fn same(path: &Path) -> PathBuf {
