@@ -654,3 +654,14 @@ The desktop app's Changes panel was opened (and closed again) on the worktree se
 - **Search popover rows**: round 19c saw `+N -M` on each row of the desktop app's search list; Forge's rows show the name and the grey folder only.
 - **Branch menu**: the desktop app has a third row `커밋 N ›` when the branch has commits; Forge leaves it out (spec: the right column's list has the same content).
 - Same in both: stacked sections with sticky headers, the grey folder after the name, `+N -M` coloured counts, `더 많은 줄 보기` after the last hunk, the tree at the right with `커밋 N` at its foot and rows `subject` / `sha · author · age`.
+
+### Round 20: the menus and the diff comment box that Plan 48 left out (2026-10-17, Plan 50)
+
+Same session and worktree as round 19 (clean tree, one commit `d5bfbad`). Nothing was sent, staged or changed; the one view setting that was switched on (`테스트, 빌드, 생성된 파일 분리`) was switched off again. Captures are not committed.
+
+- **Panel `⋮` > `파일 목록 위치 ›`**: the row shows the current value `자동` at the right; its submenu is `자동` (check), `왼쪽`, `오른쪽`.
+- **Panel `⋮` > `테스트, 빌드, 생성된 파일 분리`**: a switch row; the menu stays open and the row gets a check. The repository had no test, build or generated file, so what the switch does to the list was NOT seen.
+- **Branch button menu on a clean tree** (one commit): `모든 변경사항 ✓ master 대비`, `비교 대상 master ›`, `커밋 1 ›`. There is no `커밋되지 않은 변경사항` row on a clean tree.
+- **`커밋 N ›` submenu** (opens beside the row): a field `커밋 검색` with the caret in it, then one row per commit: the subject cut with `…` at the left and the short sha in grey at the right (`d5bfbad`). Not clicked.
+- **File row right click > `복사 ›`**: `절대 경로`, `상대 경로`, `파일 이름`.
+- **A diff line shows a round blue `+` in the left margin while the pointer is over it.** Clicking it opens a comment box under that line (the rest of the diff moves down): a grey title `2번 줄`, the placeholder `Claude에게 변경할 내용을 알려주세요`, a round icon at the bottom right; blue border while editing. Escape closed it with nothing saved. Not seen: sending a comment, where it goes, a range, a comment on a removed line.
