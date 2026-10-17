@@ -586,6 +586,8 @@ impl Workspace {
                 Ok(forge_application::Release::Removed) => {
                     let mut records = this.worktrees;
                     records.write().retain(|record| record.path != path);
+                    // A custom-location worktree was a folder of its own in the list.
+                    this.reload_past();
                 }
                 Ok(_) => {}
                 Err(error) => this.report(tr!("Could not remove the worktree {name}: {error}", name = name, error = error)),
@@ -1476,7 +1478,7 @@ impl Workspace {
                             ProjectSummary { path: record.path, last_active: String::new(), session_count: 0, exists: true }
                         }
                         Err(error) => {
-                            this.report(tr!("Could not create the worktree: {error}", error = error));
+                            this.report(tr!("Could not create the worktree: {error}", error = crate::worktree_view::creation_error_text(&error)));
                             let mut unsent = this.new_unsent;
                             unsent.set(Some(text));
                             return;
@@ -1608,7 +1610,7 @@ impl Workspace {
         if let Active::Live(id) = self.active() {
             if let Some(view) = self.live_view(id) {
                 let folder = view.read().project_path.clone();
-                return self.show_new_session_in(folder);
+                return self.show_new_session_in(self.origin_of(&folder));
             }
         }
         self.show_new_session();

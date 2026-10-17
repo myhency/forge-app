@@ -49,13 +49,20 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
     let composer = use_composer_state_provider(text);
     let mut text = text;
 
+    let previous_folder = use_signal(|| workspace.chosen_new_folder());
+
     // The probe follows the chosen folder: it is replaced when the folder changes, kept when it does
     // not, and ended when this panel goes away (send, another session, the settings).
     use_effect(move || {
         let folder = workspace.chosen_new_folder();
-        // Another folder starts from its own current branch.
-        let mut branch = draft.branch;
-        branch.set(None);
+        // Another folder starts from its own current branch; the same folder (a reloaded project
+        // list) keeps the branch that was chosen.
+        if *previous_folder.peek() != folder {
+            let mut branch = draft.branch;
+            branch.set(None);
+            let mut previous = previous_folder;
+            previous.set(folder.clone());
+        }
         spawn(async move {
             workspace.probe_new_folder(folder.clone());
             workspace.probe_new_repo(folder);

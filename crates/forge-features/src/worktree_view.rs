@@ -65,6 +65,18 @@ pub fn worktree_in_use(
     listed || open
 }
 
+/// Why a worktree could not be made, in the person's language; git's own text for any other failure.
+pub fn creation_error_text(error: &forge_application::WorktreeUseCaseError) -> String {
+    use forge_application::WorktreeUseCaseError;
+    use forge_ports::WorktreeError;
+    match error {
+        WorktreeUseCaseError::Git(WorktreeError::Detached) => forge_shared::tr!("HEAD is detached: choose a branch first").to_string(),
+        WorktreeUseCaseError::Git(WorktreeError::NotARepository) => forge_shared::tr!("Not a git repository").to_string(),
+        WorktreeUseCaseError::Git(WorktreeError::NameTaken) => forge_shared::tr!("A worktree with that name already exists").to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Every listed session as the auto archive sees it. `busy` holds the Claude session ids of the open
 /// sessions that are running, waiting for an approval or have background work.
 pub fn candidates(past: &[(ProjectSummary, Vec<SessionSummary>)], archived: &[ArchivedRef], busy: &[SessionId]) -> Vec<ArchiveCandidate> {
