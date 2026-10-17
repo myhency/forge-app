@@ -142,6 +142,26 @@ impl EditorPrefs {
     }
 }
 
+/// How the Changes panel draws a diff (its `⋮` menu).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChangesViewPrefs {
+    /// Whether the right column shows folders (else a flat list).
+    pub group_by_folder: bool,
+    pub side_by_side: bool,
+    pub wrap: bool,
+    /// Whether the changed words of a changed line are marked.
+    pub highlight_words: bool,
+    /// Whether git leaves out whitespace-only changes (`-w`).
+    pub hide_whitespace: bool,
+}
+
+impl Default for ChangesViewPrefs {
+    fn default() -> Self {
+        Self { group_by_folder: true, side_by_side: false, wrap: true, highlight_words: true, hide_whitespace: false }
+    }
+}
+
 macro_rules! choice_enum {
     ($name:ident, default $default:ident, { $($variant:ident => ($value:literal, $label:expr)),+ $(,)? }) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -245,6 +265,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub editor: EditorPrefs,
     #[serde(default)]
+    pub changes_view: ChangesViewPrefs,
+    #[serde(default)]
     pub archived: Vec<ArchivedRef>,
     #[serde(default)]
     pub routines: Vec<crate::Routine>,
@@ -316,6 +338,7 @@ impl Default for AppConfig {
             enabled_mcp_servers: Vec::new(),
             sidebar: SidebarPrefs::default(),
             editor: EditorPrefs::default(),
+            changes_view: ChangesViewPrefs::default(),
             archived: Vec::new(),
             routines: Vec::new(),
             routine_runs: Vec::new(),
@@ -657,6 +680,26 @@ mod tests {
         for stored in [2u8, 4, 8] {
             assert_eq!(EditorPrefs { tab_size: stored, ..EditorPrefs::default() }.clamped_tab_size(), stored);
         }
+    }
+
+    #[test]
+    fn changes_view_defaults_and_round_trips() {
+        let config: AppConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            config.changes_view,
+            ChangesViewPrefs { group_by_folder: true, side_by_side: false, wrap: true, highlight_words: true, hide_whitespace: false }
+        );
+        let prefs = ChangesViewPrefs { side_by_side: true, hide_whitespace: true, ..ChangesViewPrefs::default() };
+        let config = AppConfig { changes_view: prefs.clone(), ..AppConfig::default() };
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(back.changes_view, prefs);
+    }
+
+    #[test]
+    fn a_partial_changes_view_keeps_the_defaults_for_the_rest() {
+        let config: AppConfig = serde_json::from_str(r#"{"changes_view":{"wrap":false}}"#).unwrap();
+        assert!(!config.changes_view.wrap);
+        assert!(config.changes_view.group_by_folder);
     }
 
     #[test]

@@ -33,7 +33,7 @@ mod msg;
 pub mod i18n;
 pub use command::SlashCommand;
 pub use config::{
-    normalize_setting, AppConfig, Appearance, ArchivedRef, ChatWidth, FontChoice, Language, MotionPref, NotificationPrefs, TextSize, Theme, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,
+    normalize_setting, AppConfig, Appearance, ArchivedRef, ChangesViewPrefs, ChatWidth, FontChoice, Language, MotionPref, NotificationPrefs, TextSize, Theme, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,
     MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
 };
 pub use effort::{AvailableModel, EffortLevel};
