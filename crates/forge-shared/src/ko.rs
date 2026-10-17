@@ -695,6 +695,7 @@ pub static KO: &[(&str, &str)] = &[
     ("failed to load the Forge config: {error}", "Forge 설정을 불러오지 못했습니다: {error}"),
     ("failed to save the archived sessions: {error}", "보관한 세션을 저장하지 못했습니다: {error}"),
     ("failed to save the changes view settings: {error}", "변경 사항 보기 설정을 저장하지 못했습니다: {error}"),
+    ("failed to save the changes view: {error}", "변경 사항 보기를 저장하지 못했습니다: {error}"),
     ("failed to save the editor settings: {error}", "편집기 설정을 저장하지 못했습니다: {error}"),
     ("failed to save the sidebar settings: {error}", "사이드바 설정을 저장하지 못했습니다: {error}"),
     ("just now", "방금"),

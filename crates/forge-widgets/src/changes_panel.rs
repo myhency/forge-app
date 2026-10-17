@@ -19,6 +19,16 @@ use forge_shared::tr;
 #[component]
 pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let workspace = use_workspace();
+    // Back to what this session compared last time; before the loaders' effects run.
+    use_hook(move || workspace.restore_change_mode(id));
+    let mode_memo = use_memo(move || {
+        let state = workspace.changes_session(id);
+        (state.view, state.base)
+    });
+    use_effect(move || {
+        let _ = mode_memo();
+        workspace.remember_change_mode(id);
+    });
     let mut refresh = use_signal(|| 0u32);
     let mut list_open = use_signal(|| true);
     // ⇧⌘Y shows or hides the list.

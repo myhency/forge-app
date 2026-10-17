@@ -118,4 +118,4 @@ pub use session_notices::{notice_between, should_send, use_session_notices, Noti
 pub use appearance::{apply_appearance, apply_appearance_script};
 pub use window_width::use_window_width;
 
-pub use change_rows::{fallback_source, filter_commits, filter_files, fold_all, is_folded, show_uncommitted, source_for, split_folder, stack_order, toggle_fold, toggle_section, tree_rows, unfold_all, vanished_commit, ChangeView, ChangesSession, TreeRow as ChangeTreeRow, OPEN_SECTIONS, ROW_LIMIT};
+pub use change_rows::{fallback_source, filter_commits, filter_files, fold_all, forget_mode, is_folded, mode_of, upsert_mode, show_uncommitted, source_for, split_folder, stack_order, toggle_fold, toggle_section, tree_rows, unfold_all, vanished_commit, ChangeView, ChangesSession, TreeRow as ChangeTreeRow, OPEN_SECTIONS, ROW_LIMIT};

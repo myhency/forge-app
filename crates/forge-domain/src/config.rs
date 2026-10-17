@@ -38,6 +38,25 @@ pub enum StatusFilter {
     Active,
 }
 
+/// What a session's Changes panel compared, kept so it is the same after a restart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SavedChangeView {
+    All,
+    Uncommitted,
+    Commit(String),
+}
+
+/// The Changes panel's view and base of one session, found by project folder and Claude session
+/// id like `ArchivedRef`. A session on the default (all changes, default base) has no entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangeModeRef {
+    pub project: std::path::PathBuf,
+    pub session_id: String,
+    pub view: SavedChangeView,
+    pub base: Option<String>,
+}
+
 /// A session the person archived. The Claude transcript is not changed; only Forge's config
 /// remembers it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -291,6 +310,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub archived: Vec<ArchivedRef>,
     #[serde(default)]
+    pub changes_modes: Vec<ChangeModeRef>,
+    #[serde(default)]
     pub routines: Vec<crate::Routine>,
     #[serde(default)]
     pub routine_runs: Vec<crate::RoutineRun>,
@@ -362,6 +383,7 @@ impl Default for AppConfig {
             editor: EditorPrefs::default(),
             changes_view: ChangesViewPrefs::default(),
             archived: Vec::new(),
+            changes_modes: Vec::new(),
             routines: Vec::new(),
             routine_runs: Vec::new(),
             default_transcript_view: crate::TranscriptView::default(),
@@ -394,6 +416,25 @@ pub fn normalize_setting(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_old_config_has_no_saved_modes() {
+        let config: AppConfig = serde_json::from_str("{}").unwrap();
+        assert!(config.changes_modes.is_empty());
+    }
+
+    #[test]
+    fn saved_modes_survive_a_round_trip() {
+        let config = AppConfig {
+            changes_modes: vec![
+                ChangeModeRef { project: "/work/a".into(), session_id: "s1".to_string(), view: SavedChangeView::Commit("abc".to_string()), base: Some("dev".to_string()) },
+                ChangeModeRef { project: "/work/a".into(), session_id: "s2".to_string(), view: SavedChangeView::Uncommitted, base: None },
+            ],
+            ..AppConfig::default()
+        };
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(back.changes_modes, config.changes_modes);
+    }
 
     #[test]
     fn a_config_without_trusted_folders_has_an_empty_list() {

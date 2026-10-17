@@ -232,6 +232,63 @@ pub fn unfold_all(session: &mut ChangesSession, paths: &[String]) {
     session.expanded_files = paths.iter().cloned().collect();
 }
 
+use std::path::Path;
+
+use forge_domain::{ChangeModeRef, SavedChangeView};
+
+fn to_saved(view: &ChangeView) -> SavedChangeView {
+    match view {
+        ChangeView::All => SavedChangeView::All,
+        ChangeView::Uncommitted => SavedChangeView::Uncommitted,
+        ChangeView::Commit(sha) => SavedChangeView::Commit(sha.clone()),
+    }
+}
+
+fn from_saved(view: &SavedChangeView) -> ChangeView {
+    match view {
+        SavedChangeView::All => ChangeView::All,
+        SavedChangeView::Uncommitted => ChangeView::Uncommitted,
+        SavedChangeView::Commit(sha) => ChangeView::Commit(sha.clone()),
+    }
+}
+
+fn same_session(entry: &ChangeModeRef, project: &Path, session: &str) -> bool {
+    entry.project == project && entry.session_id == session
+}
+
+/// The saved view and base of one session.
+pub fn mode_of(list: &[ChangeModeRef], project: &Path, session: &str) -> Option<(ChangeView, Option<String>)> {
+    list.iter().find(|entry| same_session(entry, project, session)).map(|entry| (from_saved(&entry.view), entry.base.clone()))
+}
+
+/// Saves a session's view and base. The default (all changes, no picked base) has no entry, so an
+/// untouched session adds nothing. True when the list changed.
+pub fn upsert_mode(list: &mut Vec<ChangeModeRef>, project: &Path, session: &str, view: &ChangeView, base: Option<&str>) -> bool {
+    let is_default = *view == ChangeView::All && base.is_none();
+    if is_default {
+        return forget_mode(list, project, session);
+    }
+    let next = ChangeModeRef { project: project.to_path_buf(), session_id: session.to_string(), view: to_saved(view), base: base.map(str::to_string) };
+    match list.iter_mut().find(|entry| same_session(entry, project, session)) {
+        Some(entry) if *entry == next => false,
+        Some(entry) => {
+            *entry = next;
+            true
+        }
+        None => {
+            list.push(next);
+            true
+        }
+    }
+}
+
+/// Drops a session's entry (its session was deleted). True when there was one.
+pub fn forget_mode(list: &mut Vec<ChangeModeRef>, project: &Path, session: &str) -> bool {
+    let before = list.len();
+    list.retain(|entry| !same_session(entry, project, session));
+    list.len() != before
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -246,6 +303,54 @@ mod tests {
     }
 
     use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn a_mode_is_kept_per_session() {
+        let mut list = Vec::new();
+        assert!(upsert_mode(&mut list, Path::new("/p"), "s1", &ChangeView::Uncommitted, None));
+        assert!(upsert_mode(&mut list, Path::new("/p"), "s2", &ChangeView::Commit("abc".to_string()), Some("dev")));
+        assert_eq!(mode_of(&list, Path::new("/p"), "s1"), Some((ChangeView::Uncommitted, None)));
+        assert_eq!(mode_of(&list, Path::new("/p"), "s2"), Some((ChangeView::Commit("abc".to_string()), Some("dev".to_string()))));
+        assert_eq!(mode_of(&list, Path::new("/p"), "s3"), None);
+        assert_eq!(mode_of(&list, Path::new("/other"), "s1"), None);
+    }
+
+    #[test]
+    fn saving_the_same_mode_again_changes_nothing() {
+        let mut list = Vec::new();
+        upsert_mode(&mut list, Path::new("/p"), "s1", &ChangeView::Uncommitted, None);
+        assert!(!upsert_mode(&mut list, Path::new("/p"), "s1", &ChangeView::Uncommitted, None));
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn the_default_mode_leaves_no_entry() {
+        let mut list = Vec::new();
+        assert!(!upsert_mode(&mut list, Path::new("/p"), "s1", &ChangeView::All, None));
+        assert!(list.is_empty());
+        upsert_mode(&mut list, Path::new("/p"), "s1", &ChangeView::Uncommitted, None);
+        assert!(upsert_mode(&mut list, Path::new("/p"), "s1", &ChangeView::All, None));
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn a_picked_base_with_all_changes_is_kept() {
+        let mut list = Vec::new();
+        assert!(upsert_mode(&mut list, Path::new("/p"), "s1", &ChangeView::All, Some("dev")));
+        assert_eq!(mode_of(&list, Path::new("/p"), "s1"), Some((ChangeView::All, Some("dev".to_string()))));
+    }
+
+    #[test]
+    fn forgetting_a_session_drops_its_entry() {
+        let mut list = Vec::new();
+        upsert_mode(&mut list, Path::new("/p"), "s1", &ChangeView::Uncommitted, None);
+        upsert_mode(&mut list, Path::new("/p"), "s2", &ChangeView::Uncommitted, None);
+        assert!(forget_mode(&mut list, Path::new("/p"), "s1"));
+        assert!(!forget_mode(&mut list, Path::new("/p"), "s1"));
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].session_id, "s2");
+    }
 
     #[test]
     fn a_missing_base_falls_back_to_the_uncommitted_changes_and_names_the_base() {

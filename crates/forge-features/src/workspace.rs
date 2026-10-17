@@ -6,12 +6,12 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use forge_application::{WorktreesUseCase, Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{ChangesViewPrefs, WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{ChangeModeRef, ChangesViewPrefs, WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
 use forge_ports::Surface;
 use time::OffsetDateTime;
 
-use crate::change_rows::ChangesSession;
+use crate::change_rows::{ChangeView, ChangesSession};
 use crate::cards::{clamp_cards, Cards};
 use crate::closed_sessions::ClosedSessions;
 use crate::editor_tabs::EditorTabs;
@@ -120,6 +120,7 @@ pub struct Workspace {
     editor: Signal<EditorPrefs>,
     changes_view: Signal<ChangesViewPrefs>,
     changes_sessions: Signal<HashMap<LiveSessionId, ChangesSession>>,
+    changes_modes: Signal<Vec<ChangeModeRef>>,
     archived: Signal<Vec<ArchivedRef>>,
     worktrees: Signal<Vec<WorktreeRecord>>,
     new_repo: Signal<Option<RepoInfo>>,
@@ -184,6 +185,7 @@ pub fn use_workspace_provider() -> Workspace {
             editor: Signal::new(EditorPrefs::default()),
             changes_view: Signal::new(ChangesViewPrefs::default()),
             changes_sessions: Signal::new(HashMap::new()),
+            changes_modes: Signal::new(Vec::new()),
             archived: Signal::new(Vec::new()),
             worktrees: Signal::new(Vec::new()),
             new_repo: Signal::new(None),
@@ -370,6 +372,50 @@ impl Workspace {
         change(sessions.write().entry(id).or_default());
     }
 
+    /// The project folder and Claude session id of an open session; `None` before its first message.
+    fn session_ref(&self, id: LiveSessionId) -> Option<(PathBuf, String)> {
+        self.live.read().iter().find(|entry| entry.handle.id() == id).and_then(|entry| {
+            let view = entry.view.read();
+            view.claude_session_id.as_ref().map(|session| (view.project_path.clone(), session.0.clone()))
+        })
+    }
+
+    /// Puts back the view and base this session had when Forge last saved them, unless the person
+    /// has already changed them in this run.
+    pub fn restore_change_mode(&self, id: LiveSessionId) {
+        let Some((project, session)) = self.session_ref(id) else { return };
+        let Some((view, base)) = crate::change_rows::mode_of(&self.changes_modes.read(), &project, &session) else { return };
+        self.update_changes_session(id, |state| {
+            if state.view == ChangeView::All && state.base.is_none() {
+                state.view = view;
+                state.base = base;
+            }
+        });
+    }
+
+    /// Saves this session's view and base (a no-op when they are what is already saved).
+    pub fn remember_change_mode(&self, id: LiveSessionId) {
+        let Some((project, session)) = self.session_ref(id) else { return };
+        let state = self.changes_session(id);
+        let mut modes = self.changes_modes;
+        let changed = crate::change_rows::upsert_mode(&mut modes.write(), &project, &session, &state.view, state.base.as_deref());
+        if changed {
+            self.save_change_modes();
+        }
+    }
+
+    fn save_change_modes(&self) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let list = self.changes_modes.peek().clone();
+        // Root scope: the save must finish even if the panel that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
+            if let Err(error) = services.settings.save_code_settings(move |config| config.changes_modes = list).await {
+                this.report(tr!("failed to save the changes view: {error}", error = error));
+            }
+        });
+    }
+
     /// The branch a worktree of Forge's record started from; `None` for any other folder.
     pub fn worktree_base(&self, path: &Path) -> Option<String> {
         self.worktrees.read().iter().find(|record| record.path == path).map(|record| record.base_branch.clone())
@@ -382,12 +428,14 @@ impl Workspace {
         let mut worktrees = self.worktrees;
         let mut editor = self.editor;
         let mut changes_view = self.changes_view;
+        let mut changes_modes = self.changes_modes;
         spawn(async move {
             if let Ok(config) = services.settings.load().await {
                 prefs.set(config.sidebar);
                 editor.set(config.editor);
                 changes_view.set(config.changes_view);
                 archived.set(config.archived);
+                changes_modes.set(config.changes_modes);
                 worktrees.set(config.worktrees);
             }
         });
@@ -575,6 +623,10 @@ impl Workspace {
             match services.registry.delete(&project, &session).await {
                 Ok(()) => {
                     this.set_archived(project.clone(), session.clone(), false);
+                    let mut modes = this.changes_modes;
+                    if crate::change_rows::forget_mode(&mut modes.write(), &project, &session.0) {
+                        this.save_change_modes();
+                    }
                     this.reload_project(project);
                 }
                 Err(error) => {
