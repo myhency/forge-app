@@ -256,6 +256,15 @@ fn CodeSection() -> Element {
             }
         }
         SettingRow {
+            title: tr!("Archive inactive sessions"),
+            description: tr!("Archives local sessions with no activity for a while. A session that is running or has background work is not archived, and a worktree with uncommitted changes stays on disk."),
+            Select {
+                value: forge_features::auto_archive_value(settings.auto_archive_days()),
+                options: forge_domain::AUTO_ARCHIVE_CHOICES.iter().map(|days| (forge_features::auto_archive_value(*days), forge_features::auto_archive_text(*days))).collect::<Vec<_>>(),
+                onchange: move |value: String| settings.set_auto_archive_days(value.parse::<u32>().ok()),
+            }
+        }
+        SettingRow {
             title: tr!("Worktree location"),
             description: tr!("Where the Git worktrees of isolated sessions on this computer are kept. A folder inside the project is not used."),
             Select {

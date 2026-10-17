@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, SettingsUseCase};
 use forge_domain::{AppConfig, Appearance, ChatWidth, FontChoice, Language, McpServerDefinition, MotionPref, NotificationPrefs, OutputStyle, PluginDefinition, SkillDefinition, TextSize, Theme, TranscriptView, WorktreeLocation};
 use forge_ports::FolderPickerPort;
+use forge_shared::tr;
 use forge_entities::{mcp_rows, plugin_rows, project_label, skill_rows, ExtensionRow};
 
 use crate::section_status::status_for;
@@ -54,6 +55,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::AllowBypass(on) => config.allow_bypass_mode = on,
         CodeChange::DynamicWorkflows(on) => config.dynamic_workflows = on,
         CodeChange::WorktreeLocation(value) => config.worktree_location = value,
+        CodeChange::AutoArchiveDays(days) => config.auto_archive_days = days,
         CodeChange::Theme(value) => config.appearance.theme = value,
         CodeChange::Font(value) => config.appearance.font = value,
         CodeChange::TextSize(value) => config.appearance.text_size = value,
@@ -74,6 +76,24 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
     }
 }
 
+/// The value of the menu entry for `days` (an empty text is off).
+pub fn auto_archive_value(days: Option<u32>) -> String {
+    days.map(|days| days.to_string()).unwrap_or_default()
+}
+
+/// The text of the menu entry for `days`, translated.
+pub fn auto_archive_text(days: Option<u32>) -> String {
+    match days {
+        None => tr!("None").to_string(),
+        Some(1) => tr!("1 day").to_string(),
+        Some(2) => tr!("2 days").to_string(),
+        Some(7) => tr!("7 days").to_string(),
+        Some(14) => tr!("14 days").to_string(),
+        Some(30) => tr!("30 days").to_string(),
+        Some(other) => other.to_string(),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CodeChange {
     DefaultView(TranscriptView),
@@ -82,6 +102,7 @@ pub(crate) enum CodeChange {
     AllowBypass(bool),
     DynamicWorkflows(bool),
     WorktreeLocation(WorktreeLocation),
+    AutoArchiveDays(Option<u32>),
     Theme(Theme),
     Font(FontChoice),
     TextSize(TextSize),
@@ -289,6 +310,14 @@ impl Settings {
 
     pub fn set_dynamic_workflows(&self, on: bool) {
         self.change_code(CodeChange::DynamicWorkflows(on));
+    }
+
+    pub fn auto_archive_days(&self) -> Option<u32> {
+        self.saved.read().auto_archive_days
+    }
+
+    pub fn set_auto_archive_days(&self, days: Option<u32>) {
+        self.change_code(CodeChange::AutoArchiveDays(days));
     }
 
     pub fn worktree_location(&self) -> WorktreeLocation {
@@ -684,6 +713,30 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_auto_archive_change_sets_only_the_days() {
+        let mut config = AppConfig { worktree_location: forge_domain::WorktreeLocation::Folder("/t".into()), ..AppConfig::default() };
+        apply_code_change(&mut config, CodeChange::AutoArchiveDays(Some(14)));
+        assert_eq!(config.auto_archive_days, Some(14));
+        assert_eq!(config.worktree_location, forge_domain::WorktreeLocation::Folder("/t".into()));
+        apply_code_change(&mut config, CodeChange::AutoArchiveDays(None));
+        assert_eq!(config.auto_archive_days, None);
+    }
+
+    #[test]
+    fn the_search_finds_the_archive_inactive_sessions_row() {
+        assert!(crate::settings_pages::filter_pages("inactive").contains(&SettingsSection::Code));
+    }
+
+    #[test]
+    fn every_auto_archive_choice_has_a_value_and_a_text() {
+        for days in forge_domain::AUTO_ARCHIVE_CHOICES {
+            let value = auto_archive_value(days);
+            assert_eq!(value.parse::<u32>().ok(), days);
+            assert!(!auto_archive_text(days).is_empty());
+        }
+    }
 
     #[test]
     fn trusting_and_untrusting_a_folder_changes_only_the_list() {
