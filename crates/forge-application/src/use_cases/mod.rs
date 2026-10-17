@@ -8,6 +8,7 @@ mod session_lifecycle;
 mod settings;
 mod sidecar_commands;
 mod toggles;
+mod worktrees;
 
 pub use config_lock::ConfigLock;
 pub use connector_catalog::{AddedConnector, ConnectorCatalogUseCase, ConnectorView, ConnectorsError};
@@ -19,3 +20,4 @@ pub use session_lifecycle::{ResumeSessionError, ResumeSessionUseCase, StartSessi
 pub use settings::SettingsUseCase;
 pub use sidecar_commands::{AnswerQuestionUseCase, ApprovePermissionUseCase, StopTaskUseCase, InterruptTurnUseCase, SendMessageUseCase};
 pub use toggles::{ToggleMcpServerUseCase, TogglePluginUseCase, ToggleSkillUseCase};
+pub use worktrees::{Kept, Release, WorktreeUseCaseError, WorktreesUseCase};
