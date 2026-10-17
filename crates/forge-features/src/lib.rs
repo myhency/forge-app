@@ -52,8 +52,9 @@ mod sidebar;
 mod task_list_views;
 mod transcript_views;
 mod workspace;
+mod worktree_view;
 
-pub use arrange::{arrange, arranged_open_order, folder_group_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
+pub use arrange::{arrange, arrange_with_origins, arranged_open_order, folder_group_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use file_menu::{file_menu, menu_height, submenu_opens_left, FileAction, MenuEntry, MenuTarget};
 pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
@@ -90,6 +91,7 @@ pub use refocus::{refocus_composer, refocus_workspace, watch_focus};
 pub use permission_mode::{menu_digit_row, confirmation_still_valid, mode_choice, mode_options, mode_rows, mode_value, parse_mode, ModeChoice, ModeRow};
 pub use search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
 pub use send_message::SendMessageBox;
+pub use worktree_view::{folder_choices, NewWorktree, RepoInfo, WorktreeTag};
 mod account_menu;
 pub use account_menu::{account_rows, user_initial, user_name, AccountAction, AccountRow};
 pub use settings::{use_settings, use_settings_provider, ExtensionKind, NotificationKind, Settings, SettingsSection, SettingsStatus};

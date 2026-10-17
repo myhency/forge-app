@@ -1,5 +1,5 @@
 use std::cmp::Reverse;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use forge_application::LiveSessionId;
 use forge_domain::{GroupBy, ProjectSummary, SidebarPrefs, SortBy, StatusFilter};
@@ -187,6 +187,19 @@ pub fn arrange(
     now: OffsetDateTime,
     active: Option<LiveSessionId>,
 ) -> Vec<ArrangedGroup> {
+    arrange_with_origins(groups, prefs, now, active, &|path: &Path| path.to_path_buf())
+}
+
+/// `arrange`, where the Folder grouping puts the projects that share an `origin` in one group (a
+/// worktree's sessions join their repository's). Every row keeps its own project, which is what
+/// opening, archiving and forking use.
+pub fn arrange_with_origins(
+    groups: &[SidebarGroup],
+    prefs: &SidebarPrefs,
+    now: OffsetDateTime,
+    active: Option<LiveSessionId>,
+    origin: &dyn Fn(&Path) -> PathBuf,
+) -> Vec<ArrangedGroup> {
     let limited: Vec<SidebarGroup> = groups
         .iter()
         .map(|group| SidebarGroup {
@@ -194,7 +207,7 @@ pub fn arrange(
             entries: group.entries.iter().filter(|entry| shown(entry, prefs.status)).cloned().collect(),
         })
         .collect();
-    arrange_filtered(&limited, prefs, now, active)
+    arrange_filtered(&limited, prefs, now, active, origin)
 }
 
 fn arrange_filtered(
@@ -202,21 +215,40 @@ fn arrange_filtered(
     prefs: &SidebarPrefs,
     now: OffsetDateTime,
     active: Option<LiveSessionId>,
+    origin: &dyn Fn(&Path) -> PathBuf,
 ) -> Vec<ArrangedGroup> {
     match prefs.group_by {
-        GroupBy::Folder => groups
-            .iter()
-            .filter(|group| prefs.show_empty || !group.entries.is_empty())
-            .map(|group| {
-                let mut entries: Vec<ArrangedEntry> = group
+        GroupBy::Folder => {
+            let mut merged: Vec<(PathBuf, ProjectSummary, Vec<ArrangedEntry>)> = Vec::new();
+            for group in groups {
+                let home = origin(&group.project.path);
+                let items: Vec<ArrangedEntry> = group
                     .entries
                     .iter()
                     .map(|entry| ArrangedEntry { project: group.project.clone(), entry: entry.clone() })
                     .collect();
-                sort_entries(&mut entries, prefs.sort_by);
-                finish(folder_group_id(&group.project.path), Heading::Project(group.project.clone()), entries, prefs, active)
-            })
-            .collect(),
+                match merged.iter_mut().find(|(path, _, _)| *path == home) {
+                    Some((_, heading, entries)) => {
+                        heading.exists |= group.project.exists;
+                        heading.session_count += group.project.session_count;
+                        entries.extend(items);
+                    }
+                    None => {
+                        let mut heading = group.project.clone();
+                        heading.path = home.clone();
+                        merged.push((home, heading, items));
+                    }
+                }
+            }
+            merged
+                .into_iter()
+                .filter(|(_, _, entries)| prefs.show_empty || !entries.is_empty())
+                .map(|(home, heading, mut entries)| {
+                    sort_entries(&mut entries, prefs.sort_by);
+                    finish(folder_group_id(&home), Heading::Project(heading), entries, prefs, active)
+                })
+                .collect()
+        }
         GroupBy::Date => {
             let mut items = all_entries(groups);
             sort_entries(&mut items, prefs.sort_by);
@@ -647,5 +679,39 @@ mod tests {
         let order = open_session_order(&groups, &prefs, now());
 
         assert_eq!(order, vec![LiveSessionId(1), LiveSessionId(2)]);
+    }
+
+    fn worktree_project(path: &str) -> ProjectSummary {
+        ProjectSummary { path: PathBuf::from(path), last_active: String::new(), session_count: 1, exists: true }
+    }
+
+    #[test]
+    fn a_worktrees_sessions_join_the_group_of_their_repository_and_keep_their_own_folder() {
+        let groups = vec![
+            SidebarGroup { project: worktree_project("/app"), entries: vec![entry("main", None, Some("2026-09-29T00:00:00Z"))] },
+            SidebarGroup { project: worktree_project("/app/.claude/worktrees/x-1"), entries: vec![entry("tree", None, Some("2026-09-30T00:00:00Z"))] },
+            SidebarGroup { project: worktree_project("/other"), entries: vec![entry("o", None, Some("2026-09-28T00:00:00Z"))] },
+        ];
+        let origin = |path: &std::path::Path| match path.to_str().unwrap() {
+            "/app/.claude/worktrees/x-1" => PathBuf::from("/app"),
+            other => PathBuf::from(other),
+        };
+        let arranged = arrange_with_origins(&groups, &SidebarPrefs::default(), now(), None, &origin);
+        assert_eq!(arranged.len(), 2);
+        let app = &arranged[0];
+        assert!(matches!(&app.heading, Heading::Project(project) if project.path == PathBuf::from("/app")));
+        assert_eq!(app.entries.len(), 2);
+        assert_eq!(app.entries[0].entry.title, "tree");
+        assert_eq!(app.entries[0].project.path, PathBuf::from("/app/.claude/worktrees/x-1"));
+        assert_eq!(app.entries[1].project.path, PathBuf::from("/app"));
+    }
+
+    #[test]
+    fn a_group_made_only_of_a_worktree_is_headed_by_its_repository() {
+        let groups = vec![SidebarGroup { project: worktree_project("/app/.claude/worktrees/x-1"), entries: vec![entry("tree", None, Some("2026-09-30T00:00:00Z"))] }];
+        let origin = |_: &std::path::Path| PathBuf::from("/app");
+        let arranged = arrange_with_origins(&groups, &SidebarPrefs::default(), now(), None, &origin);
+        assert!(matches!(&arranged[0].heading, Heading::Project(project) if project.path == PathBuf::from("/app")));
+        assert_eq!(arranged[0].id, folder_group_id(std::path::Path::new("/app")));
     }
 }

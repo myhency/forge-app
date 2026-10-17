@@ -22,7 +22,7 @@ use forge_adapter_files::LocalFiles;
 use forge_adapter_git::GitCli;
 use forge_adapter_terminal::PtyTerminal;
 use forge_adapter_webview::WryWebViews;
-use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, RegistryHost, RoutineRunner, RoutinesUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase};
+use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, RegistryHost, RoutineRunner, RoutinesUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase, WorktreesUseCase};
 use forge_features::{RoutineServices, WorkspaceServices};
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
@@ -201,6 +201,8 @@ fn build_services() -> WorkspaceServices {
     let (host, starts) = RegistryHost::new(registry.clone(), routines.clone());
     let host = Arc::new(host);
     let runner = Arc::new(RoutineRunner::new(routines.clone(), host.clone()));
+    let git = Arc::new(GitCli::new());
+    let worktrees = Arc::new(WorktreesUseCase::new(git.clone(), settings.clone()));
     let picker = Arc::new(RfdFolderPicker::new());
     let shell = default_shell(std::env::var("SHELL").ok());
     WorkspaceServices {
@@ -212,10 +214,11 @@ fn build_services() -> WorkspaceServices {
         plugin_catalog,
         skill_catalog,
         connector_catalog,
+        worktrees,
         folder_picker: picker.clone(),
         file_picker: picker,
         terminal: Arc::new(PtyTerminal::new(shell)),
-        git: Arc::new(GitCli::new()),
+        git: git.clone(),
         files: Arc::new(LocalFiles::new()),
         browser: Arc::new(SystemBrowser::new()),
         webviews: webviews(),

@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
-use forge_application::{Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
+use forge_application::{WorktreesUseCase, Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
-use forge_domain::{ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
+use forge_domain::{WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
 use forge_ports::Surface;
 use time::OffsetDateTime;
@@ -25,9 +25,10 @@ use crate::shortcut::{match_code, shortcut_allowed, shortcut_for, swallowed_behi
 use crate::tool_activity::finished_tool_calls;
 use crate::task_list_views::{TaskListView, TaskListViews};
 use crate::transcript_views::TranscriptViews;
-use crate::arrange::{arrange, open_session_order, ArrangedGroup};
+use crate::arrange::{arrange_with_origins, open_session_order, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
 use crate::sidebar::{archive_key_plan, cycle_target, ArchiveKey, SidebarEntry, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
+use crate::worktree_view::{folder_choices, RepoInfo, WorktreeTag};
 use forge_shared::tr;
 
 // Typing waits this long before the transcripts are scanned.
@@ -57,6 +58,7 @@ pub struct WorkspaceServices {
     pub plugin_catalog: Arc<PluginCatalogUseCase>,
     pub skill_catalog: Arc<SkillCatalogUseCase>,
     pub connector_catalog: Arc<ConnectorCatalogUseCase>,
+    pub worktrees: Arc<WorktreesUseCase>,
     pub folder_picker: Arc<dyn FolderPickerPort>,
     pub file_picker: Arc<dyn FilePickerPort>,
     pub terminal: Arc<dyn TerminalPort>,
@@ -114,6 +116,9 @@ pub struct Workspace {
     prefs: Signal<SidebarPrefs>,
     editor: Signal<EditorPrefs>,
     archived: Signal<Vec<ArchivedRef>>,
+    worktrees: Signal<Vec<WorktreeRecord>>,
+    new_repo: Signal<Option<RepoInfo>>,
+    new_unsent: Signal<Option<String>>,
     docks: Signal<DockStates>,
     file_requests: Signal<HashMap<LiveSessionId, String>>,
     previews: Signal<PreviewHost>,
@@ -173,6 +178,9 @@ pub fn use_workspace_provider() -> Workspace {
             prefs: Signal::new(SidebarPrefs::default()),
             editor: Signal::new(EditorPrefs::default()),
             archived: Signal::new(Vec::new()),
+            worktrees: Signal::new(Vec::new()),
+            new_repo: Signal::new(None),
+            new_unsent: Signal::new(None),
             docks: Signal::new(DockStates::default()),
             file_requests: Signal::new(HashMap::new()),
             previews: Signal::new(PreviewHost::default()),
@@ -288,12 +296,14 @@ impl Workspace {
         let services = (*self.services.peek()).clone();
         let mut prefs = self.prefs;
         let mut archived = self.archived;
+        let mut worktrees = self.worktrees;
         let mut editor = self.editor;
         spawn(async move {
             if let Ok(config) = services.settings.load().await {
                 prefs.set(config.sidebar);
                 editor.set(config.editor);
                 archived.set(config.archived);
+                worktrees.set(config.worktrees);
             }
         });
     }
@@ -304,7 +314,8 @@ impl Workspace {
             Active::Live(id) => Some(id),
             Active::NewSession | Active::Customize | Active::Routines => None,
         };
-        arrange(&self.sidebar(), &self.prefs.read(), now, active)
+        let records = self.worktrees.read().clone();
+        arrange_with_origins(&self.sidebar(), &self.prefs.read(), now, active, &|path| forge_domain::origin_of(&records, path))
     }
 
     pub fn shortcuts_open(&self) -> bool {
@@ -408,12 +419,14 @@ impl Workspace {
     /// The project folders a new session can start in: known projects that still exist, plus any
     /// folders added through the dialog.
     pub fn new_session_projects(&self) -> Vec<ProjectSummary> {
+        let records = self.worktrees.read().clone();
         let past = self.past.read();
-        let mut projects: Vec<ProjectSummary> = past
+        let listed: Vec<ProjectSummary> = past
             .iter()
             .filter(|(project, _)| project.exists)
             .map(|(project, _)| project.clone())
             .collect();
+        let mut projects = folder_choices(listed, &|path| forge_domain::origin_of(&records, path));
         for path in self.extra_folders.read().iter() {
             if !projects.iter().any(|project| project.path == *path) {
                 projects.push(ProjectSummary {
@@ -425,6 +438,20 @@ impl Workspace {
             }
         }
         projects
+    }
+
+    /// The folder a session's project belongs to in the sidebar and the header: the repository of
+    /// a worktree, else the project itself.
+    pub fn origin_of(&self, path: &Path) -> PathBuf {
+        forge_domain::origin_of(&self.worktrees.read(), path)
+    }
+
+    /// `Some` for a session in a worktree (one Forge made, or one at `<repo>/.claude/worktrees/<name>`).
+    pub fn worktree_tag(&self, path: &Path) -> Option<WorktreeTag> {
+        if let Some(record) = self.worktrees.read().iter().find(|record| record.path == path) {
+            return Some(WorktreeTag { branch: Some(record.branch.clone()) });
+        }
+        forge_domain::main_repo_of(path).map(|_| WorktreeTag { branch: None })
     }
 
     /// Reloads one project's session list, leaving every other project as drawn.
