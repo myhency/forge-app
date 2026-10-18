@@ -53,7 +53,11 @@ pub fn comment_text(raw: &str) -> Option<String> {
 /// The absolute path of a changed file. Git prints paths relative to the repository root, which may
 /// lie above the session folder.
 pub fn absolute_path(root: &Path, relative: &str) -> String {
-    root.join(relative).to_string_lossy().to_string()
+    // Git prints '/', the Files panel joins component by component: on Windows both must give
+    // the same text, or cards would not match the file they belong to.
+    let mut path = root.to_path_buf();
+    path.extend(relative.split('/').filter(|part| !part.is_empty()));
+    path.to_string_lossy().to_string()
 }
 
 /// What a key press in the comment field does.
@@ -83,6 +87,21 @@ pub fn comment_key(enter: bool, escape: bool, shift: bool, composing: bool) -> C
 mod tests {
     use super::*;
     use forge_domain::LineRange;
+    use std::path::PathBuf;
+
+    #[test]
+    fn absolute_path_uses_the_separator_of_the_os_like_the_files_panel() {
+        let root = Path::new(if cfg!(windows) { r"C:\repo" } else { "/repo" });
+        let got = PathBuf::from(absolute_path(root, "sub/dir/a.rs"));
+        let expected: PathBuf = root.join("sub").join("dir").join("a.rs");
+        assert_eq!(got, expected);
+        assert_eq!(got.to_string_lossy(), expected.to_string_lossy());
+        assert_eq!(got.components().count(), expected.components().count());
+        // No stray '/' left on Windows.
+        if cfg!(windows) {
+            assert!(!got.to_string_lossy().contains('/'));
+        }
+    }
 
     fn line(kind: DiffLineKind, old_no: Option<u32>, new_no: Option<u32>) -> PatchLine {
         PatchLine { kind, text: String::new(), old_no, new_no }
