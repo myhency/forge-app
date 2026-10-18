@@ -614,9 +614,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .cd-folder { color: var(--fg-muted); }
 .cd-file-head .cd-counts { margin-left: 4px; }
 .cd-lines { font-family: var(--mono); font-size: 12px; }
-.cd-lines .diff-line { min-height: 1.5em; }
-.cd-lines .diff-line { position: relative; }
-.cd-add-comment { display: none; position: absolute; left: 4px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; padding: 0; border: none; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; line-height: 16px; text-align: center; cursor: pointer; z-index: 1; }
+.cd-lines .diff-line { min-height: 1.5em; position: relative; padding-left: 18px; }
+.cd-add-comment { display: none; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; padding: 0; border: none; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; line-height: 14px; text-align: center; cursor: pointer; z-index: 1; }
 .cd-lines .diff-line:hover .cd-add-comment { display: block; }
 .cd-lines.nowrap .diff-text { white-space: pre; overflow-wrap: normal; }
 /* Wrap off: each file scrolls sideways on its own, its rows as wide as its longest line (side by side: both halves). */
@@ -902,8 +901,11 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .cd-comment-title { color: var(--fg-muted); margin-bottom: 4px; }
 .cd-comment-input { display: block; width: calc(100% - 30px); box-sizing: border-box; resize: none; border: none; outline: none; background: transparent; color: var(--fg); font: inherit; }
 .cd-comment-ok, .cd-comment-edit, .cd-comment-delete { border: none; background: transparent; cursor: pointer; color: var(--fg-muted); font-size: 13px; }
-.cd-comment-ok { position: absolute; right: 8px; bottom: 6px; }
-.cd-comment-edit, .cd-comment-delete { float: right; margin-left: 6px; }
+.cd-comment-ok { position: absolute; right: 8px; bottom: 6px; width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-hover); line-height: 1; }
+.cd-comment-edit svg, .cd-comment-delete svg { display: block; width: 14px; height: 14px; }
+.cd-comment-edit, .cd-comment-delete { position: absolute; top: 6px; padding: 0; line-height: 1; }
+.cd-comment-edit { right: 34px; }
+.cd-comment-delete { right: 10px; }
 .cd-comment-delete { color: var(--danger); }
 .cd-comment.saved .cd-comment-text { cursor: pointer; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cd-comment-slot { grid-column: 1 / -1; }

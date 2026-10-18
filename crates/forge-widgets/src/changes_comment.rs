@@ -101,9 +101,9 @@ pub(crate) fn DiffCommentBox(id: LiveSessionId, path: String, line: u32, card: O
                     class: "cd-comment-ok",
                     r#type: "button",
                     title: tr!("Add comment"),
-                    "aria-label": "Add comment",
+                    "aria-label": tr!("Add comment"),
                     onclick: move |_| finish_icon(true),
-                    "⊕"
+                    "↑"
                 }
             } else {
                 div { class: "cd-comment-text", onclick: move |_| editing.set(true), "{saved_text}" }
@@ -112,17 +112,17 @@ pub(crate) fn DiffCommentBox(id: LiveSessionId, path: String, line: u32, card: O
                         class: "cd-comment-edit",
                         r#type: "button",
                         title: tr!("Edit comment"),
-                        "aria-label": "Edit comment",
+                        "aria-label": tr!("Edit comment"),
                         onclick: move |_| editing.set(true),
-                        "✎"
+                        svg { view_box: "0 0 16 16", fill: "none", stroke: "currentColor", stroke_width: "1.5", stroke_linecap: "round", stroke_linejoin: "round", path { d: "M2 14l1-4 8-8 3 3-8 8z" } }
                     }
                     button {
                         class: "cd-comment-delete",
                         r#type: "button",
                         title: tr!("Delete comment"),
-                        "aria-label": "Delete comment",
+                        "aria-label": tr!("Delete comment"),
                         onclick: move |_| workspace.remove_card(id, card.id),
-                        "🗑"
+                        svg { view_box: "0 0 16 16", fill: "none", stroke: "currentColor", stroke_width: "1.5", stroke_linecap: "round", stroke_linejoin: "round", path { d: "M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4" } }
                     }
                 }
             }

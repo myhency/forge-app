@@ -125,7 +125,7 @@ fn add_button(line: Option<u32>, env: Option<&CommentEnv>) -> Element {
             class: "cd-add-comment",
             r#type: "button",
             title: tr!("Add comment"),
-            "aria-label": "Add comment",
+            "aria-label": tr!("Add comment"),
             onclick: move |event: MouseEvent| {
                 event.stop_propagation();
                 on_open.call(line);
