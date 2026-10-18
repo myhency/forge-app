@@ -35,7 +35,7 @@ pub struct ChangesViewPrefs { ..., pub file_list_position: FileListPosition, pub
 
 Panel `⋮` menu gets the two rows in the app's order: `Show files`, `File list position ›` (current value at the right, submenu `Auto`, `Left`, `Right` with a check), `Group files by folder`, `Separate test, build and generated files`, then the rule and the fold rows as today. Submenu opens beside the row on hover (as the app's does).
 
-`Left` puts the file column at the left of the stacked diffs, `Right` at the right (today). `Auto` is `Right` while the panel body is 560 px or wider and moves the column UNDER the diffs below that. This narrow rule is a guess: the app's rule for `자동` was not observed (the panel was one width). It is recorded in the spec's "As built" when checked.
+`Left` puts the file column at the left of the stacked diffs, `Right` at the right (today). `Auto` is `Right` while the panel body is 400 px or wider and moves the column UNDER the diffs below that. The 400 px is a guess, chosen so the default dock panel width (about 460 px) stays on the right: the app's rule for `자동` was not observed (the panel was one width). It is recorded in the spec's "As built" when checked.
 
 ### Splitting special files (`forge-entities`, new `file_class.rs`)
 
@@ -130,6 +130,8 @@ a range comment, a comment on a removed line, a comment in a `Commit` view, the 
 - The commit list replaces the menu content (inline, like the base list) instead of opening a flyout.
 - Folders inside the Test and Generated sections have namespaced folder keys (`test:src`, `generated:src`), so the same folder among the normal files stays a separate row and closes separately.
 - A mode chosen before the config has loaded is not saved.
+- The `Auto` threshold is 400 px (`@container (max-width: 399px)`), a guess chosen so the default dock panel width (about 460 px) keeps the list at the right; a floating panel of about 380 px put it under the diffs.
+- Real-window check run on 2026-10-18 (Korean UI, harness): passed the menu order, flyout (one click keeps it open after hover), Left/Right/Auto, the Test/Generated sections, the Commits list (long subject cut with an ellipsis, sha visible, menu inside the window; `No matching commits` line), the Uncommitted row, and the mode surviving a session switch. Not checked: dark mode.
 
-**Checked in the real window:** NOT YET. The Mac's screen was locked during the build (`CGSSessionScreenIsLocked`), so the capture tools could not see the window. Unchecked and to be checked next: the `File list position` flyout (hover, clipping), `Auto` going under the diffs below 560 px (and `max-height: 40%`), `Left`, the sections in the tree (open and closed, counts), the `Commits N ›` list (ellipsis, search focus, the check), the `Uncommitted changes` row on a clean tree, persistence after closing and reopening a session, dark mode and the Korean labels. Unit tests: 241 domain, 290 entities, 498 features, 34 widgets, 61 shared.
+**Checked in the real window:** NOT YET. The Mac's screen was locked during the build (`CGSSessionScreenIsLocked`), so the capture tools could not see the window. Unchecked and to be checked next: the `File list position` flyout (hover, clipping), `Auto` going under the diffs below 400 px (and `max-height: 40%`), `Left`, the sections in the tree (open and closed, counts), the `Commits N ›` list (ellipsis, search focus, the check), the `Uncommitted changes` row on a clean tree, persistence after closing and reopening a session, dark mode and the Korean labels. Unit tests: 241 domain, 290 entities, 498 features, 34 widgets, 61 shared.
 

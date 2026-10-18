@@ -365,6 +365,7 @@ pub static KO: &[(&str, &str)] = &[
     ("No log for {name} yet. Claude Code writes one when a session starts the server.", "{name}의 로그가 아직 없습니다. 세션이 서버를 시작하면 Claude Code가 로그를 남깁니다."),
     ("No marketplaces yet.", "아직 마켓플레이스가 없습니다."),
     ("No matches", "일치하는 항목이 없습니다"),
+    ("No matching commits", "일치하는 커밋이 없습니다"),
     ("No model use in this range.", "이 기간에는 모델 사용 기록이 없습니다."),
     ("No output yet", "아직 출력이 없습니다"),
     ("No plugins installed. Use Explore to find some.", "설치된 플러그인이 없습니다. 탐색에서 찾아보세요."),

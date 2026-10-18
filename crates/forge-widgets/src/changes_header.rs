@@ -135,6 +135,9 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                                 let _ = mounted.set_focus(true).await;
                             },
                         }
+                        if shown_commits.is_empty() {
+                            div { class: "cd-note", {tr!("No matching commits")} }
+                        }
                         for commit in shown_commits {
                             button {
                                 key: "{commit.sha}",
@@ -304,7 +307,7 @@ fn PositionRow(current: FileListPosition) -> Element {
                 r#type: "button",
                 role: "menuitem",
                 "aria-haspopup": "menu",
-                onclick: move |_| flyout.set(!flyout()),
+                onclick: move |_| flyout.set(true),
                 span { class: "picker-text", {tr!("File list position")} }
                 span { class: "picker-hint", "{position_label(current)} ›" }
             }
