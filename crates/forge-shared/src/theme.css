@@ -894,6 +894,16 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .cm-comment-ok, .cm-comment-edit, .cm-comment-delete { border: none; background: transparent; cursor: pointer; color: var(--fg-muted); }
 .cm-comment-delete { color: #d44; }
 .cm-comment-box.saved { cursor: pointer; }
+.cd-comment { box-sizing: border-box; margin: 4px 12px 4px 48px; max-width: 640px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-family: var(--font); font-size: 12px; line-height: 1.5; white-space: normal; position: relative; }
+.cd-comment.editing { border-color: var(--accent); }
+.cd-comment-title { color: var(--fg-muted); margin-bottom: 4px; }
+.cd-comment-input { display: block; width: calc(100% - 30px); box-sizing: border-box; resize: none; border: none; outline: none; background: transparent; color: var(--fg); font: inherit; }
+.cd-comment-ok, .cd-comment-edit, .cd-comment-delete { border: none; background: transparent; cursor: pointer; color: var(--fg-muted); font-size: 13px; }
+.cd-comment-ok { position: absolute; right: 8px; bottom: 6px; }
+.cd-comment-edit, .cd-comment-delete { float: right; margin-left: 6px; }
+.cd-comment-delete { color: var(--danger); }
+.cd-comment.saved .cd-comment-text { cursor: pointer; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cd-comment-slot { grid-column: 1 / -1; }
 .cm-ctx-menu { position: fixed; z-index: 70; min-width: 180px; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .2); display: flex; flex-direction: column; }
 .cm-ctx-menu button { text-align: left; border: none; background: transparent; color: var(--fg); padding: 5px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
 .cm-ctx-menu button:hover { background: var(--bg-hover); }

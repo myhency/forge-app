@@ -1,4 +1,5 @@
 mod account_menu;
+mod changes_comment;
 mod changes_header;
 mod changes_panel;
 mod changes_stack;
