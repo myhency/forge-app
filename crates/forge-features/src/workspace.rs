@@ -1307,6 +1307,11 @@ impl Workspace {
         })
     }
 
+    /// What the menu under the active session's title offers (`None` when no session is active).
+    pub fn active_title_menu(&self) -> Option<crate::sidebar::RowActions> {
+        self.active_entry().map(|(_, entry)| entry.title_menu_actions())
+    }
+
     /// Forks the active session, as the row menu's Fork does.
     pub fn fork_active(&self) {
         if let Some((project, entry)) = self.active_entry() {

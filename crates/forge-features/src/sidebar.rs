@@ -80,6 +80,20 @@ impl SidebarEntry {
     }
 }
 
+impl SidebarEntry {
+    /// What the menu under the title of the open session offers: the row's actions, except that the
+    /// session can be archived while open (archiving closes it, as ⌥⌘A does) and there is no delete.
+    pub fn title_menu_actions(&self) -> RowActions {
+        let row = self.actions();
+        let archive = match (self.session_id.is_some(), self.archived) {
+            (false, _) => ArchiveAction::Unavailable,
+            (true, true) => ArchiveAction::Unarchive,
+            (true, false) => ArchiveAction::Archive,
+        };
+        RowActions { delete: DeleteAction::Unavailable, archive, ..row }
+    }
+}
+
 /// What a key does while a session row's menu is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuKeyAction {
@@ -514,6 +528,22 @@ mod tests {
     fn an_open_session_can_be_renamed_but_not_deleted() {
         let open = entry(EntryKey::Live(LiveSessionId(1)), Some("s"));
         assert_eq!(open.actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::WhileOpen, archive: ArchiveAction::Unavailable });
+    }
+
+    #[test]
+    fn the_title_menu_of_an_open_session_archives_and_closes_it_and_never_deletes() {
+        let mut open = entry(EntryKey::Live(LiveSessionId(1)), Some("s"));
+        assert_eq!(open.title_menu_actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Unavailable, archive: ArchiveAction::Archive });
+
+        open.archived = true;
+        assert_eq!(open.title_menu_actions().archive, ArchiveAction::Unarchive);
+        assert_eq!(menu_key_action("KeyD", false, open.title_menu_actions()), None);
+    }
+
+    #[test]
+    fn the_title_menu_of_a_session_without_a_claude_id_offers_nothing() {
+        let fresh = entry(EntryKey::Live(LiveSessionId(1)), None);
+        assert_eq!(fresh.title_menu_actions(), RowActions { can_rename: false, can_fork: false, delete: DeleteAction::Unavailable, archive: ArchiveAction::Unavailable });
     }
 
     #[test]

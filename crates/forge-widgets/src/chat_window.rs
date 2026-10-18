@@ -8,6 +8,7 @@ use crate::dock::Dock;
 use crate::permission_panel::PermissionPanel;
 use crate::plus_menu::PlusMenu;
 use crate::question_panel::QuestionPanel;
+use crate::session_title_menu::SessionTitleMenu;
 use crate::session_tools::SessionTools;
 use crate::sidebar::project_label;
 use crate::tasks_panel::use_running_workflows;
@@ -62,11 +63,9 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
         .as_ref()
         .is_some_and(|session| workspace.is_archived(&view.project_path, session));
     let dock_expanded = workspace.dock(id).expanded.is_some() && !archived;
-    let heading = format!(
-        "{} · {}",
-        project_label(&workspace.origin_of(&view.project_path)),
-        view.session.title.as_deref().unwrap_or(tr!("Session"))
-    );
+    let heading = view.session.title.as_deref().unwrap_or(tr!("Session")).to_string();
+    let folder = project_label(&workspace.origin_of(&view.project_path));
+    let title_menu = workspace.active_title_menu();
     let tag = workspace.worktree_tag(&view.project_path).map(|tag| match tag.branch {
         Some(branch) => format!("{} · {}", tr!("Worktree"), branch),
         None => tr!("Worktree").to_string(),
@@ -75,9 +74,15 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
     rsx! {
         div { class: if dock_expanded { "main-pane dock-expanded" } else { "main-pane" },
             div { class: "pane-header",
-                span { class: "pane-title", "{heading}" }
-                if let Some(tag) = tag {
-                    span { class: "pane-tag", "{tag}" }
+                div { class: "pane-titlebox",
+                    span { class: "pane-title", "{heading}" }
+                    if let Some(actions) = title_menu {
+                        SessionTitleMenu { actions }
+                    }
+                    span { class: "pane-tag", "{folder}" }
+                    if let Some(tag) = tag {
+                        span { class: "pane-tag", "{tag}" }
+                    }
                 }
                 div { class: "view-switch", role: "radiogroup", "aria-label": tr!("Transcript view"),
                     for option in TranscriptView::ALL {

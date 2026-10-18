@@ -123,6 +123,13 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .pane-header { display: flex; align-items: center; gap: 12px; padding: 12px 28px; font-weight: 600; }
 .pane-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pane-tag { flex: none; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--bg-hover); color: var(--fg-muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
+.pane-titlebox { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
+.pane-titlebox .pane-title { flex: 0 1 auto; }
+.pane-titlebox .pane-tag { margin-left: 4px; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; max-width: 14em; }
+.title-menu { position: relative; flex: none; }
+.title-chevron { appearance: none; width: 22px; height: 22px; border: none; border-radius: 6px; background: transparent; color: var(--fg-muted); font: inherit; line-height: 1; cursor: pointer; }
+.title-chevron:hover, .title-chevron.open { background: var(--bg-hover); color: var(--fg); }
+.title-menu-list { right: auto; left: 0; font-weight: 400; }
 .view-switch { display: flex; flex: none; padding: 2px; gap: 2px; border: 1px solid var(--border); border-radius: 8px; font-weight: 400; }
 .view-option { appearance: none; border: none; background: none; color: var(--fg-muted); font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
 .view-option:hover { background: var(--bg-hover); }

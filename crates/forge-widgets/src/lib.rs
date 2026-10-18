@@ -35,6 +35,7 @@ mod routines_form;
 mod routines_page;
 mod search_palette;
 mod session_row;
+mod session_title_menu;
 mod session_tools;
 mod developer_section;
 mod settings_overlay;
