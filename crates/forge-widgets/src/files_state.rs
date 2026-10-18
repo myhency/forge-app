@@ -809,6 +809,17 @@ mod tests {
         assert_eq!(copy_text_for(FileAction::CopyAbsolute, &base, "packages/app/src/x.ts"), Some(session.join("src/x.ts").to_string_lossy().to_string()));
     }
 
+    #[test]
+    fn a_diff_comment_is_keyed_like_the_files_panel_of_a_subfolder_session() {
+        let repo = scratch("diff-comment-key").canonicalize().unwrap();
+        let cwd = repo.join("sub");
+        std::fs::create_dir_all(&cwd).unwrap();
+        // The Files panel keys a file by the session folder plus its path inside it.
+        let files_key = cwd.join("a.rs").to_string_lossy().to_string();
+        let root = menu_root(Some(&repo), &cwd);
+        assert_eq!(forge_features::absolute_path(&root, "sub/a.rs"), files_key);
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_changes_menu_keeps_the_session_folders_spelling_through_a_symlink() {

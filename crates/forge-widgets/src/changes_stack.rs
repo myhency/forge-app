@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{Card, ChangesViewPrefs};
 use forge_entities::{cap_lines, gap_after, gap_lines, icon_of, paired_spans, parse_patch, side_by_side, split_by_spans, DiffLineKind, PatchHunk, PatchLine, Span};
-use forge_features::{absolute_path, comment_line, commentable, comments_on, is_folded, run_blocking, split_folder, toggle_fold, use_workspace, ChangesSession};
+use forge_features::{absolute_path, comment_line, commentable, comments_of, comments_on, is_folded, run_blocking, split_folder, toggle_fold, use_workspace, ChangesSession};
 use forge_ports::{ChangeSource, ChangeStatus, DiffOptions, FileChange, PatchState};
 use forge_shared::tr;
 
@@ -45,7 +45,7 @@ fn section_key(source: &ChangeSource, change: &FileChange) -> String {
 pub fn DiffStack(
     id: LiveSessionId,
     cwd: PathBuf,
-    root: PathBuf,
+    root: Option<PathBuf>,
     source: ChangeSource,
     files: Vec<FileChange>,
     order: Vec<usize>,
@@ -53,6 +53,12 @@ pub fn DiffStack(
     session: ChangesSession,
     on_menu: EventHandler<(String, bool, f64, f64)>,
 ) -> Element {
+    // The cards are read here once, so a change to them reaches a file only when its own comments
+    // changed. Until the repository root is known the paths cannot be keyed, so no comments.
+    let workspace = use_workspace();
+    let cards = workspace.cards(id);
+    let can_comment = commentable(&source) && root.is_some();
+    let root = root.unwrap_or_default();
     rsx! {
         div { class: "cd-stack",
             for (position, index) in order.iter().copied().enumerate() {
@@ -61,7 +67,8 @@ pub fn DiffStack(
                     id,
                     cwd: cwd.clone(),
                     root: root.clone(),
-                    commentable: commentable(&source),
+                    commentable: can_comment,
+                    comments: if can_comment { comments_of(&cards, &absolute_path(&root, &files[index].file.path)) } else { Vec::new() },
                     source: source.clone(),
                     change: files[index].clone(),
                     prefs: prefs.clone(),
@@ -240,6 +247,7 @@ fn FileSection(
     cwd: PathBuf,
     root: PathBuf,
     commentable: bool,
+    comments: Vec<Card>,
     source: ChangeSource,
     change: FileChange,
     prefs: ChangesViewPrefs,
@@ -271,7 +279,7 @@ fn FileSection(
     let env = commentable.then(|| CommentEnv {
         id,
         path: absolute_path(&root, &path),
-        cards: workspace.cards(id),
+        cards: comments.clone(),
         open: open_comment(),
         on_open: EventHandler::new(move |line| open_comment.set(Some(line))),
         on_close: EventHandler::new(move |_| open_comment.set(None)),
@@ -314,7 +322,7 @@ fn FileSection(
                         } else if let Some(lines) = gaps.read().get(&index) {
                             div { class: "cd-hunk",
                                 for line in lines.iter() {
-                                    {line_row(line, &[], false, None)}
+                                    {line_row(line, &[], false, env.as_ref())}
                                 }
                             }
                         } else if gap_after(&hunks, index).is_some() && !(created && index + 1 == hunks.len()) {
@@ -425,6 +433,16 @@ mod tests {
         assert_eq!(offers_comment(&added, false, false), Some(11));
         assert_eq!(offers_comment(&context, false, false), Some(10));
         assert_eq!(offers_comment(&removed, false, false), None);
+    }
+
+    #[test]
+    fn a_revealed_gap_line_can_be_commented() {
+        let hunks = parse_patch("@@ -2,1 +2,2 @@\n a\n+b\n@@ -20,1 +21,1 @@\n x\n");
+        let file: Vec<String> = (1..=30).map(|n| format!("line {n}")).collect();
+        let lines = gap_lines(&hunks, 0, &file);
+        assert!(!lines.is_empty());
+        assert_eq!(offers_comment(&lines[0], false, false), lines[0].new_no);
+        assert!(offers_comment(&lines[0], false, false).is_some());
     }
 
     #[test]

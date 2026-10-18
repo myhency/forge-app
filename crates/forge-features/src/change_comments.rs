@@ -29,6 +29,12 @@ pub fn comments_on(cards: &[Card], path: &str, line: u32) -> Vec<Card> {
     cards.iter().filter(|card| card.kind == CardKind::Comment && card.path == path && card.range.end == line).cloned().collect()
 }
 
+/// The comment cards of the file `path` (absolute), all lines: what one file section needs of the
+/// session's cards, so a change to another file's cards does not redraw it.
+pub fn comments_of(cards: &[Card], path: &str) -> Vec<Card> {
+    cards.iter().filter(|card| card.kind == CardKind::Comment && card.path == path).cloned().collect()
+}
+
 /// The text to save: trimmed, or `None` when there is nothing but blanks.
 pub fn comment_text(raw: &str) -> Option<String> {
     let text = raw.trim();
@@ -113,6 +119,19 @@ mod tests {
         let found: Vec<u64> = comments_on(&cards, "/r/src/a.rs", 3).iter().map(|c| c.id).collect();
         assert_eq!(found, vec![1]);
         assert!(comments_on(&cards, "/r/src/a.rs", 9).is_empty());
+    }
+
+    #[test]
+    fn comments_of_keeps_one_files_comments_only() {
+        let cards = vec![
+            comment(1, "/r/a.rs", 3, 3),
+            comment(2, "/r/a.rs", 9, 9),
+            comment(3, "/r/b.rs", 3, 3),
+            Card { id: 4, kind: CardKind::Excerpt, path: "/r/a.rs".to_string(), range: LineRange::new(3, 3), text: "x".to_string() },
+        ];
+        let found: Vec<u64> = comments_of(&cards, "/r/a.rs").iter().map(|c| c.id).collect();
+        assert_eq!(found, vec![1, 2]);
+        assert!(comments_of(&cards, "/r/none.rs").is_empty());
     }
 
     #[test]
