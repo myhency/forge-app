@@ -5,11 +5,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use forge_domain::WorktreeRecord;
-use forge_ports::{BranchInfo, BranchList, ChangeSource, ChangeStatus, ChangedFile, CommitInfo, DiffOptions, FileChange, GitError, GitPort, PatchState, WorktreeError, WorktreePort, WorktreeState};
+use forge_ports::{BranchInfo, BranchList, ChangeSource, ChangeStatus, ChangedFile, CommitInfo, DiffOptions, FileChange, GitError, GitPort, PatchState, WorktreeError, TOO_LARGE_TO_SHOW, WorktreePort, WorktreeState};
 
 mod changes;
 use changes::{is_quoted_name, parse_counts, parse_name_status, split_patch, safe_ref, untracked_patch, Count, EMPTY_TREE, PATCH_BUDGET};
 
+/// An untracked file larger than this is never read, even when asked for alone.
+const UNTRACKED_LIMIT: usize = 50 * 1024 * 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const CREATE_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -224,7 +226,7 @@ impl GitCli {
                 // Only a regular file is read, never followed: a link, a FIFO or a folder reads as binary,
                 // and a file over the budget is not read at all.
                 let (state, added) = match std::fs::symlink_metadata(root.join(&path)) {
-                    Ok(meta) if meta.is_file() && meta.len() > budget as u64 => (PatchState::TooLarge, 0),
+                    Ok(meta) if meta.is_file() && meta.len() > budget.min(UNTRACKED_LIMIT) as u64 => (PatchState::TooLarge, 0),
                     Ok(meta) if meta.is_file() => match std::fs::read(root.join(&path)) {
                         Ok(bytes) => untracked_patch(&bytes, budget),
                         Err(_) => (PatchState::Binary, 0),
@@ -361,6 +363,7 @@ impl GitPort for GitCli {
         let files = self.collect(cwd, source, options, Some(path), usize::MAX)?;
         Ok(match files.into_iter().next().map(|change| change.patch) {
             Some(PatchState::Text(text)) => text,
+            Some(PatchState::TooLarge) => return Err(GitError::Failed(TOO_LARGE_TO_SHOW.to_string())),
             _ => String::new(),
         })
     }
@@ -1035,6 +1038,18 @@ mod tests {
         assert_eq!(big.patch, PatchState::TooLarge);
         assert_eq!(big.file.added, None);
         assert_eq!(big.file.status, ChangeStatus::Untracked);
+    }
+
+    #[test]
+    fn an_untracked_file_past_50_mb_is_never_read_even_alone() {
+        let dir = repo();
+        let big = fs::File::create(dir.path().join("huge.bin")).unwrap();
+        big.set_len(51 * 1024 * 1024).unwrap();
+        let options = DiffOptions::default();
+        let files = GitCli::new().changes(dir.path(), &ChangeSource::Uncommitted, &options).unwrap();
+        assert_eq!(named(&files, "huge.bin").patch, PatchState::TooLarge);
+        let alone = GitCli::new().file_patch(dir.path(), &ChangeSource::Uncommitted, &options, "huge.bin");
+        assert_eq!(alone, Err(GitError::Failed(forge_ports::TOO_LARGE_TO_SHOW.to_string())));
     }
 
     #[test]

@@ -38,6 +38,9 @@ pub struct ChangedFile {
     pub removed: Option<usize>,
 }
 
+/// The message of loading the diff of a file that is too large to read.
+pub const TOO_LARGE_TO_SHOW: &str = "This file is too large to show";
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum GitError {
     #[error("Not a git repository")]

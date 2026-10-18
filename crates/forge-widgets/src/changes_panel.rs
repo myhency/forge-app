@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{fallback_source, run_blocking, source_for, stack_order, use_workspace, vanished_commit, ChangeView, FileAction, MenuTarget, Panel};
+use forge_features::{fallback_source, ready_to_load, run_blocking, source_for, stack_order, use_workspace, vanished_commit, ChangeView, FileAction, MenuTarget, Panel};
 use forge_ports::{BranchInfo, ChangeSource, CommitInfo, DiffOptions, FileChange, GitError};
 
 use crate::changes_header::{position_class, BranchButton, FileSearch, ViewMenu};
@@ -75,6 +75,15 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         })
     };
     let source_memo = use_memo(move || source_for(&workspace.changes_session(id).view, base_memo().as_deref()));
+    // The view and the base chosen or saved, without the default base from the branch list.
+    let saved_memo = {
+        let cwd = cwd.clone();
+        use_memo(move || {
+            let state = workspace.changes_session(id);
+            (state.view, state.base.or_else(|| workspace.worktree_base(&cwd)))
+        })
+    };
+    let info_loaded = use_memo(move || info().is_some());
     let hide_memo = use_memo(move || workspace.changes_view_prefs().hide_whitespace);
 
     {
@@ -116,6 +125,11 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             let _ = refresh();
             let _ = finished();
             let (source, hide) = (source_memo(), hide_memo());
+            // Wait for the branch list when it decides the base: one load, not two.
+            let (view, saved_base) = saved_memo();
+            if !ready_to_load(&view, saved_base.as_deref(), info_loaded()) {
+                return;
+            }
             let ticket = changes_ticket.peek().wrapping_add(1);
             changes_ticket.set(ticket);
             let (git, cwd) = (workspace.git(), cwd.clone());

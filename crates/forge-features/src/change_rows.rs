@@ -41,6 +41,12 @@ pub fn source_for(view: &ChangeView, base: Option<&str>) -> ChangeSource {
     }
 }
 
+/// Whether the first load may start. Only `All` with no saved base needs the branch list (it
+/// brings the default base); loading before it would run the Uncommitted pass and then the All pass.
+pub fn ready_to_load(view: &ChangeView, saved_base: Option<&str>, info_loaded: bool) -> bool {
+    !matches!(view, ChangeView::All) || saved_base.is_some() || info_loaded
+}
+
 /// What to load instead when loading `asked` failed with `error`: a base branch that is not there
 /// falls back to the uncommitted changes (with the missing name, for the notice). A commit view
 /// and any other error have no fallback. The panel keeps the source it really loaded with the
@@ -342,6 +348,22 @@ pub fn forget_mode(list: &mut Vec<ChangeModeRef>, project: &Path, session: &str)
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_first_load_waits_for_the_branch_list_only_when_the_base_decides_the_source() {
+        let commit = ChangeView::Commit("abc".to_string());
+        // (view, saved base, branch list loaded, ready)
+        let table = [
+            (ChangeView::All, None, false, false),
+            (ChangeView::All, None, true, true),
+            (ChangeView::All, Some("main"), false, true),
+            (ChangeView::Uncommitted, None, false, true),
+            (commit, None, false, true),
+        ];
+        for (view, saved, loaded, ready) in table {
+            assert_eq!(ready_to_load(&view, saved, loaded), ready, "{view:?} {saved:?} {loaded}");
+        }
+    }
+
     #[test]
     fn a_commit_missing_from_the_loaded_list_has_vanished() {
         let commit = |sha: &str| CommitInfo { sha: sha.to_string(), subject: String::new(), author: String::new(), time: 0 };

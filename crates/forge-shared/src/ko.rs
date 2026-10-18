@@ -608,6 +608,7 @@ pub static KO: &[(&str, &str)] = &[
     ("This file has changed on disk since you started editing.", "편집을 시작한 뒤 디스크에서 이 파일이 변경되었습니다."),
     ("This file is empty.", "이 파일은 비어 있습니다."),
     ("This file is not valid UTF-8, so it is shown read only.", "이 파일은 올바른 UTF-8이 아니어서 읽기 전용으로 표시됩니다."),
+    ("This file is too large to show", "이 파일은 너무 커서 표시할 수 없습니다"),
     ("This file looks like binary data and cannot be previewed as text.", "이 파일은 바이너리 데이터로 보여 텍스트로 미리 볼 수 없습니다."),
     ("This picture cannot be shown.", "이 사진을 표시할 수 없습니다."),
     ("This project (.mcp.json)", "이 프로젝트 (.mcp.json)"),

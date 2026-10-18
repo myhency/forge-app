@@ -8,7 +8,7 @@ use forge_application::LiveSessionId;
 use forge_domain::{Card, ChangesViewPrefs};
 use forge_entities::{cap_lines, gap_after, gap_lines, icon_of, paired_spans, parse_patch, side_by_side, split_by_spans, DiffLineKind, PatchHunk, PatchLine, Span};
 use forge_features::{absolute_path, comment_line, commentable, comments_of, comments_on, is_folded, run_blocking, split_folder, toggle_fold, use_workspace, ChangesSession};
-use forge_ports::{ChangeSource, ChangeStatus, DiffOptions, FileChange, PatchState};
+use forge_ports::{ChangeSource, ChangeStatus, DiffOptions, FileChange, GitError, PatchState, TOO_LARGE_TO_SHOW};
 use forge_shared::tr;
 
 use crate::changes_comment::DiffCommentBox;
@@ -301,7 +301,10 @@ fn FileSection(
                                 let options = DiffOptions { ignore_whitespace: workspace.changes_view_prefs().hide_whitespace };
                                 spawn(async move {
                                     if let Some(result) = run_blocking(move || git.file_patch(&cwd, &source, &options, &path)).await {
-                                        loaded.set(Some(result.map_err(|error| error.to_string())));
+                                        loaded.set(Some(result.map_err(|error| match error {
+                                            GitError::Failed(text) if text == TOO_LARGE_TO_SHOW => tr!("This file is too large to show").to_string(),
+                                            other => other.to_string(),
+                                        })));
                                     }
                                 });
                             },
