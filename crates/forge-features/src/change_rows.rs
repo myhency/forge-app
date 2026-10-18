@@ -103,6 +103,8 @@ pub fn header_counts(file: &ChangedFile) -> Option<(usize, usize)> {
 /// True when the view picks a commit that a loaded commit list no longer holds (a reset or a
 /// rebase). The list must have been loaded: an empty list from a successful load means the commit
 /// is gone too, so the panel calls this only once its commits are `Some`, never while they load.
+/// The list stops at a cap, so `true` only means the commit is not in the list: the panel asks
+/// `GitPort::commit_exists` before it drops the view.
 pub fn vanished_commit(view: &ChangeView, commits: &[CommitInfo]) -> bool {
     match view {
         ChangeView::Commit(sha) => !commits.iter().any(|commit| &commit.sha == sha),

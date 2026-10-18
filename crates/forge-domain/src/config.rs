@@ -178,7 +178,9 @@ pub enum FileListPosition {
 pub struct ChangesViewPrefs {
     /// Whether the right column shows folders (else a flat list).
     pub group_by_folder: bool,
+    /// Whether a diff draws the old and the new lines in two columns (else one column).
     pub side_by_side: bool,
+    /// Whether long lines wrap (else the diff scrolls sideways).
     pub wrap: bool,
     /// Whether the changed words of a changed line are marked.
     pub highlight_words: bool,

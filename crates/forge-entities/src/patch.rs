@@ -11,6 +11,7 @@ pub struct PatchLine {
     pub new_no: Option<u32>,
 }
 
+/// One `@@` hunk of a patch: where it starts in the old and the new file, and its lines.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatchHunk {
     pub old_start: u32,

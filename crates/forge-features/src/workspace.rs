@@ -344,8 +344,6 @@ impl Workspace {
         });
     }
 
-    // A config that cannot be read keeps the defaults; the settings screen reports that file's
-    // problems, so the sidebar does not repeat them.
     /// How the Changes panel draws a diff (its `⋮` menu).
     pub fn changes_view_prefs(&self) -> ChangesViewPrefs {
         self.changes_view.read().clone()
@@ -440,6 +438,8 @@ impl Workspace {
         self.worktrees.read().iter().find(|record| record.path == path).map(|record| record.base_branch.clone())
     }
 
+    // A config that cannot be read keeps the defaults; the settings screen reports that file's
+    // problems, so the sidebar does not repeat them.
     fn reload_prefs(&self) {
         let services = (*self.services.peek()).clone();
         let mut prefs = self.prefs;
