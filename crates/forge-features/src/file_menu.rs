@@ -35,6 +35,15 @@ pub enum MenuEntry {
     Divider,
 }
 
+/// The menu line that shows a file in the system's file manager, in the person's language.
+pub fn show_in_file_manager() -> &'static str {
+    if cfg!(windows) {
+        tr!("Show in Explorer")
+    } else {
+        tr!("Show in Finder")
+    }
+}
+
 fn item(label: &'static str, action: FileAction) -> MenuEntry {
     MenuEntry::Action { label, shortcut: None, action, enabled: true }
 }
@@ -60,7 +69,7 @@ pub fn file_menu(target: MenuTarget) -> Vec<MenuEntry> {
                 label: tr!("Open in"),
                 entries: vec![item(tr!("VS Code"), FileAction::OpenVsCode), MenuEntry::Divider, item(tr!("Default app"), FileAction::OpenDefault)],
             },
-            item(forge_domain::SHOW_IN_FILE_MANAGER, FileAction::Reveal),
+            item(show_in_file_manager(), FileAction::Reveal),
             MenuEntry::Divider,
             item(tr!("Show in file tree"), FileAction::ShowInTree),
             MenuEntry::Divider,
@@ -80,7 +89,7 @@ pub fn file_menu(target: MenuTarget) -> Vec<MenuEntry> {
                 label: tr!("Open in"),
                 entries: vec![item(tr!("VS Code"), FileAction::OpenVsCode), MenuEntry::Divider, item(tr!("Default app"), FileAction::OpenDefault)],
             },
-            item(forge_domain::SHOW_IN_FILE_MANAGER, FileAction::Reveal),
+            item(show_in_file_manager(), FileAction::Reveal),
         ],
         MenuTarget::Tab { preview } => vec![
             item(tr!("Attach as context"), FileAction::Attach),
@@ -144,6 +153,14 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn the_file_manager_line_has_a_korean_text() {
+        use forge_shared::i18n::translate;
+        assert_ne!(translate(forge_domain::Language::Korean, "Show in Finder"), "Show in Finder");
+        assert_ne!(translate(forge_domain::Language::Korean, "Show in Explorer"), "Show in Explorer");
+        assert_eq!(show_in_file_manager(), forge_domain::SHOW_IN_FILE_MANAGER);
     }
 
     #[test]

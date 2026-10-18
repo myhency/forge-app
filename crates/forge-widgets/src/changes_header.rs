@@ -1,21 +1,25 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{ChangesViewPrefs, FileListPosition};
-use forge_features::{filter_files, fold_all, unfold_all, use_workspace, ChangeView};
+use forge_features::{branch_label, filter_files, BranchLabel, fold_all, unfold_all, use_workspace, ChangeView};
 use forge_ports::{BranchInfo, ChangedFile, CommitInfo};
 use forge_shared::tr;
 
 /// The text of the branch button.
-pub(crate) fn button_label(view: &ChangeView, info: Option<&BranchInfo>, base: Option<&str>, commits: &[CommitInfo]) -> String {
+pub(crate) fn button_label(view: &ChangeView, info: Option<&BranchInfo>, base: Option<&str>, fallback: bool, commits: &[CommitInfo]) -> String {
     match view {
         ChangeView::Uncommitted => tr!("Uncommitted changes").to_string(),
         ChangeView::Commit(sha) => {
             let subject = commits.iter().find(|commit| &commit.sha == sha).map(|commit| commit.subject.as_str()).unwrap_or("");
             format!("{} {}", &sha[..sha.len().min(7)], subject).trim().to_string()
         }
-        ChangeView::All => match (base, info) {
-            (Some(base), Some(info)) => format!("{base} → {}", info.head_label),
-            _ => tr!("Uncommitted changes").to_string(),
+        ChangeView::All => match info {
+            Some(info) => match branch_label(base, &info.head_label, fallback) {
+                BranchLabel::Uncommitted => tr!("Uncommitted changes").to_string(),
+                BranchLabel::Branch(head) => head,
+                BranchLabel::Against { base, head } => format!("{base} → {head}"),
+            },
+            None => tr!("Uncommitted changes").to_string(),
         },
     }
 }
@@ -37,7 +41,7 @@ fn open_below(button_box: Signal<Option<std::rc::Rc<MountedData>>>, mut corner: 
 
 /// `base → branch ⌄`: a menu of the two modes and the base list. A pick is kept in the session.
 #[component]
-pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<String>, commits: Vec<CommitInfo>, view: ChangeView, dirty: bool) -> Element {
+pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<String>, commits: Vec<CommitInfo>, view: ChangeView, dirty: bool, fallback: bool) -> Element {
     let workspace = use_workspace();
     let mut open = use_signal(|| false);
     let mut choosing_base = use_signal(|| false);
@@ -45,7 +49,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
     let mut button_box = use_signal(|| None::<std::rc::Rc<MountedData>>);
     let corner = use_signal(|| (0.0f64, 0.0f64, 0.0f64));
     let mut query = use_signal(String::new);
-    let label = button_label(&view, info.as_ref(), base.as_deref(), &commits);
+    let label = button_label(&view, info.as_ref(), base.as_deref(), fallback, &commits);
     let branches: Vec<String> = info
         .as_ref()
         .map(|info| info.branches.iter().filter(|name| query().is_empty() || name.to_lowercase().contains(&query().to_lowercase())).cloned().collect())
@@ -77,7 +81,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                 div {
                     class: "picker-menu cd-menu",
                     role: "menu",
-                    style: "position: fixed; left: {corner().0}px; top: {corner().1}px; bottom: auto;",
+                    style: "position: fixed; left: max(8px, min({corner().0}px, calc(100vw - 368px))); top: {corner().1}px; bottom: auto; max-height: min(320px, calc(100vh - {corner().1}px - 8px));",
                     tabindex: "0",
                     onmounted: move |mounted| async move {
                         let _ = mounted.set_focus(true).await;
@@ -369,7 +373,7 @@ pub fn ViewMenu(id: LiveSessionId, prefs: ChangesViewPrefs, paths: Vec<String>, 
                 class: "icon-button",
                 r#type: "button",
                 title: tr!("More"),
-                "aria-label": "More",
+                "aria-label": tr!("More"),
                 "aria-haspopup": "menu",
                 "aria-expanded": "{open()}",
                 onmounted: move |mounted| button_box.set(Some(mounted.data())),
@@ -388,7 +392,7 @@ pub fn ViewMenu(id: LiveSessionId, prefs: ChangesViewPrefs, paths: Vec<String>, 
                     class: "picker-menu cd-menu flyout",
                     role: "menu",
                     // Right edges line up with the button's.
-                    style: "position: fixed; left: {corner().0 + corner().2}px; top: {corner().1}px; bottom: auto; transform: translateX(-100%);",
+                    style: "position: fixed; left: max(268px, {corner().0 + corner().2}px); top: {corner().1}px; bottom: auto; transform: translateX(-100%);",
                     tabindex: "0",
                     onmounted: move |mounted| async move {
                         let _ = mounted.set_focus(true).await;
@@ -460,18 +464,28 @@ mod tests {
 
     #[test]
     fn all_changes_name_the_base_and_the_branch() {
-        assert_eq!(button_label(&ChangeView::All, Some(&info()), Some("main"), &[]), "main → feature");
+        assert_eq!(button_label(&ChangeView::All, Some(&info()), Some("main"), false, &[]), "main → feature");
+    }
+
+    #[test]
+    fn a_fallback_to_the_uncommitted_changes_does_not_claim_a_base() {
+        assert_eq!(button_label(&ChangeView::All, Some(&info()), Some("main"), true, &[]), tr!("Uncommitted changes"));
+    }
+
+    #[test]
+    fn a_base_equal_to_the_branch_shows_the_branch_once() {
+        assert_eq!(button_label(&ChangeView::All, Some(&info()), Some("feature"), false, &[]), "feature");
     }
 
     #[test]
     fn all_changes_with_no_base_read_as_uncommitted() {
-        assert_eq!(button_label(&ChangeView::All, Some(&info()), None, &[]), tr!("Uncommitted changes"));
+        assert_eq!(button_label(&ChangeView::All, Some(&info()), None, false, &[]), tr!("Uncommitted changes"));
     }
 
     #[test]
     fn a_commit_is_named_by_its_short_sha_and_subject() {
         let commits = vec![commit("d5bfbad1234", "Update a")];
-        assert_eq!(button_label(&ChangeView::Commit("d5bfbad1234".to_string()), None, None, &commits), "d5bfbad Update a");
+        assert_eq!(button_label(&ChangeView::Commit("d5bfbad1234".to_string()), None, None, false, &commits), "d5bfbad Update a");
     }
 
     #[test]

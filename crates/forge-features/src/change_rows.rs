@@ -53,7 +53,42 @@ pub fn fallback_source(asked: &ChangeSource, error: &GitError) -> Option<(Change
     }
 }
 
-/// The folder (no trailing slash, empty at the top) and the name of a path.
+/// What the branch button says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BranchLabel {
+    /// The data shown is not against a base: the working tree's changes.
+    Uncommitted,
+    /// Base and head are the same ref: the branch alone.
+    Branch(String),
+    Against { base: String, head: String },
+}
+
+/// `base → head` only when the shown data is against the base; after a fall back to the
+/// uncommitted changes (or with no base) the button says so, and a base equal to the head shows
+/// the branch once.
+pub fn branch_label(base: Option<&str>, head: &str, uncommitted_fallback: bool) -> BranchLabel {
+    match base {
+        Some(base) if !uncommitted_fallback => {
+            if base == head {
+                BranchLabel::Branch(head.to_string())
+            } else {
+                BranchLabel::Against { base: base.to_string(), head: head.to_string() }
+            }
+        }
+        _ => BranchLabel::Uncommitted,
+    }
+}
+
+/// The `+N −M` of a file header or tree row: nothing when git gave no counts (binary, too large)
+/// or both are zero (a created empty file, a mode change).
+pub fn header_counts(file: &ChangedFile) -> Option<(usize, usize)> {
+    match (file.added, file.removed) {
+        (Some(0), Some(0)) => None,
+        (Some(added), Some(removed)) => Some((added, removed)),
+        _ => None,
+    }
+}
+
 /// True when the view picks a commit that a loaded commit list no longer holds (a reset or a
 /// rebase). The list must have been loaded: an empty list from a successful load means the commit
 /// is gone too, so the panel calls this only once its commits are `Some`, never while they load.
@@ -64,6 +99,7 @@ pub fn vanished_commit(view: &ChangeView, commits: &[CommitInfo]) -> bool {
     }
 }
 
+/// The folder (no trailing slash, empty at the top) and the name of a path.
 pub fn split_folder(path: &str) -> (String, String) {
     match path.rsplit_once('/') {
         Some((folder, name)) => (folder.to_string(), name.to_string()),
@@ -318,6 +354,25 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn the_branch_label_names_the_base_and_head_or_the_head_alone() {
+        assert_eq!(branch_label(Some("main"), "feature", false), BranchLabel::Against { base: "main".to_string(), head: "feature".to_string() });
+        assert_eq!(branch_label(Some("claude/x"), "claude/x", false), BranchLabel::Branch("claude/x".to_string()));
+        assert_eq!(branch_label(None, "feature", false), BranchLabel::Uncommitted);
+        assert_eq!(branch_label(Some("main"), "feature", true), BranchLabel::Uncommitted);
+        assert_eq!(branch_label(Some("x"), "x", true), BranchLabel::Uncommitted);
+    }
+
+    #[test]
+    fn header_counts_are_hidden_when_unknown_or_zero() {
+        let file = |added, removed| ChangedFile { path: "a".to_string(), status: ChangeStatus::Modified, added, removed };
+        assert_eq!(header_counts(&file(Some(3), Some(1))), Some((3, 1)));
+        assert_eq!(header_counts(&file(Some(2), Some(0))), Some((2, 0)));
+        assert_eq!(header_counts(&file(None, None)), None);
+        assert_eq!(header_counts(&file(Some(0), Some(0))), None);
+        assert_eq!(header_counts(&file(Some(1), None)), None);
+    }
     use std::path::Path;
 
     #[test]

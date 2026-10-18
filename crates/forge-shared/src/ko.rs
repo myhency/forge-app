@@ -516,6 +516,8 @@ pub static KO: &[(&str, &str)] = &[
     ("Show empty groups", "빈 그룹 표시"),
     ("Show file tree", "파일 트리 표시"),
     ("Show files", "파일 표시"),
+    ("Show in Explorer", "탐색기에서 보기"),
+    ("Show in Finder", "Finder에서 보기"),
     ("Show in file tree", "파일 트리에서 보기"),
     ("Show in folder", "폴더에서 보기"),
     ("Show less", "간단히 보기"),

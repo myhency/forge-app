@@ -155,16 +155,34 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             };
             let (git, cwd) = (workspace.git(), cwd.clone());
             spawn(async move {
-                let Some(read) = run_blocking(move || git.commits(&cwd, &base)).await else { return };
-                if *commits_ticket.peek() == ticket {
-                    let read = read.ok();
-                    if let Some(list) = &read {
-                        if vanished_commit(&workspace.changes_session(id).view, list) {
+                let Some(read) = run_blocking({
+                    let (git, cwd) = (git.clone(), cwd.clone());
+                    move || git.commits(&cwd, &base)
+                })
+                .await
+                else {
+                    return;
+                };
+                if *commits_ticket.peek() != ticket {
+                    return;
+                }
+                let read = read.ok();
+                if let Some(list) = &read {
+                    let view = workspace.changes_session(id).view;
+                    // The list stops at a cap: a commit missing from it is only gone if git
+                    // does not know it either.
+                    if vanished_commit(&view, list) {
+                        let ChangeView::Commit(sha) = view else { return };
+                        let exists = run_blocking(move || git.commit_exists(&cwd, &sha)).await;
+                        if *commits_ticket.peek() != ticket {
+                            return;
+                        }
+                        if exists.is_some_and(|answer| answer == Ok(false)) {
                             workspace.update_changes_session(id, |session| session.view = ChangeView::All);
                         }
                     }
-                    commits.set(read);
                 }
+                commits.set(read);
             });
         });
     }
@@ -185,12 +203,13 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             commits: commits().unwrap_or_default(),
             view: session.view.clone(),
             dirty: dirty(),
+            fallback: missing_base().is_some(),
         }
         button {
             class: "icon-button",
             r#type: "button",
             title: tr!("Search changed files"),
-            "aria-label": "Search changed files",
+            "aria-label": tr!("Search changed files"),
             onclick: move |_| searching.set(true),
             "⌕"
         }

@@ -121,6 +121,9 @@ pub trait GitPort: Send + Sync {
     /// Whether the working tree has a change or an untracked file (an ignored file is neither). The
     /// panel hides its `Uncommitted changes` row when this is false.
     fn is_dirty(&self, cwd: &Path) -> Result<bool, GitError>;
+    /// Whether `sha` names a commit of the repository, wherever it sits in the history. `commits`
+    /// stops at a cap, so a selected commit beyond it is not in that list but still exists.
+    fn commit_exists(&self, cwd: &Path, sha: &str) -> Result<bool, GitError>;
 }
 
 #[cfg(test)]

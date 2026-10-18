@@ -67,8 +67,8 @@ pub fn ChangesTree(
                         },
                         ChangeTreeRow::File { path, name, depth, added, removed, status, .. } => {
                             let deleted = status == ChangeStatus::Deleted;
-                            let counts = match (added, removed) {
-                                (Some(added), Some(removed)) => rsx! {
+                            let counts = match forge_features::header_counts(&ChangedFile { path: String::new(), status, added, removed }) {
+                                Some((added, removed)) => rsx! {
                                     span { class: "cd-counts",
                                         span { class: "cd-add", "+{added}" }
                                         " "
@@ -121,7 +121,8 @@ pub(crate) fn commit_meta(commit: &CommitInfo, now: OffsetDateTime) -> String {
         .and_then(|then| then.format(&Rfc3339).ok())
         .map(|text| forge_entities::relative_time(&text, now))
         .unwrap_or_default();
-    format!("{} · {} · {}", &commit.sha[..commit.sha.len().min(7)], commit.author, ago)
+    let short = &commit.sha[..commit.sha.len().min(7)];
+    [short, commit.author.as_str(), ago.as_str()].into_iter().filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" · ")
 }
 
 fn section_title(kind: FileClass) -> &'static str {
@@ -190,5 +191,16 @@ mod tests {
         let commit = CommitInfo { sha: "d5bfbad1234567".to_string(), subject: "s".to_string(), author: "myhency".to_string(), time: 1_000_000 };
         let now = OffsetDateTime::from_unix_timestamp(1_000_000 + 4 * 60).unwrap();
         assert_eq!(commit_meta(&commit, now), format!("d5bfbad · myhency · {}", tr!("{n}m ago", n = 4)));
+    }
+
+    #[test]
+    fn the_meta_line_has_no_dangling_separator_for_an_empty_age_or_author() {
+        let now = OffsetDateTime::from_unix_timestamp(1_000_000).unwrap();
+        let no_age = CommitInfo { sha: "d5bfbad1234567".to_string(), subject: "s".to_string(), author: "myhency".to_string(), time: i64::MAX };
+        assert_eq!(commit_meta(&no_age, now), "d5bfbad · myhency");
+        let no_author = CommitInfo { author: String::new(), time: 1_000_000, ..no_age.clone() };
+        assert_eq!(commit_meta(&no_author, now), format!("d5bfbad · {}", forge_entities::relative_time("1970-01-12T13:46:40Z", now)));
+        let neither = CommitInfo { author: String::new(), time: i64::MAX, ..no_age };
+        assert_eq!(commit_meta(&neither, now), "d5bfbad");
     }
 }

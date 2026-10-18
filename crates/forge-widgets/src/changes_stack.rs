@@ -269,7 +269,7 @@ fn FileSection(
     };
     let hunks = text.as_deref().map(parse_patch).unwrap_or_default();
     let (shown, hidden) = cap_lines(&hunks, limit());
-    let (added, removed) = (change.file.added.unwrap_or(0), change.file.removed.unwrap_or(0));
+    let counts = forge_features::header_counts(&change.file);
     // A file that did not exist before is all in its one hunk: nothing follows it.
     let created = hunks.first().is_some_and(|hunk| hunk.old_start == 0 && hunk.lines.iter().all(|line| line.kind == DiffLineKind::Added));
     let wrap_class = if prefs.wrap { "cd-lines" } else { "cd-lines nowrap" };
@@ -373,6 +373,15 @@ fn FileSection(
                     let path = path.clone();
                     move |_| workspace.update_changes_session(id, |session| toggle_fold(session, &path, folded))
                 },
+                onkeydown: {
+                    let path = path.clone();
+                    move |event: KeyboardEvent| {
+                        if fold_key(&event.key()) {
+                            event.prevent_default();
+                            workspace.update_changes_session(id, |session| toggle_fold(session, &path, folded));
+                        }
+                    }
+                },
                 oncontextmenu: {
                     let path = path.clone();
                     move |event: MouseEvent| {
@@ -387,15 +396,22 @@ fn FileSection(
                 if !folder.is_empty() {
                     span { class: "cd-folder", "{folder}" }
                 }
-                span { class: "cd-counts",
-                    span { class: "cd-add", "+{added}" }
-                    " "
-                    span { class: "cd-del", "−{removed}" }
+                if let Some((added, removed)) = counts {
+                    span { class: "cd-counts",
+                        span { class: "cd-add", "+{added}" }
+                        " "
+                        span { class: "cd-del", "−{removed}" }
+                    }
                 }
             }
             {body}
         }
     }
+}
+
+/// Enter and Space fold a file header, as a click does.
+fn fold_key(key: &Key) -> bool {
+    matches!(key, Key::Enter) || matches!(key, Key::Character(text) if text == " ")
 }
 
 #[cfg(test)]
@@ -404,6 +420,14 @@ mod tests {
 
     fn line(kind: DiffLineKind, old_no: Option<u32>, new_no: Option<u32>) -> PatchLine {
         PatchLine { kind, text: String::new(), old_no, new_no }
+    }
+
+    #[test]
+    fn enter_and_space_fold_a_file_other_keys_do_not() {
+        assert!(fold_key(&Key::Enter));
+        assert!(fold_key(&Key::Character(" ".to_string())));
+        assert!(!fold_key(&Key::Character("a".to_string())));
+        assert!(!fold_key(&Key::Tab));
     }
 
     #[test]

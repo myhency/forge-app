@@ -371,6 +371,11 @@ impl GitPort for GitCli {
         let output = self.checked(self.run(&root, &["status", "--porcelain=v1", "-z", "--untracked-files=normal"])?)?;
         Ok(!output.stdout.is_empty())
     }
+
+    fn commit_exists(&self, cwd: &Path, sha: &str) -> Result<bool, GitError> {
+        let root = self.root(cwd)?;
+        Ok(self.has_commit(&root, sha))
+    }
 }
 
 impl WorktreePort for GitCli {
@@ -903,6 +908,22 @@ mod tests {
         assert_eq!(commits[0].sha, second);
         assert_eq!(commits[0].author, "t");
         assert!(commits[0].time > 0);
+    }
+
+    #[test]
+    fn commit_exists_finds_a_commit_the_commit_list_does_not_hold() {
+        let (dir, second) = feature_repo();
+        let git_cli = GitCli::new();
+        let listed: Vec<String> = git_cli.commits(dir.path(), "main").unwrap().into_iter().map(|c| c.sha).collect();
+        let base = {
+            let output = Command::new("git").args(["rev-parse", "main"]).current_dir(dir.path()).output().unwrap();
+            String::from_utf8(output.stdout).unwrap().trim().to_string()
+        };
+        assert!(!listed.contains(&base), "the base commit is outside the list");
+        assert_eq!(git_cli.commit_exists(dir.path(), &base), Ok(true));
+        assert_eq!(git_cli.commit_exists(dir.path(), &second), Ok(true));
+        assert_eq!(git_cli.commit_exists(dir.path(), "0123456789abcdef0123456789abcdef01234567"), Ok(false));
+        assert_eq!(git_cli.commit_exists(dir.path(), "--output=x"), Ok(false));
     }
 
     #[test]

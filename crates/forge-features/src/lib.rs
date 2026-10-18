@@ -57,7 +57,7 @@ mod workspace;
 mod worktree_view;
 
 pub use arrange::{arrange, arrange_with_origins, arranged_open_order, folder_group_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
-pub use file_menu::{file_menu, menu_height, submenu_opens_left, FileAction, MenuEntry, MenuTarget};
+pub use file_menu::{file_menu, show_in_file_manager, menu_height, submenu_opens_left, FileAction, MenuEntry, MenuTarget};
 pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
@@ -120,4 +120,4 @@ pub use appearance::{apply_appearance, apply_appearance_script};
 pub use window_width::use_window_width;
 
 pub use change_comments::{absolute_path, comment_key, comment_line, comment_text, commentable, line_number, comments_of, comments_on, CommentKey};
-pub use change_rows::{fallback_source, filter_commits, filter_files, fold_all, forget_mode, is_folded, mode_of, upsert_mode, show_uncommitted, source_for, split_folder, stack_order, toggle_fold, toggle_section, tree_rows, unfold_all, vanished_commit, ChangeView, ChangesSession, TreeRow as ChangeTreeRow, OPEN_SECTIONS, ROW_LIMIT};
+pub use change_rows::{branch_label, header_counts, BranchLabel, fallback_source, filter_commits, filter_files, fold_all, forget_mode, is_folded, mode_of, upsert_mode, show_uncommitted, source_for, split_folder, stack_order, toggle_fold, toggle_section, tree_rows, unfold_all, vanished_commit, ChangeView, ChangesSession, TreeRow as ChangeTreeRow, OPEN_SECTIONS, ROW_LIMIT};
