@@ -148,6 +148,9 @@ What differs from the desktop app: Enter-to-save, the round submit icon and the 
 - `+` on another line replaces an open empty box and drops its draft.
 - In side by side the left half also gets the 18 px padding; revisit in 50C with the single number column.
 - The comment `+` is hidden until the repository root is known (the branch info has loaded), so a session in a subfolder never saves under a wrong path.
+- IME finding (2026-10-18, real window, Korean 2-set): this webview gives the Dioxus handlers no `compositionstart`/`compositionend` at all and `keydown.isComposing` stays false; the only trace of a syllable being confirmed is an `input` event that leaves the text unchanged, a few ms before the `keydown` of the Enter. The box therefore ignores Enter when `is_composing()` or when such an unchanged `input` came less than 80 ms ago (`input_confirms`, `recently_composed`, `comment_key(.., just_composed)` in `change_comments.rs`). Checked: `g k s` then one Return does not save, the second saves; Enter after ASCII text saves at once; Escape cancels.
+- The same latent issue exists, unchanged here, in the session rename box (one Return after a composing syllable committed the rename at once, checked live), and by the same `is_composing()`-only rule in the search palette, the command box and the Files editor comment input (not tried).
+- Window results of the remaining 50B checks: Files-to-diff and send/read-back PASS; dark mode PASS with a polish (the round submit icon now takes the accent colour; the saved box border stays `--border` because the theme has no stronger dark token). The real composer card shows only the text and a `코멘트` tag, no path or line: left as is.
 
 Known limit: a reload that changes a file's diff remounts the section and drops an unsent draft.
 
