@@ -3,7 +3,6 @@
 //! which saved ones belong under a line.
 
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 use forge_domain::{Card, CardKind};
 use forge_entities::{DiffLineKind, PatchLine};
@@ -48,21 +47,6 @@ pub fn absolute_path(root: &Path, relative: &str) -> String {
     root.join(relative).to_string_lossy().to_string()
 }
 
-/// How long after a composition ends an Enter still counts as the one that confirmed it.
-pub const COMPOSITION_GRACE: Duration = Duration::from_millis(80);
-
-/// WKWebView fires `compositionend` before the `keydown` of the Enter that commits a composition,
-/// so `isComposing` is already false on that key. True when the last composition ended within the grace.
-pub fn recently_composed(last_end: Option<Instant>, now: Instant) -> bool {
-    last_end.is_some_and(|end| now.saturating_duration_since(end) < COMPOSITION_GRACE)
-}
-
-/// An `input` event that leaves the text as it was: the input method confirming a syllable it had
-/// already put in the field (Korean 2-set shows no composition events in this webview).
-pub fn input_confirms(before: &str, after: &str) -> bool {
-    before == after
-}
-
 /// What a key press in the comment field does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommentKey {
@@ -73,9 +57,8 @@ pub enum CommentKey {
 
 /// Enter saves, Shift+Enter is a new line (the field handles it), Escape cancels. While an input
 /// method is composing, Enter confirms the letters being typed and must not save.
-/// `just_composed`: a composition ended a moment ago (see `recently_composed`).
-pub fn comment_key(enter: bool, escape: bool, shift: bool, composing: bool, just_composed: bool) -> CommentKey {
-    if composing || just_composed {
+pub fn comment_key(enter: bool, escape: bool, shift: bool, composing: bool) -> CommentKey {
+    if composing {
         return CommentKey::Ignore;
     }
     if escape {
@@ -174,39 +157,15 @@ mod tests {
 
     #[test]
     fn enter_saves_shift_enter_is_a_new_line_and_escape_cancels() {
-        assert!(matches!(comment_key(true, false, false, false, false), CommentKey::Save));
-        assert!(matches!(comment_key(true, false, true, false, false), CommentKey::Ignore));
-        assert!(matches!(comment_key(false, true, false, false, false), CommentKey::Cancel));
-        assert!(matches!(comment_key(false, false, false, false, false), CommentKey::Ignore));
+        assert!(matches!(comment_key(true, false, false, false), CommentKey::Save));
+        assert!(matches!(comment_key(true, false, true, false), CommentKey::Ignore));
+        assert!(matches!(comment_key(false, true, false, false), CommentKey::Cancel));
+        assert!(matches!(comment_key(false, false, false, false), CommentKey::Ignore));
     }
 
     #[test]
     fn enter_while_composing_is_ignored() {
-        assert!(matches!(comment_key(true, false, false, true, false), CommentKey::Ignore));
-        assert!(matches!(comment_key(false, true, false, true, false), CommentKey::Ignore));
-    }
-
-    #[test]
-    fn enter_right_after_a_composition_ended_is_ignored() {
-        // WKWebView ends the composition before the keydown of the Enter that commits it.
-        assert!(matches!(comment_key(true, false, false, false, true), CommentKey::Ignore));
-        assert!(matches!(comment_key(false, true, false, false, true), CommentKey::Ignore));
-        assert!(matches!(comment_key(true, false, true, false, true), CommentKey::Ignore));
-    }
-
-    #[test]
-    fn a_composition_end_is_recent_for_a_short_while_only() {
-        let end = Instant::now();
-        assert!(recently_composed(Some(end), end));
-        assert!(recently_composed(Some(end), end + Duration::from_millis(40)));
-        assert!(!recently_composed(Some(end), end + Duration::from_millis(200)));
-        assert!(!recently_composed(None, end));
-    }
-
-    #[test]
-    fn an_input_that_changes_nothing_is_the_input_method_confirming() {
-        assert!(input_confirms("한", "한"));
-        assert!(!input_confirms("한", "한ㄱ"));
-        assert!(!input_confirms("", "a"));
+        assert!(matches!(comment_key(true, false, false, true), CommentKey::Ignore));
+        assert!(matches!(comment_key(false, true, false, true), CommentKey::Ignore));
     }
 }

@@ -5,9 +5,8 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{Card, LineRange};
-use forge_features::{comment_key, comment_text, input_confirms, recently_composed, use_workspace, CommentKey, Workspace};
+use forge_features::{comment_key, comment_text, use_workspace, CommentKey, Workspace};
 use forge_shared::tr;
-use std::time::Instant;
 
 /// What saving a comment asks of the card list. A value, so the decision can be tested.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,9 +43,6 @@ pub(crate) fn store(workspace: Workspace, id: LiveSessionId, path: &str, line: u
 pub(crate) fn DiffCommentBox(id: LiveSessionId, path: String, line: u32, card: Option<Card>, on_done: EventHandler<()>) -> Element {
     let workspace = use_workspace();
     let mut text = use_signal(|| card.as_ref().map(|card| card.text.clone()).unwrap_or_default());
-    // When an input method last confirmed text without changing it: the webview reports no composition
-    // events here, and the keydown of the Enter that confirms a syllable arrives just after that input.
-    let mut composed_at = use_signal(|| None::<Instant>);
     let mut editing = use_signal(|| card.is_none());
     let title = tr!("Line {n}", n = line);
     let saved_text = card.as_ref().map(|card| card.text.clone()).unwrap_or_default();
@@ -81,19 +77,13 @@ pub(crate) fn DiffCommentBox(id: LiveSessionId, path: String, line: u32, card: O
                     rows: "2",
                     placeholder: tr!("Tell Claude what to change"),
                     value: "{text}",
-                    oninput: move |event| {
-                        let value = event.value();
-                        if input_confirms(&text(), &value) {
-                            composed_at.set(Some(Instant::now()));
-                        }
-                        text.set(value);
-                    },
+                    oninput: move |event| text.set(event.value()),
                     onmounted: move |mounted| async move {
                         let _ = mounted.set_focus(true).await;
                     },
                     onkeydown: move |event: KeyboardEvent| {
                         let key = event.key();
-                        match comment_key(key == Key::Enter, key == Key::Escape, event.modifiers().shift(), event.is_composing(), recently_composed(composed_at(), Instant::now())) {
+                        match comment_key(key == Key::Enter, key == Key::Escape, event.modifiers().shift(), event.is_composing()) {
                             CommentKey::Save => {
                                 event.prevent_default();
                                 finish_key(true);

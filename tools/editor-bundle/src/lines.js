@@ -134,7 +134,7 @@ class CommentBox extends WidgetType {
       };
       ok.addEventListener("mousedown", (event) => { event.preventDefault(); submit(); });
       input.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); submit(); }
+        if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); }
         if (event.key === "Escape") view.dispatch({ effects: [setEditing.of(null), openDraft.of(null)] });
       });
       box.append(input, ok);
