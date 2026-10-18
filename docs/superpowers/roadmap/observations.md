@@ -705,4 +705,7 @@ Same desktop app, window 1200 x 800 pt, a Code-side session (`Acknowledge instru
 **Trash (OTH-03)**
 - The `더보기` item of the sidebar opens a one-row menu: `사이드바 편집...`. No trash or restore item was seen anywhere; deleting was not tried (it is destructive). Nothing suggests the desktop app has a trash.
 
+**A plain click on a sidebar row while split (checked a second time, 2026-10-19)**
+- Two panes side by side (`Acknowledge instruction` | `obs-a dynamic workflow`, the focus in the right one), then a plain click on a third row (`Parallel agent file analysis workflow`): the session opened as a **third pane stacked under the left pane**; the other two panes stayed. So a plain click does not replace a pane's session while the screen is split; it adds a pane (here under the first one). Closing it with its × gave back the two panes. The row was highlighted in the sidebar like the other open ones.
+
 **Not seen**: `세션 레일 표시`, the contents of `사이드바 편집...`, the drag of a session row into a pane, keys inside a pane (focus moves between panes), how many panes the app allows, whether the layout is restored on restart.
