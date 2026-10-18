@@ -389,6 +389,12 @@ impl Workspace {
         self.live.read().iter().find(|entry| entry.handle.id() == id).and_then(|entry| entry.view.read().claude_session_id.as_ref().map(|session| session.0.clone()))
     }
 
+    /// Whether the saved views have been read from the config, subscribing to it: the Changes
+    /// panel restores a session's view when this turns true.
+    pub fn change_modes_loaded(&self) -> bool {
+        *self.changes_modes_loaded.read()
+    }
+
     /// Puts back the view and base this session had when Forge last saved them, unless the person
     /// has already changed them in this run. Does nothing until the saved modes have loaded.
     pub fn restore_change_mode(&self, id: LiveSessionId) {

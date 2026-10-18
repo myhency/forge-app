@@ -271,6 +271,28 @@ pub fn show_uncommitted(dirty: bool, view: &ChangeView) -> bool {
     dirty || *view == ChangeView::Uncommitted
 }
 
+/// Whether the saved view and base may be put back now: once the saved modes have loaded and the
+/// session has its Claude id, and only once.
+pub fn should_restore(loaded: bool, has_key: bool, restored: bool) -> bool {
+    loaded && has_key && !restored
+}
+
+/// The tree is dirty if the uncommitted changes are listed, so `git status` need not run. Only
+/// that source is the working tree alone; a list made with "hide whitespace" can be empty on a
+/// dirty tree, so an empty one then says nothing. `None`: ask git.
+pub fn dirty_from_changes(source: &ChangeSource, hide_whitespace: bool, files: usize) -> Option<bool> {
+    match (source, files) {
+        (ChangeSource::Uncommitted, 0) if !hide_whitespace => Some(false),
+        (ChangeSource::Uncommitted, n) if n > 0 => Some(true),
+        _ => None,
+    }
+}
+
+/// Whether the list always answers "dirty?" for this source, so `git status` can be skipped.
+pub fn dirty_known_from_list(source: &ChangeSource, hide_whitespace: bool) -> bool {
+    matches!(source, ChangeSource::Uncommitted) && !hide_whitespace
+}
+
 pub fn is_folded(session: &ChangesSession, path: &str, position: usize) -> bool {
     session.folded_files.contains(path) || (position >= OPEN_SECTIONS && !session.expanded_files.contains(path))
 }
@@ -355,6 +377,50 @@ pub fn forget_mode(list: &mut Vec<ChangeModeRef>, project: &Path, session: &str)
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn restore_waits_for_the_config_and_the_session_key_and_runs_once() {
+        // (loaded, has_key, restored) -> restore now?
+        let table = [
+            (false, false, false, false),
+            (false, true, false, false),
+            (true, false, false, false),
+            (true, true, false, true),
+            (true, true, true, false),
+        ];
+        for (loaded, key, restored, want) in table {
+            assert_eq!(should_restore(loaded, key, restored), want, "{loaded} {key} {restored}");
+        }
+    }
+
+    #[test]
+    fn git_status_is_skipped_only_when_the_list_always_answers() {
+        use forge_ports::ChangeSource as S;
+        assert!(dirty_known_from_list(&S::Uncommitted, false));
+        assert!(!dirty_known_from_list(&S::Uncommitted, true));
+        assert!(!dirty_known_from_list(&S::All { base: "m".into() }, false));
+        assert!(!dirty_known_from_list(&S::Commit { sha: "a".into() }, false));
+    }
+
+    #[test]
+    fn dirty_is_read_from_the_files_only_when_they_are_the_whole_working_tree_change() {
+        use forge_ports::ChangeSource as S;
+        let all = S::All { base: "main".into() };
+        let commit = S::Commit { sha: "a".into() };
+        // (source, hide whitespace, file count) -> dirty if known
+        let table = [
+            (S::Uncommitted, false, 0, Some(false)),
+            (S::Uncommitted, false, 3, Some(true)),
+            (S::Uncommitted, true, 0, None),
+            (S::Uncommitted, true, 3, Some(true)),
+            (all.clone(), false, 0, None),
+            (all, false, 3, None),
+            (commit, false, 3, None),
+        ];
+        for (source, hide, count, want) in table {
+            assert_eq!(dirty_from_changes(&source, hide, count), want, "{source:?} {hide} {count}");
+        }
+    }
+
     #[test]
     fn closing_a_session_drops_its_changes_state() {
         let mut map = std::collections::HashMap::new();

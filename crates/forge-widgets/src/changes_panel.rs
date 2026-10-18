@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{fallback_source, ready_to_load, run_blocking, source_for, stack_order, use_workspace, vanished_commit, ChangeView, FileAction, MenuTarget, Panel};
+use forge_features::{fallback_source, ready_to_load, run_blocking, should_restore, dirty_from_changes, dirty_known_from_list, source_for, stack_order, use_workspace, vanished_commit, ChangeView, FileAction, MenuTarget, Panel};
 use forge_ports::{BranchInfo, ChangeSource, CommitInfo, DiffOptions, FileChange, GitError};
 
 use crate::changes_header::{position_class, BranchButton, FileSearch, ViewMenu};
@@ -19,8 +19,10 @@ use forge_shared::tr;
 #[component]
 pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let workspace = use_workspace();
-    // Back to what this session compared last time; before the loaders' effects run.
-    use_hook(move || workspace.restore_change_mode(id));
+    // Back to what this session compared last time. The saved views and the session's Claude id
+    // can arrive after the panel opens (a session open at launch), so this reruns until both are
+    // there; nothing is saved before it has happened, or the saved view would be overwritten.
+    let mut restored = use_signal(|| false);
     let mode_memo = use_memo(move || {
         let state = workspace.changes_session(id);
         (state.view, state.base)
@@ -28,9 +30,18 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     // The Claude session id appears with the first message; a mode chosen before then is saved then.
     let key_memo = use_memo(move || workspace.claude_session_key(id));
     use_effect(move || {
+        let (loaded, has_key) = (workspace.change_modes_loaded(), key_memo().is_some());
+        if should_restore(loaded, has_key, *restored.peek()) {
+            workspace.restore_change_mode(id);
+            restored.set(true);
+        }
+    });
+    use_effect(move || {
         let _ = mode_memo();
         let _ = key_memo();
-        workspace.remember_change_mode(id);
+        if restored() {
+            workspace.remember_change_mode(id);
+        }
     });
     let mut refresh = use_signal(|| 0u32);
     let mut list_open = use_signal(|| true);
@@ -107,6 +118,10 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         use_effect(move || {
             let _ = refresh();
             let _ = finished();
+            // The list of uncommitted changes answers this by itself: the loader below sets it.
+            if dirty_known_from_list(&source_memo(), hide_memo()) {
+                return;
+            }
             let ticket = dirty_ticket.peek().wrapping_add(1);
             dirty_ticket.set(ticket);
             let (git, cwd) = (workspace.git(), cwd.clone());
@@ -151,6 +166,14 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 };
                 if *changes_ticket.peek() == ticket {
                     missing_base.set(missing);
+                    if let Ok(files) = &read {
+                        if let Some(known) = dirty_from_changes(&used, hide, files.len()) {
+                            // Cancels a `git status` still running for an earlier source.
+                            let next = dirty_ticket.peek().wrapping_add(1);
+                            dirty_ticket.set(next);
+                            dirty.set(known);
+                        }
+                    }
                     result.set(Some((used, read)));
                 }
             });
