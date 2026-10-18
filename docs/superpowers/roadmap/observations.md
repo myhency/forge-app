@@ -676,3 +676,33 @@ Throwaway files (uncommitted, removed again with `git clean`) were put in the wo
 - **NOT separated** (stay in the normal list): `build/*`, `out/*`, `target/*` (a Rust file in `target/`), `bundle.d.ts`, `main.py`, `a.txt`.
 - A folder row inside a section is named by its own folder (`src` holds `x.test.ts` under the test section while `src/c.txt` stays in the normal tree).
 - **Not seen**: whether the collapsed state is remembered, whether a section's counts change with the search, a section with no match (presumably hidden).
+
+## Round 20: split panes and the side chat (2026-10-19, OBS-06, OTH-04)
+
+Same desktop app, window 1200 x 800 pt, a Code-side session (`Acknowledge instruction`) open with its Changes panel. Only layout keys, menus and the × buttons were used. No message was sent, nothing was deleted or archived. The window was left as found (one pane, Changes panel open, no side chat).
+
+**Opening a pane**
+- `⌥+Click` on a sidebar row opens that session in a second pane at the right of the first. Both rows stay highlighted in the sidebar. The two panes share the width in half (about 460 pt each at 1200 pt with the sidebar shown).
+- `⌃⌘\` opens a **new-session pane** beside the focused pane (to its right) and gives it focus: a blue border around the pane and the cursor in its box. `⌃⌘-` does the same below the focused pane. So the layout is a tree of side-by-side and stacked panes: with two sessions stacked on the left and a new-session pane at the right, `⌃⌘-` on the right pane gave four panes (a column of two sessions, a column of two new-session panes).
+- `⌘\` (listed as `창 닫기`) did nothing visible with the focus in a composer. The × in a pane header closes it.
+
+**What a pane looks like**
+- A pane is a full session view: its own header, transcript, composer, mode, model and effort, and **its own panels** (Changes in the left pane, `백그라운드 작업` in the right one at the same time). A pane's panels sit inside that pane, as a rounded card over its right part.
+- Header of a narrow pane (side by side): the title (cut with `...`, with its chevron), `⋮`, and `×`. The folder tag and the toolbar icons are gone. A wide pane (stacked, full width) keeps the toolbar: a first icon (session rail, `세션 레일 표시`, only in some panes), terminal, changes, browser, files, `⋮`, `×`; the title is complete.
+- A new-session pane has the title `새 세션`, a link `새로운 기능` (blue, at the right: this is where PG-07 lives) and `×`. Under it: a list of recent folders (`forge-observe`, `mywork`), `환경 선택 ⌄`, a row `Claude Code CLI 세션 N개 가져오기`, then the composer with the chips `이 컴퓨터` and the folder, the mode and the model. No greeting and no usage card here. The pixel creature stands on the box.
+- Closing a pane gives its space to the neighbour; no pane keeps the focus border afterwards. Closing the new-session pane brought back the earlier layout (two sessions stacked).
+
+**The `⋮` menu of a pane**
+- Side by side: `세션 레일 표시`, `터미널 ⌘J`, `변경 사항 ⇧⌘D`, `Browser ⇧⌘B`, `파일 ⇧⌘F`, `백그라운드 작업` (checked when open), `iOS 시뮬레이터`; a divider; the sleep switch (`컴퓨터 절전 모드 방지 / 이 세션에서만`); a divider; `분할 화면을 왼쪽으로 이동`, `분할 보기 아래로 이동`, `분할 보기 닫기`.
+- Stacked: only the items that do not fit as icons (`백그라운드 작업`, `iOS 시뮬레이터`), the sleep switch, then `분할 보기 위로 이동`, `분할 보기를 오른쪽으로 이동`, `분할 보기 닫기`. So the menu moves the pane (swap with the neighbour, or turn the split from side by side to stacked) and the labels follow the orientation. Choosing `분할 보기 아래로 이동` on the right pane stacked the panes: the first session on top, the second below.
+
+**Resizing**
+- The divider between two columns drags (a thin grab bar at the middle of the line). Dragging it left by about 140 pt widened the right pane; the left pane shrank to about 320 pt, its title was cut to one letter and its panels kept their width and covered the chat. Not tried: the horizontal divider, a minimum width, double click to reset.
+
+**Side chat (`⌘;`)**
+- `⌘;` opens a panel at the right (in the panel column, below the Changes panel, which shrank): a tab `사이드 채팅 ×`, a `+` for more tabs, expand and close at the right. Empty: `아직 메시지가 없습니다` in the middle and a box `이 세션에서 답장하기...` with a return icon. `⌘;` again closes it. Not seen: what the side chat sends (the box says it replies in this session), what `+` does, a side chat with messages.
+
+**Trash (OTH-03)**
+- The `더보기` item of the sidebar opens a one-row menu: `사이드바 편집...`. No trash or restore item was seen anywhere; deleting was not tried (it is destructive). Nothing suggests the desktop app has a trash.
+
+**Not seen**: `세션 레일 표시`, the contents of `사이드바 편집...`, the drag of a session row into a pane, keys inside a pane (focus moves between panes), how many panes the app allows, whether the layout is restored on restart.

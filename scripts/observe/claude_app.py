@@ -2,7 +2,7 @@
 """Capture and click the installed Claude desktop app, to look at it before copying a feature.
 
   claude_app.py shot OUT.png
-  claude_app.py click X Y [--shown-scale 1.2] [--button left|right|middle] [--shift]
+  claude_app.py click X Y [--shown-scale 1.2] [--button left|right|middle] [--shift] [--option]
   claude_app.py drag X1 Y1 X2 Y2   press at the first point, move, release at the second
   claude_app.py scroll X Y LINES   wheel at the point; positive LINES scroll up (older content)
   claude_app.py type TEXT        paste TEXT at the cursor (through the clipboard, so IME does not matter)
@@ -66,10 +66,11 @@ def to_point(x, y, shown_scale):
     return point
 
 
-def post_mouse(kind, point, button, shift=False):
+def post_mouse(kind, point, button, shift=False, option=False):
     event = Quartz.CGEventCreateMouseEvent(None, kind, point, button)
-    if shift:
-        Quartz.CGEventSetFlags(event, Quartz.kCGEventFlagMaskShift)
+    flags = (Quartz.kCGEventFlagMaskShift if shift else 0) | (Quartz.kCGEventFlagMaskAlternate if option else 0)
+    if flags:
+        Quartz.CGEventSetFlags(event, flags)
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
 
 
@@ -81,14 +82,14 @@ BUTTONS = {
 }
 
 
-def click(x, y, shown_scale, button="left", shift=False):
+def click(x, y, shown_scale, button="left", shift=False, option=False):
     bring_to_front()
     point = to_point(x, y, shown_scale)
     cg_button, down, up, _ = BUTTONS[button]
     post_mouse(Quartz.kCGEventMouseMoved, point, Quartz.kCGMouseButtonLeft)
     time.sleep(0.3)
     for kind in (down, up):
-        post_mouse(kind, point, cg_button, shift)
+        post_mouse(kind, point, cg_button, shift, option)
         time.sleep(0.05)
 
 
@@ -126,7 +127,8 @@ MODIFIERS = {"cmd": "command", "shift": "shift", "option": "option", "ctrl": "co
 LETTER_CODES = {"a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11,
                 "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17, "o": 31, "u": 32, "i": 34, "p": 35,
                 "l": 37, "j": 38, "k": 40, "n": 45, "m": 46}
-KEY_CODES = {"delete": 51, "return": 36, "tab": 48, "escape": 53, "left": 123, "right": 124, "down": 125, "up": 126}
+KEY_CODES = {"delete": 51, "return": 36, "tab": 48, "escape": 53, "left": 123, "right": 124, "down": 125, "up": 126,
+             "backslash": 42, "semicolon": 41, "minus": 27}
 
 
 def type_text(text):
@@ -160,6 +162,7 @@ def main():
     click_parser.add_argument("--shown-scale", type=float, default=1.2)
     click_parser.add_argument("--button", choices=sorted(BUTTONS), default="left")
     click_parser.add_argument("--shift", action="store_true")
+    click_parser.add_argument("--option", action="store_true")
     drag_parser = sub.add_parser("drag")
     for name in ("x1", "y1", "x2", "y2"):
         drag_parser.add_argument(name, type=float)
@@ -186,7 +189,7 @@ def main():
     elif args.command == "drag":
         drag(args.x1, args.y1, args.x2, args.y2, args.shown_scale)
     else:
-        click(args.x, args.y, args.shown_scale, args.button, args.shift)
+        click(args.x, args.y, args.shown_scale, args.button, args.shift, args.option)
 
 
 if __name__ == "__main__":
