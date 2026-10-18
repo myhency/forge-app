@@ -1660,6 +1660,8 @@ impl Workspace {
         stores.write().remove(&id);
         let mut cards = self.cards;
         cards.write().take(id);
+        let mut changes = self.changes_sessions;
+        crate::change_rows::forget_changes_session(&mut changes.write(), &id);
         if self.active() == Active::Live(id) {
             let next = self.live.peek().last().map(|entry| entry.handle.id());
             match next {

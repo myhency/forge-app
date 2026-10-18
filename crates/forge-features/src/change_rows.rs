@@ -41,6 +41,11 @@ pub fn source_for(view: &ChangeView, base: Option<&str>) -> ChangeSource {
     }
 }
 
+/// Drops the Changes state of a session that closed; `true` when there was one.
+pub fn forget_changes_session<K: std::hash::Hash + Eq, V>(sessions: &mut std::collections::HashMap<K, V>, id: &K) -> bool {
+    sessions.remove(id).is_some()
+}
+
 /// Whether the first load may start. Only `All` with no saved base needs the branch list (it
 /// brings the default base); loading before it would run the Uncommitted pass and then the All pass.
 pub fn ready_to_load(view: &ChangeView, saved_base: Option<&str>, info_loaded: bool) -> bool {
@@ -348,6 +353,18 @@ pub fn forget_mode(list: &mut Vec<ChangeModeRef>, project: &Path, session: &str)
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn closing_a_session_drops_its_changes_state() {
+        let mut map = std::collections::HashMap::new();
+        map.insert(1u32, ChangesSession { view: ChangeView::Uncommitted, ..ChangesSession::default() });
+        map.insert(2u32, ChangesSession::default());
+        assert!(forget_changes_session(&mut map, &1));
+        assert!(!map.contains_key(&1), "no entry is left");
+        assert_eq!(map.get(&1).cloned().unwrap_or_default(), ChangesSession::default());
+        assert!(map.contains_key(&2), "another session keeps its state");
+        assert!(!forget_changes_session(&mut map, &1), "nothing to drop twice");
+    }
+
     #[test]
     fn the_first_load_waits_for_the_branch_list_only_when_the_base_decides_the_source() {
         let commit = ChangeView::Commit("abc".to_string());
