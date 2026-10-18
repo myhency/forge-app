@@ -10,10 +10,18 @@
 (function () {
   var before = new WeakMap(); // the field's text before the key being handled
   var armed = -Infinity;      // timeStamp of an input that changed nothing
+  var armedTarget = null;     // the field that input happened in
   var WINDOW_MS = 150;
+  // Only fields that hold typed text. A checkbox, radio, range or button has a .value too, but it
+  // never changes with typing, so it must not look like "an input that left the text unchanged".
+  var TEXT_TYPES = { text: 1, search: 1, url: 1, email: 1, password: 1, tel: 1, number: 1, "": 1 };
 
   function text(target) {
-    return target && typeof target.value === "string" ? target.value : null;
+    if (!target || typeof target.value !== "string") return null;
+    var tag = target.tagName;
+    if (tag === "TEXTAREA") return target.value;
+    if (tag === "INPUT" && TEXT_TYPES[String(target.getAttribute("type") || "").toLowerCase()] === 1) return target.value;
+    return null;
   }
 
   document.addEventListener("keydown", function (event) {
@@ -21,9 +29,10 @@
     var confirmed = false;
     if (event.key === "Enter") {
       composing = event.isComposing || event.keyCode === 229;
-      confirmed = event.timeStamp - armed < WINDOW_MS;
+      confirmed = event.target === armedTarget && event.timeStamp - armed < WINDOW_MS;
     }
     armed = -Infinity;
+    armedTarget = null;
     if (composing || confirmed) {
       event.stopImmediatePropagation();
       if (!composing) event.preventDefault();
@@ -36,7 +45,9 @@
   document.addEventListener("input", function (event) {
     var value = text(event.target);
     if (value === null) return;
-    armed = before.get(event.target) === value ? event.timeStamp : -Infinity;
+    var unchanged = before.get(event.target) === value;
+    armed = unchanged ? event.timeStamp : -Infinity;
+    armedTarget = unchanged ? event.target : null;
     before.set(event.target, value);
   }, true);
 })();

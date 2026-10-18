@@ -65,3 +65,93 @@ test("typing the same character again after the field was cleared does not arm t
   press(w, area, "Enter", 13);
   assert.deepEqual(seen, ["a", "a", "Enter"]);
 });
+
+// Builds a page with two textareas, a checkbox and a text input, with a handler under the document.
+function boot2() {
+  const dom = new JSDOM(
+    `<!doctype html><body><textarea id="a"></textarea><textarea id="b"></textarea><input id="c" type="checkbox"><input id="r" type="radio"><input id="t" type="text"></body>`,
+    { runScripts: "outside-only" },
+  );
+  const w = dom.window;
+  w.eval(code);
+  const seen = [];
+  w.document.body.addEventListener("keydown", (event) => seen.push(event.target.id + ":" + event.key));
+  return { w, seen, el: (id) => w.document.getElementById(id) };
+}
+
+function stamp(event, ms) {
+  Object.defineProperty(event, "timeStamp", { value: ms, configurable: true });
+  return event;
+}
+function key(w, target, k, ms, init = {}) {
+  const event = stamp(new w.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...init }), ms);
+  target.dispatchEvent(event);
+  return event;
+}
+function input(w, target, ms, value) {
+  if (value !== undefined) target.value = value;
+  target.dispatchEvent(stamp(new w.InputEvent("input", { bubbles: true }), ms));
+}
+
+test("the swallow lasts 149 ms after the unchanged input and not 150 ms", () => {
+  const { w, seen, el } = boot2();
+  const a = el("a");
+  key(w, a, "x", 1000); input(w, a, 1001, "x");
+  key(w, a, "y", 1002); input(w, a, 1003, "xy");
+  input(w, a, 2000); // unchanged
+  assert.equal(key(w, a, "Enter", 2149, { keyCode: 13 }).defaultPrevented, true);
+  input(w, a, 3000); // unchanged
+  assert.equal(key(w, a, "Enter", 3150, { keyCode: 13 }).defaultPrevented, false);
+  assert.deepEqual(seen.filter((s) => s.endsWith("Enter")), ["a:Enter"], "only the late one reached the handler");
+});
+
+test("a composing Enter keeps its default, the Enter after the unchanged input does not", () => {
+  const { w, seen, el } = boot2();
+  const a = el("a");
+  const composing = key(w, a, "Enter", 10, { keyCode: 229 });
+  assert.equal(composing.defaultPrevented, false, "the input method's own confirmation runs");
+  const flagged = key(w, a, "Enter", 20, { isComposing: true });
+  assert.equal(flagged.defaultPrevented, false);
+  key(w, a, "k", 30); input(w, a, 31, "k");
+  input(w, a, 40); // unchanged
+  assert.equal(key(w, a, "Enter", 50, { keyCode: 13 }).defaultPrevented, true);
+  assert.deepEqual(seen, ["a:k"]);
+});
+
+test("a key between the unchanged input and the Enter disarms the guard", () => {
+  const { w, seen, el } = boot2();
+  const a = el("a");
+  key(w, a, "k", 10); input(w, a, 11, "k");
+  input(w, a, 20); // unchanged
+  key(w, a, "ArrowLeft", 30);
+  assert.equal(key(w, a, "Enter", 40, { keyCode: 13 }).defaultPrevented, false);
+  assert.deepEqual(seen, ["a:k", "a:ArrowLeft", "a:Enter"]);
+});
+
+test("a checkbox or radio never arms the guard", () => {
+  const { w, seen, el } = boot2();
+  for (const id of ["c", "r"]) {
+    key(w, el(id), " ", 10);
+    input(w, el(id), 20); // value stays "on"
+    assert.equal(key(w, el(id), "Enter", 30, { keyCode: 13 }).defaultPrevented, false);
+  }
+  assert.deepEqual(seen, ["c: ", "c:Enter", "r: ", "r:Enter"]);
+});
+
+test("a text input still arms the guard", () => {
+  const { w, seen, el } = boot2();
+  const t = el("t");
+  key(w, t, "k", 10); input(w, t, 11, "k");
+  input(w, t, 20);
+  assert.equal(key(w, t, "Enter", 30, { keyCode: 13 }).defaultPrevented, true);
+  assert.deepEqual(seen, ["t:k"]);
+});
+
+test("an unchanged input in field A does not swallow Enter in field B", () => {
+  const { w, seen, el } = boot2();
+  const a = el("a"), b = el("b");
+  key(w, a, "k", 10); input(w, a, 11, "k");
+  input(w, a, 20); // unchanged, A armed
+  assert.equal(key(w, b, "Enter", 30, { keyCode: 13 }).defaultPrevented, false);
+  assert.deepEqual(seen, ["a:k", "b:Enter"]);
+});
