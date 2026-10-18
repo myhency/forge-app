@@ -115,8 +115,8 @@ Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Mode
 
 | Id | Feature | Source | Plan |
 | --- | --- | --- | --- |
-| OTH-01 | Package the app | Plan 13 candidates | - |
-| OTH-02 | Chat view extras | Plan 13 candidates | - |
+| OTH-01 | Package the app | Plan 13 candidates | Plan 29 (built) |
+| OTH-02 | Chat view extras | Plan 13 candidates | superseded by Plans 23A/B/C |
 | OTH-03 | Trash restore for deleted sessions | Plan 13 candidates | - |
 | OTH-04 | Split panes | Plan 13 candidates | - |
 | OTH-05 | Plan 12's deferred minors | spec §23.8 | - |
