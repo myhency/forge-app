@@ -30,6 +30,19 @@ const term = new Terminal({ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospa
 const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
 term.open(host);
+// WebKit's Korean input method rewrites the syllable under construction with an
+// insertReplacementText that xterm.js does not turn into data. Send the difference ourselves:
+// backspaces for what went, then what came.
+let preIme = "";
+host.addEventListener("beforeinput", (e) => { if (e.target === term.textarea) preIme = term.textarea.value; }, true);
+host.addEventListener("input", (e) => {
+    if (e.target !== term.textarea || e.inputType !== "insertReplacementText" || !e.data) return;
+    const now = term.textarea.value;
+    let i = 0;
+    while (i < preIme.length && i < now.length && preIme[i] === now[i]) i++;
+    const gone = [...preIme.slice(i)].length, added = now.slice(i);
+    if (gone || added) dioxus.send({ t: "data", d: "\x7f".repeat(gone) + added });
+}, true);
 let last = "";
 let timer = null;
 function report() {
@@ -271,5 +284,14 @@ pub fn SignInTerminal(cwd: PathBuf, tap: TapHandle) -> Element {
         div { class: "sign-in-terminal",
             TerminalTab { tab: SIGN_IN_TAB, cwd, active: true, on_restart: move |_| {}, tap: Some(tap) }
         }
+    }
+}
+
+#[cfg(test)]
+mod ime_tests {
+    #[test]
+    fn bridge_repairs_korean_replacement_text() {
+        assert!(super::BRIDGE_JS.contains("insertReplacementText"));
+        assert!(super::BRIDGE_JS.contains(r"\x7f"));
     }
 }

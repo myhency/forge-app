@@ -155,3 +155,14 @@ test("an unchanged input in field A does not swallow Enter in field B", () => {
   assert.equal(key(w, b, "Enter", 30, { keyCode: 13 }).defaultPrevented, false);
   assert.deepEqual(seen, ["a:k", "b:Enter"]);
 });
+
+test("the xterm helper textarea is never guarded", () => {
+  const { w, area, seen } = boot();
+  area.className = "xterm-helper-textarea";
+  press(w, area, "ㄴ", 229, "한");
+  area.dispatchEvent(new w.InputEvent("input", { inputType: "insertReplacementText", bubbles: true }));
+  const enter = new w.KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+  area.dispatchEvent(enter);
+  assert.equal(enter.defaultPrevented, false);
+  assert.deepEqual(seen, ["ㄴ", "Enter"]);
+});

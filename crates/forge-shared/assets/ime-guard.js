@@ -18,6 +18,8 @@
 
   function text(target) {
     if (!target || typeof target.value !== "string") return null;
+    // xterm's hidden textarea: one Enter must run a command, so it is never guarded.
+    if (target.classList && target.classList.contains("xterm-helper-textarea")) return null;
     var tag = target.tagName;
     if (tag === "TEXTAREA") return target.value;
     if (tag === "INPUT" && TEXT_TYPES[String(target.getAttribute("type") || "").toLowerCase()] === 1) return target.value;
