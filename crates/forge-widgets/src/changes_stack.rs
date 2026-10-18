@@ -5,12 +5,13 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_domain::ChangesViewPrefs;
+use forge_domain::{Card, ChangesViewPrefs};
 use forge_entities::{cap_lines, gap_after, gap_lines, icon_of, paired_spans, parse_patch, side_by_side, split_by_spans, DiffLineKind, PatchHunk, PatchLine, Span};
-use forge_features::{is_folded, run_blocking, split_folder, toggle_fold, use_workspace, ChangesSession};
+use forge_features::{absolute_path, comment_line, commentable, comments_on, is_folded, run_blocking, split_folder, toggle_fold, use_workspace, ChangesSession};
 use forge_ports::{ChangeSource, ChangeStatus, DiffOptions, FileChange, PatchState};
 use forge_shared::tr;
 
+use crate::changes_comment::DiffCommentBox;
 use crate::files_icons::FileTypeIcon;
 
 // How many lines of one file are drawn at first and added by each `Show N more lines`, and the
@@ -44,6 +45,7 @@ fn section_key(source: &ChangeSource, change: &FileChange) -> String {
 pub fn DiffStack(
     id: LiveSessionId,
     cwd: PathBuf,
+    root: PathBuf,
     source: ChangeSource,
     files: Vec<FileChange>,
     order: Vec<usize>,
@@ -58,6 +60,8 @@ pub fn DiffStack(
                     key: "{section_key(&source, &files[index])}",
                     id,
                     cwd: cwd.clone(),
+                    root: root.clone(),
+                    commentable: commentable(&source),
                     source: source.clone(),
                     change: files[index].clone(),
                     prefs: prefs.clone(),
@@ -89,10 +93,75 @@ fn number(value: Option<u32>) -> String {
     value.map(|n| n.to_string()).unwrap_or_default()
 }
 
-fn line_row(line: &PatchLine, spans: &[Span], highlight: bool) -> Element {
+/// What the rows need to offer comments on the new side of the diff. It exists only when the new
+/// side is the working tree (`commentable`).
+#[derive(Clone)]
+struct CommentEnv {
+    id: LiveSessionId,
+    /// The file's absolute path: the key of its comment cards.
+    path: String,
+    cards: Vec<Card>,
+    /// The line whose empty box is open.
+    open: Option<u32>,
+    on_open: EventHandler<u32>,
+    on_close: EventHandler<()>,
+}
+
+/// The line a `+` on this row would comment on: the new number of an added or a context line; in
+/// side by side only the right half has one.
+fn offers_comment(line: &PatchLine, right: bool, side_by_side: bool) -> Option<u32> {
+    if side_by_side && !right {
+        return None;
+    }
+    comment_line(line)
+}
+
+/// The round `+` in the row's left margin (shown while the pointer is over the row).
+fn add_button(line: Option<u32>, env: Option<&CommentEnv>) -> Element {
+    let (Some(line), Some(env)) = (line, env) else { return rsx! {} };
+    let on_open = env.on_open;
+    rsx! {
+        button {
+            class: "cd-add-comment",
+            r#type: "button",
+            title: tr!("Add comment"),
+            "aria-label": "Add comment",
+            onclick: move |event: MouseEvent| {
+                event.stop_propagation();
+                on_open.call(line);
+            },
+            "+"
+        }
+    }
+}
+
+/// The saved comments of a line and, when its `+` was clicked, an empty box, under the row.
+fn comment_slot(line: Option<u32>, env: Option<&CommentEnv>) -> Element {
+    let (Some(line), Some(env)) = (line, env) else { return rsx! {} };
+    let saved = comments_on(&env.cards, &env.path, line);
+    if saved.is_empty() && env.open != Some(line) {
+        return rsx! {};
+    }
+    let (id, path, on_close) = (env.id, env.path.clone(), env.on_close);
+    let open_here = env.open == Some(line);
+    rsx! {
+        div { class: "cd-comment-slot",
+            for card in saved {
+                DiffCommentBox { key: "c{card.id}", id, path: path.clone(), line, card: Some(card), on_done: move |_| {} }
+            }
+            if open_here {
+                DiffCommentBox { key: "new{line}", id, path: path.clone(), line, card: None, on_done: on_close }
+            }
+        }
+    }
+}
+
+fn line_row(line: &PatchLine, spans: &[Span], highlight: bool, env: Option<&CommentEnv>) -> Element {
     let pieces = if highlight && !spans.is_empty() { split_by_spans(&line.text, spans) } else { vec![(line.text.clone(), false)] };
+    let target = env.and_then(|_| offers_comment(line, false, false));
     rsx! {
         div { class: "diff-line {line_class(line.kind)}",
+            {add_button(target, env)}
             span { class: "cd-no", "{number(line.old_no)}" }
             span { class: "cd-no", "{number(line.new_no)}" }
             span { class: "diff-sign", "{sign(line.kind)}" }
@@ -102,6 +171,7 @@ fn line_row(line: &PatchLine, spans: &[Span], highlight: bool) -> Element {
                 }
             }
         }
+        {comment_slot(target, env)}
     }
 }
 
@@ -115,13 +185,15 @@ fn cell_number(line: &PatchLine, right: bool) -> Option<u32> {
     }
 }
 
-fn cell(line: Option<&PatchLine>, right: bool, spans: &[Span], highlight: bool) -> Element {
+fn cell(line: Option<&PatchLine>, right: bool, spans: &[Span], highlight: bool, env: Option<&CommentEnv>) -> Element {
     match line {
         Some(line) => {
             let pieces = if highlight && !spans.is_empty() { split_by_spans(&line.text, spans) } else { vec![(line.text.clone(), false)] };
             let number = cell_number(line, right);
+            let target = env.and_then(|_| offers_comment(line, right, true));
             rsx! {
                 div { class: "diff-line {line_class(line.kind)}",
+                    {add_button(target, env)}
                     span { class: "cd-no", "{self::number(number)}" }
                     span { class: "diff-sign", "{sign(line.kind)}" }
                     span { class: "diff-text",
@@ -130,13 +202,14 @@ fn cell(line: Option<&PatchLine>, right: bool, spans: &[Span], highlight: bool) 
                         }
                     }
                 }
+                {comment_slot(target, env)}
             }
         }
         None => rsx! { div { class: "diff-line empty" } },
     }
 }
 
-fn hunk_view(hunk: &PatchHunk, prefs: &ChangesViewPrefs) -> Element {
+fn hunk_view(hunk: &PatchHunk, prefs: &ChangesViewPrefs, env: Option<&CommentEnv>) -> Element {
     let spans = if prefs.highlight_words { paired_spans(&hunk.lines) } else { Vec::new() };
     let none: Vec<Span> = Vec::new();
     let spans_of = |index: usize| spans.get(index).unwrap_or(&none);
@@ -145,8 +218,8 @@ fn hunk_view(hunk: &PatchHunk, prefs: &ChangesViewPrefs) -> Element {
         rsx! {
             div { class: "cd-hunk cd-sbs",
                 for (left , right) in rows {
-                    {cell(left.map(|i| &hunk.lines[i]), false, left.map(spans_of).unwrap_or(&none), prefs.highlight_words)}
-                    {cell(right.map(|i| &hunk.lines[i]), true, right.map(spans_of).unwrap_or(&none), prefs.highlight_words)}
+                    {cell(left.map(|i| &hunk.lines[i]), false, left.map(spans_of).unwrap_or(&none), prefs.highlight_words, env)}
+                    {cell(right.map(|i| &hunk.lines[i]), true, right.map(spans_of).unwrap_or(&none), prefs.highlight_words, env)}
                 }
             }
         }
@@ -154,7 +227,7 @@ fn hunk_view(hunk: &PatchHunk, prefs: &ChangesViewPrefs) -> Element {
         rsx! {
             div { class: "cd-hunk",
                 for (index , line) in hunk.lines.iter().enumerate() {
-                    {line_row(line, spans_of(index), prefs.highlight_words)}
+                    {line_row(line, spans_of(index), prefs.highlight_words, env)}
                 }
             }
         }
@@ -165,6 +238,8 @@ fn hunk_view(hunk: &PatchHunk, prefs: &ChangesViewPrefs) -> Element {
 fn FileSection(
     id: LiveSessionId,
     cwd: PathBuf,
+    root: PathBuf,
+    commentable: bool,
     source: ChangeSource,
     change: FileChange,
     prefs: ChangesViewPrefs,
@@ -191,6 +266,16 @@ fn FileSection(
     // A file that did not exist before is all in its one hunk: nothing follows it.
     let created = hunks.first().is_some_and(|hunk| hunk.old_start == 0 && hunk.lines.iter().all(|line| line.kind == DiffLineKind::Added));
     let wrap_class = if prefs.wrap { "cd-lines" } else { "cd-lines nowrap" };
+
+    let mut open_comment = use_signal(|| None::<u32>);
+    let env = commentable.then(|| CommentEnv {
+        id,
+        path: absolute_path(&root, &path),
+        cards: workspace.cards(id),
+        open: open_comment(),
+        on_open: EventHandler::new(move |line| open_comment.set(Some(line))),
+        on_close: EventHandler::new(move |_| open_comment.set(None)),
+    });
 
     let body = if folded {
         rsx! {}
@@ -223,13 +308,13 @@ fn FileSection(
             _ => rsx! {
                 div { class: "{wrap_class}",
                     for (index , hunk) in shown.iter().enumerate() {
-                        {hunk_view(hunk, &prefs)}
+                        {hunk_view(hunk, &prefs, env.as_ref())}
                         if hidden > 0 && index + 1 == shown.len() {
                             // The lines after the cut are not drawn, so there is no gap to open.
                         } else if let Some(lines) = gaps.read().get(&index) {
                             div { class: "cd-hunk",
                                 for line in lines.iter() {
-                                    {line_row(line, &[], false)}
+                                    {line_row(line, &[], false, None)}
                                 }
                             }
                         } else if gap_after(&hunks, index).is_some() && !(created && index + 1 == hunks.len()) {
@@ -330,5 +415,22 @@ mod tests {
         let removed = line(DiffLineKind::Removed, Some(5), None);
         assert_eq!(cell_number(&removed, false), Some(5));
         assert_eq!(cell_number(&removed, true), None);
+    }
+
+    #[test]
+    fn a_plus_is_offered_on_added_and_context_lines_but_not_on_removed_ones() {
+        let added = line(DiffLineKind::Added, None, Some(11));
+        let context = line(DiffLineKind::Context, Some(10), Some(10));
+        let removed = line(DiffLineKind::Removed, Some(5), None);
+        assert_eq!(offers_comment(&added, false, false), Some(11));
+        assert_eq!(offers_comment(&context, false, false), Some(10));
+        assert_eq!(offers_comment(&removed, false, false), None);
+    }
+
+    #[test]
+    fn side_by_side_offers_it_in_the_right_half_only() {
+        let context = line(DiffLineKind::Context, Some(10), Some(10));
+        assert_eq!(offers_comment(&context, true, true), Some(10));
+        assert_eq!(offers_comment(&context, false, true), None);
     }
 }

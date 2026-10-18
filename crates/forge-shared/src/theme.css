@@ -615,6 +615,9 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .cd-file-head .cd-counts { margin-left: 4px; }
 .cd-lines { font-family: var(--mono); font-size: 12px; }
 .cd-lines .diff-line { min-height: 1.5em; }
+.cd-lines .diff-line { position: relative; }
+.cd-add-comment { display: none; position: absolute; left: 4px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; padding: 0; border: none; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; line-height: 16px; text-align: center; cursor: pointer; z-index: 1; }
+.cd-lines .diff-line:hover .cd-add-comment { display: block; }
 .cd-lines.nowrap .diff-text { white-space: pre; overflow-wrap: normal; }
 /* Wrap off: each file scrolls sideways on its own, its rows as wide as its longest line (side by side: both halves). */
 .cd-lines.nowrap { overflow-x: auto; }

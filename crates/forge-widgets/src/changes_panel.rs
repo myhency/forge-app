@@ -285,6 +285,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                             DiffStack {
                                 id,
                                 cwd: cwd.clone(),
+                                root: menu_root(info().and_then(|read| read.ok()).map(|branches| branches.root).as_deref(), &cwd),
                                 source: used,
                                 files: files.clone(),
                                 order,
