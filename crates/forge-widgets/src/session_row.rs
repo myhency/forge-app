@@ -57,18 +57,18 @@ pub fn SessionRow(
                         value: "{draft}",
                         autofocus: true,
                         spellcheck: "false",
-                        onmounted: move |mounted| async move {
-                            let _ = mounted.set_focus(true).await;
+                        // Focus and select at once; the value is the draft the row opened with and
+                        // never changes while typing, so an IME composition is left alone.
+                        onmounted: move |_| {
+                            document::eval("const input = document.querySelector('.rename-input'); if (input) { input.focus(); input.select(); }");
                         },
                         // A click in the field must not open the session behind it.
                         onclick: move |event| event.stop_propagation(),
-                        oninput: move |event| mode.set(RowMode::Renaming(event.value())),
                         onblur: move |_| {
                             mode.set(RowMode::Normal);
                             refocus_workspace();
                         },
                         onkeydown: {
-                            let draft = draft.clone();
                             move |event: KeyboardEvent| {
                                 // Only the keys the input consumes stop here; everything else,
                                 // the app shortcuts included, bubbles to the workspace root.
@@ -78,11 +78,22 @@ pub fn SessionRow(
                                     Key::Enter if !event.is_composing() => {
                                         event.stop_propagation();
                                         event.prevent_default();
-                                        if let (Some(title), Some(id)) = (rename_submit(&draft, &original), session_id.clone()) {
-                                            workspace.rename_session(project.clone(), id, title);
-                                        }
-                                        mode.set(RowMode::Normal);
-                                        refocus_workspace();
+                                        // The text is read from the element only now.
+                                        let (original, project, session_id) = (original.clone(), project.clone(), session_id.clone());
+                                        spawn(async move {
+                                            let text = document::eval("return document.querySelector('.rename-input')?.value ?? null;")
+                                                .join::<Option<String>>()
+                                                .await
+                                                .ok()
+                                                .flatten();
+                                            if let (Some(text), Some(id)) = (text, session_id) {
+                                                if let Some(title) = rename_submit(&text, &original) {
+                                                    workspace.rename_session(project, id, title);
+                                                }
+                                            }
+                                            mode.set(RowMode::Normal);
+                                            refocus_workspace();
+                                        });
                                     }
                                     Key::Escape => {
                                         event.stop_propagation();
