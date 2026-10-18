@@ -17,6 +17,12 @@
   var TEXT_TYPES = { text: 1, search: 1, url: 1, email: 1, password: 1, tel: 1, number: 1, "": 1 };
 
   function text(target) {
+    // A contenteditable (CodeMirror) has no value: the text at the caret stands for it.
+    if (target && target.isContentEditable) {
+      var sel = document.getSelection();
+      var node = sel && sel.anchorNode;
+      return node && target.contains(node) ? (node.textContent || "") + "@" + sel.anchorOffset : null;
+    }
     if (!target || typeof target.value !== "string") return null;
     // xterm's hidden textarea: one Enter must run a command, so it is never guarded.
     if (target.classList && target.classList.contains("xterm-helper-textarea")) return null;

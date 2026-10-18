@@ -156,6 +156,39 @@ test("an unchanged input in field A does not swallow Enter in field B", () => {
   assert.deepEqual(seen, ["a:k", "b:Enter"]);
 });
 
+// A contenteditable (CodeMirror) has no .value: the guard reads the text at the caret instead.
+function bootEditable() {
+  const dom = new JSDOM(`<!doctype html><body><div id="e" contenteditable="true"><div class="line">한</div></div></body>`, { runScripts: "outside-only" });
+  const w = dom.window;
+  w.eval(code);
+  const el = w.document.getElementById("e");
+  // jsdom does not implement isContentEditable.
+  Object.defineProperty(el, "isContentEditable", { value: true });
+  const seen = [];
+  el.addEventListener("keydown", (event) => seen.push(event.key));
+  const node = el.querySelector(".line").firstChild;
+  w.document.getSelection().setBaseAndExtent(node, 1, node, 1);
+  return { w, el, seen };
+}
+
+test("contenteditable: the Enter after an input that left the text unchanged is swallowed once", () => {
+  const { w, el, seen } = bootEditable();
+  el.dispatchEvent(new w.KeyboardEvent("keydown", { key: "ㄴ", keyCode: 229, bubbles: true, cancelable: true }));
+  el.dispatchEvent(new w.InputEvent("input", { inputType: "insertReplacementText", bubbles: true }));
+  const enter = new w.KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+  el.dispatchEvent(enter);
+  assert.equal(enter.defaultPrevented, true);
+  assert.deepEqual(seen, ["ㄴ"]);
+  el.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true }));
+  assert.deepEqual(seen, ["ㄴ", "Enter"]);
+});
+
+test("contenteditable: an ordinary Enter passes", () => {
+  const { w, el, seen } = bootEditable();
+  el.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true }));
+  assert.deepEqual(seen, ["Enter"]);
+});
+
 test("the xterm helper textarea is never guarded", () => {
   const { w, area, seen } = boot();
   area.className = "xterm-helper-textarea";
