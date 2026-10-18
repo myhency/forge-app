@@ -48,7 +48,7 @@ pub fn ChangesTree(
                                             })
                                         }
                                     },
-                                    span { class: "cd-chevron", if open { "▾" } else { "▸" } }
+                                    span { class: if open { "cd-chevron open" } else { "cd-chevron" }, "›" }
                                     span { class: "cd-name", "{name}" }
                                 }
                             }
@@ -59,7 +59,7 @@ pub fn ChangesTree(
                                     class: "cd-row",
                                     r#type: "button",
                                     onclick: move |_| workspace.update_changes_session(id, |session| toggle_section(session, kind)),
-                                    span { class: "cd-chevron", if open { "▾" } else { "▸" } }
+                                    span { class: if open { "cd-chevron open" } else { "cd-chevron" }, "›" }
                                     span { class: "cd-name", "{section_title(kind)}" }
                                     span { class: "cd-counts", "{count}" }
                                 }
@@ -141,7 +141,7 @@ pub fn CommitsSection(id: LiveSessionId, commits: Vec<CommitInfo>, view: ChangeV
     rsx! {
         div { class: "cd-commits",
             div { class: "cd-commits-title", onclick: move |_| open.set(!open()),
-                span { class: "cd-chevron", if open() { "▾" } else { "▸" } }
+                span { class: if open() { "cd-chevron open" } else { "cd-chevron" }, "›" }
                 span { {tr!("Commits")} }
                 span { style: "margin-left: auto;", "{commits.len()}" }
             }

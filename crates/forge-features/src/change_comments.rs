@@ -23,6 +23,15 @@ pub fn comment_line(line: &PatchLine) -> Option<u32> {
     }
 }
 
+/// The one number a unified diff row shows: the old number of a removed line, the new number of any
+/// other (falling back to the old one).
+pub fn line_number(line: &PatchLine) -> Option<u32> {
+    match line.kind {
+        DiffLineKind::Removed => line.old_no,
+        DiffLineKind::Added | DiffLineKind::Context => line.new_no.or(line.old_no),
+    }
+}
+
 /// The comment cards of the file `path` (absolute) drawn under `line`. A comment made over a range
 /// in the Files editor shows once, under its last line.
 pub fn comments_on(cards: &[Card], path: &str, line: u32) -> Vec<Card> {
@@ -81,6 +90,13 @@ mod tests {
 
     fn comment(id: u64, path: &str, from: u32, to: u32) -> Card {
         Card { id, kind: CardKind::Comment, path: path.to_string(), range: LineRange::new(from, to), text: format!("c{id}") }
+    }
+
+    #[test]
+    fn line_number_is_old_for_removed_and_new_otherwise() {
+        assert_eq!(line_number(&line(DiffLineKind::Removed, Some(7), None)), Some(7));
+        assert_eq!(line_number(&line(DiffLineKind::Added, None, Some(9))), Some(9));
+        assert_eq!(line_number(&line(DiffLineKind::Context, Some(3), Some(5))), Some(5));
     }
 
     #[test]

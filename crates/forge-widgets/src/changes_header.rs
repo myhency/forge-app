@@ -70,7 +70,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                     open_below(button_box, corner, open);
                 },
                 span { "{label}" }
-                span { class: "cd-chevron", "⌄" }
+                span { class: "cd-chevron open", "›" }
             }
             if open() {
                 div { class: "picker-backdrop", onclick: move |_| open.set(false) }
@@ -264,6 +264,13 @@ pub fn FileSearch(files: Vec<ChangedFile>, on_pick: EventHandler<String>, on_clo
                                 span { class: "cd-name", "{name}" }
                                 if !folder.is_empty() {
                                     span { class: "cd-folder", "{folder}" }
+                                }
+                                if file.added.is_some() || file.removed.is_some() {
+                                    span { class: "cd-counts",
+                                        span { class: "cd-add", "+{file.added.unwrap_or(0)}" }
+                                        " "
+                                        span { class: "cd-del", "−{file.removed.unwrap_or(0)}" }
+                                    }
                                 }
                             }
                         }

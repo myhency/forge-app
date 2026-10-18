@@ -169,8 +169,7 @@ fn line_row(line: &PatchLine, spans: &[Span], highlight: bool, env: Option<&Comm
     rsx! {
         div { class: "diff-line {line_class(line.kind)}",
             {add_button(target, env)}
-            span { class: "cd-no", "{number(line.old_no)}" }
-            span { class: "cd-no", "{number(line.new_no)}" }
+            span { class: "cd-no", "{number(forge_features::line_number(line))}" }
             span { class: "diff-sign", "{sign(line.kind)}" }
             span { class: "diff-text",
                 for (piece , hot) in pieces {
@@ -341,7 +340,7 @@ fn FileSection(
                                                 gaps.write().insert(index, lines);
                                             });
                                         },
-                                        span { class: "cd-chevron", "⌄" }
+                                        span { class: "cd-chevron open", "›" }
                                         {tr!("Show more lines")}
                                     }
                                 }
@@ -353,7 +352,7 @@ fn FileSection(
                             class: "cd-gap",
                             r#type: "button",
                             onclick: move |_| limit += LINE_STEP,
-                            span { class: "cd-chevron", "⌄" }
+                            span { class: "cd-chevron open", "›" }
                             {tr!("Show {count} more lines", count = hidden.min(LINE_STEP))}
                         }
                     } else if hidden > 0 {
@@ -382,7 +381,7 @@ fn FileSection(
                         on_menu.call((path.clone(), deleted, point.x, point.y));
                     }
                 },
-                span { class: "cd-chevron", if folded { "▸" } else { "▾" } }
+                span { class: if folded { "cd-chevron" } else { "cd-chevron open" }, "›" }
                 FileTypeIcon { icon: icon_of(&path) }
                 span { class: "cd-name", "{name}" }
                 if !folder.is_empty() {
