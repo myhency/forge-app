@@ -60,7 +60,7 @@ mod workspace;
 mod worktree_view;
 
 pub use pane_context::{use_pane_focused, use_pane_index, PaneIndex};
-pub use pane_tree::{Dir, Divider, PaneTree, Rect, MAX_PANES, MIN_PANE_HEIGHT, MIN_PANE_WIDTH};
+pub use pane_tree::{drag_ratio, Dir, Divider, PaneTree, Rect, MAX_PANES, MIN_PANE_HEIGHT, MIN_PANE_WIDTH};
 pub use arrange::{arrange, arrange_with_origins, arranged_open_order, folder_group_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use file_menu::{file_menu, show_in_file_manager, menu_height, submenu_opens_left, FileAction, MenuEntry, MenuTarget};
 pub use files_store::{Draft, FilesStore, Restore};

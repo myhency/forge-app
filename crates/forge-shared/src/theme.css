@@ -70,6 +70,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .pane-divider.dragging { background: var(--accent); }
 .pane-close { position: absolute; top: 10px; right: 10px; z-index: 6; }
 .pane.has-close .pane-header { padding-right: 48px; }
+.pane.pane-short .pane-header { padding-top: 6px; padding-bottom: 6px; }
+.pane.pane-short .new-session { gap: 8px; padding-top: 12px; padding-bottom: 12px; }
 .sidebar-item.shown { background: var(--bg-hover); }
 .preview-idle { flex: 1; display: flex; align-items: center; justify-content: center; }
 .workspace { position: relative; display: flex; height: 100vh; outline: none; }

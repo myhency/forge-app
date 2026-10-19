@@ -235,6 +235,16 @@ fn split_rects(rect: Rect, dir: Dir, ratio: f32, first: &Node, second: &Node) ->
     }
 }
 
+/// The first child's share of the split `split` for a pointer at `pointer` (window coordinates).
+/// `origin` is where the main area starts in the window, measured when the drag began, so nothing
+/// above or beside the panes has to be assumed.
+pub fn drag_ratio(dir: Dir, split: Rect, origin: (f32, f32), pointer: (f32, f32)) -> f32 {
+    match dir {
+        Dir::Beside => (pointer.0 - origin.0 - split.x as f32) / split.w.max(1) as f32,
+        Dir::Below => (pointer.1 - origin.1 - split.y as f32) / split.h.max(1) as f32,
+    }
+}
+
 /// The screens of the main area. Screens are unique, so the focus is kept as the focused screen.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaneTree {
@@ -463,6 +473,15 @@ impl PaneTree {
             (rect, node) = if step { (b, &**second) } else { (a, &**first) };
         }
         matches!(node, Node::Split { .. }).then_some(rect)
+    }
+
+    /// The direction of the split at `path`; none when `path` does not lead to a split. A drag that
+    /// started on a divider ends when the tree no longer has the same split there.
+    pub fn split_dir(&self, path: &[bool]) -> Option<Dir> {
+        match self.root.node_at(path)? {
+            Node::Split { dir, .. } => Some(*dir),
+            Node::Leaf(_) => None,
+        }
     }
 
     /// Moves the divider of the split at `path`: `ratio` is the first child's share of the split's
@@ -925,5 +944,26 @@ mod tests {
         // A layout that fits may not be turned into one that does not (here: too short for 3 stacked).
         let mut pair = pair();
         assert!(!pair.can_move(1, Dir::Below, W, 2 * MIN_PANE_HEIGHT - 1));
+    }
+
+    #[test]
+    fn a_drag_turns_the_pointer_into_the_first_childs_share_of_the_split() {
+        let split = rect(0, 400, 600, 400);
+        // The area starts 220 px from the window's left edge and 0 from its top.
+        assert_eq!(drag_ratio(Dir::Beside, split, (220.0, 0.0), (220.0 + 150.0, 500.0)), 0.25);
+        assert_eq!(drag_ratio(Dir::Below, split, (220.0, 0.0), (400.0, 600.0)), 0.5);
+        // A top bar shifts the origin, not the answer.
+        assert_eq!(drag_ratio(Dir::Below, split, (220.0, 40.0), (400.0, 640.0)), 0.5);
+        // A split of no size does not divide by zero.
+        assert!(drag_ratio(Dir::Beside, rect(0, 0, 0, 0), (0.0, 0.0), (5.0, 5.0)).is_finite());
+    }
+
+    #[test]
+    fn split_dir_names_the_direction_of_the_split_a_divider_cuts() {
+        let tree = three();
+        assert_eq!(tree.split_dir(&[]), Some(Dir::Beside));
+        assert_eq!(tree.split_dir(&[true]), Some(Dir::Below));
+        assert_eq!(tree.split_dir(&[false]), None, "a leaf");
+        assert_eq!(tree.split_dir(&[true, true]), None, "past the leaves");
     }
 }

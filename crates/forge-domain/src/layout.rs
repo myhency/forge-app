@@ -70,9 +70,12 @@ pub fn workspace_class(sidebar: SidebarMode, resizing: bool) -> String {
     class
 }
 
-/// The class list of one pane: the responsive rules that depend on the pane's own width. With one
-/// pane `pane_width` is the whole main area.
-pub fn pane_class(pane_width: u32, dock_width: u32) -> String {
+/// A pane lower than this tightens its vertical spacing.
+pub const SHORT_PANE_BELOW: u32 = 360;
+
+/// The class list of one pane: the responsive rules that depend on the pane's own size. With one
+/// pane the size is the whole main area.
+pub fn pane_class(pane_width: u32, pane_height: u32, dock_width: u32) -> String {
     let layout = pane_layout(pane_width, dock_width);
     let mut class = String::from("pane");
     if layout.dock == DockMode::Float {
@@ -80,6 +83,9 @@ pub fn pane_class(pane_width: u32, dock_width: u32) -> String {
     }
     if layout.chat_width < NARROW_CHAT_BELOW {
         class.push_str(" chat-narrow");
+    }
+    if pane_height < SHORT_PANE_BELOW {
+        class.push_str(" pane-short");
     }
     class
 }
@@ -129,21 +135,21 @@ mod tests {
 
     #[test]
     fn a_pane_names_each_mode_that_is_on() {
-        assert_eq!(pane_class(1236, 0), "pane");
+        assert_eq!(pane_class(1236, 800, 0), "pane");
         // 650 wide with a 350 dock still pushes (the chat keeps exactly 300) and is narrow.
-        assert_eq!(pane_class(650, 350), "pane chat-narrow");
+        assert_eq!(pane_class(650, 800, 350), "pane chat-narrow");
         // A 480 dock would leave 240, so it floats and the chat keeps the whole 720.
-        assert_eq!(pane_class(720, 480), "pane dock-float");
+        assert_eq!(pane_class(720, 800, 480), "pane dock-float");
         // 1000 wide: the dock pushes, the chat keeps 520, which is narrow.
-        assert_eq!(pane_class(1000, 480), "pane chat-narrow");
+        assert_eq!(pane_class(1000, 800, 480), "pane chat-narrow");
         // Floating over a 601 wide pane: the chat has all 601, which is not narrow.
-        assert_eq!(pane_class(601, 480), "pane dock-float");
+        assert_eq!(pane_class(601, 800, 480), "pane dock-float");
     }
 
     #[test]
     fn the_header_is_narrow_under_560() {
-        assert_eq!(pane_class(559, 0), "pane chat-narrow");
-        assert_eq!(pane_class(560, 0), "pane");
+        assert_eq!(pane_class(559, 800, 0), "pane chat-narrow");
+        assert_eq!(pane_class(560, 800, 0), "pane");
     }
 
     #[test]
@@ -152,5 +158,13 @@ mod tests {
         assert!(!keep_peek(true, 650, true), "Settings or the search palette opened from the sidebar puts it away");
         assert!(!keep_peek(true, 701, false), "a window grown past the overlay width forgets it");
         assert!(!keep_peek(false, 650, false));
+    }
+
+    #[test]
+    fn a_pane_under_360_high_is_short() {
+        assert_eq!(pane_class(1000, 360, 0), "pane");
+        assert_eq!(pane_class(1000, 359, 0), "pane pane-short");
+        // Width and height classes add up.
+        assert_eq!(pane_class(500, 300, 0), "pane chat-narrow pane-short");
     }
 }

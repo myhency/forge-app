@@ -1495,7 +1495,7 @@ impl Workspace {
         self.show_new_session();
     }
 
-    /// The screens of the panes, left to right (one or two).
+    /// The screens of the panes in reading order (one to four).
     pub fn pane_targets(&self) -> Vec<Active> {
         self.shown.read().clone()
     }
@@ -1611,6 +1611,11 @@ impl Workspace {
     /// The rectangle the split at `path` cuts; what a drag of its divider measures the pointer in.
     pub fn pane_split_rect(&self, path: &[bool], w: u32, h: u32) -> Option<Rect> {
         self.panes.peek().split_rect(path, w, h)
+    }
+
+    /// The direction of the split at `path` now; none when the tree no longer has a split there.
+    pub fn pane_split_dir(&self, path: &[bool]) -> Option<Dir> {
+        self.panes.peek().split_dir(path)
     }
 
     /// A divider drag: `ratio` is the first child's share of the split at `path`.
@@ -1864,7 +1869,7 @@ impl Workspace {
         cards.write().take(id);
         let mut changes = self.changes_sessions;
         crate::change_rows::forget_changes_session(&mut changes.write(), &id);
-        // With two panes the one that shows it closes; with one, the next open session (or the
+        // While split the pane that shows it closes; with one pane, the next open session (or the
         // New-session page) takes its place.
         if self.edit_panes(|panes| panes.remove_target(Active::Live(id))) {
             self.visit_active();
