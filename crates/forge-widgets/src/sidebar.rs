@@ -116,6 +116,7 @@ pub fn Sidebar() -> Element {
         .collect();
     let labels: HashMap<PathBuf, String> = paths.iter().cloned().zip(project_labels(&paths)).collect();
     let active = workspace.active();
+    let panes = workspace.panes();
     let notice = workspace.notice();
 
     rsx! {
@@ -210,14 +211,18 @@ pub fn Sidebar() -> Element {
                                 EntryKey::Live(id) => active == Active::Live(*id),
                                 EntryKey::Past { .. } => false,
                             },
+                            shown: match &item.entry.key {
+                                EntryKey::Live(id) => panes.pane_of(Active::Live(*id)).is_some(),
+                                EntryKey::Past { .. } => false,
+                            },
                             onopen: {
                                 let project = item.project.clone();
                                 let key = item.entry.key.clone();
-                                move |_| match &key {
-                                    EntryKey::Live(id) => workspace.select(*id),
-                                    EntryKey::Past { session, .. } => {
-                                        workspace.open_past(project.clone(), session.clone())
-                                    }
+                                move |beside: bool| match (&key, beside) {
+                                    (EntryKey::Live(id), false) => workspace.select(*id),
+                                    (EntryKey::Live(id), true) => workspace.open_session_beside(*id),
+                                    (EntryKey::Past { session, .. }, false) => workspace.open_past(project.clone(), session.clone()),
+                                    (EntryKey::Past { session, .. }, true) => workspace.open_past_beside(project.clone(), session.clone()),
                                 }
                             },
                         }

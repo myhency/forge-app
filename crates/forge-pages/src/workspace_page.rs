@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
-use forge_domain::{keep_peek, layout_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
-use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_width, use_workspace_provider, Active};
-use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, WebViewHost, NavButtons, NewSessionPanel, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
+use forge_domain::{keep_peek, layout_for, pane_class, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
+use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_width, use_workspace, use_workspace_provider, Active, PaneIndex, Workspace};
+use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, WebViewHost, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
 use forge_shared::tr;
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
@@ -14,6 +14,7 @@ pub fn WorkspacePage() -> Element {
     use_routines_provider(workspace, settings);
     use_session_notices(workspace, settings);
     let mut dragging = use_signal(|| false);
+    let mut pane_dragging = use_signal(|| false);
     // Key events only reach the root while something inside it has focus. Whenever the overlay
     // closes or the main pane switches view, the focused input or button may have been removed
     // and focus falls to <body>, which silences every shortcut until the next click. Give focus
@@ -46,21 +47,15 @@ pub fn WorkspacePage() -> Element {
 
     let prefs = workspace.prefs();
     let hidden = prefs.hidden;
-    // The room the open dock columns ask for; an expanded column fills the pane and asks for none.
-    let dock_width: u32 = match workspace.active() {
-        Active::Live(id) => {
-            let dock = workspace.dock(id);
-            if dock.expanded.is_some() {
-                0
-            } else {
-                dock.columns.iter().map(|column| column.width as u32).sum()
-            }
-        }
-        Active::NewSession | Active::Customize | Active::Routines => 0,
-    };
     let docked_sidebar = if hidden { SIDEBAR_RAIL_WIDTH } else { prefs.clamped_width() };
-    let layout = layout_for(window_width(), docked_sidebar, dock_width);
+    let layout = layout_for(window_width(), docked_sidebar, 0);
     let sidebar_mode = layout.sidebar;
+    // The area right of the docked sidebar (the whole window with an overlay sidebar).
+    let main_area = match sidebar_mode {
+        SidebarMode::Docked => window_width().saturating_sub(docked_sidebar),
+        SidebarMode::Overlay => window_width(),
+    };
+    use_effect(use_reactive!(|main_area| workspace.set_main_width(main_area)));
 
     // ⌥⌘R needs the row on screen: bring the sidebar out when it is hidden or an overlay. The mode
     // depends on the window width only, so the dock width does not matter here.
@@ -80,7 +75,7 @@ pub fn WorkspacePage() -> Element {
 
     rsx! {
         div {
-            class: workspace_class(layout, dragging()),
+            class: workspace_class(layout, dragging() || pane_dragging()),
             tabindex: "0",
             // Key events only reach the root while something inside it has focus.
             onmounted: move |mounted| async move {
@@ -112,11 +107,19 @@ pub fn WorkspacePage() -> Element {
                     let x = event.client_coordinates().x.max(0.0) as u32;
                     workspace.change_prefs_unsaved(|prefs| prefs.width = x.clamp(forge_domain::MIN_SIDEBAR_WIDTH, forge_domain::MAX_SIDEBAR_WIDTH));
                 }
+                if pane_dragging() {
+                    let area = main_area.max(1) as f32;
+                    let left_edge = window_width().saturating_sub(main_area) as f32;
+                    workspace.set_pane_ratio((event.client_coordinates().x as f32 - left_edge) / area);
+                }
             },
             onmouseup: move |_| {
                 if dragging() {
                     dragging.set(false);
                     workspace.save_prefs();
+                }
+                if pane_dragging() {
+                    pane_dragging.set(false);
                 }
             },
             match layout.sidebar {
@@ -158,17 +161,91 @@ pub fn WorkspacePage() -> Element {
                     }
                 },
             }
-            match workspace.active() {
-                Active::NewSession => rsx! { NewSessionPanel {} },
-                Active::Customize => rsx! { CustomizePage {} },
-                Active::Routines => rsx! { RoutinesPage {} },
-                Active::Live(id) => rsx! { ChatWindow { key: "{id:?}", id } },
-            }
+            {pane_row(workspace, pane_dragging)}
             SettingsOverlay {}
             SearchPalette {}
             ShortcutsDialog {}
             Lightbox {}
             WebViewHost {}
+        }
+    }
+}
+
+// The panes and the divider. A pane is keyed by its screen, so closing the left one does not
+// remount the right one.
+fn pane_row(workspace: Workspace, mut pane_dragging: Signal<bool>) -> Element {
+    let panes = workspace.panes();
+    let (left, right) = workspace.pane_widths();
+    let split = panes.is_split();
+    rsx! {
+        div { class: if split { "panes split" } else { "panes" },
+            for (index, target) in panes.targets().iter().copied().enumerate() {
+                Fragment { key: "{target:?}",
+                    if index == 1 {
+                        div {
+                            class: if pane_dragging() { "pane-divider dragging" } else { "pane-divider" },
+                            onmousedown: move |event| {
+                                event.prevent_default();
+                                pane_dragging.set(true);
+                            },
+                        }
+                    }
+                    Pane { index, target, width: if index == 0 { left } else { right } }
+                }
+            }
+        }
+    }
+}
+
+/// One screen of the main area. It tells its descendants which pane they are in and moves the
+/// focus here on any click or focus inside.
+#[component]
+fn Pane(index: usize, target: Active, width: u32) -> Element {
+    let workspace = use_workspace();
+    let mut index_signal = use_context_provider(|| PaneIndex(Signal::new(index)));
+    use_effect(use_reactive!(|index| {
+        if *index_signal.0.peek() != index {
+            index_signal.0.set(index);
+        }
+    }));
+    let panes = workspace.panes();
+    let split = panes.is_split();
+    let dock_width: u32 = match target {
+        Active::Live(id) => {
+            let dock = workspace.dock(id);
+            if dock.expanded.is_some() {
+                0
+            } else {
+                dock.columns.iter().map(|column| column.width as u32).sum()
+            }
+        }
+        Active::NewSession | Active::Customize | Active::Routines => 0,
+    };
+    let mut class = pane_class(width, dock_width);
+    if split {
+        class.push_str(" split");
+    }
+    if panes.focused() == index {
+        class.push_str(" focused");
+    }
+    // The right pane takes what is left, so the two always fill the area.
+    let style = if split && index == 0 { format!("width: {width}px; flex: none;") } else { String::new() };
+    rsx! {
+        div {
+            class,
+            style,
+            "data-pane": "{index}",
+            onmousedown: move |_| workspace.focus_pane(index),
+            onfocusin: move |_| workspace.focus_pane(index),
+            match target {
+                Active::NewSession => rsx! { NewSessionPanel {} },
+                Active::Customize => rsx! { CustomizePage {} },
+                Active::Routines => rsx! { RoutinesPage {} },
+                Active::Live(id) => rsx! { ChatWindow { key: "{id:?}", id } },
+            }
+            if split && !matches!(target, Active::Live(_)) {
+                PaneClose { index }
+            }
         }
     }
 }

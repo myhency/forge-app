@@ -21,7 +21,11 @@ pub fn SessionRow(
     project: PathBuf,
     entry: SidebarEntry,
     active: bool,
-    onopen: EventHandler<()>,
+    /// Shown in the other pane of a split screen.
+    #[props(default)]
+    shown: bool,
+    /// The row was clicked; `true` when Option was held (open it beside).
+    onopen: EventHandler<bool>,
     /// Set in date and no-grouping lists, where the heading does not say which project a row is in.
     #[props(default)]
     project_name: Option<String>,
@@ -152,9 +156,10 @@ pub fn SessionRow(
                         ),
                         marker: entry.marker,
                         active,
-                        onclick: move |_| {
+                        shown,
+                        onclick: move |event: MouseEvent| {
                             mode.set(RowMode::Normal);
-                            onopen.call(());
+                            onopen.call(event.modifiers().alt());
                         },
                         if has_menu {
                             button {

@@ -119,6 +119,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Close all", "모두 닫기"),
     ("Close file", "파일 닫기"),
     ("Close others", "다른 파일 닫기"),
+    ("Close split view", "분할 보기 닫기"),
     ("Close tab", "탭 닫기"),
     ("Close the quote in the arguments.", "인수의 따옴표를 닫아 주세요."),
     ("Close the session", "세션 닫기"),
