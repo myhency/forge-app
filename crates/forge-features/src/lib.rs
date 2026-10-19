@@ -7,6 +7,7 @@ mod settings_pages;
 mod window_width;
 mod blocking;
 mod nav_history;
+mod pane_tree;
 mod panes;
 mod pane_context;
 mod cards;
