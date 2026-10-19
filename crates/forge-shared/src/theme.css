@@ -1117,3 +1117,12 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .routine-form-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .routine-problem { color: var(--danger); margin: 0; }
 @media (max-width: 760px) { .routine-columns { grid-template-columns: 1fr; } }
+.env-menu { min-width: 260px; }
+.env-search { width: calc(100% - 16px); margin: 6px 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: inherit; font: inherit; box-sizing: border-box; }
+.env-row { position: relative; display: flex; align-items: center; }
+.env-row > .picker-item { flex: 1; }
+.env-row-icons { position: absolute; right: 56px; display: none; gap: 2px; }
+.env-row:hover .env-row-icons { display: inline-flex; }
+.env-icon { border: 0; background: transparent; color: var(--fg-muted); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.env-icon:hover { background: var(--bg-hover); color: inherit; }
+.env-icon.pinned { color: var(--accent); }

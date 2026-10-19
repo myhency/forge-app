@@ -16,6 +16,9 @@ pub fn FolderChip() -> Element {
         .map(|row| PickerItem { label: row.label.clone(), description: None, key: None, checked: row.checked, divider_before: false })
         .collect();
     let mut draft = use_new_session_draft();
+    if draft.environment.read().is_some() {
+        return rsx! {};
+    }
     let repo = workspace.new_repo();
     items.push(PickerItem { label: tr!("Open folder…").to_string(), description: None, key: None, checked: false, divider_before: true });
     if repo.is_some() {
@@ -49,6 +52,9 @@ pub fn FolderChip() -> Element {
 pub fn BranchChip() -> Element {
     let workspace = use_workspace();
     let mut draft = use_new_session_draft();
+    if draft.environment.read().is_some() {
+        return rsx! {};
+    }
     let Some(info) = workspace.new_repo() else { return rsx! {} };
     if !*draft.worktree.read() {
         return rsx! {};
@@ -82,6 +88,10 @@ pub fn BranchChip() -> Element {
 #[component]
 pub fn AddFolderButton() -> Element {
     let workspace = use_workspace();
+    let draft = use_new_session_draft();
+    if draft.environment.read().is_some() {
+        return rsx! {};
+    }
     rsx! {
         button {
             class: "chip-button",

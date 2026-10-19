@@ -85,7 +85,7 @@ pub use editor_doc::{normalize_newlines, text_hash, Banner, TabDoc};
 pub use editor_tabs::{EditorTab, EditorTabs};
 pub use task_list_views::TaskListView;
 pub use dock::{Column, DockState, DockStates, Panel, DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH};
-pub use environment::{environment_menu, numbered_ids, start_plan, EnvRow, EnvironmentDraft, EnvironmentKey, EnvironmentMenu, EnvironmentRequest, EnvironmentStart, StartError};
+pub use environment::{draft_choice, environment_menu, numbered_ids, start_plan, EnvRow, EnvironmentDraft, EnvironmentKey, EnvironmentMenu, EnvironmentRequest, EnvironmentStart, StartError};
 pub use effort::{effort_button_label, effort_levels, slider_position, effort_help, slider_faster, slider_smarter};
 pub use composer_cards::ComposerCards;
 pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, Outgoing};

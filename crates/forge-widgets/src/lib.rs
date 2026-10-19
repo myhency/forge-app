@@ -23,6 +23,7 @@ mod files_state;
 mod files_tabs;
 mod filter_menu;
 mod lightbox;
+mod environment_chip;
 mod new_session_controls;
 mod new_session_panel;
 mod panel_frame;

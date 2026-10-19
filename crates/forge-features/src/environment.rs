@@ -191,6 +191,12 @@ pub enum EnvironmentRequest {
     Edit(String),
 }
 
+/// The worktree switch and branch a picked environment puts in the draft; `None` for this computer,
+/// which leaves the draft alone.
+pub fn draft_choice(environment: Option<&Environment>) -> Option<(bool, Option<String>)> {
+    environment.map(|environment| (environment.worktree, environment.branch.clone()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,6 +229,15 @@ mod tests {
         assert_eq!(menu.visible.iter().map(|row| row.number).collect::<Vec<_>>(), vec![Some(1), Some(2), Some(3)]);
         assert_eq!(menu.more.iter().map(|row| row.number).collect::<Vec<_>>(), vec![None, None]);
         assert_eq!(menu.visible[0].id, None);
+    }
+
+    #[test]
+    fn picking_an_environment_takes_its_worktree_choice_and_this_computer_leaves_the_draft_as_it_is() {
+        let mut environment = env("a", "app", false, 0);
+        environment.worktree = true;
+        environment.branch = Some("dev".to_string());
+        assert_eq!(draft_choice(Some(&environment)), Some((true, Some("dev".to_string()))));
+        assert_eq!(draft_choice(None), None);
     }
 
     #[test]

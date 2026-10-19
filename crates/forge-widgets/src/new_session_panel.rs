@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use forge_features::{use_workspace, user_name, NewSessionComposer};
 
+use crate::environment_chip::EnvironmentChip;
 use crate::new_session_controls::{AddFolderButton, BranchChip, FolderChip, NewEffortPicker, NewModePicker, NewModelPicker};
 use crate::plus_menu::PlusMenu;
 use crate::usage_card::UsageCard;
@@ -18,6 +19,7 @@ pub fn NewSessionPanel() -> Element {
             }
             NewSessionComposer {
                 chips: rsx! {
+                    EnvironmentChip {}
                     FolderChip {}
                     BranchChip {}
                     AddFolderButton {}
