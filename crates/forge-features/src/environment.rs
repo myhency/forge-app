@@ -84,7 +84,7 @@ pub fn numbered_ids(environments: &[Environment]) -> Vec<Option<String>> {
 }
 
 /// What the dialog edits. `id` is `None` while a new environment is being made.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct EnvironmentDraft {
     pub id: Option<String>,
     pub name: String,
@@ -92,6 +92,19 @@ pub struct EnvironmentDraft {
     pub branch: Option<String>,
     pub worktree: bool,
     pub env_vars: String,
+}
+
+impl std::fmt::Debug for EnvironmentDraft {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EnvironmentDraft")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("folders", &self.folders)
+            .field("branch", &self.branch)
+            .field("worktree", &self.worktree)
+            .field("env_vars", &format!("<redacted, {} chars>", self.env_vars.chars().count()))
+            .finish()
+    }
 }
 
 impl EnvironmentDraft {
@@ -191,12 +204,6 @@ pub enum EnvironmentRequest {
     Edit(String),
 }
 
-/// The worktree switch and branch a picked environment puts in the draft; `None` for this computer,
-/// which leaves the draft alone.
-pub fn draft_choice(environment: Option<&Environment>) -> Option<(bool, Option<String>)> {
-    environment.map(|environment| (environment.worktree, environment.branch.clone()))
-}
-
 /// The one-line text for a bad variables line, for the dialog.
 pub fn variables_error_text(error: &EnvParseError) -> String {
     use forge_domain::EnvParseReason::{BadKey, NotAPair, UnclosedQuote};
@@ -250,12 +257,12 @@ mod tests {
     }
 
     #[test]
-    fn picking_an_environment_takes_its_worktree_choice_and_this_computer_leaves_the_draft_as_it_is() {
-        let mut environment = env("a", "app", false, 0);
-        environment.worktree = true;
-        environment.branch = Some("dev".to_string());
-        assert_eq!(draft_choice(Some(&environment)), Some((true, Some("dev".to_string()))));
-        assert_eq!(draft_choice(None), None);
+    fn a_draft_prints_its_variables_as_a_character_count() {
+        let mut draft = EnvironmentDraft::blank("app".to_string(), None);
+        draft.env_vars = "TOKEN=secret".to_string();
+        let text = format!("{draft:?}");
+        assert!(!text.contains("secret"));
+        assert!(text.contains("<redacted, 12 chars>"));
     }
 
     #[test]

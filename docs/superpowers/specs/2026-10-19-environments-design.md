@@ -98,6 +98,12 @@ Cloud, SSH, Slack, Remote Control (all of it, see Goal); the sidebar `환경` fi
 - The branch `<select>` sets `selected` on the matching `<option>`, because the web view ignores `value` on a `<select>` (it showed the first branch).
 - Also from the dialog work: the folder popover opens below its button (`.picker-menu` opens upward and was clipped), the gear closes the chip menu, a stale edit (environment deleted) closes the dialog, and the name is selected on open.
 
+- Picking an environment does not write its worktree switch or branch into the new-session draft. While one is picked the draft values are unused (sending uses the environment's own plan and the folder and branch chips are hidden), and writing them would leave the person's own Worktree switch changed after going back to `This computer`.
+- Picking an environment with no folder shows no dashed hint on the new-session screen (only the dialog has one); sending then shows the notice "Add a folder to this environment first". This is a recorded gap against the spec.
+- The config reads `environments` entry by entry: an entry that does not parse is skipped and the others stay, so a hand edit cannot empty the list (the next save would have written the empty list back). A value that is not a list reads as empty.
+- While the environment dialog is open it counts as an overlay for the shortcut keys (the `on_key` overlay flag), and ⌥⌘0…9 do nothing, so unsaved edits stay and nothing acts on the hidden screen.
+- On the Variables page the back arrow and Escape keep the typed text when it parses (a bad line keeps the page); the close button and backdrop ask the Discard question when the text differs.
+
 ### Checked in the real window (harness, tasks 4 and 5)
 - Chip left of the folder chip; menu with search, group `로컬`, `이 컴퓨터 ✓ ⌥⌘1`, `새 환경 ⌥⌘0`; no cloud or Remote row; Escape closes it.
 - Dialog: name prefilled and selected; `+ Add` popover and `Choose…` with a system dialog; trust card (`Trust and add` adds, Cancel does not); a git repo shows the branch select (current branch correct after the fix) and Worktree, saved and reloaded through the gear; Variables page with the note, a bad line shows `Line 2: expected NAME=value` and disables Done; Create adds the row with `⌥⌘2`; hover shows gear and star; close prompt (Discard, Keep editing, Save) on Escape, backdrop and the close button, also from the Variables page; delete asks and removes, the chip falls back to `이 컴퓨터` and the other chips return.
@@ -108,4 +114,5 @@ Cloud, SSH, Slack, Remote Control (all of it, see Goal); the sidebar `환경` fi
 - Dark mode of the dialog and the chip menu.
 - Not seen: the star (pin) click, the `Not a Git repository` flash before a repo is read.
 - Deferred minors: `1 variables` has no singular; the folder popover is cut off at the bottom when the folder list is empty; two folders with the same name look alike in the popover (only the hover title tells them apart); the Variables page error banner is indented; the folder popover search has no placeholder; Escape does not dismiss the close question; the name is selected again when returning from the Variables page.
+- A session reopened from the sidebar or with ⇧⌘T runs without the environment's variables and extra folders: nothing records the environment on the session until stage B.
 - Stage B: the `환경` side-panel card and the `시작 위치 … 환경으로 저장` line; model and effort in an environment; seeding from past sessions; encrypted storage.

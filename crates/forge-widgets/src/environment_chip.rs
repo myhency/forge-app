@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::Environment;
-use forge_features::{draft_choice, environment_menu, numbered_ids, refocus_composer, use_new_session_draft, use_workspace, EnvRow, EnvironmentKey, EnvironmentRequest};
+use forge_features::{environment_menu, numbered_ids, refocus_composer, use_new_session_draft, use_workspace, EnvRow, EnvironmentKey, EnvironmentRequest};
 use forge_shared::tr;
 
 /// The chip at the left of the new-session chips: the environment the session starts from, and a menu
@@ -19,12 +19,6 @@ pub fn EnvironmentChip() -> Element {
     let label = picked.as_ref().map_or_else(|| this_computer.clone(), |environment| environment.name.clone());
 
     let mut pick = move |id: Option<String>| {
-        let list = workspace.environments();
-        let chosen = id.as_ref().and_then(|id| list.iter().find(|environment| environment.id == *id));
-        if let Some((worktree, branch)) = draft_choice(chosen) {
-            draft.worktree.set(worktree);
-            draft.branch.set(branch);
-        }
         draft.environment.set(id);
         open.set(false);
         more.set(false);

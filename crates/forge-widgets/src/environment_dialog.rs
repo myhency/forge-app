@@ -68,8 +68,10 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
     let mut variables_text = use_signal(String::new);
 
     // The branches of the first folder, when it is a git repository.
+    // A memo, so typing in the name or variables does not run git again.
+    let first_folder = use_memo(move || draft.read().folders.first().cloned());
     let branches = use_resource(move || {
-        let folder = draft.read().folders.first().cloned();
+        let folder = first_folder();
         async move {
             match folder {
                 Some(folder) => workspace.folder_branches(folder).await,
@@ -83,10 +85,20 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
         refocus_workspace();
     };
     let mut request_close = move || {
-        if draft.read().changed_from(&initial.read()) {
+        let typed = page() == Page::Variables && variables_text.read().as_str() != draft.read().env_vars;
+        if typed || draft.read().changed_from(&initial.read()) {
             ask.set(Ask::Discard);
         } else {
             close();
+        }
+    };
+    // Back from the Variables page keeps what was typed when it parses; a bad line keeps the page.
+    let mut leave_variables = move || {
+        let text = variables_text();
+        let bad = EnvironmentDraft { env_vars: text.clone(), ..draft.read().clone() }.variables_error();
+        if bad.is_none() {
+            draft.write().env_vars = text;
+            page.set(Page::Form);
         }
     };
     let save = {
@@ -133,14 +145,14 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                     if event.key() == Key::Escape {
                         event.stop_propagation();
                         match page() {
-                            Page::Variables => page.set(Page::Form),
+                            Page::Variables => leave_variables(),
                             Page::Form => request_close(),
                         }
                     }
                 },
                 if page() == Page::Variables {
                     div { class: "env-head",
-                        button { class: "env-back", r#type: "button", title: tr!("Back"), onclick: move |_| page.set(Page::Form), "‹" }
+                        button { class: "env-back", r#type: "button", title: tr!("Back"), onclick: move |_| leave_variables(), "‹" }
                         h2 { {tr!("Variables")} }
                         button { class: "settings-close", r#type: "button", title: tr!("Close (Esc)"), onclick: move |_| request_close(), "✕" }
                     }

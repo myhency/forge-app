@@ -39,7 +39,7 @@ pub fn WorkspacePage() -> Element {
     });
     // Growing past the overlay width, or opening Settings or the search palette, puts it away too.
     use_effect(move || {
-        let overlay_open = settings.is_open() || workspace.search_open() || workspace.shortcuts_open();
+        let overlay_open = settings.is_open() || workspace.search_open() || workspace.shortcuts_open() || workspace.environment_request().is_some();
         if *peek.peek() && !keep_peek(true, window_width(), overlay_open) {
             peek.set(false);
         }
@@ -84,12 +84,12 @@ pub fn WorkspacePage() -> Element {
             },
             onkeydown: move |event| {
                 // Escape puts the overlay sidebar away, unless an overlay of the app is on top of it.
-                if peek() && event.key() == Key::Escape && !settings.is_open() && !workspace.search_open() && !workspace.shortcuts_open() {
+                if peek() && event.key() == Key::Escape && !settings.is_open() && !workspace.search_open() && !workspace.shortcuts_open() && workspace.environment_request().is_none() {
                     peek.set(false);
                     return;
                 }
                 // The palette is an overlay too: the session shortcuts wait while it is open.
-                if !workspace.on_key(&event, settings.is_open() || workspace.search_open() || workspace.shortcuts_open()) {
+                if !workspace.on_key(&event, settings.is_open() || workspace.search_open() || workspace.shortcuts_open() || workspace.environment_request().is_some()) {
                     if forge_features::shortcut_from_event(&event) == Some(forge_features::Shortcut::ToggleSidebar) {
                         // An overlay swallowed the key before this point (`shortcut_allowed`).
                         match sidebar_mode {

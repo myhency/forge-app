@@ -356,7 +356,7 @@ pub struct AppConfig {
     #[serde(default, deserialize_with = "lenient")]
     pub auto_archive_days: Option<u32>,
     /// Saved environments of the new-session screen.
-    #[serde(default, deserialize_with = "lenient")]
+    #[serde(default, deserialize_with = "lenient_entries")]
     pub environments: Vec<crate::Environment>,
 }
 
@@ -373,6 +373,18 @@ where
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+// Like `lenient`, but one entry that does not parse is skipped and the others stay, so a hand edit
+// cannot empty the list (the next save would write the empty list back).
+fn lenient_entries<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let serde_json::Value::Array(entries) = value else { return Ok(Vec::new()) };
+    Ok(entries.into_iter().filter_map(|entry| serde_json::from_value(entry).ok()).collect())
 }
 
 impl Default for AppConfig {
@@ -888,6 +900,21 @@ mod tests {
             ..AppConfig::default()
         };
         assert!(!format!("{config:?}").contains("s3cret"));
+    }
+
+    #[test]
+    fn one_bad_environment_entry_is_skipped_and_the_good_one_stays() {
+        let text = r#"{"base_url":null,"api_key":null,"environments":[{"id":"a","name":"app"},{"name":"no id"},"junk"]}"#;
+        let config: AppConfig = serde_json::from_str(text).unwrap();
+        assert_eq!(config.environments.len(), 1);
+        assert_eq!(config.environments[0].id, "a");
+    }
+
+    #[test]
+    fn environments_that_are_not_a_list_read_as_empty_and_the_rest_loads() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":"https://x.test","api_key":null,"environments":{"id":"a"}}"#).unwrap();
+        assert!(config.environments.is_empty());
+        assert_eq!(config.base_url.as_deref(), Some("https://x.test"));
     }
 
     #[test]

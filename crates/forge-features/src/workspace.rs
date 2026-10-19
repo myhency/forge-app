@@ -2038,7 +2038,7 @@ impl Workspace {
 
     /// Asks the new-session screen's environment chip to act on a key (⌥⌘0…9). Nothing else shows one.
     pub fn request_environment_key(&self, key: crate::EnvironmentKey) {
-        if self.active() == Active::NewSession {
+        if self.active() == Active::NewSession && self.environment_request.peek().is_none() {
             let mut request = self.environment_key;
             request.set(Some(key));
         }
