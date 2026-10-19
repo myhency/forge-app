@@ -86,3 +86,26 @@ Cloud, SSH, Slack, Remote Control (all of it, see Goal); the sidebar `환경` fi
 3. `EnvironmentChip`, `Picker` extension, keys.
 4. `EnvironmentDialog` (create, edit, variables page, close prompt, delete, trust).
 5. Korean text, shortcut list, backlog and observation notes, real-window check.
+
+## As built (2026-10-19)
+
+### What differs from the spec
+- A dedicated `EnvironmentChip` (forge-widgets) instead of extending `Picker`.
+- Trust is asked when a folder is added to the dialog (the card shows in the dialog and `Trust and add` adds the folder), not at save.
+- `EnvVars` and `parse_env` live in `forge-domain`, not `forge-entities`.
+- `Environment`'s `Debug` redacts `env_vars`, so values never reach logs.
+- An environment whose first folder is gone is refused at send: nothing starts, a notice says "The folder of this environment no longer exists. Edit the environment.", and the typed text is kept. Two fixes found in review in `new_session.rs`: the missing-folder check (`folder_missing`) replaced a plain `is_dir` flag on the project, and the send returns early so the draft text is not cleared.
+- The branch `<select>` sets `selected` on the matching `<option>`, because the web view ignores `value` on a `<select>` (it showed the first branch).
+- Also from the dialog work: the folder popover opens below its button (`.picker-menu` opens upward and was clipped), the gear closes the chip menu, a stale edit (environment deleted) closes the dialog, and the name is selected on open.
+
+### Checked in the real window (harness, tasks 4 and 5)
+- Chip left of the folder chip; menu with search, group `로컬`, `이 컴퓨터 ✓ ⌥⌘1`, `새 환경 ⌥⌘0`; no cloud or Remote row; Escape closes it.
+- Dialog: name prefilled and selected; `+ Add` popover and `Choose…` with a system dialog; trust card (`Trust and add` adds, Cancel does not); a git repo shows the branch select (current branch correct after the fix) and Worktree, saved and reloaded through the gear; Variables page with the note, a bad line shows `Line 2: expected NAME=value` and disables Done; Create adds the row with `⌥⌘2`; hover shows gear and star; close prompt (Discard, Keep editing, Save) on Escape, backdrop and the close button, also from the Variables page; delete asks and removes, the chip falls back to `이 컴퓨터` and the other chips return.
+- Light mode only.
+
+### What is left
+- The real-session check (Task 3 of the plan): an environment with a variable and a second folder, one real message; verify the variable reaches the command, the second folder is readable without a folder question, and the transcript path is under the first folder. Not done yet because it costs a real turn on the user's account.
+- Dark mode of the dialog and the chip menu.
+- Not seen: the star (pin) click, the `Not a Git repository` flash before a repo is read.
+- Deferred minors: `1 variables` has no singular; the folder popover is cut off at the bottom when the folder list is empty; two folders with the same name look alike in the popover (only the hover title tells them apart); the Variables page error banner is indented; the folder popover search has no placeholder; Escape does not dismiss the close question; the name is selected again when returning from the Variables page.
+- Stage B: the `환경` side-panel card and the `시작 위치 … 환경으로 저장` line; model and effort in an environment; seeding from past sessions; encrypted storage.
