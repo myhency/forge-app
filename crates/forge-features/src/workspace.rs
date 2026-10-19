@@ -19,6 +19,7 @@ use crate::files_store::{FilesStore, Restore};
 use crate::dock::{DockState, DockStates, Panel};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::nav_history::NavHistory;
+use crate::panes::Panes;
 use crate::preview_host::PreviewHost;
 use crate::preview_tabs::{normalize_url, PreviewTabId, PreviewTabs};
 use crate::new_session::ModelChoice;
@@ -105,7 +106,9 @@ pub struct Workspace {
     services: Signal<WorkspaceServices>,
     past: Signal<Vec<(ProjectSummary, Vec<SessionSummary>)>>,
     live: Signal<Vec<LiveEntry>>,
-    active: Signal<Active>,
+    panes: Signal<Panes>,
+    /// The width of the area right of the docked sidebar; the page reports it.
+    main_width: Signal<u32>,
     history: Signal<NavHistory<Active>>,
     notice: Signal<Option<String>>,
     new_folder: Signal<Option<PathBuf>>,
@@ -173,7 +176,8 @@ pub fn use_workspace_provider() -> Workspace {
             services: Signal::new(services),
             past: Signal::new(Vec::new()),
             live: Signal::new(Vec::new()),
-            active: Signal::new(Active::NewSession),
+            panes: Signal::new(Panes::new(Active::NewSession)),
+            main_width: Signal::new(1200),
             history: Signal::new(NavHistory::new(Active::NewSession)),
             notice: Signal::new(None),
             new_folder: Signal::new(None),
@@ -228,7 +232,7 @@ pub fn use_workspace() -> Workspace {
 
 impl Workspace {
     pub fn active(&self) -> Active {
-        *self.active.read()
+        self.panes.read().focused_target()
     }
 
     /// A message for the user (a failed open, a failed listing), shown until dismissed.
@@ -1465,6 +1469,102 @@ impl Workspace {
         self.show_new_session();
     }
 
+    pub fn panes(&self) -> Panes {
+        self.panes.read().clone()
+    }
+
+    pub fn focused_pane(&self) -> usize {
+        self.panes.read().focused()
+    }
+
+    /// A click or focus inside a pane. Writes only when the focus moves, so a click in the focused
+    /// pane redraws nothing.
+    pub fn focus_pane(&self, index: usize) {
+        if self.panes.peek().focused() == index {
+            return;
+        }
+        let mut panes = self.panes;
+        if panes.write().focus(index) {
+            self.clear_rename_request();
+        }
+    }
+
+    /// ⌥+click on an open session: it opens in the right pane (or takes focus if it is shown).
+    pub fn open_session_beside(&self, id: LiveSessionId) {
+        self.clear_rename_request();
+        self.open_beside(Active::Live(id));
+    }
+
+    /// `⌃⌘\`: a New-session pane beside the focused one.
+    pub fn open_new_session_beside(&self) {
+        self.clear_rename_request();
+        self.open_beside(Active::NewSession);
+    }
+
+    fn open_beside(&self, target: Active) {
+        let room = Panes::can_split(self.main_width());
+        let mut panes = self.panes;
+        panes.write().open_beside(target, room);
+        self.after_pane_change(target);
+    }
+
+    // What `display` does for a screen that now has the focus: the lightbox goes, a routine's
+    // session stays open, and the history records the screen (so Back returns to it).
+    fn after_pane_change(&self, target: Active) {
+        self.close_lightbox();
+        if let Active::Live(id) = target {
+            self.services.peek().routines.host.keep_open(id);
+        }
+        let mut history = self.history;
+        history.write().visit(target);
+    }
+
+    pub fn close_pane(&self, index: usize) {
+        let mut panes = self.panes;
+        panes.write().close(index);
+    }
+
+    pub fn swap_panes(&self) {
+        let mut panes = self.panes;
+        panes.write().swap();
+    }
+
+    pub fn set_pane_ratio(&self, ratio: f32) {
+        let area = self.main_width();
+        let mut panes = self.panes;
+        panes.write().set_ratio(ratio, area);
+    }
+
+    /// The width of the area right of the docked sidebar; the page reports it.
+    pub fn set_main_width(&self, width: u32) {
+        if *self.main_width.peek() != width {
+            let mut slot = self.main_width;
+            slot.set(width);
+        }
+    }
+
+    pub fn main_width(&self) -> u32 {
+        *self.main_width.peek()
+    }
+
+    /// The left and right pane widths for the current main area (reads, so a drag redraws).
+    pub fn pane_widths(&self) -> (u32, u32) {
+        let area = *self.main_width.read();
+        self.panes.read().widths(area)
+    }
+
+    // The first message of a New-session pane turns that very pane into the session, even if the
+    // person has clicked into the other pane since.
+    fn show_started(&self, id: LiveSessionId) {
+        let mut panes = self.panes;
+        let replaced = panes.write().replace(Active::NewSession, Active::Live(id));
+        if !replaced {
+            self.select(id);
+        } else if self.active() == Active::Live(id) {
+            self.after_pane_change(Active::Live(id));
+        }
+    }
+
     pub fn select(&self, id: LiveSessionId) {
         self.clear_rename_request();
         self.navigate(Active::Live(id));
@@ -1485,8 +1585,8 @@ impl Workspace {
             // closed away by the routine timer.
             self.services.peek().routines.host.keep_open(id);
         }
-        let mut active = self.active;
-        active.set(to);
+        let mut panes = self.panes;
+        panes.write().show(to);
     }
 
     // A screen the history can return to: every page, and a session that is still open.
@@ -1559,6 +1659,15 @@ impl Workspace {
 
     /// Opens a past session read-only (or focuses it if it is already open).
     pub fn open_past(&self, project: ProjectSummary, session_id: SessionId) {
+        self.open_past_in(project, session_id, false);
+    }
+
+    /// The same, in the right pane (⌥+click).
+    pub fn open_past_beside(&self, project: ProjectSummary, session_id: SessionId) {
+        self.open_past_in(project, session_id, true);
+    }
+
+    fn open_past_in(&self, project: ProjectSummary, session_id: SessionId, beside: bool) {
         let this = *self;
         let services = (*self.services.peek()).clone();
         // Root scope: the search palette closes the moment it opens a session, and a task of the
@@ -1567,7 +1676,11 @@ impl Workspace {
             match services.registry.open_existing(&project, session_id).await {
                 Ok(outcome) => {
                     let id = this.ensure_attached(outcome.handle);
-                    this.select(id);
+                    if beside {
+                        this.open_session_beside(id);
+                    } else {
+                        this.select(id);
+                    }
                 }
                 Err(error) => this.report(error.to_string()),
             }
@@ -1630,7 +1743,7 @@ impl Workspace {
                         handle.add_directories(folders);
                     }
                     handle.send_with(text, attachments);
-                    this.select(id);
+                    this.show_started(id);
                 }
                 Err(error) => this.report(error.to_string()),
             }
@@ -1673,7 +1786,11 @@ impl Workspace {
         cards.write().take(id);
         let mut changes = self.changes_sessions;
         crate::change_rows::forget_changes_session(&mut changes.write(), &id);
-        if self.active() == Active::Live(id) {
+        // With two panes the one that shows it closes; with one, the next open session (or the
+        // New-session page) takes its place.
+        let mut panes = self.panes;
+        let closed_pane = panes.write().remove_target(Active::Live(id));
+        if !closed_pane && self.active() == Active::Live(id) {
             let next = self.live.peek().last().map(|entry| entry.handle.id());
             match next {
                 Some(next) => self.select(next),
