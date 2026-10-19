@@ -12,8 +12,8 @@ from window import SHOT_PATH, bring_to_front, find_window
 def click_at(x, y, option=False):
     for event_type in (Quartz.kCGEventMouseMoved, Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
         event = Quartz.CGEventCreateMouseEvent(None, event_type, (x, y), Quartz.kCGMouseButtonLeft)
-        if option and event_type != Quartz.kCGEventMouseMoved:
-            Quartz.CGEventSetFlags(event, Quartz.kCGEventFlagMaskAlternate)
+        # Always set the flags: an event without them can inherit a modifier left over from an earlier --option click.
+        Quartz.CGEventSetFlags(event, Quartz.kCGEventFlagMaskAlternate if option else 0)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
         time.sleep(0.05)
 
