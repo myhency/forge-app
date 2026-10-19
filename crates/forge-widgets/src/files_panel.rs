@@ -441,7 +441,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                 // The rows are drawn after this task yields: look for the row a few frames.
                 let literal = serde_json::to_string(&path).unwrap_or_default();
                 document::eval(&format!(
-                    "(function(p){{let n=0;const go=()=>{{const el=[...document.querySelectorAll('[data-path]')].find(e=>e.dataset.path===p);if(el){{el.scrollIntoView({{block:'center'}});}}else if(n++<30){{requestAnimationFrame(go);}}}};go();}})({literal});"
+                    "(function(p){{let n=0;const go=()=>{{const el=[...document.querySelectorAll('.pane.focused [data-path]')].find(e=>e.dataset.path===p);if(el){{el.scrollIntoView({{block:'center'}});}}else if(n++<30){{requestAnimationFrame(go);}}}};go();}})({literal});"
                 ));
             });
         }

@@ -15,15 +15,12 @@ use crate::tasks_panel::use_running_workflows;
 use crate::usage_ring::UsageRing;
 use forge_shared::tr;
 
-// A click on a file name in an answer: the page sends the path to Rust. The handler is replaced each
-// time (`dioxus.send` belongs to the eval that created it).
-const WATCH_FILE_LINKS: &str = "if (window.__forgeFileLinkHandler) { document.removeEventListener('click', window.__forgeFileLinkHandler); } window.__forgeFileLinkHandler = (event) => { const link = event.target && event.target.closest ? event.target.closest('.file-link') : null; if (link && link.dataset.path) { dioxus.send(link.dataset.path); } }; document.addEventListener('click', window.__forgeFileLinkHandler);";
-
 // Watches the message list: `data-away` on the pane tells the CSS whether the button shows.
-const WATCH_SCROLL: &str = "if (!window.__forgeScrollWatch) { window.__forgeScrollWatch = setInterval(() => { const list = document.querySelector('.messages'); if (!list || list.dataset.watching) return; list.dataset.watching = '1'; const pane = list.closest('.main-pane'); const update = () => { const away = list.scrollHeight - list.scrollTop - list.clientHeight > 80; pane?.setAttribute('data-away', away ? 'true' : 'false'); }; list.addEventListener('scroll', update); const resizes = new ResizeObserver(update); resizes.observe(list); const content = list.firstElementChild; if (content) resizes.observe(content); update(); }, 400); }";
+const WATCH_SCROLL: &str = "if (!window.__forgeScrollWatch) { window.__forgeScrollWatch = setInterval(() => { for (const list of document.querySelectorAll('.messages')) { if (list.dataset.watching) continue; list.dataset.watching = '1'; const pane = list.closest('.main-pane'); const update = () => { const away = list.scrollHeight - list.scrollTop - list.clientHeight > 80; pane?.setAttribute('data-away', away ? 'true' : 'false'); }; list.addEventListener('scroll', update); const resizes = new ResizeObserver(update); resizes.observe(list); const content = list.firstElementChild; if (content) resizes.observe(content); update(); } }, 400); }";
 
 #[component]
 fn ScrollToEnd() -> Element {
+    let pane = forge_features::use_pane_index();
     use_hook(|| {
         document::eval(WATCH_SCROLL);
     });
@@ -33,8 +30,8 @@ fn ScrollToEnd() -> Element {
             r#type: "button",
             title: tr!("Scroll to end"),
             "aria-label": tr!("Scroll to end"),
-            onclick: |_| {
-                document::eval("const list = document.querySelector('.messages'); list?.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });");
+            onclick: move |_| {
+                document::eval(&format!("const list = document.querySelector('[data-pane=\"{pane}\"] .messages'); list?.scrollTo({{ top: list.scrollHeight, behavior: 'smooth' }});"));
             },
             "↓"
         }
@@ -46,12 +43,6 @@ fn ScrollToEnd() -> Element {
 pub fn ChatWindow(id: LiveSessionId) -> Element {
     let workspace = use_workspace();
     let settings = use_settings();
-    use_future(move || async move {
-        let mut links = document::eval(WATCH_FILE_LINKS);
-        while let Ok(path) = links.recv::<String>().await {
-            workspace.open_file_in_active(path);
-        }
-    });
     let workflows = use_running_workflows(id);
     let Some(view_signal) = workspace.live_view(id) else {
         return rsx! { div { class: "empty-state", {tr!("This session is no longer open.")} } };
@@ -179,17 +170,6 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
 #[cfg(test)]
 mod tests {
     use super::WATCH_SCROLL;
-
-    #[test]
-    fn the_file_link_listener_replaces_its_old_self_so_a_new_page_scope_is_the_one_that_hears_clicks() {
-        use super::WATCH_FILE_LINKS;
-        // `dioxus.send` belongs to the eval that installed the listener; when the chat is shown
-        // again a new eval must take over, so the old handler is removed first.
-        assert!(WATCH_FILE_LINKS.contains("removeEventListener"), "{WATCH_FILE_LINKS}");
-        assert!(WATCH_FILE_LINKS.contains(".file-link"));
-        assert!(WATCH_FILE_LINKS.contains("dioxus.send"));
-        assert!(WATCH_FILE_LINKS.contains("dataset.path"));
-    }
 
     #[test]
     fn the_scroll_watch_keeps_looking_for_the_list_so_a_late_or_replaced_list_is_still_watched() {

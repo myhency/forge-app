@@ -8,6 +8,8 @@ use forge_features::{use_workspace, Panel};
 #[component]
 pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
     let workspace = use_workspace();
+    let pane = forge_features::use_pane_index();
+    let split = workspace.panes().is_split();
     let mut open = use_signal(|| false);
     let terminal_open = workspace.dock(id).is_open(Panel::Terminal);
     let changes_open = workspace.dock(id).is_open(Panel::Changes);
@@ -122,8 +124,35 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                 span { {tr!("Files")} }
                             }
                         }
+                        if split {
+                            if pane == 1 {
+                                button {
+                                    class: "picker-item",
+                                    r#type: "button",
+                                    role: "menuitem",
+                                    onclick: move |_| {
+                                        workspace.swap_panes();
+                                        open.set(false);
+                                    },
+                                    span { {tr!("Move split view left")} }
+                                }
+                            }
+                            button {
+                                class: "picker-item",
+                                r#type: "button",
+                                role: "menuitem",
+                                onclick: move |_| {
+                                    workspace.close_pane(pane);
+                                    open.set(false);
+                                },
+                                span { {tr!("Close split view")} }
+                            }
+                        }
                     }
                 }
+            }
+            if split {
+                crate::pane_close::PaneClose { index: pane }
             }
         }
     }

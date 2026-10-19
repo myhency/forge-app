@@ -9,7 +9,7 @@ const token = (window.__forgeSurfaceToken = {});
 let last = null;
 function tick() {
   if (window.__forgeSurfaceToken !== token) return;
-  const el = document.querySelector('.preview-surface');
+  const el = document.querySelector('.pane.focused .preview-surface');
   const r = el ? el.getBoundingClientRect() : null;
   const text = r ? [r.x, r.y, r.width, r.height].join(',') : '';
   if (text !== last) { last = text; dioxus.send(text); }
@@ -122,6 +122,12 @@ mod tests {
         for bad in ["", "1,2,3", "a,b,c,d", "1,2,3,4,5", "NaN,0,1,1"] {
             assert_eq!(parse_surface(bad), None, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn the_surface_is_the_one_in_the_focused_pane() {
+        assert!(SURFACE_SCRIPT.contains(".pane.focused .preview-surface"));
+        assert!(!SURFACE_SCRIPT.contains("querySelector('.preview-surface')"));
     }
 
     #[test]

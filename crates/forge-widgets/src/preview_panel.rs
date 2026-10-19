@@ -7,7 +7,7 @@ use forge_shared::tr;
 
 /// Puts the keyboard in the address field, once the field is there (a new tab draws it a moment later).
 fn focus_address() {
-    let _ = document::eval("setTimeout(function(){var i=document.querySelector('.preview-url');if(i){i.focus();i.select();}},30);");
+    let _ = document::eval("setTimeout(function(){var i=document.querySelector('.pane.focused .preview-url');if(i){i.focus();i.select();}},30);");
 }
 
 /// Does a Preview key for session `id`. A new tab and the address key leave the cursor in the address field.
@@ -24,6 +24,7 @@ pub(crate) fn run_preview_key(workspace: Workspace, id: LiveSessionId, key: Prev
 #[component]
 pub fn PreviewPanel(id: LiveSessionId) -> Element {
     let workspace = use_workspace();
+    let focused = forge_features::use_pane_focused();
     // The panel never opens empty: a tab is there to type an address into.
     use_hook(|| {
         if workspace.previews(id).is_empty() {
@@ -201,6 +202,9 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                         p { class: "preview-failed-url", "{url}" }
                         button { class: "preview-open", r#type: "button", onclick: move |_| retry(), {tr!("Try again")} }
                     }
+                } else if !focused {
+                    // Only the focused pane has the native view; this one comes back on a click.
+                    div { class: "preview-idle", div { class: "dock-note", {tr!("Click to show the page")} } }
                 } else {
                     // The page's web view lies over this; the hint shows until it has an address.
                     div { class: "preview-surface",

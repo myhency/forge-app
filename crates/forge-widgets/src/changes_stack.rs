@@ -23,7 +23,7 @@ const LINE_MAX: usize = 20_000;
 pub(crate) fn scroll_to_diff(path: &str) {
     let literal = serde_json::to_string(path).unwrap_or_default();
     document::eval(&format!(
-        "(function(p){{const el=[...document.querySelectorAll('[data-diff-path]')].find(e=>e.dataset.diffPath===p);if(el){{el.scrollIntoView({{block:'start'}});}}}})({literal});"
+        "(function(p){{const el=[...document.querySelectorAll('.pane.focused [data-diff-path]')].find(e=>e.dataset.diffPath===p);if(el){{el.scrollIntoView({{block:'start'}});}}}})({literal});"
     ));
 }
 

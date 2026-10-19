@@ -585,6 +585,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .menu-narrow { display: none; }
 .chat-narrow .picker-item.menu-narrow { display: flex; }
 .chat-narrow .pane-tools > .icon-button { display: none; }
+.chat-narrow .pane-tools > .icon-button.pane-close { display: inline-flex; }
+.pane-tools .pane-close { position: static; }
 .chat-narrow .pane-header { flex-wrap: wrap; row-gap: 6px; padding: 12px 16px; }
 .chat-narrow .pane-title { flex: 1 1 120px; }
 .chat-narrow .messages { padding: 8px 16px 16px; }
