@@ -94,3 +94,13 @@ Saved split, focus keys between panes, side chat (`⌘;`), dragging a row into a
 - The web view: the focused pane's surface rect must follow every geometry change (a divider drag, a move, a close). Checked in the real window as in Plan 51.
 - A vertical size now matters. `main_height` is new state; if the window height is wrong at first render the minimum-height refusals would fire early. The first render uses the measured height of the window (the same source as the width) and the window check resizes the window.
 - The `move_pane` rule on deeper trees is an extension of what the desktop app shows (two panes). It is unit-tested; a surprise in a three-pane layout would be a note in the plan's "left" list, not a blocker.
+
+## As built
+
+- The type is `PaneTree` (`pane_tree.rs`), not `Panes`; `Panes` and `panes.rs` are gone. `can_hold` became `fits(w, h) -> bool`. The focus is kept as the focused screen (screens are unique), not as an index.
+- `set_ratio` clamps in whole px: clamping the two ratios themselves can invert by a rounding error and panic (`f32::clamp`).
+- A pane's `⋮` menu shows "move left / up" (a swap) only for the second child of its split, and "move down / to the right" (turning the split) for any pane with a parent. The labels follow the split's direction.
+- A layout that does not fit the area at the minimum sizes (for example three panes where a column was turned side by side) shows the focused pane alone, with its screens kept; it returns when the window grows (checked with `resize.py`: 800 wide folds, 1200 brings the grid back).
+- The New-session panel scrolls inside a short pane: `.new-session` keeps its content at the bottom when there is room (`margin-top: auto` on its first child) and scrolls from the top when there is not. Found in the real window at 267 px.
+- Checked in the real window (light mode, harness): ⌥+click gives 2×2 in the desktop app's order; a fifth ⌥+click replaces the bottom-right pane and keeps four; the horizontal divider moves only its own column and the vertical divider stops at 420 px; × closes a pane and its sibling takes the column; the `⋮` menu items for a first child ("to the right", close) and for the lone pane ("down", close); turning a split and turning it back keeps every pane's session; `⌃⌘-` opens a New-session pane below the focused pane; narrow window fold and return.
+- Not checked: dark mode, a Preview tab in two panes, a first message from a New-session pane in a grid, Korean typing, a swap ("move left") in a grid, the minimum height with the compact header of a very short pane.
