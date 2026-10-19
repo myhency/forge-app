@@ -152,6 +152,9 @@ pub struct Workspace {
     changes_modes_loaded: Signal<bool>,
     archived: Signal<Vec<ArchivedRef>>,
     worktrees: Signal<Vec<WorktreeRecord>>,
+    environments: Signal<Vec<forge_domain::Environment>>,
+    environment_key: Signal<Option<crate::EnvironmentKey>>,
+    environment_request: Signal<Option<crate::EnvironmentRequest>>,
     new_repo: Signal<Option<RepoInfo>>,
     new_unsent: Signal<Option<String>>,
     docks: Signal<DockStates>,
@@ -222,6 +225,9 @@ pub fn use_workspace_provider() -> Workspace {
             changes_modes_loaded: Signal::new(false),
             archived: Signal::new(Vec::new()),
             worktrees: Signal::new(Vec::new()),
+            environments: Signal::new(Vec::new()),
+            environment_key: Signal::new(None),
+            environment_request: Signal::new(None),
             new_repo: Signal::new(None),
             new_unsent: Signal::new(None),
             docks: Signal::new(DockStates::default()),
@@ -481,6 +487,7 @@ impl Workspace {
         let mut prefs = self.prefs;
         let mut archived = self.archived;
         let mut worktrees = self.worktrees;
+        let mut environments = self.environments;
         let mut editor = self.editor;
         let mut changes_view = self.changes_view;
         let mut changes_modes = self.changes_modes;
@@ -494,6 +501,7 @@ impl Workspace {
                 changes_modes.set(config.changes_modes);
                 changes_modes_loaded.set(true);
                 worktrees.set(config.worktrees);
+                environments.set(config.environments);
             }
         });
     }
@@ -1781,6 +1789,7 @@ impl Workspace {
         attachments: Vec<Attachment>,
         folders: Vec<PathBuf>,
         worktree: Option<NewWorktree>,
+        environment: Option<crate::EnvironmentStart>,
     ) {
         let this = *self;
         let services = (*self.services.peek()).clone();
@@ -1788,6 +1797,12 @@ impl Workspace {
         // Pinned to the root scope: `NewSessionComposer` unmounts if the person clicks elsewhere
         // while the saved model is being read, which would cancel a plain `spawn`.
         dioxus::core::spawn_forever(async move {
+            // An environment names its worktree choice, not a probed repository: ask git now, and start
+            // in the folder itself when it is not a repository.
+            let worktree = match (&environment, worktree) {
+                (Some(_), Some(request)) => services.worktrees.branches(project.path.clone()).await.ok().map(|_| request),
+                (_, other) => other,
+            };
             let project = match worktree {
                 None => project,
                 Some(request) => {
@@ -1822,6 +1837,17 @@ impl Workspace {
             match services.registry.open_new_with_effort(&project, mode, model, effort, commands) {
                 Ok(handle) => {
                     let id = this.attach(handle.clone());
+                    let mut folders = folders;
+                    if let Some(environment) = &environment {
+                        for extra in &environment.extra {
+                            if !folders.contains(extra) {
+                                folders.push(extra.clone());
+                            }
+                        }
+                        if !environment.env.0.is_empty() {
+                            handle.set_env(environment.env.clone());
+                        }
+                    }
                     if !folders.is_empty() {
                         handle.add_directories(folders);
                     }
@@ -1971,6 +1997,124 @@ impl Workspace {
         }
     }
 
+    pub fn environments(&self) -> Vec<forge_domain::Environment> {
+        self.environments.read().clone()
+    }
+
+    /// Adds the environment, or replaces the one with its id. Pinned to the root scope: the save must
+    /// finish even if the dialog goes away meanwhile.
+    pub fn save_environment(&self, environment: forge_domain::Environment) {
+        self.change_environments(move |list| match list.iter_mut().find(|existing| existing.id == environment.id) {
+            Some(existing) => *existing = environment,
+            None => list.push(environment),
+        });
+    }
+
+    pub fn delete_environment(&self, id: String) {
+        self.change_environments(move |list| list.retain(|environment| environment.id != id));
+    }
+
+    pub fn set_environment_pinned(&self, id: String, pinned: bool) {
+        self.change_environments(move |list| {
+            if let Some(environment) = list.iter_mut().find(|environment| environment.id == id) {
+                environment.pinned = pinned;
+            }
+        });
+    }
+
+    fn change_environments(&self, change: impl FnOnce(&mut Vec<forge_domain::Environment>) + 'static) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        dioxus::core::spawn_forever(async move {
+            match services.settings.save_code_settings(|config| change(&mut config.environments)).await {
+                Ok(config) => {
+                    let mut environments = this.environments;
+                    environments.set(config.environments);
+                }
+                Err(error) => this.report(tr!("Could not save the environment: {error}", error = error)),
+            }
+        });
+    }
+
+    /// Asks the new-session screen's environment chip to act on a key (⌥⌘0…9). Nothing else shows one.
+    pub fn request_environment_key(&self, key: crate::EnvironmentKey) {
+        if self.active() == Active::NewSession {
+            let mut request = self.environment_key;
+            request.set(Some(key));
+        }
+    }
+
+    pub fn environment_key(&self) -> Option<crate::EnvironmentKey> {
+        *self.environment_key.read()
+    }
+
+    pub fn clear_environment_key(&self) {
+        let mut request = self.environment_key;
+        if request.peek().is_some() {
+            request.set(None);
+        }
+    }
+
+    pub fn environment_request(&self) -> Option<crate::EnvironmentRequest> {
+        self.environment_request.read().clone()
+    }
+
+    pub fn open_environment_dialog(&self, request: crate::EnvironmentRequest) {
+        let mut current = self.environment_request;
+        current.set(Some(request));
+    }
+
+    pub fn close_environment_dialog(&self) {
+        let mut current = self.environment_request;
+        current.set(None);
+    }
+
+    /// The local branches of `folder`; `None` when it is not a git repository.
+    pub async fn folder_branches(&self, folder: PathBuf) -> Option<forge_ports::BranchList> {
+        let services = (*self.services.peek()).clone();
+        services.worktrees.branches(folder).await.ok()
+    }
+
+    /// The system folder dialog; `None` when cancelled.
+    pub async fn pick_folder(&self) -> Option<PathBuf> {
+        let services = (*self.services.peek()).clone();
+        services.folder_picker.pick_folder().await
+    }
+
+    /// Whether `folder` is off the trusted list, so the person must be asked. A list that cannot be
+    /// read counts as empty, like the composer's add-folder.
+    pub async fn needs_trust(&self, folder: PathBuf) -> bool {
+        let services = (*self.services.peek()).clone();
+        let trusted = services.settings.load().await.map(|config| config.trusted_folders).unwrap_or_default();
+        crate::run_blocking(move || crate::trust::classify_added_folder(&trusted, &[], &folder, &crate::trust::resolved(&folder)) == crate::trust::FolderAdd::NeedsAsking).await.unwrap_or(true)
+    }
+
+    /// Puts `folder` on the trusted list.
+    pub fn trust_folder(&self, folder: PathBuf) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        dioxus::core::spawn_forever(async move {
+            let Some(resolved) = crate::run_blocking(move || crate::trust::resolved(&folder)).await else { return };
+            let saved = services.settings.save_code_settings(|config| {
+                forge_domain::add_trusted(&mut config.trusted_folders, resolved);
+            });
+            if let Err(error) = saved.await {
+                this.report(tr!("Could not save the trusted folder: {error}", error = error));
+            }
+        });
+    }
+
+    /// Marks the environment as used now, which is what orders the menu.
+    pub fn touch_environment(&self, id: String) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis() as i64).unwrap_or(0);
+        self.change_environments(move |list| {
+            if let Some(environment) = list.iter_mut().find(|environment| environment.id == id) {
+                environment.last_used_at = now;
+            }
+        });
+    }
+
+
     /// Steps the active session's transcript view (Normal, Thinking, Detailed, Normal…).
     pub fn cycle_transcript_view(&self) {
         if let Active::Live(id) = self.active() {
@@ -2080,6 +2224,8 @@ impl Workspace {
             Shortcut::RenameActive => self.rename_active(),
             Shortcut::ShowShortcuts => self.toggle_shortcuts(),
             Shortcut::OpenPicker(kind) => self.request_picker(kind),
+            Shortcut::PickEnvironment(index) => self.request_environment_key(crate::EnvironmentKey::Pick(index)),
+            Shortcut::NewEnvironment => self.request_environment_key(crate::EnvironmentKey::New),
             Shortcut::CycleTranscript => self.cycle_transcript_view(),
             Shortcut::ToggleFileList => self.toggle_file_list(),
             Shortcut::ExpandPanel => self.toggle_panel_expanded(),

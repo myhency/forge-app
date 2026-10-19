@@ -1,9 +1,10 @@
 use std::path::Path;
 
 use dioxus::prelude::*;
-use forge_domain::{EffortLevel, PermissionMode};
+use forge_domain::{EffortLevel, PermissionMode, ProjectSummary};
 
 use crate::command_box::CommandTextArea;
+use crate::environment::{start_plan, StartError};
 use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCard};
 use crate::workspace::use_workspace;
 use crate::worktree_view::{NewWorktree, RepoInfo};
@@ -22,6 +23,8 @@ pub struct NewSessionDraft {
     pub effort: Signal<Option<EffortLevel>>,
     pub worktree: Signal<bool>,
     pub branch: Signal<Option<String>>,
+    /// The saved environment picked, or `None` for this computer.
+    pub environment: Signal<Option<String>>,
 }
 
 pub fn use_new_session_draft() -> NewSessionDraft {
@@ -44,7 +47,7 @@ pub fn worktree_request(on: bool, branch: Option<String>, repo: Option<RepoInfo>
 #[component]
 pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
     let workspace = use_workspace();
-    let draft = use_context_provider(|| NewSessionDraft { mode: Signal::new(PermissionMode::Default), model: Signal::new(None), effort: Signal::new(None), worktree: Signal::new(true), branch: Signal::new(None) });
+    let draft = use_context_provider(|| NewSessionDraft { mode: Signal::new(PermissionMode::Default), model: Signal::new(None), effort: Signal::new(None), worktree: Signal::new(true), branch: Signal::new(None), environment: Signal::new(None) });
     let text = use_signal(String::new);
     let composer = use_composer_state_provider(text);
     let mut text = text;
@@ -78,7 +81,19 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
         }
     });
 
-    let has_folder = !workspace.new_session_projects().is_empty();
+    // An environment deleted while it was picked: back to this computer.
+    use_effect(move || {
+        let picked = draft.environment.read().clone();
+        if let Some(id) = picked {
+            if !workspace.environments().iter().any(|environment| environment.id == id) {
+                let mut picked_signal = draft.environment;
+                picked_signal.set(None);
+            }
+        }
+    });
+
+    let picked_environment = draft.environment.read().clone().and_then(|id| workspace.environments().into_iter().find(|environment| environment.id == id));
+    let has_folder = picked_environment.is_some() || !workspace.new_session_projects().is_empty();
 
     // `submit` is used by two handlers, so it may capture only `Copy` values (signals): it looks the
     // folder up again instead of capturing a string.
@@ -86,18 +101,41 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
         if !send_ready(&text.read(), composer.attachments().len()) {
             return;
         }
-        let projects = workspace.new_session_projects();
-        let project = match workspace.new_folder() {
-            Some(path) => projects.iter().find(|project| project.path == path).cloned().or_else(|| projects.first().cloned()),
-            None => projects.first().cloned(),
-        };
-        let Some(project) = project else {
-            return;
+        let environment = draft.environment.peek().clone().and_then(|id| workspace.environments().into_iter().find(|environment| environment.id == id));
+        let (project, plan) = match &environment {
+            Some(environment) => match start_plan(environment) {
+                Ok(plan) => {
+                    let exists = plan.folder.is_dir();
+                    (ProjectSummary { path: plan.folder.clone(), last_active: String::new(), session_count: 0, exists }, Some(plan))
+                }
+                Err(StartError::NoFolder) => {
+                    workspace.report(tr!("Add a folder to this environment first").to_string());
+                    return;
+                }
+                Err(StartError::Variables(error)) => {
+                    workspace.report(tr!("The variables of this environment are not valid (line {line}). Edit the environment.", line = error.line));
+                    return;
+                }
+            },
+            None => {
+                let projects = workspace.new_session_projects();
+                let project = match workspace.new_folder() {
+                    Some(path) => projects.iter().find(|project| project.path == path).cloned().or_else(|| projects.first().cloned()),
+                    None => projects.first().cloned(),
+                };
+                let Some(project) = project else {
+                    return;
+                };
+                (project, None)
+            }
         };
         let Some(outgoing) = composer.take_for_new_session(&text.read()) else {
             return;
         };
-        let worktree = worktree_request(*draft.worktree.peek(), draft.branch.peek().clone(), workspace.new_repo(), &project.path);
+        let worktree = match &plan {
+            Some(plan) => plan.worktree.clone(),
+            None => worktree_request(*draft.worktree.peek(), draft.branch.peek().clone(), workspace.new_repo(), &project.path),
+        };
         workspace.start_new(
             project,
             *draft.mode.peek(),
@@ -107,7 +145,11 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
             outgoing.attachments,
             composer.take_folders(),
             worktree,
+            plan,
         );
+        if let Some(environment) = environment {
+            workspace.touch_environment(environment.id);
+        }
         text.set(String::new());
     };
     let ready = send_ready(&text.read(), composer.attachments().len());

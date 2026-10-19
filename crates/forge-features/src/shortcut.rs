@@ -25,6 +25,10 @@ pub enum Shortcut {
     TogglePanel(Panel),
     /// Opens one of the composer's menus (⇧⌘M, ⇧⌘I, ⇧⌘E).
     OpenPicker(PickerKind),
+    /// ⌥⌘1…9 on the new-session screen: picks the environment in that row of the menu (0 is this computer).
+    PickEnvironment(usize),
+    /// ⌥⌘0: opens the new-environment dialog.
+    NewEnvironment,
     /// Steps the chat's transcript view: Normal, Thinking, Detailed, Normal…
     CycleTranscript,
     /// Shows or hides the file list of the Files panel, or of Changes when Files is shut.
@@ -172,6 +176,8 @@ pub static SHORTCUTS: &[ShortcutRow] = &[
     ShortcutRow { group: Group::Composer, label: msg!("Open the mode menu"), action: Shortcut::OpenPicker(PickerKind::Mode), keys: &[cmd_shift("KeyM")] },
     ShortcutRow { group: Group::Composer, label: msg!("Open the model menu"), action: Shortcut::OpenPicker(PickerKind::Model), keys: &[cmd_shift("KeyI")] },
     ShortcutRow { group: Group::Composer, label: msg!("Open the effort menu"), action: Shortcut::OpenPicker(PickerKind::Effort), keys: &[cmd_shift("KeyE")] },
+    ShortcutRow { group: Group::Composer, label: msg!("Pick an environment 1…9"), action: Shortcut::PickEnvironment(0), keys: &[cmd_alt(DIGITS)] },
+    ShortcutRow { group: Group::Composer, label: msg!("New environment"), action: Shortcut::NewEnvironment, keys: &[cmd_alt("Digit0")] },
     ShortcutRow { group: Group::Composer, label: msg!("Add file or photo"), action: Shortcut::AddFiles, keys: &[cmd("KeyU")] },
 ];
 
@@ -228,6 +234,7 @@ impl Binding {
 fn key_label(code: &str) -> String {
     match code {
         DIGITS => "1…9".to_string(),
+        "Digit0" => "0".to_string(),
         "ArrowDown" => "↓".to_string(),
         "ArrowUp" => "↑".to_string(),
         "Comma" => ",".to_string(),
@@ -304,7 +311,10 @@ pub fn shortcut_for(press: &KeyPress, mac: bool) -> Option<Shortcut> {
             }
             if binding.code == DIGITS {
                 if let Some(index) = digit_index(press.code) {
-                    return Some(Shortcut::GoToSession(index));
+                    return Some(match row.action {
+                        Shortcut::PickEnvironment(_) => Shortcut::PickEnvironment(index),
+                        _ => Shortcut::GoToSession(index),
+                    });
                 }
             } else if binding.code == press.code {
                 return Some(row.action);
@@ -501,6 +511,16 @@ mod tests {
     }
 
     #[test]
+    fn option_command_digits_pick_an_environment_and_option_command_zero_makes_one() {
+        let press = |code: &'static str| KeyPress { code, ctrl: false, meta: true, alt: true, shift: false };
+        assert_eq!(shortcut_for(&press("Digit1"), true), Some(Shortcut::PickEnvironment(0)));
+        assert_eq!(shortcut_for(&press("Digit9"), true), Some(Shortcut::PickEnvironment(8)));
+        assert_eq!(shortcut_for(&press("Digit0"), true), Some(Shortcut::NewEnvironment));
+        let plain = KeyPress { code: "Digit2", ctrl: false, meta: true, alt: false, shift: false };
+        assert_eq!(shortcut_for(&plain, true), Some(Shortcut::GoToSession(1)));
+    }
+
+    #[test]
     fn the_digits_go_to_the_session_at_that_place() {
         assert_eq!(shortcut_for(&press("Digit1", false, true, false, false), true), Some(Shortcut::GoToSession(0)));
         assert_eq!(shortcut_for(&press("Digit9", false, true, false, false), true), Some(Shortcut::GoToSession(8)));
@@ -589,7 +609,7 @@ mod tests {
         }
         let listed: usize = shortcut_sections(true).iter().map(|section| section.rows.len()).sum();
         assert_eq!(listed, SHORTCUTS.len() + PREVIEW_SHORTCUTS.len());
-        assert_eq!(shortcut_sections(true).last().map(|section| section.rows.len()), Some(4), "the composer group: three menus and add file");
+        assert_eq!(shortcut_sections(true).last().map(|section| section.rows.len()), Some(6), "the composer group: three menus, add file, pick and new environment");
     }
 
     #[test]
