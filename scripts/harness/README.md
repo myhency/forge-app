@@ -4,7 +4,7 @@ Runs the real Forge window against a fake Claude home so its UI can be checked w
 
     scripts/harness/launch.sh            # build, fixture, start the app in the background
     python3 scripts/harness/capture.py   # screenshot -> /private/tmp/forge-harness-shot.png (open it to look)
-    python3 scripts/harness/click.py X Y # click pixel X,Y of that screenshot, then capture again
+    python3 scripts/harness/click.py X Y [--option] # click pixel X,Y of that screenshot (--option holds ⌥), then capture again
     python3 scripts/harness/resize.py W H  # set the window size in points (needs Accessibility), then capture
     scripts/harness/stop.sh              # quit the app, remove the fixture
     python3 -m unittest discover -s scripts/harness   # tests of the fixture builder and the click math

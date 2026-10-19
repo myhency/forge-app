@@ -118,7 +118,7 @@ Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Mode
 | OTH-01 | Package the app | Plan 13 candidates | Plan 29 (built) |
 | OTH-02 | Chat view extras | Plan 13 candidates | superseded by Plans 23A/B/C |
 | OTH-03 | Trash restore for deleted sessions | Plan 13 candidates | - |
-| OTH-04 | Split panes and side chat | Plan 13 candidates | observed (Round 20, 2026-10-19); not planned |
+| OTH-04 | Split panes and side chat | Plan 13 candidates | Plan 51 (built, 2026-10-19): horizontal 2-split, ⌥+click, `⌃⌘\`, divider, Preview in the focused pane. Left: vertical stacking, trees, more than two panes, saved split, focus keys, side chat (`⌘;`) |
 | OTH-05 | Plan 12's deferred minors | spec §23.8 | - |
 | OTH-06 | Test harness levels B (scenario runner) and C (SSR render tests) | Plan 13, deferred by the user | - |
 | OTH-07 | Check the model ids in `KNOWN_MODELS` against the bundled Claude Code: `claude-sonnet-5-5` was refused by `setModel` in a running session; Settings and new sessions use the same ids | Plan 16 | Plan 19 (built: Sonnet is `claude-sonnet-5`, "Sonnet 5") |

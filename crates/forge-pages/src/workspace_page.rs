@@ -230,7 +230,8 @@ fn Pane(index: usize, target: Active, width: u32) -> Element {
         class.push_str(" focused");
     }
     // The right pane takes what is left, so the two always fill the area.
-    let style = if split && index == 0 { format!("width: {width}px; flex: none;") } else { String::new() };
+    // Always spelled out: an empty style would leave the old width on a pane that was the left one.
+    let style = if split && index == 0 { format!("width: {width}px; flex: none;") } else { "width: auto; flex: 1;".to_string() };
     rsx! {
         div {
             class,

@@ -66,7 +66,7 @@ New `Workspace` methods: `panes()`, `focus_pane(i)`, `open_session_beside(id)`, 
 - With one pane the markup is `div.pane` with width 100%: the same layout as now.
 - Each pane gets a context value `PaneIndex(usize)`. A `pointerdown`/`focusin` anywhere in a pane calls `focus_pane(i)`. The focused pane has a 1 px accent outline only when split.
 - Pane header: when split, the toolbar's Close button (×) is added at the right of every pane header. The ⋮ menu gets "Move split view left" (right pane only) and "Close split view".
-- The dock (`dock_width`, `layout_for(window_width(), …)`): the layout decision uses the width of the pane, not the window. Each pane measures itself with a `ResizeObserver` and passes its width to `layout_for`; the sidebar state still comes from the window. With one pane the pane width equals today's main width, so nothing changes.
+- The dock (`dock_width`, `layout_for(window_width(), …)`): the layout decision uses the width of the pane, not the window. Each pane's width is computed (window width, docked sidebar width, split ratio; pure and tested in `Panes::widths` and `pane_class`) instead of measured with a `ResizeObserver`; the sidebar state still comes from the window. With one pane the pane width equals today's main width, so nothing changes.
 - The sidebar overlay (narrow window) is unchanged.
 
 ### 4. Sizes
@@ -100,3 +100,10 @@ Vertical stacking and a tree layout; more than two panes; the new-session pane's
 
 - The pane-scoped scripts are the main risk: a leftover `document.querySelector('.messages')` would act on the wrong pane. The plan lists every selector (`grep` for `querySelector` in `forge-widgets` and `forge-features`) and converts each.
 - The native Preview view moves between panes; the surface rect must update on focus change and on divider drag. It is checked in the real window.
+
+## As built
+
+- The × and the ⋮ items ("Move split view left", "Close split view") sit in `SessionTools`; a page-level × is drawn for panes that are not sessions (New session, Customize, Routines).
+- A pane's inline width is always written (`width: auto; flex: 1;` when it is not the left of two), because an empty style left the old width on a pane that had been the left one (found in the real window).
+- Past sessions open beside too (`open_past_beside`).
+- Checked in the real window (light mode): ⌥+click, plain click in a split, focus by click, divider drag to the 420 pt limit, ⋮ menu, ×, Preview idle text in the unfocused pane, `⌃⌘\\`, ⌘W in the focused pane, narrow window falls back to a plain open. Not checked: dark mode, Korean typing, a first message from an unfocused New-session pane, a session closed in the unfocused pane, file-link clicks and the scroll button in two panes.
