@@ -24,29 +24,30 @@ pub enum DockMode {
     Float,
 }
 
+/// Whether the sidebar is docked or an overlay at this window width.
+pub fn sidebar_mode_for(window_width: u32) -> SidebarMode {
+    if window_width.max(MIN_WINDOW_WIDTH) <= SIDEBAR_OVERLAY_UP_TO {
+        SidebarMode::Overlay
+    } else {
+        SidebarMode::Docked
+    }
+}
+
+/// How one pane lays out its dock. `dock_width` is the sum of the open dock columns, 0 when there is
+/// none or when one is expanded over the pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Layout {
-    pub sidebar: SidebarMode,
+pub struct PaneLayout {
     pub dock: DockMode,
     /// The width the chat column gets.
     pub chat_width: u32,
 }
 
-/// `sidebar_width` is what a docked sidebar (or its rail) takes; `dock_width` is the sum of the open
-/// dock columns, 0 when there is none or when one is expanded over the pane.
-pub fn layout_for(window_width: u32, sidebar_width: u32, dock_width: u32) -> Layout {
-    let window_width = window_width.max(MIN_WINDOW_WIDTH);
-    let sidebar = if window_width <= SIDEBAR_OVERLAY_UP_TO { SidebarMode::Overlay } else { SidebarMode::Docked };
-    let taken = match sidebar {
-        SidebarMode::Docked => sidebar_width,
-        SidebarMode::Overlay => 0,
-    };
-    let beside = window_width.saturating_sub(taken);
-    let pushed = beside.saturating_sub(dock_width);
+pub fn pane_layout(pane_width: u32, dock_width: u32) -> PaneLayout {
+    let pushed = pane_width.saturating_sub(dock_width);
     if dock_width == 0 || pushed >= MIN_CHAT_WIDTH {
-        Layout { sidebar, dock: DockMode::Push, chat_width: pushed }
+        PaneLayout { dock: DockMode::Push, chat_width: pushed }
     } else {
-        Layout { sidebar, dock: DockMode::Float, chat_width: beside }
+        PaneLayout { dock: DockMode::Float, chat_width: pane_width }
     }
 }
 
@@ -57,29 +58,27 @@ pub fn keep_peek(peek: bool, window_width: u32, overlay_open: bool) -> bool {
     peek && window_width <= SIDEBAR_OVERLAY_UP_TO && !overlay_open
 }
 
-/// The class list of `.workspace`: every visual rule of the responsive layout hangs on one of these.
-pub fn workspace_class(layout: Layout, resizing: bool) -> String {
+/// The class list of `.workspace`: the sidebar mode and the sidebar drag.
+pub fn workspace_class(sidebar: SidebarMode, resizing: bool) -> String {
     let mut class = String::from("workspace");
     if resizing {
         class.push_str(" resizing");
     }
-    if layout.sidebar == SidebarMode::Overlay {
+    if sidebar == SidebarMode::Overlay {
         class.push_str(" sidebar-overlay");
     }
     class
 }
 
 /// The class list of one pane: the responsive rules that depend on the pane's own width. With one
-/// pane `pane_width` is the whole main area, so this is what the workspace used to say.
+/// pane `pane_width` is the whole main area.
 pub fn pane_class(pane_width: u32, dock_width: u32) -> String {
-    let pushed = pane_width.saturating_sub(dock_width);
-    let floats = dock_width > 0 && pushed < MIN_CHAT_WIDTH;
-    let chat_width = if floats { pane_width } else { pushed };
+    let layout = pane_layout(pane_width, dock_width);
     let mut class = String::from("pane");
-    if floats {
+    if layout.dock == DockMode::Float {
         class.push_str(" dock-float");
     }
-    if chat_width < NARROW_CHAT_BELOW {
+    if layout.chat_width < NARROW_CHAT_BELOW {
         class.push_str(" chat-narrow");
     }
     class
@@ -91,65 +90,41 @@ mod tests {
 
     #[test]
     fn the_sidebar_is_an_overlay_up_to_700_and_docked_from_701() {
-        assert_eq!(layout_for(600, 264, 0).sidebar, SidebarMode::Overlay);
-        assert_eq!(layout_for(700, 264, 0).sidebar, SidebarMode::Overlay);
-        assert_eq!(layout_for(701, 264, 0).sidebar, SidebarMode::Docked);
-        assert_eq!(layout_for(1200, 264, 0).sidebar, SidebarMode::Docked);
+        assert_eq!(sidebar_mode_for(600), SidebarMode::Overlay);
+        assert_eq!(sidebar_mode_for(700), SidebarMode::Overlay);
+        assert_eq!(sidebar_mode_for(701), SidebarMode::Docked);
+        assert_eq!(sidebar_mode_for(1200), SidebarMode::Docked);
     }
 
     #[test]
     fn a_window_below_the_minimum_is_treated_like_the_smallest() {
-        assert_eq!(layout_for(0, 264, 0).sidebar, SidebarMode::Overlay);
-        assert_eq!(layout_for(599, 264, 480).dock, DockMode::Float);
+        assert_eq!(sidebar_mode_for(0), SidebarMode::Overlay);
     }
 
     #[test]
     fn the_dock_pushes_the_chat_until_the_chat_would_be_under_300() {
-        // 1060 - 280 - 480 = 300: exactly enough.
-        assert_eq!(layout_for(1060, 280, 480).dock, DockMode::Push);
-        assert_eq!(layout_for(1060, 280, 480).chat_width, 300);
-        // One point less and it floats; the chat keeps all the room beside the sidebar.
-        assert_eq!(layout_for(1059, 280, 480).dock, DockMode::Float);
-        assert_eq!(layout_for(1059, 280, 480).chat_width, 779);
-    }
-
-    #[test]
-    fn an_overlay_sidebar_takes_no_room_from_the_dock() {
-        // 650 - 0 - 350 = 300 even though the saved sidebar width is 480.
-        let layout = layout_for(650, 480, 350);
-        assert_eq!(layout.sidebar, SidebarMode::Overlay);
-        assert_eq!(layout.dock, DockMode::Push);
-        assert_eq!(layout.chat_width, 300);
-    }
-
-    #[test]
-    fn a_wide_saved_sidebar_in_a_small_docked_window_floats_the_dock() {
-        let layout = layout_for(701, 480, 260);
-        assert_eq!(layout.sidebar, SidebarMode::Docked);
-        assert_eq!(layout.dock, DockMode::Float);
-        assert_eq!(layout.chat_width, 221);
+        // 780 - 480 = 300: exactly enough.
+        assert_eq!(pane_layout(780, 480), PaneLayout { dock: DockMode::Push, chat_width: 300 });
+        // One point less and it floats; the chat keeps all the room of the pane.
+        assert_eq!(pane_layout(779, 480), PaneLayout { dock: DockMode::Float, chat_width: 779 });
     }
 
     #[test]
     fn no_dock_is_always_a_push_and_the_chat_gets_what_is_left() {
-        let layout = layout_for(701, 480, 0);
-        assert_eq!(layout.dock, DockMode::Push);
-        assert_eq!(layout.chat_width, 221);
-        assert_eq!(layout_for(1200, 264, 0).chat_width, 936);
+        assert_eq!(pane_layout(221, 0), PaneLayout { dock: DockMode::Push, chat_width: 221 });
+        assert_eq!(pane_layout(936, 0).chat_width, 936);
     }
 
     #[test]
-    fn a_dock_wider_than_the_window_does_not_underflow() {
-        let layout = layout_for(600, 264, 4000);
-        assert_eq!(layout.dock, DockMode::Float);
-        assert_eq!(layout.chat_width, 600);
+    fn a_dock_wider_than_the_pane_does_not_underflow() {
+        assert_eq!(pane_layout(600, 4000), PaneLayout { dock: DockMode::Float, chat_width: 600 });
     }
 
     #[test]
     fn the_workspace_class_names_the_sidebar_mode_and_the_drag() {
-        assert_eq!(workspace_class(layout_for(1500, 264, 0), false), "workspace");
-        assert_eq!(workspace_class(layout_for(1500, 264, 0), true), "workspace resizing");
-        assert_eq!(workspace_class(layout_for(650, 264, 350), false), "workspace sidebar-overlay");
+        assert_eq!(workspace_class(SidebarMode::Docked, false), "workspace");
+        assert_eq!(workspace_class(SidebarMode::Docked, true), "workspace resizing");
+        assert_eq!(workspace_class(SidebarMode::Overlay, false), "workspace sidebar-overlay");
     }
 
     #[test]

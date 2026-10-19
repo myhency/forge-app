@@ -14,7 +14,7 @@ pub fn FileLinkWatcher() -> Element {
         while let Ok(text) = links.recv::<String>().await {
             let Some((pane, path)) = text.split_once('\n') else { continue };
             let Ok(index) = pane.parse::<usize>() else { continue };
-            if let Some(Active::Live(id)) = workspace.panes().target(index) {
+            if let Some(Active::Live(id)) = workspace.pane_target(index) {
                 workspace.open_file(id, path.to_string());
             }
         }

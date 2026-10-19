@@ -107,3 +107,7 @@ Vertical stacking and a tree layout; more than two panes; the new-session pane's
 - A pane's inline width is always written (`width: auto; flex: 1;` when it is not the left of two), because an empty style left the old width on a pane that had been the left one (found in the real window).
 - Past sessions open beside too (`open_past_beside`).
 - Checked in the real window (light mode): ⌥+click, plain click in a split, focus by click, divider drag to the 420 pt limit, ⋮ menu, ×, Preview idle text in the unfocused pane, `⌃⌘\\`, ⌘W in the focused pane, narrow window falls back to a plain open. Not checked: dark mode, Korean typing, a first message from an unfocused New-session pane, a session closed in the unfocused pane, file-link clicks and the scroll button in two panes.
+- A main area under 840 px shows only the focused pane (the other keeps its session and comes back when the window grows). The pane widths are computed from the main area in the same render, not from a value an effect stored a frame earlier.
+- A focus change is a stop of the Back/Forward history, so Back after a click into the other pane always moves.
+- `Workspace` keeps the focused screen, the shown screens and the focus index in their own signals, so a divider drag (which only changes the ratio) does not rerun what watches the focused screen. The drag also ends when the move events say the button is up, for a release outside the window.
+- `Layout` is gone: `sidebar_mode_for(window)` for the sidebar and `pane_layout(pane_width, dock_width)` for each pane's dock.

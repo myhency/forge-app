@@ -116,7 +116,7 @@ pub fn Sidebar() -> Element {
         .collect();
     let labels: HashMap<PathBuf, String> = paths.iter().cloned().zip(project_labels(&paths)).collect();
     let active = workspace.active();
-    let panes = workspace.panes();
+    let shown_targets = workspace.pane_targets();
     let notice = workspace.notice();
 
     rsx! {
@@ -212,7 +212,7 @@ pub fn Sidebar() -> Element {
                                 EntryKey::Past { .. } => false,
                             },
                             shown: match &item.entry.key {
-                                EntryKey::Live(id) => panes.pane_of(Active::Live(*id)).is_some(),
+                                EntryKey::Live(id) => shown_targets.contains(&Active::Live(*id)),
                                 EntryKey::Past { .. } => false,
                             },
                             onopen: {

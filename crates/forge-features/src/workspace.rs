@@ -107,6 +107,11 @@ pub struct Workspace {
     past: Signal<Vec<(ProjectSummary, Vec<SessionSummary>)>>,
     live: Signal<Vec<LiveEntry>>,
     panes: Signal<Panes>,
+    // What the rest of the app reads of `panes`, kept apart so a divider drag (which only changes the
+    // ratio) does not rerun everything that watches the focused screen.
+    active: Signal<Active>,
+    shown: Signal<Vec<Active>>,
+    focus: Signal<usize>,
     /// The width of the area right of the docked sidebar; the page reports it.
     main_width: Signal<u32>,
     history: Signal<NavHistory<Active>>,
@@ -177,6 +182,9 @@ pub fn use_workspace_provider() -> Workspace {
             past: Signal::new(Vec::new()),
             live: Signal::new(Vec::new()),
             panes: Signal::new(Panes::new(Active::NewSession)),
+            active: Signal::new(Active::NewSession),
+            shown: Signal::new(vec![Active::NewSession]),
+            focus: Signal::new(0),
             main_width: Signal::new(1200),
             history: Signal::new(NavHistory::new(Active::NewSession)),
             notice: Signal::new(None),
@@ -232,7 +240,7 @@ pub fn use_workspace() -> Workspace {
 
 impl Workspace {
     pub fn active(&self) -> Active {
-        self.panes.read().focused_target()
+        *self.active.read()
     }
 
     /// A message for the user (a failed open, a failed listing), shown until dismissed.
@@ -1469,23 +1477,48 @@ impl Workspace {
         self.show_new_session();
     }
 
-    pub fn panes(&self) -> Panes {
-        self.panes.read().clone()
+    /// The screens of the panes, left to right (one or two).
+    pub fn pane_targets(&self) -> Vec<Active> {
+        self.shown.read().clone()
+    }
+
+    /// The screen of pane `index` without subscribing (for tasks that answer a click).
+    pub fn pane_target(&self, index: usize) -> Option<Active> {
+        self.panes.peek().target(index)
     }
 
     pub fn focused_pane(&self) -> usize {
-        self.panes.read().focused()
+        *self.focus.read()
+    }
+
+    // Changes the panes and brings the derived signals up to date, writing only those that changed.
+    fn edit_panes<R>(&self, change: impl FnOnce(&mut Panes) -> R) -> R {
+        let mut panes = self.panes;
+        let result = change(&mut panes.write());
+        let (target, targets, focused) = {
+            let now = self.panes.peek();
+            (now.focused_target(), now.targets().to_vec(), now.focused())
+        };
+        set_if_changed(self.active, target);
+        set_if_changed(self.shown, targets);
+        set_if_changed(self.focus, focused);
+        result
+    }
+
+    fn visit_active(&self) {
+        let mut history = self.history;
+        history.write().visit(self.active());
     }
 
     /// A click or focus inside a pane. Writes only when the focus moves, so a click in the focused
-    /// pane redraws nothing.
+    /// pane redraws nothing. The move is a stop of the history, so Back returns to the other pane.
     pub fn focus_pane(&self, index: usize) {
-        if self.panes.peek().focused() == index {
+        if *self.focus.peek() == index {
             return;
         }
-        let mut panes = self.panes;
-        if panes.write().focus(index) {
+        if self.edit_panes(|panes| panes.focus(index)) {
             self.clear_rename_request();
+            self.visit_active();
         }
     }
 
@@ -1503,8 +1536,7 @@ impl Workspace {
 
     fn open_beside(&self, target: Active) {
         let room = Panes::can_split(self.main_width());
-        let mut panes = self.panes;
-        panes.write().open_beside(target, room);
+        self.edit_panes(|panes| panes.open_beside(target, room));
         self.after_pane_change(target);
     }
 
@@ -1520,44 +1552,37 @@ impl Workspace {
     }
 
     pub fn close_pane(&self, index: usize) {
-        let mut panes = self.panes;
-        panes.write().close(index);
+        self.edit_panes(|panes| panes.close(index));
+        self.visit_active();
     }
 
     pub fn swap_panes(&self) {
-        let mut panes = self.panes;
-        panes.write().swap();
+        self.edit_panes(|panes| panes.swap());
     }
 
     pub fn set_pane_ratio(&self, ratio: f32) {
         let area = self.main_width();
-        let mut panes = self.panes;
-        panes.write().set_ratio(ratio, area);
+        self.edit_panes(|panes| panes.set_ratio(ratio, area));
     }
 
     /// The width of the area right of the docked sidebar; the page reports it.
     pub fn set_main_width(&self, width: u32) {
-        if *self.main_width.peek() != width {
-            let mut slot = self.main_width;
-            slot.set(width);
-        }
+        set_if_changed(self.main_width, width);
     }
 
     pub fn main_width(&self) -> u32 {
         *self.main_width.peek()
     }
 
-    /// The left and right pane widths for the current main area (reads, so a drag redraws).
-    pub fn pane_widths(&self) -> (u32, u32) {
-        let area = *self.main_width.read();
+    /// The left and right pane widths in an area `area` wide (reads the ratio, so a drag redraws).
+    pub fn pane_widths(&self, area: u32) -> (u32, u32) {
         self.panes.read().widths(area)
     }
 
     // The first message of a New-session pane turns that very pane into the session, even if the
     // person has clicked into the other pane since.
     fn show_started(&self, id: LiveSessionId) {
-        let mut panes = self.panes;
-        let replaced = panes.write().replace(Active::NewSession, Active::Live(id));
+        let replaced = self.edit_panes(|panes| panes.replace(Active::NewSession, Active::Live(id)));
         if !replaced {
             self.select(id);
         } else if self.active() == Active::Live(id) {
@@ -1585,8 +1610,7 @@ impl Workspace {
             // closed away by the routine timer.
             self.services.peek().routines.host.keep_open(id);
         }
-        let mut panes = self.panes;
-        panes.write().show(to);
+        self.edit_panes(|panes| panes.show(to));
     }
 
     // A screen the history can return to: every page, and a session that is still open.
@@ -1788,9 +1812,9 @@ impl Workspace {
         crate::change_rows::forget_changes_session(&mut changes.write(), &id);
         // With two panes the one that shows it closes; with one, the next open session (or the
         // New-session page) takes its place.
-        let mut panes = self.panes;
-        let closed_pane = panes.write().remove_target(Active::Live(id));
-        if !closed_pane && self.active() == Active::Live(id) {
+        if self.edit_panes(|panes| panes.remove_target(Active::Live(id))) {
+            self.visit_active();
+        } else if self.active() == Active::Live(id) {
             let next = self.live.peek().last().map(|entry| entry.handle.id());
             match next {
                 Some(next) => self.select(next),
@@ -2133,6 +2157,12 @@ async fn list_all(
         }
     }
     (loaded, problem)
+}
+
+fn set_if_changed<T: PartialEq + 'static>(mut slot: Signal<T>, value: T) {
+    if *slot.peek() != value {
+        slot.set(value);
+    }
 }
 
 #[cfg(test)]

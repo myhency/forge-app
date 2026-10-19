@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
-use forge_domain::{keep_peek, layout_for, pane_class, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
-use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_width, use_workspace, use_workspace_provider, Active, PaneIndex, Workspace};
+use forge_domain::{keep_peek, pane_class, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
+use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_width, use_workspace, use_workspace_provider, Active, PaneIndex, Panes, Workspace};
 use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
 use forge_shared::tr;
 
@@ -48,8 +48,7 @@ pub fn WorkspacePage() -> Element {
     let prefs = workspace.prefs();
     let hidden = prefs.hidden;
     let docked_sidebar = if hidden { SIDEBAR_RAIL_WIDTH } else { prefs.clamped_width() };
-    let layout = layout_for(window_width(), docked_sidebar, 0);
-    let sidebar_mode = layout.sidebar;
+    let sidebar_mode = sidebar_mode_for(window_width());
     // The area right of the docked sidebar (the whole window with an overlay sidebar).
     let main_area = match sidebar_mode {
         SidebarMode::Docked => window_width().saturating_sub(docked_sidebar),
@@ -63,7 +62,7 @@ pub fn WorkspacePage() -> Element {
         if workspace.rename_request().is_none() {
             return;
         }
-        match layout_for(window_width(), SIDEBAR_RAIL_WIDTH, 0).sidebar {
+        match sidebar_mode_for(window_width()) {
             SidebarMode::Overlay => peek.set(true),
             SidebarMode::Docked => {
                 if workspace.prefs().hidden {
@@ -75,7 +74,7 @@ pub fn WorkspacePage() -> Element {
 
     rsx! {
         div {
-            class: workspace_class(layout, dragging() || pane_dragging()),
+            class: workspace_class(sidebar_mode, dragging() || pane_dragging()),
             tabindex: "0",
             // Key events only reach the root while something inside it has focus.
             onmounted: move |mounted| async move {
@@ -108,6 +107,12 @@ pub fn WorkspacePage() -> Element {
                     workspace.change_prefs_unsaved(|prefs| prefs.width = x.clamp(forge_domain::MIN_SIDEBAR_WIDTH, forge_domain::MAX_SIDEBAR_WIDTH));
                 }
                 if pane_dragging() {
+                    // A release outside the window never reaches `onmouseup`: end the drag as soon as
+                    // the move events say the button is up.
+                    if !event.held_buttons().contains(dioxus::html::input_data::MouseButton::Primary) {
+                        pane_dragging.set(false);
+                        return;
+                    }
                     let area = main_area.max(1) as f32;
                     let left_edge = window_width().saturating_sub(main_area) as f32;
                     workspace.set_pane_ratio((event.client_coordinates().x as f32 - left_edge) / area);
@@ -122,7 +127,7 @@ pub fn WorkspacePage() -> Element {
                     pane_dragging.set(false);
                 }
             },
-            match layout.sidebar {
+            match sidebar_mode {
                 SidebarMode::Docked => rsx! {
                     if hidden {
                         div { class: "sidebar-rail",
@@ -161,7 +166,7 @@ pub fn WorkspacePage() -> Element {
                     }
                 },
             }
-            {pane_row(workspace, pane_dragging)}
+            {pane_row(workspace, main_area, pane_dragging)}
             SettingsOverlay {}
             SearchPalette {}
             ShortcutsDialog {}
@@ -173,16 +178,23 @@ pub fn WorkspacePage() -> Element {
 }
 
 // The panes and the divider. A pane is keyed by its screen, so closing the left one does not
-// remount the right one.
-fn pane_row(workspace: Workspace, mut pane_dragging: Signal<bool>) -> Element {
-    let panes = workspace.panes();
-    let (left, right) = workspace.pane_widths();
-    let split = panes.is_split();
+// remount the right one. A main area too narrow for two panes shows only the focused one; the
+// other comes back when the window grows.
+fn pane_row(workspace: Workspace, main_area: u32, mut pane_dragging: Signal<bool>) -> Element {
+    let targets = workspace.pane_targets();
+    let focused = workspace.focused_pane();
+    let split = targets.len() == 2 && Panes::can_split(main_area);
+    let (left, right) = workspace.pane_widths(main_area);
+    let shown: Vec<(usize, Active)> = if split {
+        targets.iter().copied().enumerate().collect()
+    } else {
+        vec![(focused.min(targets.len() - 1), targets[focused.min(targets.len() - 1)])]
+    };
     rsx! {
         div { class: if split { "panes split" } else { "panes" },
-            for (index, target) in panes.targets().iter().copied().enumerate() {
+            for (index, target) in shown {
                 Fragment { key: "{target:?}",
-                    if index == 1 {
+                    if split && index == 1 {
                         div {
                             class: if pane_dragging() { "pane-divider dragging" } else { "pane-divider" },
                             onmousedown: move |event| {
@@ -191,7 +203,13 @@ fn pane_row(workspace: Workspace, mut pane_dragging: Signal<bool>) -> Element {
                             },
                         }
                     }
-                    Pane { index, target, width: if index == 0 { left } else { right } }
+                    Pane {
+                        index,
+                        target,
+                        width: if !split { main_area } else if index == 0 { left } else { right },
+                        split,
+                        focused: focused == index,
+                    }
                 }
             }
         }
@@ -201,7 +219,7 @@ fn pane_row(workspace: Workspace, mut pane_dragging: Signal<bool>) -> Element {
 /// One screen of the main area. It tells its descendants which pane they are in and moves the
 /// focus here on any click or focus inside.
 #[component]
-fn Pane(index: usize, target: Active, width: u32) -> Element {
+fn Pane(index: usize, target: Active, width: u32, split: bool, focused: bool) -> Element {
     let workspace = use_workspace();
     let mut index_signal = use_context_provider(|| PaneIndex(Signal::new(index)));
     use_effect(use_reactive!(|index| {
@@ -209,8 +227,6 @@ fn Pane(index: usize, target: Active, width: u32) -> Element {
             index_signal.0.set(index);
         }
     }));
-    let panes = workspace.panes();
-    let split = panes.is_split();
     let dock_width: u32 = match target {
         Active::Live(id) => {
             let dock = workspace.dock(id);
@@ -223,14 +239,19 @@ fn Pane(index: usize, target: Active, width: u32) -> Element {
         Active::NewSession | Active::Customize | Active::Routines => 0,
     };
     let mut class = pane_class(width, dock_width);
+    // A pane that is not a session has no tools row, so the page draws its ×.
+    let closable = split && !matches!(target, Active::Live(_));
     if split {
         class.push_str(" split");
     }
-    if panes.focused() == index {
+    if closable {
+        class.push_str(" has-close");
+    }
+    if focused {
         class.push_str(" focused");
     }
-    // The right pane takes what is left, so the two always fill the area.
-    // Always spelled out: an empty style would leave the old width on a pane that was the left one.
+    // The right pane takes what is left, so the two always fill the area. Always spelled out: an
+    // empty style would leave the old width on a pane that had been the left one.
     let style = if split && index == 0 { format!("width: {width}px; flex: none;") } else { "width: auto; flex: 1;".to_string() };
     rsx! {
         div {
@@ -245,7 +266,7 @@ fn Pane(index: usize, target: Active, width: u32) -> Element {
                 Active::Routines => rsx! { RoutinesPage {} },
                 Active::Live(id) => rsx! { ChatWindow { key: "{id:?}", id } },
             }
-            if split && !matches!(target, Active::Live(_)) {
+            if closable {
                 PaneClose { index }
             }
         }
