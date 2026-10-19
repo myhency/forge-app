@@ -122,21 +122,26 @@ Cloud, SSH, Slack, Remote Control (all of it, see Goal); the sidebar `환경` fi
 Every git folder of an environment now has its own branch and worktree choice (option A, decided with the user on 2026-10-20). The desktop app shows an unchecked box on extra git folders but stores only the first folder's flag; Forge stores and uses all of them.
 
 - Model: `FolderChoice { branch, worktree }`; `Environment.extra_choices` holds one choice per extra folder, aligned with `extra` by position. `normalized()` pads with default choices or trims so the two lists always match; adding or removing a folder moves its choice with it. A stage A config without `extra_choices` loads with default choices (no branch, box off). The dialog draft holds `choices` (index 0 is the first folder).
-- Start: after the first folder's worktree, `start_new` makes a worktree for each extra folder whose box is on. The worktree path replaces the folder as the added directory. If one fails, nothing starts, the text comes back to the composer, and the notice is `Could not create the worktree: {error}`. Worktrees made before the failure stay on disk and in the records.
+- Start: after the first folder's worktree, `start_new` makes a worktree for each extra folder whose box is on. The worktree path replaces the folder as the added directory. If one fails, nothing starts, the text comes back to the composer, and the notice is `Could not create the worktree: {error}`. The worktrees already made for that send (the first folder's and the earlier extras') are released again, as on archive, and dropped from the records; the same happens when the saved model cannot be read or the session cannot be opened. If one cannot be removed, the notice adds `Some worktrees made for this message could not be removed: {paths}`. On a failed send only the text comes back; attachments and composer folder chips are lost (this predates A2).
+- An environment extra folder that became a worktree replaces the same folder when it is also a composer chip, so the folder and its worktree are not both added.
+- A malformed `extra_choices` (null, a non-array, a bad entry) reads as no choices or the default choice, so the environment keeps its folders and variables.
 - Dialog: one `FolderRow` per folder, keyed by path, with a branch select and the Worktree box for every git folder, and `Not a Git repository` for others. Removing a folder keeps the other rows' choices.
 - Layout fixes: the folder popover scrolls its known-folder list inside the dialog (search and `Choose...` stay fixed); a long environment name is ellipsized in the chip menu next to the hover gear and star.
-- No new user-visible strings, so no new Korean entries (`cargo test -p forge-shared` green).
+- One new user-visible string (the left-worktrees notice), with its Korean entry.
 
 ### Checked in the real window
 - Long name (70 characters) ellipsized on hover, gear and star do not overlap the shortcut.
-- Edit dialog with three git folders and one plain folder: each git folder shows branch select and Worktree box, the plain one shows the note. Ticking an extra folder's box saves to `extra_choices` and reloads. A seeded branch (`dev`) shows in the select after reopening.
+- Edit dialog with two git folders and one plain folder (`t3-a`, `t3-b`, `t3-plain`): each git folder shows branch select and Worktree box, the plain one shows the note. The remove checks used three git folders. Ticking an extra folder's box saves to `extra_choices` and reloads. A seeded branch (`dev`) shows in the select after reopening.
 - Removing the first and then another folder keeps the right names, selects and boxes; saved `folders` and `extra_choices` stay aligned.
-- Folder popover fully visible at 900x560 and 900x420, list scrolls.
+- Folder popover fully visible at 900x560 and 900x420, list scrolls. Hovering a chip-menu row shifts the shortcut text left (padding-right 96px for the gear and star); the popover is capped at 50vh.
 
 ### Not checked
 - Changing a branch through the native select was not driven live (keys do not reach the native popup).
 - An end-to-end start with extra worktrees was not run.
 - A long or empty known-folder popover list was not checked live (the fixture has only 3 or 4 entries).
+- The first folder's worktree box being on by default for a new environment was not driven live (the fixture folder was not a git repository).
+- The chip menu is still clipped at the top in a 420pt-high window (older defect).
+- The release of worktrees after a failed send was not driven live.
 
 ### Known limit
 - Archiving a session removes only the first folder's worktree. Extra worktrees stay on disk and in the `worktrees` records.
