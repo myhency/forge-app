@@ -104,7 +104,7 @@ Cloud, SSH, Slack, Remote Control (all of it, see Goal); the sidebar `환경` fi
 - Light mode only.
 
 ### What is left
-- The real-session check (Task 3 of the plan): an environment with a variable and a second folder, one real message; verify the variable reaches the command, the second folder is readable without a folder question, and the transcript path is under the first folder. Not done yet because it costs a real turn on the user's account.
+- The real-session check (Step 3 of Task 6): an environment with a variable and a second folder, one real message; verify the variable reaches the command, the second folder is readable without a folder question, and the transcript path is under the first folder. Not done yet because it costs a real turn on the user's account.
 - Dark mode of the dialog and the chip menu.
 - Not seen: the star (pin) click, the `Not a Git repository` flash before a repo is read.
 - Deferred minors: `1 variables` has no singular; the folder popover is cut off at the bottom when the folder list is empty; two folders with the same name look alike in the popover (only the hover title tells them apart); the Variables page error banner is indented; the folder popover search has no placeholder; Escape does not dismiss the close question; the name is selected again when returning from the Variables page.
