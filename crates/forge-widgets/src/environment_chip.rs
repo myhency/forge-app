@@ -32,6 +32,14 @@ pub fn EnvironmentChip() -> Element {
         refocus_composer();
     };
 
+    // The gear: close the menu like the other ways into the dialog, then open the edit dialog.
+    let mut edit = move |id: String| {
+        open.set(false);
+        more.set(false);
+        query.set(String::new());
+        workspace.open_environment_dialog(EnvironmentRequest::Edit(id));
+    };
+
     // The keys ⌥⌘0…9 land here.
     use_effect(move || {
         let Some(key) = workspace.environment_key() else { return };
@@ -94,7 +102,7 @@ pub fn EnvironmentChip() -> Element {
                         div { class: "picker-title", {tr!("Local")} }
                     }
                     for row in menu.visible.iter().cloned() {
-                        EnvironmentRow { key: "{row.id:?}", row: row.clone(), checked: row.id == picked_id, onpick: move |id: Option<String>| pick(id) }
+                        EnvironmentRow { key: "{row.id:?}", row: row.clone(), checked: row.id == picked_id, onpick: move |id: Option<String>| pick(id), onedit: move |id: String| edit(id) }
                     }
                     if !menu.more.is_empty() {
                         button {
@@ -107,7 +115,7 @@ pub fn EnvironmentChip() -> Element {
                         }
                         if more() {
                             for row in menu.more.iter().cloned() {
-                                EnvironmentRow { key: "{row.id:?}", row: row.clone(), checked: row.id == picked_id, onpick: move |id: Option<String>| pick(id) }
+                                EnvironmentRow { key: "{row.id:?}", row: row.clone(), checked: row.id == picked_id, onpick: move |id: Option<String>| pick(id), onedit: move |id: String| edit(id) }
                             }
                         }
                     }
@@ -138,7 +146,7 @@ fn number_label(number: usize) -> String {
 }
 
 #[component]
-fn EnvironmentRow(row: EnvRow, checked: bool, onpick: EventHandler<Option<String>>) -> Element {
+fn EnvironmentRow(row: EnvRow, checked: bool, onpick: EventHandler<Option<String>>, onedit: EventHandler<String>) -> Element {
     let workspace = use_workspace();
     let id = row.id.clone();
     let edit_id = row.id.clone();
@@ -164,7 +172,7 @@ fn EnvironmentRow(row: EnvRow, checked: bool, onpick: EventHandler<Option<String
                         class: "env-icon",
                         r#type: "button",
                         title: tr!("Edit environment"),
-                        onclick: move |_| workspace.open_environment_dialog(EnvironmentRequest::Edit(edit_id.clone())),
+                        onclick: move |_| onedit.call(edit_id.clone()),
                         "⚙"
                     }
                     button {

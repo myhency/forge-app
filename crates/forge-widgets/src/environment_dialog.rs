@@ -41,15 +41,19 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
         EnvironmentRequest::Edit(id) => workspace.environments().into_iter().find(|environment| environment.id == *id),
         EnvironmentRequest::New { .. } => None,
     };
+    // An environment deleted under an open edit dialog: nothing left to edit. Every hook below
+    // still runs (with a blank fallback draft); the effect closes the dialog and nothing renders.
+    let gone = matches!(request, EnvironmentRequest::Edit(_)) && stored.is_none();
     let initial = match (&request, &stored) {
         (EnvironmentRequest::Edit(_), Some(environment)) => EnvironmentDraft::of(environment),
         (EnvironmentRequest::New { folder }, _) => EnvironmentDraft::blank(folder.as_deref().map(folder_name).unwrap_or_default(), folder.clone()),
-        // An environment deleted under an open edit dialog: nothing left to edit.
-        (EnvironmentRequest::Edit(_), None) => {
-            workspace.close_environment_dialog();
-            return rsx! {};
-        }
+        (EnvironmentRequest::Edit(_), None) => EnvironmentDraft::blank(String::new(), None),
     };
+    use_effect(move || {
+        if gone {
+            workspace.close_environment_dialog();
+        }
+    });
     let editing = stored.is_some();
     let mut draft = use_signal({
         let initial = initial.clone();
@@ -112,6 +116,10 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
         });
     };
 
+    if gone {
+        return rsx! {};
+    }
+
     rsx! {
         div {
             class: "settings-backdrop",
@@ -172,11 +180,12 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                     }
                     label { class: "env-label", {tr!("Name")} }
                     input {
-                        class: "customize-field",
+                        class: "customize-field env-name",
                         r#type: "text",
                         value: "{draft.read().name}",
                         onmounted: move |mounted| async move {
                             let _ = mounted.set_focus(true).await;
+                            let _ = document::eval("const input = document.querySelector('.env-dialog .env-name'); if (input) { input.select(); }");
                         },
                         oninput: move |event| draft.write().name = event.value(),
                     }
@@ -221,10 +230,15 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                                             Some(list) => rsx! {
                                                 select {
                                                     class: "env-branch",
-                                                    value: "{draft.read().branch.clone().or_else(|| list.current.clone()).unwrap_or_default()}",
                                                     onchange: move |event| draft.write().branch = Some(event.value()),
-                                                    for name in list.local.clone() {
-                                                        option { key: "{name}", value: "{name}", "{name}" }
+                                                    {
+                                                        // `selected` on the option: a `value` on the select is not applied by the web view.
+                                                        let shown = draft.read().branch.clone().or_else(|| list.current.clone());
+                                                        rsx! {
+                                                            for name in list.local.clone() {
+                                                                option { key: "{name}", value: "{name}", selected: shown.as_deref() == Some(name.as_str()), "{name}" }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                                 label { class: "env-worktree",
