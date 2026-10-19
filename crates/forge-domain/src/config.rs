@@ -355,6 +355,9 @@ pub struct AppConfig {
     /// Sessions with no activity for this many days are archived; `None` is off.
     #[serde(default, deserialize_with = "lenient")]
     pub auto_archive_days: Option<u32>,
+    /// Saved environments of the new-session screen.
+    #[serde(default, deserialize_with = "lenient")]
+    pub environments: Vec<crate::Environment>,
 }
 
 fn default_true() -> bool {
@@ -401,6 +404,7 @@ impl Default for AppConfig {
             worktrees: Vec::new(),
             worktree_location: crate::WorktreeLocation::Project,
             auto_archive_days: None,
+            environments: Vec::new(),
         }
     }
 }
@@ -852,6 +856,35 @@ mod tests {
             }],
             worktree_location: crate::WorktreeLocation::Folder("/trees".into()),
             auto_archive_days: Some(7),
+            ..AppConfig::default()
+        };
+        let text = serde_json::to_string(&config).unwrap();
+        assert_eq!(serde_json::from_str::<AppConfig>(&text).unwrap(), config);
+    }
+
+    #[test]
+    fn a_config_from_an_older_forge_has_no_environments_and_a_broken_value_reads_as_none() {
+        let old: AppConfig = serde_json::from_str(r#"{"base_url":null,"api_key":null}"#).unwrap();
+        assert!(old.environments.is_empty());
+        let broken: AppConfig = serde_json::from_str(r#"{"base_url":"https://x.test","api_key":null,"environments":"oops"}"#).unwrap();
+        assert_eq!(broken.base_url.as_deref(), Some("https://x.test"));
+        assert!(broken.environments.is_empty());
+    }
+
+    #[test]
+    fn environments_are_saved_and_read_back() {
+        let config = AppConfig {
+            environments: vec![crate::Environment {
+                id: "env-1".into(),
+                name: "work".into(),
+                folders: vec!["/a".into(), "/b".into()],
+                branch: Some("dev".into()),
+                worktree: true,
+                env_vars: "A=1".into(),
+                pinned: true,
+                created_at: 5,
+                last_used_at: 9,
+            }],
             ..AppConfig::default()
         };
         let text = serde_json::to_string(&config).unwrap();
