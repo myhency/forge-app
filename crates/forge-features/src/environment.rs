@@ -197,8 +197,26 @@ pub fn draft_choice(environment: Option<&Environment>) -> Option<(bool, Option<S
     environment.map(|environment| (environment.worktree, environment.branch.clone()))
 }
 
+/// The one-line text for a bad variables line, for the dialog.
+pub fn variables_error_text(error: &EnvParseError) -> String {
+    use forge_domain::EnvParseReason::{BadKey, NotAPair, UnclosedQuote};
+    match error.reason {
+        NotAPair => forge_shared::tr!("Line {line}: expected NAME=value", line = error.line),
+        BadKey => forge_shared::tr!("Line {line}: the name may use letters, digits and _ and must not start with a digit", line = error.line),
+        UnclosedQuote => forge_shared::tr!("Line {line}: a quote is not closed", line = error.line),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn each_reason_has_its_own_text_with_the_line_number() {
+        use forge_domain::EnvParseReason::{BadKey, NotAPair, UnclosedQuote};
+        let texts: Vec<String> = [NotAPair, BadKey, UnclosedQuote].into_iter().map(|reason| variables_error_text(&EnvParseError { line: 7, reason })).collect();
+        assert!(texts.iter().all(|text| text.contains('7')));
+        assert_eq!(texts.iter().collect::<std::collections::HashSet<_>>().len(), 3);
+    }
+
     use super::*;
     use forge_domain::EnvParseReason;
 

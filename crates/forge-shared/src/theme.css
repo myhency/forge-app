@@ -1126,3 +1126,29 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .env-icon { border: 0; background: transparent; color: var(--fg-muted); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
 .env-icon:hover { background: var(--bg-hover); color: inherit; }
 .env-icon.pinned { color: var(--accent); }
+.env-dialog { position: relative; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow: auto; padding: 20px 24px; border-radius: 16px; background: var(--bg-elevated, var(--bg)); box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+.env-head { display: flex; align-items: center; gap: 8px; }
+.env-head h2 { flex: 1; margin: 0 0 12px; }
+.env-back { border: 0; background: transparent; font-size: 22px; cursor: pointer; color: inherit; }
+.env-label { display: block; margin: 14px 0 6px; font-weight: 600; }
+.env-folders-head { position: relative; display: flex; align-items: center; justify-content: space-between; }
+.env-add { border: 1px solid var(--border); background: transparent; border-radius: 8px; padding: 4px 10px; cursor: pointer; color: inherit; }
+.env-empty { border: 1px dashed var(--border); border-radius: 10px; padding: 14px; color: var(--muted); }
+.env-folders { border: 1px solid var(--border); border-radius: 10px; }
+.env-folder { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.env-folder + .env-folder { border-top: 1px solid var(--border); }
+.env-folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.env-branch { font-family: var(--mono, monospace); border: 0; background: transparent; color: var(--muted); }
+.env-worktree { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.env-note { color: var(--muted); }
+.env-remove { visibility: hidden; border: 0; background: transparent; cursor: pointer; color: inherit; }
+.env-folder:hover .env-remove { visibility: visible; }
+.env-variables-card { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: transparent; text-align: left; cursor: pointer; color: inherit; }
+.env-variables-card .hint { flex: 1; }
+.env-variables { box-sizing: border-box; width: 100%; min-height: 180px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; font-family: var(--mono, monospace); font-size: 13px; background: transparent; color: inherit; resize: vertical; }
+.env-buttons { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
+.env-buttons .spacer { flex: 1; }
+.env-delete { border: 0; background: transparent; color: #b4281e; cursor: pointer; }
+.env-ask-backdrop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.2); border-radius: 16px; }
+.env-ask { width: min(440px, 90%); padding: 18px 20px; border-radius: 14px; background: var(--bg-elevated, var(--bg)); box-shadow: 0 8px 28px rgba(0,0,0,.3); }
+.env-folder-popover { position: absolute; top: 100%; bottom: auto; left: auto; margin-top: 6px; right: 0; z-index: 10; min-width: 260px; }
