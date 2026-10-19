@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use forge_domain::{EffortLevel, PermissionMode, ProjectSummary};
 
 use crate::command_box::CommandTextArea;
-use crate::environment::{start_plan, StartError};
+use crate::environment::{folder_missing, start_plan, StartError};
 use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCard};
 use crate::workspace::use_workspace;
 use crate::worktree_view::{NewWorktree, RepoInfo};
@@ -105,8 +105,11 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
         let (project, plan) = match &environment {
             Some(environment) => match start_plan(environment) {
                 Ok(plan) => {
-                    let exists = plan.folder.is_dir();
-                    (ProjectSummary { path: plan.folder.clone(), last_active: String::new(), session_count: 0, exists }, Some(plan))
+                    if folder_missing(&plan) {
+                        workspace.report(tr!("The folder of this environment no longer exists. Edit the environment.").to_string());
+                        return;
+                    }
+                    (ProjectSummary { path: plan.folder.clone(), last_active: String::new(), session_count: 0, exists: true }, Some(plan))
                 }
                 Err(StartError::NoFolder) => {
                     workspace.report(tr!("Add a folder to this environment first").to_string());

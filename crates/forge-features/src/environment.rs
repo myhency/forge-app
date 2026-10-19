@@ -170,6 +170,11 @@ pub fn start_plan(environment: &Environment) -> Result<EnvironmentStart, StartEr
     })
 }
 
+/// Whether the first folder of the plan is gone, so nothing may be started in it.
+pub fn folder_missing(plan: &EnvironmentStart) -> bool {
+    !plan.folder.is_dir()
+}
+
 /// A key the new-session screen's environment chip answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnvironmentKey {
@@ -316,5 +321,12 @@ mod tests {
         let mut plain = env("c", "app", false, 0);
         plain.worktree = false;
         assert_eq!(start_plan(&plain).unwrap().worktree, None);
+    }
+
+    #[test]
+    fn a_plan_whose_first_folder_is_gone_is_reported_missing() {
+        let plan = |folder: PathBuf| EnvironmentStart { folder, extra: Vec::new(), env: EnvVars(Vec::new()), worktree: None };
+        assert!(folder_missing(&plan(std::env::temp_dir().join("forge-no-such-folder-8f3a1c"))));
+        assert!(!folder_missing(&plan(std::env::temp_dir())));
     }
 }
