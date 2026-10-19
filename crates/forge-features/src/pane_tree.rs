@@ -54,6 +54,67 @@ enum Node {
 }
 
 impl Node {
+    // The tree without the leaf that shows `target`; its sibling takes the parent's place. None when
+    // the whole tree was that leaf.
+    fn without(self, target: Active) -> Option<Node> {
+        match self {
+            Node::Leaf(shown) => (shown != target).then_some(Node::Leaf(shown)),
+            Node::Split { dir, ratio, first, second } => match (first.without(target), second.without(target)) {
+                (Some(a), Some(b)) => Some(Node::Split { dir, ratio, first: Box::new(a), second: Box::new(b) }),
+                (Some(only), None) | (None, Some(only)) => Some(only),
+                (None, None) => None,
+            },
+        }
+    }
+
+    fn rename(&mut self, from: Active, to: Active) {
+        match self {
+            Node::Leaf(shown) => {
+                if *shown == from {
+                    *shown = to;
+                }
+            }
+            Node::Split { first, second, .. } => {
+                first.rename(from, to);
+                second.rename(from, to);
+            }
+        }
+    }
+
+    // The steps from this node to the leaf that shows `target` (false = first child).
+    fn path_to(&self, target: Active) -> Option<Vec<bool>> {
+        match self {
+            Node::Leaf(shown) => (*shown == target).then(Vec::new),
+            Node::Split { first, second, .. } => {
+                if let Some(mut path) = first.path_to(target) {
+                    path.insert(0, false);
+                    return Some(path);
+                }
+                let mut path = second.path_to(target)?;
+                path.insert(0, true);
+                Some(path)
+            }
+        }
+    }
+
+    fn node_at(&self, path: &[bool]) -> Option<&Node> {
+        let mut node = self;
+        for &step in path {
+            let Node::Split { first, second, .. } = node else { return None };
+            node = if step { &**second } else { &**first };
+        }
+        Some(node)
+    }
+
+    fn node_at_mut(&mut self, path: &[bool]) -> Option<&mut Node> {
+        let mut node = self;
+        for &step in path {
+            let Node::Split { first, second, .. } = node else { return None };
+            node = if step { &mut **second } else { &mut **first };
+        }
+        Some(node)
+    }
+
     fn leaves(&self, out: &mut Vec<Active>) {
         match self {
             Node::Leaf(target) => out.push(*target),
@@ -153,6 +214,140 @@ pub struct PaneTree {
 }
 
 impl PaneTree {
+    // The same screen under a new name, in the tree and in the opened order, keeping its place.
+    fn rename(&mut self, from: Active, to: Active) {
+        self.root.rename(from, to);
+        for opened in &mut self.opened {
+            if *opened == from {
+                *opened = to;
+            }
+        }
+        if self.focus == from {
+            self.focus = to;
+        }
+    }
+
+    /// Puts `target` in the focused pane. A screen another pane already shows takes the focus
+    /// instead, so two panes never show the same screen (two New-session panes would share one
+    /// unsent text).
+    pub fn show(&mut self, target: Active) {
+        if self.pane_of(target).is_some() {
+            self.focus = target;
+        } else {
+            self.rename(self.focus, target);
+        }
+    }
+
+    /// ⌥+click, and a plain click while the area is split: `target` gets a new pane, which takes the
+    /// focus. The new pane splits the widest pane (the first on a tie) along its longer side; when
+    /// that would leave a pane under its minimum size, the next widest is tried. At the limit, or
+    /// when nothing has room, the pane that was opened last shows `target` instead. A screen that is
+    /// already shown only takes the focus.
+    pub fn add(&mut self, target: Active, w: u32, h: u32) {
+        if self.pane_of(target).is_some() {
+            self.focus = target;
+            return;
+        }
+        if self.len() < MAX_PANES {
+            let (shown, rects) = (self.targets(), self.rects(w, h));
+            let mut order: Vec<usize> = (0..shown.len()).collect();
+            // A stable sort: panes of equal area stay in reading order.
+            order.sort_by_key(|&i| std::cmp::Reverse(u64::from(rects[i].w) * u64::from(rects[i].h)));
+            for i in order {
+                let dir = if rects[i].w >= rects[i].h { Dir::Beside } else { Dir::Below };
+                let candidate = self.root.clone().split_leaf(shown[i], dir, target);
+                if candidate.min_width() <= w && candidate.min_height() <= h {
+                    self.root = candidate;
+                    self.focus = target;
+                    self.opened.push(target);
+                    return;
+                }
+            }
+        }
+        let last = *self.opened.last().expect("a tree always has a pane");
+        self.rename(last, target);
+        self.focus = target;
+    }
+
+    /// A New-session pane whose first message started a session becomes that session. The focus
+    /// stays on the same pane. False when `from` is not shown.
+    pub fn replace(&mut self, from: Active, to: Active) -> bool {
+        if self.pane_of(from).is_none() {
+            return false;
+        }
+        self.rename(from, to);
+        true
+    }
+
+    /// A session that was closed. When split, the pane that shows it closes. True when a pane was
+    /// closed; with one pane the caller picks what to show.
+    pub fn remove_target(&mut self, target: Active) -> bool {
+        match self.pane_of(target) {
+            Some(index) if self.is_split() => {
+                self.close(index);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Closes pane `index`; its sibling takes the parent's place. A closed pane that had the focus
+    /// hands it to the pane now at its place in the reading order.
+    pub fn close(&mut self, index: usize) {
+        let Some(target) = self.target(index) else { return };
+        if !self.is_split() {
+            return;
+        }
+        let had_focus = self.focus == target;
+        let root = std::mem::replace(&mut self.root, Node::Leaf(target)).without(target);
+        self.root = root.expect("a split keeps at least one pane");
+        self.opened.retain(|&opened| opened != target);
+        if had_focus {
+            let remaining = self.targets();
+            self.focus = remaining[index.min(remaining.len() - 1)];
+        }
+    }
+
+    /// True when the focus moved.
+    pub fn focus(&mut self, index: usize) -> bool {
+        match self.target(index) {
+            Some(target) if target != self.focus => {
+                self.focus = target;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The `⋮` menu's move items. `dir` is the direction of the pane's parent split: moving along it
+    /// ("move left", "move up") swaps a second child with its sibling; moving across it ("move
+    /// down", "move to the right") turns the split. Focus stays on the same content.
+    pub fn move_pane(&mut self, index: usize, dir: Dir) {
+        let Some(target) = self.target(index) else { return };
+        let Some(path) = self.root.path_to(target) else { return };
+        let Some((&second, parent_path)) = path.split_last() else { return };
+        let Some(Node::Split { dir: parent_dir, ratio, first, second: other, .. }) = self.root.node_at_mut(parent_path) else { return };
+        if *parent_dir == dir {
+            if second {
+                std::mem::swap(first, other);
+                *ratio = 1.0 - *ratio;
+            }
+        } else {
+            *parent_dir = dir;
+        }
+    }
+
+    /// The direction of the split the pane sits in and whether it is that split's second child;
+    /// none for the only pane. The `⋮` menu's labels follow it.
+    pub fn pane_slot(&self, index: usize) -> Option<(Dir, bool)> {
+        let path = self.root.path_to(self.target(index)?)?;
+        let (&second, parent_path) = path.split_last()?;
+        match self.root.node_at(parent_path)? {
+            Node::Split { dir, .. } => Some((*dir, second)),
+            Node::Leaf(_) => None,
+        }
+    }
+
     pub fn new(first: Active) -> Self {
         Self { root: Node::Leaf(first), focus: first, opened: vec![first] }
     }
@@ -446,5 +641,203 @@ mod tests {
         assert!(!narrow.split_focused(Dir::Beside, live(2), 2 * MIN_PANE_WIDTH - 1, H));
         assert!(!narrow.split_focused(Dir::Below, live(2), W, 2 * MIN_PANE_HEIGHT - 1));
         assert_eq!(narrow.targets(), vec![live(1)]);
+    }
+
+    // 1 over 3 on the left, 2 over 4 on the right: the reading order is [1, 3, 2, 4].
+    fn grid() -> PaneTree {
+        let mut tree = PaneTree::new(live(1));
+        for n in 2..=4 {
+            tree.add(live(n), W, H);
+        }
+        tree
+    }
+
+    #[test]
+    fn add_builds_a_grid_in_the_order_the_desktop_app_does() {
+        let mut tree = PaneTree::new(live(1));
+        tree.add(live(2), W, H);
+        assert_eq!(tree.targets(), vec![live(1), live(2)]);
+        assert_eq!(tree.rects(W, H), vec![rect(0, 0, 600, 800), rect(600, 0, 600, 800)]);
+        // The third pane goes under the left one (the widest pane, the first on a tie, split along its longer side).
+        tree.add(live(3), W, H);
+        assert_eq!(tree.targets(), vec![live(1), live(3), live(2)]);
+        assert_eq!(tree.rects(W, H), vec![rect(0, 0, 600, 400), rect(0, 400, 600, 400), rect(600, 0, 600, 800)]);
+        // The fourth under the right one: a 2 x 2 grid.
+        tree.add(live(4), W, H);
+        assert_eq!(tree.targets(), vec![live(1), live(3), live(2), live(4)]);
+        assert_eq!(
+            tree.rects(W, H),
+            vec![rect(0, 0, 600, 400), rect(0, 400, 600, 400), rect(600, 0, 600, 400), rect(600, 400, 600, 400)]
+        );
+        assert_eq!(tree.focused_target(), live(4));
+    }
+
+    #[test]
+    fn add_to_a_stacked_pair_splits_the_first_pane_beside() {
+        let mut tree = PaneTree::new(live(1));
+        assert!(tree.split_focused(Dir::Below, live(2), W, H));
+        tree.add(live(3), W, H);
+        assert_eq!(tree.targets(), vec![live(1), live(3), live(2)]);
+        assert_eq!(tree.rects(W, H), vec![rect(0, 0, 600, 400), rect(600, 0, 600, 400), rect(0, 400, 1200, 400)]);
+    }
+
+    #[test]
+    fn add_at_the_limit_replaces_the_pane_opened_last_and_focuses_it() {
+        let mut tree = grid();
+        tree.focus = live(1);
+        tree.add(live(5), W, H);
+        assert_eq!(tree.targets(), vec![live(1), live(3), live(2), live(5)], "the bottom right pane, opened last, changed");
+        assert_eq!(tree.focused_target(), live(5));
+        // It stays the last one: the next add replaces it again.
+        tree.add(live(6), W, H);
+        assert_eq!(tree.targets(), vec![live(1), live(3), live(2), live(6)]);
+    }
+
+    #[test]
+    fn add_a_shown_screen_only_focuses_it() {
+        let mut tree = grid();
+        tree.add(live(2), W, H);
+        assert_eq!(tree.len(), 4);
+        assert_eq!(tree.focused_target(), live(2));
+    }
+
+    #[test]
+    fn add_without_room_replaces_the_pane_opened_last_instead_of_adding() {
+        let mut tree = PaneTree::new(live(1));
+        tree.add(live(2), 2 * MIN_PANE_WIDTH - 1, H);
+        assert_eq!(tree.targets(), vec![live(2)]);
+        assert_eq!(tree.focused_target(), live(2));
+    }
+
+    #[test]
+    fn add_replaces_when_no_pane_can_be_split_within_the_minimums() {
+        // 1 | 2 in an area 840 wide and 519 high: each pane is 420 x 519, so a split would be
+        // below, and 2 x 260 high does not fit. The pane opened last shows the screen instead.
+        let mut tree = pair();
+        tree.add(live(3), 2 * MIN_PANE_WIDTH, 2 * MIN_PANE_HEIGHT - 1);
+        assert_eq!(tree.targets(), vec![live(1), live(3)]);
+        // One pixel more height and the third pane fits: 1 over 3 on the left.
+        let mut roomy = pair();
+        roomy.add(live(3), 2 * MIN_PANE_WIDTH, 2 * MIN_PANE_HEIGHT);
+        assert_eq!(roomy.targets(), vec![live(1), live(3), live(2)]);
+    }
+
+    #[test]
+    fn show_replaces_the_focused_pane_and_a_shown_screen_only_moves_focus() {
+        let mut tree = pair();
+        tree.show(live(3));
+        assert_eq!(tree.targets(), vec![live(1), live(3)]);
+        tree.show(live(1));
+        assert_eq!(tree.targets(), vec![live(1), live(3)]);
+        assert_eq!(tree.focused_target(), live(1));
+        tree.show(live(4));
+        assert_eq!(tree.targets(), vec![live(4), live(3)]);
+    }
+
+    #[test]
+    fn closing_a_pane_gives_its_space_to_its_sibling() {
+        let mut tree = grid();
+        tree.close(1);
+        assert_eq!(tree.targets(), vec![live(1), live(2), live(4)]);
+        assert_eq!(tree.rects(W, H), vec![rect(0, 0, 600, 800), rect(600, 0, 600, 400), rect(600, 400, 600, 400)]);
+        assert_eq!(tree.focused_target(), live(4), "the focus stays on a pane that was not closed");
+        // The focused pane closes: the focus goes to the pane now at its place in the reading order.
+        tree.close(2);
+        assert_eq!(tree.targets(), vec![live(1), live(2)]);
+        assert_eq!(tree.focused_target(), live(2));
+        // Out of range and the only pane: nothing happens.
+        tree.close(7);
+        assert_eq!(tree.len(), 2);
+        tree.close(0);
+        tree.close(0);
+        assert_eq!(tree.len(), 1);
+    }
+
+    #[test]
+    fn a_closed_session_closes_its_pane_even_when_it_is_nested_and_not_when_it_is_alone() {
+        let mut tree = grid();
+        assert!(tree.remove_target(live(2)));
+        assert_eq!(tree.targets(), vec![live(1), live(3), live(4)]);
+        assert_eq!(tree.rects(W, H), vec![rect(0, 0, 600, 400), rect(0, 400, 600, 400), rect(600, 0, 600, 800)]);
+        assert!(!tree.remove_target(live(9)), "not shown");
+        let mut single = PaneTree::new(live(1));
+        assert!(!single.remove_target(live(1)), "the caller picks what to show");
+    }
+
+    #[test]
+    fn the_new_session_pane_becomes_the_started_session_wherever_it_is_and_focus_stays() {
+        let mut tree = pair();
+        tree.focus = live(1);
+        assert!(tree.split_focused(Dir::Below, Active::NewSession, W, H));
+        tree.focus = live(1);
+        assert!(tree.replace(Active::NewSession, live(9)));
+        assert_eq!(tree.targets(), vec![live(1), live(9), live(2)]);
+        assert_eq!(tree.focused_target(), live(1), "focus stays where it was");
+        // When the New-session pane had the focus it keeps it as the session.
+        let mut focused = PaneTree::new(live(1));
+        assert!(focused.split_focused(Dir::Beside, Active::NewSession, W, H));
+        assert!(focused.replace(Active::NewSession, live(9)));
+        assert_eq!(focused.focused_target(), live(9));
+        assert!(!focused.replace(Active::NewSession, live(10)), "no New session pane is left");
+    }
+
+    #[test]
+    fn focus_reports_whether_it_changed_and_ignores_an_index_that_is_not_there() {
+        let mut tree = PaneTree::new(live(1));
+        assert!(!tree.focus(1));
+        assert!(tree.split_focused(Dir::Beside, live(2), W, H));
+        assert!(!tree.focus(1));
+        assert!(tree.focus(0));
+        assert_eq!(tree.focused(), 0);
+    }
+
+    #[test]
+    fn move_pane_swaps_with_the_sibling_or_turns_the_split() {
+        let mut tree = pair();
+        assert_eq!(tree.pane_slot(0), Some((Dir::Beside, false)));
+        assert_eq!(tree.pane_slot(1), Some((Dir::Beside, true)));
+        // "Move split view left" on the right pane: the two trade places, focus follows the content.
+        tree.move_pane(1, Dir::Beside);
+        assert_eq!(tree.targets(), vec![live(2), live(1)]);
+        assert_eq!(tree.focused_target(), live(2));
+        // The left pane has nowhere further left to go.
+        tree.move_pane(0, Dir::Beside);
+        assert_eq!(tree.targets(), vec![live(2), live(1)]);
+        // "Move split view down": the side by side split turns into a stacked one.
+        tree.move_pane(1, Dir::Below);
+        assert_eq!(tree.rects(W, H), vec![rect(0, 0, 1200, 400), rect(0, 400, 1200, 400)]);
+        assert_eq!(tree.pane_slot(1), Some((Dir::Below, true)));
+        // "Move split view up" on the bottom pane swaps; "to the right" turns it back.
+        tree.move_pane(1, Dir::Below);
+        assert_eq!(tree.targets(), vec![live(1), live(2)]);
+        tree.move_pane(1, Dir::Beside);
+        assert_eq!(tree.rects(W, H), vec![rect(0, 0, 600, 800), rect(600, 0, 600, 800)]);
+        // One pane: nothing to move.
+        let mut single = PaneTree::new(live(1));
+        assert_eq!(single.pane_slot(0), None);
+        single.move_pane(0, Dir::Below);
+        assert_eq!(single.targets(), vec![live(1)]);
+    }
+
+    #[test]
+    fn move_pane_swapping_keeps_the_divider_where_the_content_was() {
+        let mut tree = pair();
+        tree.set_ratio(&[], 0.6, W, H);
+        tree.move_pane(1, Dir::Beside);
+        // The wide pane (1, 60 %) is now on the right.
+        assert_eq!(tree.rects(W, H), vec![rect(0, 0, 480, 800), rect(480, 0, 720, 800)]);
+    }
+
+    #[test]
+    fn the_opened_order_follows_adds_closes_and_replacements() {
+        let mut tree = PaneTree::new(live(1));
+        tree.add(live(2), W, H);
+        tree.add(live(3), W, H);
+        tree.close(0); // closes 1
+        assert_eq!(tree.opened, vec![live(2), live(3)]);
+        tree.show(live(7)); // the focused pane (3) now shows 7, in 3's place
+        assert_eq!(tree.opened, vec![live(2), live(7)]);
+        assert!(tree.replace(live(2), live(8)));
+        assert_eq!(tree.opened, vec![live(8), live(7)]);
     }
 }
