@@ -709,3 +709,9 @@ Same desktop app, window 1200 x 800 pt, a Code-side session (`Acknowledge instru
 - Two panes side by side (`Acknowledge instruction` | `obs-a dynamic workflow`, the focus in the right one), then a plain click on a third row (`Parallel agent file analysis workflow`): the session opened as a **third pane stacked under the left pane**; the other two panes stayed. So a plain click does not replace a pane's session while the screen is split; it adds a pane (here under the first one). Closing it with its × gave back the two panes. The row was highlighted in the sidebar like the other open ones.
 
 **Not seen**: `세션 레일 표시`, the contents of `사이드바 편집...`, the drag of a session row into a pane, keys inside a pane (focus moves between panes), how many panes the app allows, whether the layout is restored on restart.
+
+**Pane limit (checked 2026-10-19, OTH-04)**
+- `⌃⌘\` pressed three more times with the New-session pane already focused did nothing: no second New-session pane (same rule as Forge: a target is not shown twice).
+- ⌥+click on rows built a **2×2 grid** (Acknowledge top left, New session top right, two sessions below): four panes. Each pane has its own header with `⋮` and `×`.
+- With four panes, further ⌥+clicks on other rows (three tried) did not make a fifth pane. Each replaced the session in the **bottom-right** pane (the last one opened): `Report writing…` → `Add scheduled…` → `obs-a…` → `Parallel agent…`. So the limit is **four panes**; at the limit ⌥+click replaces the last-opened pane. Not settled: whether it replaces the focused pane (a click into the top-left pane before the ⌥+click did not change which pane was replaced; that click may have been swallowed).
+- The layout was a grid (a row of two over a row of two), not a column of tall panes. All four panes were closed with their × and the window ended as found (one pane, Changes panel open). No message was sent.
