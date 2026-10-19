@@ -122,7 +122,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
             if workspace.needs_trust(path.clone()).await {
                 trust_question.set(Some(path));
             } else {
-                draft.write().folders.push(path);
+                draft.write().push_folder(path);
             }
             adding.set(false);
         });
@@ -222,7 +222,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                                         let path = path.clone();
                                         move |_| {
                                             workspace.trust_folder(path.clone());
-                                            draft.write().folders.push(path.clone());
+                                            draft.write().push_folder(path.clone());
                                             trust_question.set(None);
                                         }
                                     },
@@ -242,10 +242,10 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                                             Some(list) => rsx! {
                                                 select {
                                                     class: "env-branch",
-                                                    onchange: move |event| draft.write().branch = Some(event.value()),
+                                                    onchange: move |event| draft.write().choices[0].branch = Some(event.value()),
                                                     {
                                                         // `selected` on the option: a `value` on the select is not applied by the web view.
-                                                        let shown = draft.read().branch.clone().or_else(|| list.current.clone());
+                                                        let shown = draft.read().choices[0].branch.clone().or_else(|| list.current.clone());
                                                         rsx! {
                                                             for name in list.local.clone() {
                                                                 option { key: "{name}", value: "{name}", selected: shown.as_deref() == Some(name.as_str()), "{name}" }
@@ -256,8 +256,8 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                                                 label { class: "env-worktree",
                                                     input {
                                                         r#type: "checkbox",
-                                                        checked: draft.read().worktree,
-                                                        onchange: move |event| draft.write().worktree = event.checked(),
+                                                        checked: draft.read().choices[0].worktree,
+                                                        onchange: move |event| draft.write().choices[0].worktree = event.checked(),
                                                     }
                                                     {tr!("Worktree")}
                                                 }
@@ -270,10 +270,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                                         r#type: "button",
                                         title: tr!("Remove"),
                                         onclick: move |_| {
-                                            let mut folders = draft.write();
-                                            if index < folders.folders.len() {
-                                                folders.folders.remove(index);
-                                            }
+                                            draft.write().remove_folder(index);
                                         },
                                         "×"
                                     }

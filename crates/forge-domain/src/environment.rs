@@ -2,6 +2,15 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+/// The branch and worktree choice of one folder of an environment.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct FolderChoice {
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub worktree: bool,
+}
+
 /// A saved set of folders and variables a new session can start from. `folders[0]` is the working
 /// folder; the others are added directories. `branch` and `worktree` belong to the first folder.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,6 +23,9 @@ pub struct Environment {
     pub branch: Option<String>,
     #[serde(default)]
     pub worktree: bool,
+    /// Choices of folders[1..], entry i for folders[i + 1]; missing entries read as the default.
+    #[serde(default)]
+    pub extra_choices: Vec<FolderChoice>,
     /// `.env` text, as typed.
     #[serde(default)]
     pub env_vars: String,
@@ -35,6 +47,7 @@ impl std::fmt::Debug for Environment {
             .field("folders", &self.folders)
             .field("branch", &self.branch)
             .field("worktree", &self.worktree)
+            .field("extra_choices", &self.extra_choices)
             .field("env_vars", &format!("<redacted, {} chars>", self.env_vars.chars().count()))
             .field("pinned", &self.pinned)
             .field("created_at", &self.created_at)
@@ -48,13 +61,24 @@ impl Environment {
     /// no branch or worktree choice when there is no folder to apply it to.
     pub fn normalized(mut self) -> Environment {
         self.name = self.name.trim().to_string();
+        let folders = std::mem::take(&mut self.folders);
+        let mut choices = std::mem::take(&mut self.extra_choices).into_iter();
         let mut seen: Vec<PathBuf> = Vec::new();
-        for folder in std::mem::take(&mut self.folders) {
-            if !seen.contains(&folder) {
-                seen.push(folder);
+        let mut kept: Vec<FolderChoice> = Vec::new();
+        for (index, folder) in folders.into_iter().enumerate() {
+            // The choice of folders[index] (index 0 has none here: it lives in `branch` and `worktree`).
+            let choice = if index == 0 { None } else { Some(choices.next().unwrap_or_default()) };
+            if seen.contains(&folder) {
+                continue;
+            }
+            seen.push(folder);
+            if let Some(choice) = choice {
+                kept.push(choice);
             }
         }
         self.folders = seen;
+        kept.resize(self.folders.len().saturating_sub(1), FolderChoice::default());
+        self.extra_choices = kept;
         if self.folders.is_empty() {
             self.branch = None;
             self.worktree = false;
@@ -218,6 +242,7 @@ mod tests {
             pinned: false,
             created_at: 1,
             last_used_at: 2,
+            extra_choices: Vec::new(),
         };
         let kept = environment.clone().normalized();
         assert_eq!(kept.name, "work");
@@ -240,10 +265,62 @@ mod tests {
             pinned: false,
             created_at: 1,
             last_used_at: 2,
+            extra_choices: Vec::new(),
         };
         let shown = format!("{environment:?}");
         assert!(shown.contains("work"));
         assert!(!shown.contains("s3cret"));
+    }
+
+    fn two_folder_env() -> Environment {
+        Environment {
+            id: "env-1".into(),
+            name: "w".into(),
+            folders: vec!["/a".into(), "/b".into(), "/c".into()],
+            branch: Some("main".into()),
+            worktree: true,
+            env_vars: String::new(),
+            pinned: false,
+            created_at: 0,
+            last_used_at: 0,
+            extra_choices: vec![
+                FolderChoice { branch: Some("dev".into()), worktree: true },
+                FolderChoice { branch: None, worktree: false },
+            ],
+        }
+    }
+
+    #[test]
+    fn a_stage_a_environment_without_extra_choices_loads_with_default_choices() {
+        let text = r#"{"id":"e","name":"n","folders":["/a","/b"],"branch":"main","worktree":true}"#;
+        let environment: Environment = serde_json::from_str(text).unwrap();
+        assert!(environment.extra_choices.is_empty());
+        let normalized = environment.normalized();
+        assert_eq!(normalized.extra_choices, vec![FolderChoice::default()]);
+        assert_eq!(normalized.branch.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn normalizing_keeps_each_choice_with_its_folder_when_a_duplicate_is_dropped() {
+        let mut environment = two_folder_env();
+        environment.folders = vec!["/a".into(), "/b".into(), "/b".into(), "/c".into()];
+        environment.extra_choices = vec![
+            FolderChoice { branch: Some("dev".into()), worktree: true },
+            FolderChoice { branch: Some("dup".into()), worktree: true },
+            FolderChoice { branch: None, worktree: false },
+        ];
+        let normalized = environment.normalized();
+        assert_eq!(normalized.folders, vec![std::path::PathBuf::from("/a"), "/b".into(), "/c".into()]);
+        assert_eq!(normalized.extra_choices, vec![FolderChoice { branch: Some("dev".into()), worktree: true }, FolderChoice { branch: None, worktree: false }]);
+    }
+
+    #[test]
+    fn normalizing_pads_or_truncates_the_choices_to_the_extra_folders() {
+        let mut environment = two_folder_env();
+        environment.extra_choices.push(FolderChoice { branch: Some("x".into()), worktree: true });
+        assert_eq!(environment.clone().normalized().extra_choices.len(), 2);
+        environment.folders.truncate(1);
+        assert!(environment.normalized().extra_choices.is_empty());
     }
 
     #[test]

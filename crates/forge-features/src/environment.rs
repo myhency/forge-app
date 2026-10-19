@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use forge_domain::{new_environment_id, parse_env, EnvParseError, EnvVars, Environment};
+use forge_domain::{new_environment_id, parse_env, EnvParseError, EnvVars, Environment, FolderChoice};
 
 use crate::worktree_view::NewWorktree;
 
@@ -89,8 +89,8 @@ pub struct EnvironmentDraft {
     pub id: Option<String>,
     pub name: String,
     pub folders: Vec<PathBuf>,
-    pub branch: Option<String>,
-    pub worktree: bool,
+    /// One entry per folder, aligned with `folders`.
+    pub choices: Vec<FolderChoice>,
     pub env_vars: String,
 }
 
@@ -100,28 +100,47 @@ impl std::fmt::Debug for EnvironmentDraft {
             .field("id", &self.id)
             .field("name", &self.name)
             .field("folders", &self.folders)
-            .field("branch", &self.branch)
-            .field("worktree", &self.worktree)
+            .field("choices", &self.choices)
             .field("env_vars", &format!("<redacted, {} chars>", self.env_vars.chars().count()))
             .finish()
     }
 }
 
 impl EnvironmentDraft {
-    /// A new environment: the name and folder suggested, a worktree on (as in the folder menu).
+    /// A new environment: the name and folder suggested, a worktree on for the first folder (as in the folder menu).
     pub fn blank(name: String, folder: Option<PathBuf>) -> Self {
-        Self { id: None, name, folders: folder.into_iter().collect(), branch: None, worktree: true, env_vars: String::new() }
+        let mut draft = Self { id: None, name, folders: Vec::new(), choices: Vec::new(), env_vars: String::new() };
+        if let Some(folder) = folder {
+            draft.push_folder(folder);
+        }
+        draft
+    }
+
+    /// Adds a folder with its own choice (a worktree on only for the very first); a folder already there is ignored.
+    pub fn push_folder(&mut self, folder: PathBuf) {
+        if self.folders.contains(&folder) {
+            return;
+        }
+        let first = self.folders.is_empty();
+        self.folders.push(folder);
+        self.choices.push(FolderChoice { branch: None, worktree: first });
+    }
+
+    pub fn remove_folder(&mut self, index: usize) {
+        if index < self.folders.len() {
+            self.folders.remove(index);
+            self.choices.remove(index);
+        }
     }
 
     pub fn of(environment: &Environment) -> Self {
-        Self {
-            id: Some(environment.id.clone()),
-            name: environment.name.clone(),
-            folders: environment.folders.clone(),
-            branch: environment.branch.clone(),
-            worktree: environment.worktree,
-            env_vars: environment.env_vars.clone(),
+        let mut choices = Vec::new();
+        if !environment.folders.is_empty() {
+            choices.push(FolderChoice { branch: environment.branch.clone(), worktree: environment.worktree });
+            choices.extend(environment.extra_choices.iter().cloned());
         }
+        choices.resize(environment.folders.len(), FolderChoice::default());
+        Self { id: Some(environment.id.clone()), name: environment.name.clone(), folders: environment.folders.clone(), choices, env_vars: environment.env_vars.clone() }
     }
 
     pub fn changed_from(&self, initial: &EnvironmentDraft) -> bool {
@@ -139,12 +158,14 @@ impl EnvironmentDraft {
     /// The environment to store. An edit keeps the id, the pin and the times of `previous`; a new one
     /// gets an id from `id_seed` and `now` as both times.
     pub fn build(&self, previous: Option<&Environment>, id_seed: u64, now: i64) -> Environment {
+        let first = self.choices.first().cloned().filter(|_| !self.folders.is_empty()).unwrap_or_default();
         Environment {
             id: previous.map_or_else(|| new_environment_id(id_seed), |environment| environment.id.clone()),
             name: self.name.clone(),
             folders: self.folders.clone(),
-            branch: self.branch.clone(),
-            worktree: self.worktree,
+            branch: first.branch,
+            worktree: first.worktree,
+            extra_choices: self.choices.iter().skip(1).cloned().collect(),
             env_vars: self.env_vars.clone(),
             pinned: previous.is_some_and(|environment| environment.pinned),
             created_at: previous.map_or(now, |environment| environment.created_at),
@@ -162,6 +183,8 @@ pub struct EnvironmentStart {
     pub extra: Vec<PathBuf>,
     pub env: EnvVars,
     pub worktree: Option<NewWorktree>,
+    /// Aligned with `extra`: entry i is for `extra[i]`, `Some` when that folder's worktree is on.
+    pub extra_worktrees: Vec<Option<NewWorktree>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,8 +198,10 @@ pub fn start_plan(environment: &Environment) -> Result<EnvironmentStart, StartEr
     let mut folders = normalized.folders.into_iter();
     let folder = folders.next().ok_or(StartError::NoFolder)?;
     let env = parse_env(&normalized.env_vars).map_err(StartError::Variables)?;
+    let extra_worktrees = normalized.extra_choices.iter().map(|choice| choice.worktree.then(|| NewWorktree { base: choice.branch.clone() })).collect();
     Ok(EnvironmentStart {
         folder,
+        extra_worktrees,
         extra: folders.collect(),
         env: EnvVars(env),
         worktree: normalized.worktree.then(|| NewWorktree { base: normalized.branch }),
@@ -238,6 +263,7 @@ mod tests {
             pinned,
             created_at: 0,
             last_used_at: last_used,
+            extra_choices: Vec::new(),
         }
     }
 
@@ -300,7 +326,7 @@ mod tests {
     fn a_blank_draft_takes_the_folder_and_is_not_changed_until_edited() {
         let draft = EnvironmentDraft::blank("app".to_string(), Some("/work/app".into()));
         assert_eq!(draft.folders, vec![std::path::PathBuf::from("/work/app")]);
-        assert!(draft.worktree);
+        assert!(draft.choices[0].worktree);
         assert!(!draft.changed_from(&draft.clone()));
         let mut edited = draft.clone();
         edited.name = "other".to_string();
@@ -322,7 +348,7 @@ mod tests {
     #[test]
     fn building_a_new_environment_sets_the_ids_and_times_and_an_edit_keeps_what_the_dialog_does_not_show() {
         let mut draft = EnvironmentDraft::blank(" app ".to_string(), Some("/a".into()));
-        draft.folders.push("/a".into());
+        draft.push_folder("/a".into());
         let made = draft.build(None, 255, 1000);
         assert_eq!((made.id.as_str(), made.name.as_str(), made.created_at, made.last_used_at), ("env-00000000000000ff", "app", 1000, 1000));
         assert_eq!(made.folders, vec![std::path::PathBuf::from("/a")]);
@@ -351,6 +377,42 @@ mod tests {
     }
 
     #[test]
+    fn a_draft_keeps_one_choice_per_folder_and_the_first_folder_defaults_to_a_worktree() {
+        let mut draft = EnvironmentDraft::blank("app".to_string(), Some("/a".into()));
+        draft.push_folder("/b".into());
+        draft.push_folder("/a".into());
+        assert_eq!(draft.folders.len(), 2);
+        assert_eq!(draft.choices, vec![FolderChoice { branch: None, worktree: true }, FolderChoice { branch: None, worktree: false }]);
+        draft.remove_folder(0);
+        assert_eq!(draft.folders, vec![std::path::PathBuf::from("/b")]);
+        assert_eq!(draft.choices.len(), 1);
+    }
+
+    #[test]
+    fn building_and_reading_a_draft_round_trips_every_folders_choice() {
+        let mut draft = EnvironmentDraft::blank("app".to_string(), Some("/a".into()));
+        draft.push_folder("/b".into());
+        draft.choices[0].branch = Some("main".into());
+        draft.choices[1] = FolderChoice { branch: Some("dev".into()), worktree: true };
+        let environment = draft.build(None, 1, 5);
+        assert_eq!((environment.branch.as_deref(), environment.worktree), (Some("main"), true));
+        assert_eq!(environment.extra_choices, vec![FolderChoice { branch: Some("dev".into()), worktree: true }]);
+        assert_eq!(EnvironmentDraft::of(&environment).choices, draft.choices);
+    }
+
+    #[test]
+    fn the_start_plan_asks_a_worktree_for_each_extra_folder_whose_box_is_on() {
+        let mut environment = env("a", "app", false, 0);
+        environment.folders = vec!["/a".into(), "/b".into(), "/c".into()];
+        environment.worktree = false;
+        environment.extra_choices = vec![FolderChoice { branch: Some("dev".into()), worktree: true }, FolderChoice::default()];
+        let plan = start_plan(&environment).unwrap();
+        assert_eq!(plan.worktree, None);
+        assert_eq!(plan.extra, vec![std::path::PathBuf::from("/b"), "/c".into()]);
+        assert_eq!(plan.extra_worktrees, vec![Some(NewWorktree { base: Some("dev".into()) }), None]);
+    }
+
+    #[test]
     fn the_start_plan_refuses_an_environment_with_no_folder_or_with_bad_variables() {
         let mut environment = env("a", "app", false, 0);
         environment.folders.clear();
@@ -365,7 +427,7 @@ mod tests {
 
     #[test]
     fn a_plan_whose_first_folder_is_gone_is_reported_missing() {
-        let plan = |folder: PathBuf| EnvironmentStart { folder, extra: Vec::new(), env: EnvVars(Vec::new()), worktree: None };
+        let plan = |folder: PathBuf| EnvironmentStart { folder, extra: Vec::new(), env: EnvVars(Vec::new()), worktree: None, extra_worktrees: Vec::new() };
         assert!(folder_missing(&plan(std::env::temp_dir().join("forge-no-such-folder-8f3a1c"))));
         assert!(!folder_missing(&plan(std::env::temp_dir())));
     }
