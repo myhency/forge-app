@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, pane_class, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
-use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, PaneIndex, Workspace};
+use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
 use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
 use forge_shared::tr;
 
@@ -14,7 +14,7 @@ pub fn WorkspacePage() -> Element {
     use_routines_provider(workspace, settings);
     use_session_notices(workspace, settings);
     let mut dragging = use_signal(|| false);
-    let mut pane_dragging = use_signal(|| false);
+    let mut pane_dragging = use_signal(|| None::<(Vec<bool>, Dir)>);
     // Key events only reach the root while something inside it has focus. Whenever the overlay
     // closes or the main pane switches view, the focused input or button may have been removed
     // and focus falls to <body>, which silences every shortcut until the next click. Give focus
@@ -76,7 +76,7 @@ pub fn WorkspacePage() -> Element {
 
     rsx! {
         div {
-            class: workspace_class(sidebar_mode, dragging() || pane_dragging()),
+            class: workspace_class(sidebar_mode, dragging() || pane_dragging().is_some()),
             tabindex: "0",
             // Key events only reach the root while something inside it has focus.
             onmounted: move |mounted| async move {
@@ -108,16 +108,22 @@ pub fn WorkspacePage() -> Element {
                     let x = event.client_coordinates().x.max(0.0) as u32;
                     workspace.change_prefs_unsaved(|prefs| prefs.width = x.clamp(forge_domain::MIN_SIDEBAR_WIDTH, forge_domain::MAX_SIDEBAR_WIDTH));
                 }
-                if pane_dragging() {
+                if let Some((path, dir)) = pane_dragging() {
                     // A release outside the window never reaches `onmouseup`: end the drag as soon as
                     // the move events say the button is up.
                     if !event.held_buttons().contains(dioxus::html::input_data::MouseButton::Primary) {
-                        pane_dragging.set(false);
+                        pane_dragging.set(None);
                         return;
                     }
-                    let area = main_area.max(1) as f32;
-                    let left_edge = window_width().saturating_sub(main_area) as f32;
-                    workspace.set_pane_ratio((event.client_coordinates().x as f32 - left_edge) / area);
+                    if let Some(rect) = workspace.pane_split_rect(&path, main_area, main_height) {
+                        let left_edge = window_width().saturating_sub(main_area) as f32;
+                        let point = event.client_coordinates();
+                        let ratio = match dir {
+                            Dir::Beside => (point.x as f32 - left_edge - rect.x as f32) / rect.w.max(1) as f32,
+                            Dir::Below => (point.y as f32 - rect.y as f32) / rect.h.max(1) as f32,
+                        };
+                        workspace.set_split_ratio(&path, ratio);
+                    }
                 }
             },
             onmouseup: move |_| {
@@ -125,8 +131,8 @@ pub fn WorkspacePage() -> Element {
                     dragging.set(false);
                     workspace.save_prefs();
                 }
-                if pane_dragging() {
-                    pane_dragging.set(false);
+                if pane_dragging().is_some() {
+                    pane_dragging.set(None);
                 }
             },
             match sidebar_mode {
@@ -168,7 +174,7 @@ pub fn WorkspacePage() -> Element {
                     }
                 },
             }
-            {pane_row(workspace, main_area, pane_dragging)}
+            {pane_row(workspace, main_area, main_height, pane_dragging)}
             SettingsOverlay {}
             SearchPalette {}
             ShortcutsDialog {}
@@ -179,39 +185,42 @@ pub fn WorkspacePage() -> Element {
     }
 }
 
-// The panes and the divider. A pane is keyed by its screen, so closing the left one does not
-// remount the right one. A main area too narrow for two panes shows only the focused one; the
-// other comes back when the window grows.
-fn pane_row(workspace: Workspace, main_area: u32, mut pane_dragging: Signal<bool>) -> Element {
+// The panes and their dividers, a flat list so a pane stays mounted when the tree around it changes.
+// A pane is keyed by its screen. An area too small for the open layout at the minimum sizes shows
+// only the focused pane; the others come back when the window grows.
+fn pane_row(workspace: Workspace, main_w: u32, main_h: u32, mut dragging: Signal<Option<(Vec<bool>, Dir)>>) -> Element {
     let targets = workspace.pane_targets();
-    let focused = workspace.focused_pane();
-    let split = targets.len() == 2 && workspace.panes_fit(main_area);
-    let (left, right) = workspace.pane_widths(main_area);
-    let shown: Vec<(usize, Active)> = if split {
-        targets.iter().copied().enumerate().collect()
+    let focused = workspace.focused_pane().min(targets.len() - 1);
+    let geometry = workspace.pane_geometry(main_w, main_h);
+    let split = targets.len() > 1 && geometry.fits;
+    let shown: Vec<(usize, Active, Rect)> = if split {
+        targets.iter().copied().zip(geometry.rects.iter().copied()).enumerate().map(|(index, (target, rect))| (index, target, rect)).collect()
     } else {
-        vec![(focused.min(targets.len() - 1), targets[focused.min(targets.len() - 1)])]
+        vec![(focused, targets[focused], Rect { x: 0, y: 0, w: main_w, h: main_h })]
     };
+    let dividers = if split { geometry.dividers.clone() } else { Vec::new() };
     rsx! {
         div { class: if split { "panes split" } else { "panes" },
-            for (index, target) in shown {
-                Fragment { key: "{target:?}",
-                    if split && index == 1 {
-                        div {
-                            class: if pane_dragging() { "pane-divider dragging" } else { "pane-divider" },
-                            onmousedown: move |event| {
-                                event.prevent_default();
-                                pane_dragging.set(true);
-                            },
+            for (index, target, rect) in shown {
+                Pane { key: "{target:?}", index, target, rect, area: (main_w, main_h), split, focused: focused == index }
+            }
+            for divider in dividers {
+                div {
+                    key: "{divider.path:?}",
+                    class: match (divider.dir, dragging().as_ref().is_some_and(|(path, _)| *path == divider.path)) {
+                        (Dir::Beside, false) => "pane-divider",
+                        (Dir::Beside, true) => "pane-divider dragging",
+                        (Dir::Below, false) => "pane-divider below",
+                        (Dir::Below, true) => "pane-divider below dragging",
+                    },
+                    style: divider.percent_style(main_w, main_h),
+                    onmousedown: {
+                        let (path, dir) = (divider.path.clone(), divider.dir);
+                        move |event| {
+                            event.prevent_default();
+                            dragging.set(Some((path.clone(), dir)));
                         }
-                    }
-                    Pane {
-                        index,
-                        target,
-                        width: if !split { main_area } else if index == 0 { left } else { right },
-                        split,
-                        focused: focused == index,
-                    }
+                    },
                 }
             }
         }
@@ -221,7 +230,7 @@ fn pane_row(workspace: Workspace, main_area: u32, mut pane_dragging: Signal<bool
 /// One screen of the main area. It tells its descendants which pane they are in and moves the
 /// focus here on any click or focus inside.
 #[component]
-fn Pane(index: usize, target: Active, width: u32, split: bool, focused: bool) -> Element {
+fn Pane(index: usize, target: Active, rect: Rect, area: (u32, u32), split: bool, focused: bool) -> Element {
     let workspace = use_workspace();
     let mut index_signal = use_context_provider(|| PaneIndex(Signal::new(index)));
     use_effect(use_reactive!(|index| {
@@ -240,7 +249,7 @@ fn Pane(index: usize, target: Active, width: u32, split: bool, focused: bool) ->
         }
         Active::NewSession | Active::Customize | Active::Routines => 0,
     };
-    let mut class = pane_class(width, dock_width);
+    let mut class = pane_class(rect.w, dock_width);
     // A pane that is not a session has no tools row, so the page draws its ×.
     let closable = split && !matches!(target, Active::Live(_));
     if split {
@@ -252,9 +261,7 @@ fn Pane(index: usize, target: Active, width: u32, split: bool, focused: bool) ->
     if focused {
         class.push_str(" focused");
     }
-    // The right pane takes what is left, so the two always fill the area. Always spelled out: an
-    // empty style would leave the old width on a pane that had been the left one.
-    let style = if split && index == 0 { format!("width: {width}px; flex: none;") } else { "width: auto; flex: 1;".to_string() };
+    let style = rect.percent_style(area.0, area.1);
     rsx! {
         div {
             class,

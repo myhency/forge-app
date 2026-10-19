@@ -1612,26 +1612,6 @@ impl Workspace {
         *self.main_size.peek()
     }
 
-    // Shims for the page until it is redrawn for the tree.
-    pub fn swap_panes(&self) {
-        self.move_pane(1, Dir::Beside);
-    }
-
-    pub fn set_pane_ratio(&self, ratio: f32) {
-        self.set_split_ratio(&[], ratio);
-    }
-
-    pub fn panes_fit(&self, area: u32) -> bool {
-        let (_, h) = self.main_size();
-        self.panes.read().fits(area, h)
-    }
-
-    pub fn pane_widths(&self, area: u32) -> (u32, u32) {
-        let (_, h) = self.main_size();
-        let rects = self.panes.read().rects(area, h);
-        (rects[0].w, rects.get(1).map_or(0, |rect| rect.w))
-    }
-
     // The first message of a New-session pane turns that very pane into the session, even if the
     // person has clicked into the other pane since.
     fn show_started(&self, id: LiveSessionId) {

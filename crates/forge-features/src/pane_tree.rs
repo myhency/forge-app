@@ -47,6 +47,38 @@ pub struct Divider {
     pub length: u32,
 }
 
+// `part` of `whole` as a CSS percentage; a zero area reads as 0.
+fn percent(part: u32, whole: u32) -> String {
+    if whole == 0 {
+        return "0%".to_string();
+    }
+    format!("{}%", part as f64 * 100.0 / whole as f64)
+}
+
+impl Rect {
+    /// The CSS that positions an absolutely placed element at this rectangle of an area `w` by `h`.
+    /// Percentages, so the pane follows the real size of its box even if the page's measure of the
+    /// area is a frame behind.
+    pub fn percent_style(&self, w: u32, h: u32) -> String {
+        format!(
+            "left: {}; top: {}; width: {}; height: {};",
+            percent(self.x, w),
+            percent(self.y, h),
+            percent(self.w, w),
+            percent(self.h, h)
+        )
+    }
+}
+
+impl Divider {
+    pub fn percent_style(&self, w: u32, h: u32) -> String {
+        match self.dir {
+            Dir::Beside => format!("left: {}; top: {}; height: {};", percent(self.x, w), percent(self.y, h), percent(self.length, h)),
+            Dir::Below => format!("left: {}; top: {}; width: {};", percent(self.x, w), percent(self.y, h), percent(self.length, w)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum Node {
     Leaf(Active),
@@ -839,5 +871,21 @@ mod tests {
         assert_eq!(tree.opened, vec![live(2), live(7)]);
         assert!(tree.replace(live(2), live(8)));
         assert_eq!(tree.opened, vec![live(8), live(7)]);
+    }
+
+    #[test]
+    fn a_rect_is_styled_in_percent_of_the_area_so_it_follows_the_real_size() {
+        assert_eq!(rect(0, 0, 1200, 800).percent_style(1200, 800), "left: 0%; top: 0%; width: 100%; height: 100%;");
+        assert_eq!(rect(600, 400, 600, 400).percent_style(1200, 800), "left: 50%; top: 50%; width: 50%; height: 50%;");
+        // An area of 0 does not divide by zero.
+        assert!(!rect(0, 0, 0, 0).percent_style(0, 0).contains("NaN"));
+    }
+
+    #[test]
+    fn a_divider_is_styled_by_its_direction() {
+        let vertical = Divider { path: vec![], dir: Dir::Beside, x: 600, y: 0, length: 800 };
+        assert_eq!(vertical.percent_style(1200, 800), "left: 50%; top: 0%; height: 100%;");
+        let horizontal = Divider { path: vec![], dir: Dir::Below, x: 0, y: 400, length: 1200 };
+        assert_eq!(horizontal.percent_style(1200, 800), "left: 0%; top: 50%; width: 100%;");
     }
 }

@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_shared::tr;
 use forge_application::LiveSessionId;
-use forge_features::{use_workspace, Panel};
+use forge_features::{use_workspace, Dir, Panel};
 
 /// The icons at the right of the chat header: the terminal toggle (hidden when `terminal` is
 /// false, as for an archived session) and the `⋮` menu with the panel switches.
@@ -125,17 +125,20 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                             }
                         }
                         if split {
-                            if pane == 1 {
-                                button {
-                                    class: "picker-item",
-                                    r#type: "button",
-                                    role: "menuitem",
-                                    onclick: move |_| {
-                                        workspace.swap_panes();
-                                        open.set(false);
-                                    },
-                                    span { {tr!("Move split view left")} }
-                                }
+                            match workspace.pane_slot(pane) {
+                                Some((Dir::Beside, second)) => rsx! {
+                                    if second {
+                                        MoveItem { label: tr!("Move split view left"), pane, dir: Dir::Beside, open }
+                                    }
+                                    MoveItem { label: tr!("Move split view down"), pane, dir: Dir::Below, open }
+                                },
+                                Some((Dir::Below, second)) => rsx! {
+                                    if second {
+                                        MoveItem { label: tr!("Move split view up"), pane, dir: Dir::Below, open }
+                                    }
+                                    MoveItem { label: tr!("Move split view to the right"), pane, dir: Dir::Beside, open }
+                                },
+                                None => rsx! {},
                             }
                             button {
                                 class: "picker-item",
@@ -154,6 +157,24 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
             if split {
                 crate::pane_close::PaneClose { index: pane }
             }
+        }
+    }
+}
+
+/// One of the move items of a pane's `⋮` menu. `dir` is the direction handed to `move_pane`.
+#[component]
+fn MoveItem(label: String, pane: usize, dir: Dir, mut open: Signal<bool>) -> Element {
+    let workspace = use_workspace();
+    rsx! {
+        button {
+            class: "picker-item",
+            r#type: "button",
+            role: "menuitem",
+            onclick: move |_| {
+                workspace.move_pane(pane, dir);
+                open.set(false);
+            },
+            span { "{label}" }
         }
     }
 }
