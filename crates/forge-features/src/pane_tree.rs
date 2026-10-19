@@ -353,8 +353,25 @@ impl PaneTree {
 
     /// The `⋮` menu's move items. `dir` is the direction of the pane's parent split: moving along it
     /// ("move left", "move up") swaps a second child with its sibling; moving across it ("move
-    /// down", "move to the right") turns the split. Focus stays on the same content.
-    pub fn move_pane(&mut self, index: usize, dir: Dir) {
+    /// down", "move to the right") turns the split. Focus stays on the same content. A move that
+    /// would leave a layout that fits in an area `w` by `h` without room is refused (false).
+    pub fn move_pane(&mut self, index: usize, dir: Dir, w: u32, h: u32) -> bool {
+        if !self.can_move(index, dir, w, h) {
+            return false;
+        }
+        self.apply_move(index, dir);
+        true
+    }
+
+    /// Whether `move_pane` would do the move: not when the layout fits now and would not after it. A
+    /// layout that is already too big for the area may be turned (that is a way back to a fit).
+    pub fn can_move(&self, index: usize, dir: Dir, w: u32, h: u32) -> bool {
+        let mut moved = self.clone();
+        moved.apply_move(index, dir);
+        !self.fits(w, h) || moved.fits(w, h)
+    }
+
+    fn apply_move(&mut self, index: usize, dir: Dir) {
         let Some(target) = self.target(index) else { return };
         let Some(path) = self.root.path_to(target) else { return };
         let Some((&second, parent_path)) = path.split_last() else { return };
@@ -829,25 +846,25 @@ mod tests {
         assert_eq!(tree.pane_slot(0), Some((Dir::Beside, false)));
         assert_eq!(tree.pane_slot(1), Some((Dir::Beside, true)));
         // "Move split view left" on the right pane: the two trade places, focus follows the content.
-        tree.move_pane(1, Dir::Beside);
+        tree.move_pane(1, Dir::Beside, W, H);
         assert_eq!(tree.targets(), vec![live(2), live(1)]);
         assert_eq!(tree.focused_target(), live(2));
         // The left pane has nowhere further left to go.
-        tree.move_pane(0, Dir::Beside);
+        tree.move_pane(0, Dir::Beside, W, H);
         assert_eq!(tree.targets(), vec![live(2), live(1)]);
         // "Move split view down": the side by side split turns into a stacked one.
-        tree.move_pane(1, Dir::Below);
+        tree.move_pane(1, Dir::Below, W, H);
         assert_eq!(tree.rects(W, H), vec![rect(0, 0, 1200, 400), rect(0, 400, 1200, 400)]);
         assert_eq!(tree.pane_slot(1), Some((Dir::Below, true)));
         // "Move split view up" on the bottom pane swaps; "to the right" turns it back.
-        tree.move_pane(1, Dir::Below);
+        tree.move_pane(1, Dir::Below, W, H);
         assert_eq!(tree.targets(), vec![live(1), live(2)]);
-        tree.move_pane(1, Dir::Beside);
+        tree.move_pane(1, Dir::Beside, W, H);
         assert_eq!(tree.rects(W, H), vec![rect(0, 0, 600, 800), rect(600, 0, 600, 800)]);
         // One pane: nothing to move.
         let mut single = PaneTree::new(live(1));
         assert_eq!(single.pane_slot(0), None);
-        single.move_pane(0, Dir::Below);
+        single.move_pane(0, Dir::Below, W, H);
         assert_eq!(single.targets(), vec![live(1)]);
     }
 
@@ -855,7 +872,7 @@ mod tests {
     fn move_pane_swapping_keeps_the_divider_where_the_content_was() {
         let mut tree = pair();
         tree.set_ratio(&[], 0.6, W, H);
-        tree.move_pane(1, Dir::Beside);
+        tree.move_pane(1, Dir::Beside, W, H);
         // The wide pane (1, 60 %) is now on the right.
         assert_eq!(tree.rects(W, H), vec![rect(0, 0, 480, 800), rect(480, 0, 720, 800)]);
     }
@@ -887,5 +904,26 @@ mod tests {
         assert_eq!(vertical.percent_style(1200, 800), "left: 50%; top: 0%; height: 100%;");
         let horizontal = Divider { path: vec![], dir: Dir::Below, x: 0, y: 400, length: 1200 };
         assert_eq!(horizontal.percent_style(1200, 800), "left: 0%; top: 50%; width: 100%;");
+    }
+
+    #[test]
+    fn a_move_that_would_not_fit_is_refused_but_one_that_helps_a_folded_layout_is_allowed() {
+        // 2 x 2 in 1200 x 800: turning the right column side by side needs 420 + 840 = 1260 wide.
+        let mut full = grid();
+        assert!(!full.can_move(2, Dir::Beside, W, H));
+        assert!(!full.move_pane(2, Dir::Beside, W, H));
+        assert_eq!(full.targets(), vec![live(1), live(3), live(2), live(4)]);
+        assert_eq!(full.rects(W, H).len(), 4);
+        // A swap keeps the minimum sizes, so it is always allowed.
+        assert!(full.can_move(3, Dir::Below, W, H));
+        assert!(full.move_pane(3, Dir::Below, W, H));
+        assert_eq!(full.targets(), vec![live(1), live(3), live(4), live(2)]);
+        // Under 840 px nothing fits anyway: a turn that makes the layout smaller is allowed.
+        let mut folded = grid();
+        assert!(!folded.fits(600, H));
+        assert!(folded.can_move(2, Dir::Beside, 600, H));
+        // A layout that fits may not be turned into one that does not (here: too short for 3 stacked).
+        let mut pair = pair();
+        assert!(!pair.can_move(1, Dir::Below, W, 2 * MIN_PANE_HEIGHT - 1));
     }
 }

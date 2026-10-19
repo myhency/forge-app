@@ -51,6 +51,15 @@ pub struct RoutineServices {
     pub notify: Arc<dyn forge_ports::NotifyPort>,
 }
 
+/// How a past session opens: in the focused pane (the search palette, notices), as a click on its
+/// sidebar row (adds a pane while split), or beside (⌥+click).
+#[derive(Clone, Copy)]
+enum PastOpen {
+    Replace,
+    Click,
+    Beside,
+}
+
 /// What the page draws of the panes: one rectangle per pane in reading order, the dividers, and
 /// whether the area holds the layout at the minimum sizes.
 #[derive(Debug, Clone, PartialEq)]
@@ -1577,7 +1586,14 @@ impl Workspace {
 
     /// The `⋮` menu: move pane `index` along or across its split (see `PaneTree::move_pane`).
     pub fn move_pane(&self, index: usize, dir: Dir) {
-        self.edit_panes(|panes| panes.move_pane(index, dir));
+        let (w, h) = self.main_size();
+        self.edit_panes(|panes| panes.move_pane(index, dir, w, h));
+    }
+
+    /// Whether the move item is offered: a move that would fold the layout is left out.
+    pub fn can_move_pane(&self, index: usize, dir: Dir) -> bool {
+        let (w, h) = self.main_size();
+        self.panes.read().can_move(index, dir, w, h)
     }
 
     /// The direction of the split pane `index` sits in and whether it is the second child.
@@ -1716,15 +1732,20 @@ impl Workspace {
 
     /// Opens a past session read-only (or focuses it if it is already open).
     pub fn open_past(&self, project: ProjectSummary, session_id: SessionId) {
-        self.open_past_in(project, session_id, false);
+        self.open_past_in(project, session_id, PastOpen::Replace);
+    }
+
+    /// A plain click on a past session's row: like `open_session`, it adds a pane while split.
+    pub fn open_past_clicked(&self, project: ProjectSummary, session_id: SessionId) {
+        self.open_past_in(project, session_id, PastOpen::Click);
     }
 
     /// The same, in a pane of its own (⌥+click).
     pub fn add_past(&self, project: ProjectSummary, session_id: SessionId) {
-        self.open_past_in(project, session_id, true);
+        self.open_past_in(project, session_id, PastOpen::Beside);
     }
 
-    fn open_past_in(&self, project: ProjectSummary, session_id: SessionId, beside: bool) {
+    fn open_past_in(&self, project: ProjectSummary, session_id: SessionId, how: PastOpen) {
         let this = *self;
         let services = (*self.services.peek()).clone();
         // Root scope: the search palette closes the moment it opens a session, and a task of the
@@ -1733,10 +1754,10 @@ impl Workspace {
             match services.registry.open_existing(&project, session_id).await {
                 Ok(outcome) => {
                     let id = this.ensure_attached(outcome.handle);
-                    if beside {
-                        this.add_session(id);
-                    } else {
-                        this.open_session(id);
+                    match how {
+                        PastOpen::Replace => this.select(id),
+                        PastOpen::Click => this.open_session(id),
+                        PastOpen::Beside => this.add_session(id),
                     }
                 }
                 Err(error) => this.report(error.to_string()),

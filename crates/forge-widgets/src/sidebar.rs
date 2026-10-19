@@ -221,7 +221,7 @@ pub fn Sidebar() -> Element {
                                 move |beside: bool| match (&key, beside) {
                                     (EntryKey::Live(id), false) => workspace.open_session(*id),
                                     (EntryKey::Live(id), true) => workspace.add_session(*id),
-                                    (EntryKey::Past { session, .. }, false) => workspace.open_past(project.clone(), session.clone()),
+                                    (EntryKey::Past { session, .. }, false) => workspace.open_past_clicked(project.clone(), session.clone()),
                                     (EntryKey::Past { session, .. }, true) => workspace.add_past(project.clone(), session.clone()),
                                 }
                             },

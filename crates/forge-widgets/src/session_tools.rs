@@ -130,13 +130,17 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                     if second {
                                         MoveItem { label: tr!("Move split view left"), pane, dir: Dir::Beside, open }
                                     }
-                                    MoveItem { label: tr!("Move split view down"), pane, dir: Dir::Below, open }
+                                    if workspace.can_move_pane(pane, Dir::Below) {
+                                        MoveItem { label: tr!("Move split view down"), pane, dir: Dir::Below, open }
+                                    }
                                 },
                                 Some((Dir::Below, second)) => rsx! {
                                     if second {
                                         MoveItem { label: tr!("Move split view up"), pane, dir: Dir::Below, open }
                                     }
-                                    MoveItem { label: tr!("Move split view to the right"), pane, dir: Dir::Beside, open }
+                                    if workspace.can_move_pane(pane, Dir::Beside) {
+                                        MoveItem { label: tr!("Move split view to the right"), pane, dir: Dir::Beside, open }
+                                    }
                                 },
                                 None => rsx! {},
                             }
