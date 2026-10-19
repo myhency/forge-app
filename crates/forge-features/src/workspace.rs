@@ -1984,6 +1984,7 @@ impl Workspace {
                 }
             }
             Shortcut::NewSessionHere => self.new_session_here(),
+            Shortcut::NewSessionBeside => self.open_new_session_beside(),
             Shortcut::GoToSession(index) => self.go_to_session(index),
             Shortcut::TogglePanel(panel) => self.toggle_panel(panel),
             // The sidebar belongs to the page (it knows the layout); it offers the event next.

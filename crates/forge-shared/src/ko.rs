@@ -349,6 +349,7 @@ pub static KO: &[(&str, &str)] = &[
     ("New browser tab", "새 브라우저 탭"),
     ("New routine", "새 루틴"),
     ("New session", "새 세션"),
+    ("New session beside this one", "이 세션 옆에 새 세션"),
     ("New session in this folder", "이 폴더에 새 세션"),
     ("New sessions start with this model. A choice is saved at once.", "새 세션은 이 모델로 시작합니다. 선택은 바로 저장됩니다."),
     ("New tab", "새 탭"),

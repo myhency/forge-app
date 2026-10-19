@@ -6,6 +6,8 @@ use forge_shared::{msg, tr};
 pub enum Shortcut {
     NewSession,
     NewSessionHere,
+    /// Opens a New-session pane beside the focused one.
+    NewSessionBeside,
     NextSession,
     PreviousSession,
     CloseSession,
@@ -87,6 +89,9 @@ const fn cmd(code: &'static str) -> Binding {
 const fn cmd_shift(code: &'static str) -> Binding {
     binding(code, true, false, false, true)
 }
+const fn cmd_ctrl(code: &'static str) -> Binding {
+    binding(code, true, true, false, false)
+}
 const fn cmd_alt(code: &'static str) -> Binding {
     binding(code, true, false, true, false)
 }
@@ -132,6 +137,7 @@ pub static SHORTCUTS: &[ShortcutRow] = &[
     ShortcutRow { group: Group::General, label: msg!("Search sessions"), action: Shortcut::OpenSearch, keys: &[cmd("KeyK")] },
     ShortcutRow { group: Group::General, label: msg!("New session"), action: Shortcut::NewSession, keys: &[cmd("KeyN")] },
     ShortcutRow { group: Group::General, label: msg!("New session in this folder"), action: Shortcut::NewSessionHere, keys: &[cmd_shift("KeyN")] },
+    ShortcutRow { group: Group::General, label: msg!("New session beside this one"), action: Shortcut::NewSessionBeside, keys: &[cmd_ctrl("Backslash")] },
     ShortcutRow { group: Group::General, label: msg!("Close the session"), action: Shortcut::CloseSession, keys: &[cmd("KeyW")] },
     ShortcutRow { group: Group::General, label: msg!("Settings"), action: Shortcut::OpenSettings, keys: &[cmd("Comma")] },
     ShortcutRow { group: Group::General, label: msg!("Keyboard shortcuts"), action: Shortcut::ShowShortcuts, keys: &[cmd("Slash")] },
@@ -182,7 +188,7 @@ impl Binding {
     // The Meta and Ctrl keys this binding asks for on the platform.
     fn wanted(&self, mac: bool) -> (bool, bool) {
         if self.command {
-            if mac { (true, false) } else { (false, true) }
+            if mac { (true, self.ctrl) } else { (false, true) }
         } else {
             (false, self.ctrl)
         }
@@ -413,7 +419,7 @@ mod tests {
 
     /// The press a binding stands for on `mac`.
     fn press_of(binding: &Binding, code: &'static str, mac: bool) -> KeyPress<'static> {
-        let (meta, ctrl) = if binding.command { if mac { (true, false) } else { (false, true) } } else { (false, binding.ctrl) };
+        let (meta, ctrl) = binding.wanted(mac);
         KeyPress { code, ctrl, meta, alt: binding.alt, shift: binding.shift }
     }
 
@@ -720,5 +726,19 @@ mod tests {
         assert_eq!(total, SHORTCUTS.len() + PREVIEW_SHORTCUTS.len());
         let next = sections[0].rows.iter().find(|(label, _)| label == "Next session").unwrap();
         assert_eq!(next.1, "⌃Tab or ⇧⌘] or ⌥↓");
+    }
+
+    #[test]
+    fn the_new_session_beside_key_is_control_command_backslash_on_a_mac_and_control_backslash_elsewhere() {
+        let row = SHORTCUTS.iter().find(|row| row.action == Shortcut::NewSessionBeside).expect("listed");
+        assert_eq!(row.keys[0].display(true), "⌃⌘\\");
+        assert_eq!(row.keys[0].display(false), "Ctrl+\\");
+        let mac = KeyPress { code: "Backslash", ctrl: true, meta: true, alt: false, shift: false };
+        assert!(row.keys[0].modifiers_match(&mac, true));
+        // ⌘\ alone, and ⌘⇧\ (Expand the panel), are different keys.
+        let command_only = KeyPress { meta: true, ctrl: false, ..mac };
+        assert!(!row.keys[0].modifiers_match(&command_only, true));
+        let windows = KeyPress { code: "Backslash", ctrl: true, meta: false, alt: false, shift: false };
+        assert!(row.keys[0].modifiers_match(&windows, false));
     }
 }
