@@ -221,8 +221,8 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                         div { class: "env-empty", {tr!("Choose a folder to start the session in.")} }
                     } else {
                         div { class: "env-folders",
-                            for (index, folder) in draft.read().folders.clone().into_iter().enumerate() {
-                                FolderRow { key: "{folder.display()}", draft, index }
+                            for folder in draft.read().folders.clone() {
+                                FolderRow { key: "{folder.display()}", draft, path: folder.clone() }
                             }
                         }
                     }
@@ -307,20 +307,21 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
 
 /// One folder of the draft: name, branch and worktree choice when it is a git repository.
 #[component]
-fn FolderRow(draft: Signal<EnvironmentDraft>, index: usize) -> Element {
+fn FolderRow(draft: Signal<EnvironmentDraft>, path: PathBuf) -> Element {
     let workspace = use_workspace();
-    // A memo, so typing in the name or variables does not run git again.
-    let folder = use_memo(move || draft.read().folders.get(index).cloned());
-    let branches = use_resource(move || {
-        let folder = folder();
-        async move {
-            match folder {
-                Some(folder) => workspace.folder_branches(folder).await,
-                None => None,
-            }
+    // Rows are keyed by path: the path never changes for this component, its index does when a row is removed.
+    let index_of = {
+        let path = path.clone();
+        move || draft.read().folders.iter().position(|folder| *folder == path)
+    };
+    let branches = use_resource({
+        let path = path.clone();
+        move || {
+            let folder = path.clone();
+            async move { workspace.folder_branches(folder).await }
         }
     });
-    let Some(path) = folder() else {
+    let Some(index) = index_of() else {
         return rsx! {};
     };
     rsx! {
@@ -330,9 +331,14 @@ fn FolderRow(draft: Signal<EnvironmentDraft>, index: usize) -> Element {
                 Some(list) => rsx! {
                     select {
                         class: "env-branch",
-                        onchange: move |event| {
-                            if let Some(choice) = draft.write().choices.get_mut(index) {
-                                choice.branch = Some(event.value());
+                        onchange: {
+                            let index_of = index_of.clone();
+                            move |event| {
+                                if let Some(index) = index_of() {
+                                    if let Some(choice) = draft.write().choices.get_mut(index) {
+                                        choice.branch = Some(event.value());
+                                    }
+                                }
                             }
                         },
                         {
@@ -349,9 +355,14 @@ fn FolderRow(draft: Signal<EnvironmentDraft>, index: usize) -> Element {
                         input {
                             r#type: "checkbox",
                             checked: draft.read().choices.get(index).is_some_and(|choice| choice.worktree),
-                            onchange: move |event| {
-                                if let Some(choice) = draft.write().choices.get_mut(index) {
-                                    choice.worktree = event.checked();
+                            onchange: {
+                                let index_of = index_of.clone();
+                                move |event| {
+                                    if let Some(index) = index_of() {
+                                        if let Some(choice) = draft.write().choices.get_mut(index) {
+                                            choice.worktree = event.checked();
+                                        }
+                                    }
                                 }
                             },
                         }
@@ -365,7 +376,9 @@ fn FolderRow(draft: Signal<EnvironmentDraft>, index: usize) -> Element {
                 r#type: "button",
                 title: tr!("Remove"),
                 onclick: move |_| {
-                    draft.write().remove_folder(index);
+                    if let Some(index) = index_of() {
+                        draft.write().remove_folder(index);
+                    }
                 },
                 "×"
             }
