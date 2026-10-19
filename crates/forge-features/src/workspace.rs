@@ -1823,6 +1823,35 @@ impl Workspace {
                     }
                 }
             };
+            // The extra folders that asked for a worktree get one; a folder that is not a repository stays as it is.
+            let mut made: Vec<Option<PathBuf>> = Vec::new();
+            if let Some(environment) = &environment {
+                let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_nanos() as u64).unwrap_or(0);
+                let created_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis() as i64).unwrap_or(0);
+                for (index, folder) in environment.extra.iter().enumerate() {
+                    let Some(Some(request)) = environment.extra_worktrees.get(index) else {
+                        made.push(None);
+                        continue;
+                    };
+                    if services.worktrees.branches(folder.clone()).await.is_err() {
+                        made.push(None);
+                        continue;
+                    }
+                    match services.worktrees.create(folder, request.base.clone(), &text, seed.wrapping_add(index as u64 + 1), created_at).await {
+                        Ok(record) => {
+                            let mut records = this.worktrees;
+                            records.write().push(record.clone());
+                            made.push(Some(record.path));
+                        }
+                        Err(error) => {
+                            this.report(tr!("Could not create the worktree: {error}", error = crate::worktree_view::creation_error_text(&error)));
+                            let mut unsent = this.new_unsent;
+                            unsent.set(Some(text));
+                            return;
+                        }
+                    }
+                }
+            }
             let model = match model {
                 Some(chosen) => chosen,
                 None => match services.settings.saved_model().await {
@@ -1839,9 +1868,9 @@ impl Workspace {
                     let id = this.attach(handle.clone());
                     let mut folders = folders;
                     if let Some(environment) = &environment {
-                        for extra in &environment.extra {
-                            if !folders.contains(extra) {
-                                folders.push(extra.clone());
+                        for extra in crate::environment::extra_paths(&environment.extra, &made) {
+                            if !folders.contains(&extra) {
+                                folders.push(extra);
                             }
                         }
                         if !environment.env.0.is_empty() {

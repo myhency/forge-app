@@ -239,8 +239,20 @@ pub fn variables_error_text(error: &EnvParseError) -> String {
     }
 }
 
+/// The folder an extra folder becomes: its worktree when one was made, else itself.
+pub fn extra_paths(extra: &[PathBuf], made: &[Option<PathBuf>]) -> Vec<PathBuf> {
+    extra.iter().enumerate().map(|(index, folder)| made.get(index).cloned().flatten().unwrap_or_else(|| folder.clone())).collect()
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_extra_folder_becomes_its_worktree_when_one_was_made_and_stays_itself_otherwise() {
+        let extra: Vec<PathBuf> = vec!["/b".into(), "/c".into(), "/d".into()];
+        let made = vec![Some(PathBuf::from("/b/.claude/worktrees/x")), None];
+        assert_eq!(extra_paths(&extra, &made), vec![PathBuf::from("/b/.claude/worktrees/x"), "/c".into(), "/d".into()]);
+    }
+
     #[test]
     fn each_reason_has_its_own_text_with_the_line_number() {
         use forge_domain::EnvParseReason::{BadKey, NotAPair, UnclosedQuote};
