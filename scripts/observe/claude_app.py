@@ -45,7 +45,8 @@ def find_window():
 
 
 def bring_to_front():
-    subprocess.run(["osascript", "-e", f'tell application "{APP}" to activate'], check=False, capture_output=True)
+    # `open -a` does not wait on Apple events; `osascript ... activate` can hang when the app is busy.
+    subprocess.run(["open", "-a", APP], check=False, capture_output=True, timeout=10)
     time.sleep(0.6)
 
 
