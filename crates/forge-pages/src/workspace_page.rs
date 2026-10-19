@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, pane_class, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
-use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_width, use_workspace, use_workspace_provider, Active, PaneIndex, Panes, Workspace};
+use forge_features::{refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, PaneIndex, Workspace};
 use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, ShortcutsDialog, Sidebar};
 use forge_shared::tr;
 
@@ -48,13 +48,15 @@ pub fn WorkspacePage() -> Element {
     let prefs = workspace.prefs();
     let hidden = prefs.hidden;
     let docked_sidebar = if hidden { SIDEBAR_RAIL_WIDTH } else { prefs.clamped_width() };
+    let window_height = use_window_height();
+    let main_height = window_height();
     let sidebar_mode = sidebar_mode_for(window_width());
     // The area right of the docked sidebar (the whole window with an overlay sidebar).
     let main_area = match sidebar_mode {
         SidebarMode::Docked => window_width().saturating_sub(docked_sidebar),
         SidebarMode::Overlay => window_width(),
     };
-    use_effect(use_reactive!(|main_area| workspace.set_main_width(main_area)));
+    use_effect(use_reactive!(|main_area, main_height| workspace.set_main_size(main_area, main_height)));
 
     // ⌥⌘R needs the row on screen: bring the sidebar out when it is hidden or an overlay. The mode
     // depends on the window width only, so the dock width does not matter here.
@@ -183,7 +185,7 @@ pub fn WorkspacePage() -> Element {
 fn pane_row(workspace: Workspace, main_area: u32, mut pane_dragging: Signal<bool>) -> Element {
     let targets = workspace.pane_targets();
     let focused = workspace.focused_pane();
-    let split = targets.len() == 2 && Panes::can_split(main_area);
+    let split = targets.len() == 2 && workspace.panes_fit(main_area);
     let (left, right) = workspace.pane_widths(main_area);
     let shown: Vec<(usize, Active)> = if split {
         targets.iter().copied().enumerate().collect()

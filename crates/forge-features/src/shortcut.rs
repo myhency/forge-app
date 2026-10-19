@@ -8,6 +8,8 @@ pub enum Shortcut {
     NewSessionHere,
     /// Opens a New-session pane beside the focused one.
     NewSessionBeside,
+    /// Opens a New-session pane below the focused one.
+    NewSessionBelow,
     NextSession,
     PreviousSession,
     CloseSession,
@@ -138,6 +140,7 @@ pub static SHORTCUTS: &[ShortcutRow] = &[
     ShortcutRow { group: Group::General, label: msg!("New session"), action: Shortcut::NewSession, keys: &[cmd("KeyN")] },
     ShortcutRow { group: Group::General, label: msg!("New session in this folder"), action: Shortcut::NewSessionHere, keys: &[cmd_shift("KeyN")] },
     ShortcutRow { group: Group::General, label: msg!("New session beside this one"), action: Shortcut::NewSessionBeside, keys: &[cmd_ctrl("Backslash")] },
+    ShortcutRow { group: Group::General, label: msg!("New session below this one"), action: Shortcut::NewSessionBelow, keys: &[cmd_ctrl("Minus")] },
     ShortcutRow { group: Group::General, label: msg!("Close the session"), action: Shortcut::CloseSession, keys: &[cmd("KeyW")] },
     ShortcutRow { group: Group::General, label: msg!("Settings"), action: Shortcut::OpenSettings, keys: &[cmd("Comma")] },
     ShortcutRow { group: Group::General, label: msg!("Keyboard shortcuts"), action: Shortcut::ShowShortcuts, keys: &[cmd("Slash")] },
@@ -233,6 +236,7 @@ fn key_label(code: &str) -> String {
         "BracketRight" => "]".to_string(),
         "Backquote" => "`".to_string(),
         "Backslash" => "\\".to_string(),
+        "Minus" => "-".to_string(),
         other => other.strip_prefix("Key").unwrap_or(other).to_string(),
     }
 }
@@ -264,6 +268,7 @@ pub fn match_code(key: &str, code: &str, alt: bool) -> String {
             ']' => Some("BracketRight"),
             '`' => Some("Backquote"),
             '\\' => Some("Backslash"),
+            '-' => Some("Minus"),
             _ => None,
         };
         if let (Some(name), false) = (punctuation, alt) {
@@ -740,5 +745,16 @@ mod tests {
         assert!(!row.keys[0].modifiers_match(&command_only, true));
         let windows = KeyPress { code: "Backslash", ctrl: true, meta: false, alt: false, shift: false };
         assert!(row.keys[0].modifiers_match(&windows, false));
+    }
+
+    #[test]
+    fn the_new_session_below_key_is_control_command_minus_on_a_mac_and_control_minus_elsewhere() {
+        let row = SHORTCUTS.iter().find(|row| row.action == Shortcut::NewSessionBelow).expect("listed");
+        assert_eq!(row.keys[0].display(true), "⌃⌘-");
+        assert_eq!(row.keys[0].display(false), "Ctrl+-");
+        let mac = KeyPress { code: "Minus", ctrl: true, meta: true, alt: false, shift: false };
+        assert!(row.keys[0].modifiers_match(&mac, true));
+        assert_eq!(match_code("-", "Minus", false), "Minus");
+        assert_eq!(shortcut_for(&mac, true), Some(Shortcut::NewSessionBelow));
     }
 }

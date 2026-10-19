@@ -9,7 +9,7 @@ use forge_features::{use_workspace, Panel};
 pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
     let workspace = use_workspace();
     let pane = forge_features::use_pane_index();
-    let split = workspace.pane_targets().len() == 2;
+    let split = workspace.pane_targets().len() > 1;
     let mut open = use_signal(|| false);
     let terminal_open = workspace.dock(id).is_open(Panel::Terminal);
     let changes_open = workspace.dock(id).is_open(Panel::Changes);

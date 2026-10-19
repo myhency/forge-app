@@ -4,11 +4,11 @@ mod change_rows;
 mod session_notices;
 mod developer;
 mod settings_pages;
+mod window_height;
 mod window_width;
 mod blocking;
 mod nav_history;
 mod pane_tree;
-mod panes;
 mod pane_context;
 mod cards;
 mod closed_sessions;
@@ -60,7 +60,7 @@ mod workspace;
 mod worktree_view;
 
 pub use pane_context::{use_pane_focused, use_pane_index, PaneIndex};
-pub use panes::{Panes, DEFAULT_RATIO, MIN_PANE_WIDTH};
+pub use pane_tree::{Dir, Divider, PaneTree, Rect, MAX_PANES, MIN_PANE_HEIGHT, MIN_PANE_WIDTH};
 pub use arrange::{arrange, arrange_with_origins, arranged_open_order, folder_group_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use file_menu::{file_menu, show_in_file_manager, menu_height, submenu_opens_left, FileAction, MenuEntry, MenuTarget};
 pub use files_store::{Draft, FilesStore, Restore};
@@ -111,7 +111,7 @@ pub use sidebar::{
 pub use terminal_tabs::{TabId, TerminalTabs};
 pub use routines::{cards, history_rows, run_state_text, local_when_label, notices, offset_at, skip_text, start_failed_notice, waiting_notice, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};
 pub use routines_state::{use_routines, use_routines_provider, RoutineDialog, RoutineScreen, Routines};
-pub use workspace::{preview_key_from_event, shortcut_from_event, use_workspace, use_workspace_provider, Active, Picture, RoutineServices, Workspace, WorkspaceServices};
+pub use workspace::{preview_key_from_event, shortcut_from_event, use_workspace, use_workspace_provider, Active, PaneGeometry, Picture, RoutineServices, Workspace, WorkspaceServices};
 pub use blocking::run_blocking;
 pub use file_tree::{parse_files_query, FileTree, FilesQuery, TreeRow};
 pub use browser_host::{should_show, ShowInput};
@@ -122,6 +122,7 @@ pub use tool_activity::finished_tool_calls;
 pub use settings_pages::{filter_pages, nav_groups, NavGroup};
 pub use session_notices::{notice_between, should_send, use_session_notices, Notice, NoticeTarget, Snapshot};
 pub use appearance::{apply_appearance, apply_appearance_script};
+pub use window_height::use_window_height;
 pub use window_width::use_window_width;
 
 pub use change_comments::{absolute_path, comment_key, comment_line, comment_text, commentable, line_number, comments_of, comments_on, CommentKey};

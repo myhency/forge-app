@@ -219,10 +219,10 @@ pub fn Sidebar() -> Element {
                                 let project = item.project.clone();
                                 let key = item.entry.key.clone();
                                 move |beside: bool| match (&key, beside) {
-                                    (EntryKey::Live(id), false) => workspace.select(*id),
-                                    (EntryKey::Live(id), true) => workspace.open_session_beside(*id),
+                                    (EntryKey::Live(id), false) => workspace.open_session(*id),
+                                    (EntryKey::Live(id), true) => workspace.add_session(*id),
                                     (EntryKey::Past { session, .. }, false) => workspace.open_past(project.clone(), session.clone()),
-                                    (EntryKey::Past { session, .. }, true) => workspace.open_past_beside(project.clone(), session.clone()),
+                                    (EntryKey::Past { session, .. }, true) => workspace.add_past(project.clone(), session.clone()),
                                 }
                             },
                         }

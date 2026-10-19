@@ -19,7 +19,7 @@ use crate::files_store::{FilesStore, Restore};
 use crate::dock::{DockState, DockStates, Panel};
 use crate::folder_choice::{choose_folder, FolderChoice};
 use crate::nav_history::NavHistory;
-use crate::panes::Panes;
+use crate::pane_tree::{Dir, Divider, PaneTree, Rect};
 use crate::preview_host::PreviewHost;
 use crate::preview_tabs::{normalize_url, PreviewTabId, PreviewTabs};
 use crate::new_session::ModelChoice;
@@ -49,6 +49,15 @@ pub struct RoutineServices {
     pub starts: Arc<std::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<LiveSessionHandle>>>,
     /// Tells the person when a routine waits for approval.
     pub notify: Arc<dyn forge_ports::NotifyPort>,
+}
+
+/// What the page draws of the panes: one rectangle per pane in reading order, the dividers, and
+/// whether the area holds the layout at the minimum sizes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PaneGeometry {
+    pub rects: Vec<Rect>,
+    pub dividers: Vec<Divider>,
+    pub fits: bool,
 }
 
 /// Everything the workspace needs from the outside, injected once by the composition root.
@@ -106,14 +115,14 @@ pub struct Workspace {
     services: Signal<WorkspaceServices>,
     past: Signal<Vec<(ProjectSummary, Vec<SessionSummary>)>>,
     live: Signal<Vec<LiveEntry>>,
-    panes: Signal<Panes>,
+    panes: Signal<PaneTree>,
     // What the rest of the app reads of `panes`, kept apart so a divider drag (which only changes the
     // ratio) does not rerun everything that watches the focused screen.
     active: Signal<Active>,
     shown: Signal<Vec<Active>>,
     focus: Signal<usize>,
-    /// The width of the area right of the docked sidebar; the page reports it.
-    main_width: Signal<u32>,
+    /// The size of the area right of the docked sidebar; the page reports it.
+    main_size: Signal<(u32, u32)>,
     history: Signal<NavHistory<Active>>,
     notice: Signal<Option<String>>,
     new_folder: Signal<Option<PathBuf>>,
@@ -181,11 +190,11 @@ pub fn use_workspace_provider() -> Workspace {
             services: Signal::new(services),
             past: Signal::new(Vec::new()),
             live: Signal::new(Vec::new()),
-            panes: Signal::new(Panes::new(Active::NewSession)),
+            panes: Signal::new(PaneTree::new(Active::NewSession)),
             active: Signal::new(Active::NewSession),
             shown: Signal::new(vec![Active::NewSession]),
             focus: Signal::new(0),
-            main_width: Signal::new(1200),
+            main_size: Signal::new((1200, 800)),
             history: Signal::new(NavHistory::new(Active::NewSession)),
             notice: Signal::new(None),
             new_folder: Signal::new(None),
@@ -1492,12 +1501,12 @@ impl Workspace {
     }
 
     // Changes the panes and brings the derived signals up to date, writing only those that changed.
-    fn edit_panes<R>(&self, change: impl FnOnce(&mut Panes) -> R) -> R {
+    fn edit_panes<R>(&self, change: impl FnOnce(&mut PaneTree) -> R) -> R {
         let mut panes = self.panes;
         let result = change(&mut panes.write());
         let (target, targets, focused) = {
             let now = self.panes.peek();
-            (now.focused_target(), now.targets().to_vec(), now.focused())
+            (now.focused_target(), now.targets(), now.focused())
         };
         set_if_changed(self.active, target);
         set_if_changed(self.shown, targets);
@@ -1522,22 +1531,32 @@ impl Workspace {
         }
     }
 
-    /// ⌥+click on an open session: it opens in the right pane (or takes focus if it is shown).
-    pub fn open_session_beside(&self, id: LiveSessionId) {
-        self.clear_rename_request();
-        self.open_beside(Active::Live(id));
+    /// A plain click on a session row: with one pane it replaces that pane (as always); while split it
+    /// adds a pane, like the desktop app.
+    pub fn open_session(&self, id: LiveSessionId) {
+        if self.panes.peek().is_split() {
+            self.add_session(id);
+        } else {
+            self.select(id);
+        }
     }
 
-    /// `⌃⌘\`: a New-session pane beside the focused one.
-    pub fn open_new_session_beside(&self) {
+    /// ⌥+click on a session row: it gets a pane of its own (or takes focus if it is shown).
+    pub fn add_session(&self, id: LiveSessionId) {
         self.clear_rename_request();
-        self.open_beside(Active::NewSession);
-    }
-
-    fn open_beside(&self, target: Active) {
-        let room = Panes::can_split(self.main_width());
-        self.edit_panes(|panes| panes.open_beside(target, room));
+        let (w, h) = self.main_size();
+        let target = Active::Live(id);
+        self.edit_panes(|panes| panes.add(target, w, h));
         self.after_pane_change(target);
+    }
+
+    /// `⌃⌘\` and `⌃⌘-`: a New-session pane beside or below the focused one.
+    pub fn split_new_session(&self, dir: Dir) {
+        self.clear_rename_request();
+        let (w, h) = self.main_size();
+        if self.edit_panes(|panes| panes.split_focused(dir, Active::NewSession, w, h)) {
+            self.after_pane_change(Active::NewSession);
+        }
     }
 
     // What `display` does for a screen that now has the focus: the lightbox goes, a routine's
@@ -1556,27 +1575,61 @@ impl Workspace {
         self.visit_active();
     }
 
+    /// The `⋮` menu: move pane `index` along or across its split (see `PaneTree::move_pane`).
+    pub fn move_pane(&self, index: usize, dir: Dir) {
+        self.edit_panes(|panes| panes.move_pane(index, dir));
+    }
+
+    /// The direction of the split pane `index` sits in and whether it is the second child.
+    pub fn pane_slot(&self, index: usize) -> Option<(Dir, bool)> {
+        self.panes.read().pane_slot(index)
+    }
+
+    /// The rectangles of the panes and the dividers in a main area `w` by `h`. Reads the tree, so a
+    /// divider drag redraws.
+    pub fn pane_geometry(&self, w: u32, h: u32) -> PaneGeometry {
+        let panes = self.panes.read();
+        PaneGeometry { rects: panes.rects(w, h), dividers: panes.dividers(w, h), fits: panes.fits(w, h) }
+    }
+
+    /// The rectangle the split at `path` cuts; what a drag of its divider measures the pointer in.
+    pub fn pane_split_rect(&self, path: &[bool], w: u32, h: u32) -> Option<Rect> {
+        self.panes.peek().split_rect(path, w, h)
+    }
+
+    /// A divider drag: `ratio` is the first child's share of the split at `path`.
+    pub fn set_split_ratio(&self, path: &[bool], ratio: f32) {
+        let (w, h) = self.main_size();
+        self.edit_panes(|panes| panes.set_ratio(path, ratio, w, h));
+    }
+
+    /// The size of the area right of the docked sidebar; the page reports it.
+    pub fn set_main_size(&self, width: u32, height: u32) {
+        set_if_changed(self.main_size, (width, height));
+    }
+
+    pub fn main_size(&self) -> (u32, u32) {
+        *self.main_size.peek()
+    }
+
+    // Shims for the page until it is redrawn for the tree.
     pub fn swap_panes(&self) {
-        self.edit_panes(|panes| panes.swap());
+        self.move_pane(1, Dir::Beside);
     }
 
     pub fn set_pane_ratio(&self, ratio: f32) {
-        let area = self.main_width();
-        self.edit_panes(|panes| panes.set_ratio(ratio, area));
+        self.set_split_ratio(&[], ratio);
     }
 
-    /// The width of the area right of the docked sidebar; the page reports it.
-    pub fn set_main_width(&self, width: u32) {
-        set_if_changed(self.main_width, width);
+    pub fn panes_fit(&self, area: u32) -> bool {
+        let (_, h) = self.main_size();
+        self.panes.read().fits(area, h)
     }
 
-    pub fn main_width(&self) -> u32 {
-        *self.main_width.peek()
-    }
-
-    /// The left and right pane widths in an area `area` wide (reads the ratio, so a drag redraws).
     pub fn pane_widths(&self, area: u32) -> (u32, u32) {
-        self.panes.read().widths(area)
+        let (_, h) = self.main_size();
+        let rects = self.panes.read().rects(area, h);
+        (rects[0].w, rects.get(1).map_or(0, |rect| rect.w))
     }
 
     // The first message of a New-session pane turns that very pane into the session, even if the
@@ -1686,8 +1739,8 @@ impl Workspace {
         self.open_past_in(project, session_id, false);
     }
 
-    /// The same, in the right pane (⌥+click).
-    pub fn open_past_beside(&self, project: ProjectSummary, session_id: SessionId) {
+    /// The same, in a pane of its own (⌥+click).
+    pub fn add_past(&self, project: ProjectSummary, session_id: SessionId) {
         self.open_past_in(project, session_id, true);
     }
 
@@ -1701,9 +1754,9 @@ impl Workspace {
                 Ok(outcome) => {
                     let id = this.ensure_attached(outcome.handle);
                     if beside {
-                        this.open_session_beside(id);
+                        this.add_session(id);
                     } else {
-                        this.select(id);
+                        this.open_session(id);
                     }
                 }
                 Err(error) => this.report(error.to_string()),
@@ -2008,7 +2061,8 @@ impl Workspace {
                 }
             }
             Shortcut::NewSessionHere => self.new_session_here(),
-            Shortcut::NewSessionBeside => self.open_new_session_beside(),
+            Shortcut::NewSessionBeside => self.split_new_session(Dir::Beside),
+            Shortcut::NewSessionBelow => self.split_new_session(Dir::Below),
             Shortcut::GoToSession(index) => self.go_to_session(index),
             Shortcut::TogglePanel(panel) => self.toggle_panel(panel),
             // The sidebar belongs to the page (it knows the layout); it offers the event next.
