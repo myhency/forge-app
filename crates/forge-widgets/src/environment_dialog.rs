@@ -67,19 +67,6 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
     let mut trust_question = use_signal(|| None::<PathBuf>);
     let mut variables_text = use_signal(String::new);
 
-    // The branches of the first folder, when it is a git repository.
-    // A memo, so typing in the name or variables does not run git again.
-    let first_folder = use_memo(move || draft.read().folders.first().cloned());
-    let branches = use_resource(move || {
-        let folder = first_folder();
-        async move {
-            match folder {
-                Some(folder) => workspace.folder_branches(folder).await,
-                None => None,
-            }
-        }
-    });
-
     let close = move || {
         workspace.close_environment_dialog();
         refocus_workspace();
@@ -235,46 +222,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                     } else {
                         div { class: "env-folders",
                             for (index, folder) in draft.read().folders.clone().into_iter().enumerate() {
-                                div { key: "{folder.display()}", class: "env-folder", title: "{folder.display()}",
-                                    span { class: "env-folder-name", "{folder_name(&folder)}" }
-                                    if index == 0 {
-                                        match branches.read().clone().flatten() {
-                                            Some(list) => rsx! {
-                                                select {
-                                                    class: "env-branch",
-                                                    onchange: move |event| draft.write().choices[0].branch = Some(event.value()),
-                                                    {
-                                                        // `selected` on the option: a `value` on the select is not applied by the web view.
-                                                        let shown = draft.read().choices[0].branch.clone().or_else(|| list.current.clone());
-                                                        rsx! {
-                                                            for name in list.local.clone() {
-                                                                option { key: "{name}", value: "{name}", selected: shown.as_deref() == Some(name.as_str()), "{name}" }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                label { class: "env-worktree",
-                                                    input {
-                                                        r#type: "checkbox",
-                                                        checked: draft.read().choices[0].worktree,
-                                                        onchange: move |event| draft.write().choices[0].worktree = event.checked(),
-                                                    }
-                                                    {tr!("Worktree")}
-                                                }
-                                            },
-                                            None => rsx! { span { class: "env-note", {tr!("Not a Git repository")} } },
-                                        }
-                                    }
-                                    button {
-                                        class: "env-remove",
-                                        r#type: "button",
-                                        title: tr!("Remove"),
-                                        onclick: move |_| {
-                                            draft.write().remove_folder(index);
-                                        },
-                                        "×"
-                                    }
-                                }
+                                FolderRow { key: "{folder.display()}", draft, index }
                             }
                         }
                     }
@@ -357,6 +305,74 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
     }
 }
 
+/// One folder of the draft: name, branch and worktree choice when it is a git repository.
+#[component]
+fn FolderRow(draft: Signal<EnvironmentDraft>, index: usize) -> Element {
+    let workspace = use_workspace();
+    // A memo, so typing in the name or variables does not run git again.
+    let folder = use_memo(move || draft.read().folders.get(index).cloned());
+    let branches = use_resource(move || {
+        let folder = folder();
+        async move {
+            match folder {
+                Some(folder) => workspace.folder_branches(folder).await,
+                None => None,
+            }
+        }
+    });
+    let Some(path) = folder() else {
+        return rsx! {};
+    };
+    rsx! {
+        div { class: "env-folder", title: "{path.display()}",
+            span { class: "env-folder-name", "{folder_name(&path)}" }
+            match branches.read().clone().flatten() {
+                Some(list) => rsx! {
+                    select {
+                        class: "env-branch",
+                        onchange: move |event| {
+                            if let Some(choice) = draft.write().choices.get_mut(index) {
+                                choice.branch = Some(event.value());
+                            }
+                        },
+                        {
+                            // `selected` on the option: a `value` on the select is not applied by the web view.
+                            let shown = draft.read().choices.get(index).and_then(|choice| choice.branch.clone()).or_else(|| list.current.clone());
+                            rsx! {
+                                for name in list.local.clone() {
+                                    option { key: "{name}", value: "{name}", selected: shown.as_deref() == Some(name.as_str()), "{name}" }
+                                }
+                            }
+                        }
+                    }
+                    label { class: "env-worktree",
+                        input {
+                            r#type: "checkbox",
+                            checked: draft.read().choices.get(index).is_some_and(|choice| choice.worktree),
+                            onchange: move |event| {
+                                if let Some(choice) = draft.write().choices.get_mut(index) {
+                                    choice.worktree = event.checked();
+                                }
+                            },
+                        }
+                        {tr!("Worktree")}
+                    }
+                },
+                None => rsx! { span { class: "env-note", {tr!("Not a Git repository")} } },
+            }
+            button {
+                class: "env-remove",
+                r#type: "button",
+                title: tr!("Remove"),
+                onclick: move |_| {
+                    draft.write().remove_folder(index);
+                },
+                "×"
+            }
+        }
+    }
+}
+
 fn variables_summary(text: &str) -> String {
     match forge_domain::parse_env(text) {
         Ok(list) if list.is_empty() => tr!("None in this environment").to_string(),
@@ -377,7 +393,13 @@ fn FolderPopover(search: Signal<String>, taken: Vec<PathBuf>, onpick: EventHandl
         .filter(|path| query.is_empty() || folder_name(path).to_lowercase().contains(&query))
         .collect();
     rsx! {
-        div { class: "picker-menu env-folder-popover", role: "menu",
+        div {
+            class: "picker-menu env-folder-popover",
+            role: "menu",
+            // The dialog scrolls: bring the whole popover into view when it opens near the bottom.
+            onmounted: move |mounted| async move {
+                let _ = mounted.scroll_to(ScrollBehavior::Instant).await;
+            },
             input {
                 class: "env-search",
                 r#type: "text",
@@ -387,6 +409,7 @@ fn FolderPopover(search: Signal<String>, taken: Vec<PathBuf>, onpick: EventHandl
                 },
                 oninput: move |event| search.set(event.value()),
             }
+            div { class: "env-folder-list",
             for path in known {
                 button {
                     key: "{path.display()}",
@@ -400,6 +423,7 @@ fn FolderPopover(search: Signal<String>, taken: Vec<PathBuf>, onpick: EventHandl
                     span { class: "picker-check" }
                     span { class: "picker-text", span { class: "picker-label", "{folder_name(&path)}" } }
                 }
+            }
             }
             div { class: "picker-divider" }
             button {

@@ -1117,11 +1117,14 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .routine-form-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .routine-problem { color: var(--danger); margin: 0; }
 @media (max-width: 760px) { .routine-columns { grid-template-columns: 1fr; } }
-.env-menu { min-width: 260px; }
+.env-menu { min-width: 260px; max-width: min(380px, calc(100vw - 48px)); }
 .env-search { width: calc(100% - 16px); margin: 6px 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: inherit; font: inherit; box-sizing: border-box; }
 .env-row { position: relative; display: flex; align-items: center; }
-.env-row > .picker-item { flex: 1; }
-.env-row-icons { position: absolute; right: 56px; display: none; gap: 2px; }
+.env-row > .picker-item { flex: 1; min-width: 0; }
+.env-row .picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.env-row:hover > .picker-item { padding-right: 96px; }
+.env-row .menu-key { white-space: nowrap; flex: none; }
+.env-row-icons { position: absolute; right: 8px; display: none; gap: 2px; }
 .env-row:hover .env-row-icons { display: inline-flex; }
 .env-icon { border: 0; background: transparent; color: var(--fg-muted); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
 .env-icon:hover { background: var(--bg-hover); color: inherit; }
@@ -1151,4 +1154,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .env-delete { border: 0; background: transparent; color: var(--danger); cursor: pointer; }
 .env-ask-backdrop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.2); border-radius: 16px; }
 .env-ask { width: min(440px, 90%); padding: 18px 20px; border-radius: 14px; background: var(--bg-elevated, var(--bg)); box-shadow: 0 8px 28px rgba(0,0,0,.3); }
-.env-folder-popover { position: absolute; top: 100%; bottom: auto; left: auto; margin-top: 6px; right: 0; z-index: 10; min-width: 260px; }
+.env-folder-popover { position: absolute; top: 100%; bottom: auto; left: auto; margin-top: 6px; right: 0; z-index: 10; min-width: 260px; max-height: min(320px, 50vh); overflow: hidden; display: flex; flex-direction: column; }
+.env-folder-popover .env-folder-list { overflow: auto; min-height: 0; flex: 1 1 auto; }
+.env-folder-popover > * { flex: none; }
+.env-folder-popover > .env-folder-list { flex: 1 1 auto; }
