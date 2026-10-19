@@ -1092,6 +1092,27 @@ describe("SidecarSession", () => {
     expect(capturedOptions.includePartialMessages).toBe(true);
   });
 
+  it("passes the command's env over the process environment, and none when there is none", async () => {
+    const seen: any[] = [];
+    const queryFn: QueryFn = (args) => {
+      seen.push(args.options);
+      return toQueryHandle((async function* () {})());
+    };
+    process.env.FORGE_TEST_KEEP = "kept";
+    try {
+      const withEnv = new SidecarSession(queryFn, () => {});
+      await withEnv.handle({ ...startCommand, env: { FORGE_TEST_VAR: "v", FORGE_TEST_KEEP: "replaced" } });
+      const without = new SidecarSession(queryFn, () => {});
+      await without.handle({ ...startCommand, id: "2" });
+    } finally {
+      delete process.env.FORGE_TEST_KEEP;
+    }
+    expect(seen[0].env.FORGE_TEST_VAR).toBe("v");
+    expect(seen[0].env.FORGE_TEST_KEEP).toBe("replaced");
+    expect(seen[0].env.PATH).toBe(process.env.PATH);
+    expect(seen[1].env).toBeUndefined();
+  });
+
   it("asks the SDK for a summary of the thinking, which it omits by default", async () => {
     let capturedOptions: any;
     const queryFn: QueryFn = (args) => {

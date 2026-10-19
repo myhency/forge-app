@@ -52,6 +52,7 @@ export type SidecarCommand =
       mcp_servers: Record<string, unknown>;
       additional_directories?: string[];
       allowed_tools?: string[];
+      env?: Record<string, string>;
       output_style?: string;
       prompt_suggestions: boolean;
       allow_bypass: boolean;

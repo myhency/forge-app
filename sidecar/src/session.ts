@@ -366,6 +366,9 @@ export class SidecarSession {
           mcpServers: command.mcp_servers ?? {},
           additionalDirectories: command.additional_directories ?? [],
           allowedTools: command.allowed_tools ?? [],
+          // Variables of the environment the session starts from, over Forge's own (the SDK would
+          // replace the whole environment with what it is given).
+          ...(command.env && Object.keys(command.env).length > 0 ? { env: { ...process.env, ...command.env } } : {}),
           // Forge shows a stop button per background task and predicts the next prompt unless Settings turns it off.
           promptSuggestions: command.prompt_suggestions,
           perTaskStopAffordance: true,

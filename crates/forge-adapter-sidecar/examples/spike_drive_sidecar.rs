@@ -24,6 +24,7 @@ async fn main() {
             extensions: Default::default(),
             additional_directories: Vec::new(),
             allowed_tools: Vec::new(),
+            env: forge_domain::EnvVars::default(),
             defaults: forge_domain::SessionDefaults::default(),
         })
         .await

@@ -58,6 +58,7 @@ pub(crate) fn spawn_probe(
                 extensions: active,
                 additional_directories: Vec::new(),
                 allowed_tools: Vec::new(),
+                env: forge_domain::EnvVars::default(),
                 defaults: forge_domain::SessionDefaults::default(),
             })
             .await;
@@ -160,6 +161,7 @@ pub(crate) mod tests {
                 extensions: ActiveExtensions::default(),
                 additional_directories: Vec::new(),
                 allowed_tools: Vec::new(),
+                env: forge_domain::EnvVars::default(),
                 defaults: forge_domain::SessionDefaults::default(),
             })]
         );

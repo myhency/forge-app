@@ -361,6 +361,7 @@ mod tests {
             extensions: ActiveExtensions::default(),
             additional_directories: Vec::new(),
             allowed_tools: vec!["Read".to_string()],
+            env: forge_domain::EnvVars::default(),
             defaults: forge_domain::SessionDefaults::default(),
         };
         assert_eq!(control.calls(), vec![Call::Start(expected), Call::Send("go".to_string())]);

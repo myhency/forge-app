@@ -20,6 +20,8 @@ pub enum SidecarCommand {
         additional_directories: Vec<String>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         allowed_tools: Vec<String>,
+        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        env: BTreeMap<String, String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         output_style: Option<String>,
         prompt_suggestions: bool,
@@ -121,6 +123,7 @@ impl SidecarCommand {
             mcp_servers: params.extensions.mcp_servers,
             additional_directories: params.additional_directories,
             allowed_tools: params.allowed_tools,
+            env: params.env.0.into_iter().collect(),
             output_style: params.defaults.output_style.map(|style| style.name().to_string()),
             prompt_suggestions: params.defaults.prompt_suggestions,
             allow_bypass: params.defaults.allow_bypass,
@@ -194,8 +197,19 @@ mod tests {
             extensions: ActiveExtensions::default(),
             additional_directories,
             allowed_tools: Vec::new(),
+            env: forge_domain::EnvVars::default(),
             defaults: forge_domain::SessionDefaults::default(),
         }
+    }
+
+    #[test]
+    fn start_session_sends_env_as_an_object_and_leaves_it_out_when_empty() {
+        let none = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params_with(Vec::new()))).unwrap();
+        assert!(none.get("env").is_none());
+        let mut params = params_with(Vec::new());
+        params.env = forge_domain::EnvVars(vec![("A".to_string(), "1".to_string()), ("B".to_string(), "x y".to_string())]);
+        let some = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params)).unwrap();
+        assert_eq!(some["env"], serde_json::json!({ "A": "1", "B": "x y" }));
     }
 
     #[test]
@@ -309,6 +323,7 @@ mod tests {
                 extensions: ActiveExtensions::default(),
                 additional_directories: Vec::new(),
                 allowed_tools: Vec::new(),
+                env: forge_domain::EnvVars::default(),
                 defaults: forge_domain::SessionDefaults::default(),
             },
         );
@@ -353,6 +368,7 @@ mod tests {
                 },
                 additional_directories: Vec::new(),
                 allowed_tools: Vec::new(),
+                env: forge_domain::EnvVars::default(),
                 defaults: forge_domain::SessionDefaults::default(),
             },
         );

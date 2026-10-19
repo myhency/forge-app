@@ -32,6 +32,7 @@ pub(crate) struct Actor {
     additional_directories: Vec<String>,
     /// Permission rules for the next start (the SDK's `allowedTools`).
     allowed_tools: Vec<String>,
+    env: forge_domain::EnvVars,
     /// The sidecar was started by a warm-up and nothing has been sent to it yet. A failure then is
     /// dropped quietly: nobody asked for anything, and the first send starts a sidecar again.
     warm_only: bool,
@@ -68,6 +69,7 @@ impl Actor {
             sidecar: None,
             additional_directories: Vec::new(),
             allowed_tools: Vec::new(),
+            env: forge_domain::EnvVars::default(),
             warm_only: false,
             refusal_shown: false,
             vanished: Default::default(),
@@ -108,6 +110,7 @@ impl Actor {
             LiveCommand::Send { text, attachments } => self.send(text, attachments).await,
             LiveCommand::AddDirectories(directories) => self.add_directories(directories).await,
             LiveCommand::AllowTools(tools) => self.allow_tools(tools).await,
+            LiveCommand::SetEnv(env) => self.set_env(env).await,
             LiveCommand::WarmUp => self.warm_up().await,
             LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
             LiveCommand::AnswerQuestion { id, answers } => self.answer_question(id, answers).await,
@@ -154,6 +157,17 @@ impl Actor {
                 self.allowed_tools.push(tool);
             }
         }
+        if self.warm_only {
+            self.warm_only = false;
+            self.discard_sidecar(true).await;
+        }
+    }
+
+    async fn set_env(&mut self, env: forge_domain::EnvVars) {
+        if self.sidecar.is_some() && !self.warm_only {
+            return;
+        }
+        self.env = env;
         if self.warm_only {
             self.warm_only = false;
             self.discard_sidecar(true).await;
@@ -252,6 +266,7 @@ impl Actor {
                 extensions: extensions.clone(),
                 additional_directories: self.additional_directories.clone(),
                 allowed_tools: self.allowed_tools.clone(),
+                env: self.env.clone(),
                 defaults,
             })
             .await

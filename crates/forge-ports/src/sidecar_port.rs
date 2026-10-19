@@ -24,6 +24,8 @@ pub struct StartSessionParams {
     pub additional_directories: Vec<String>,
     /// Permission rules that need no asking (the SDK's `allowedTools`): `Read`, `Bash(npm test:*)`.
     pub allowed_tools: Vec<String>,
+    /// Variables the session's process runs with, over Forge's own environment. Values may be secrets.
+    pub env: forge_domain::EnvVars,
     /// What the Code tab of Settings decides for this start.
     pub defaults: SessionDefaults,
 }
@@ -174,6 +176,7 @@ mod tests {
                 extensions: ActiveExtensions::default(),
                 additional_directories: Vec::new(),
                 allowed_tools: Vec::new(),
+                env: forge_domain::EnvVars::default(),
                 defaults: forge_domain::SessionDefaults::default(),
             })
             .await;

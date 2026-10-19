@@ -76,6 +76,8 @@ pub enum LiveCommand {
     AddDirectories(Vec<PathBuf>),
     /// Permission rules the next start allows without asking.
     AllowTools(Vec<String>),
+    /// Variables the next start runs with.
+    SetEnv(forge_domain::EnvVars),
     WarmUp,
     Approve { id: String, decision: PermissionDecision },
     AnswerQuestion { id: String, answers: std::collections::BTreeMap<String, String> },
@@ -120,6 +122,12 @@ impl LiveSessionHandle {
     /// Permission rules the next start allows without asking (the SDK reads them once, at start).
     pub fn allow_tools(&self, tools: Vec<String>) {
         let _ = self.commands.send(LiveCommand::AllowTools(tools));
+    }
+
+    /// Variables the session's process runs with (the SDK reads them once, at start). Like folders,
+    /// only a session whose sidecar has not started takes them.
+    pub fn set_env(&self, env: forge_domain::EnvVars) {
+        let _ = self.commands.send(LiveCommand::SetEnv(env));
     }
 
     /// Starts the session's sidecar now instead of at the first send, so its slash commands are known
@@ -312,6 +320,7 @@ mod tests {
             extensions: ActiveExtensions::default(),
             additional_directories: Vec::new(),
             allowed_tools: Vec::new(),
+            env: forge_domain::EnvVars::default(),
             defaults: SessionDefaults::default(),
         }
     }
@@ -541,6 +550,22 @@ mod tests {
         let (phase, messages) = handle.with_view(|view| (view.phase, view.session.messages.len()));
         assert_eq!((phase, messages), (Phase::Idle, 0));
         assert_eq!(handle.with_view(|view| view.project_path.clone()), handle.snapshot().project_path);
+    }
+
+    #[tokio::test]
+    async fn env_goes_to_the_first_start() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.set_env(forge_domain::EnvVars(vec![("A".to_string(), "1".to_string())]));
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        let mut expected = start_params(None);
+        expected.env = forge_domain::EnvVars(vec![("A".to_string(), "1".to_string())]);
+        assert_eq!(control.calls(), vec![Call::Start(expected), Call::Send("hi".to_string())]);
     }
 
     #[tokio::test]
