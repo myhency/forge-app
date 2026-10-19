@@ -116,3 +116,31 @@ Cloud, SSH, Slack, Remote Control (all of it, see Goal); the sidebar `환경` fi
 - Deferred minors: `1 variables` has no singular; the folder popover is cut off at the bottom when the folder list is empty; two folders with the same name look alike in the popover (only the hover title tells them apart); the Variables page error banner is indented; the folder popover search has no placeholder; Escape does not dismiss the close question; the name is selected again when returning from the Variables page.
 - A session reopened from the sidebar or with ⇧⌘T runs without the environment's variables and extra folders: nothing records the environment on the session until stage B.
 - Stage B: the `환경` side-panel card and the `시작 위치 … 환경으로 저장` line; model and effort in an environment; seeding from past sessions; encrypted storage.
+
+## As built: A2 (2026-10-20)
+
+Every git folder of an environment now has its own branch and worktree choice (option A, decided with the user on 2026-10-20). The desktop app shows an unchecked box on extra git folders but stores only the first folder's flag; Forge stores and uses all of them.
+
+- Model: `FolderChoice { branch, worktree }`; `Environment.extra_choices` holds one choice per extra folder, aligned with `extra` by position. `normalized()` pads with default choices or trims so the two lists always match; adding or removing a folder moves its choice with it. A stage A config without `extra_choices` loads with default choices (no branch, box off). The dialog draft holds `choices` (index 0 is the first folder).
+- Start: after the first folder's worktree, `start_new` makes a worktree for each extra folder whose box is on. The worktree path replaces the folder as the added directory. If one fails, nothing starts, the text comes back to the composer, and the notice is `Could not create the worktree: {error}`. Worktrees made before the failure stay on disk and in the records.
+- Dialog: one `FolderRow` per folder, keyed by path, with a branch select and the Worktree box for every git folder, and `Not a Git repository` for others. Removing a folder keeps the other rows' choices.
+- Layout fixes: the folder popover scrolls its known-folder list inside the dialog (search and `Choose...` stay fixed); a long environment name is ellipsized in the chip menu next to the hover gear and star.
+- No new user-visible strings, so no new Korean entries (`cargo test -p forge-shared` green).
+
+### Checked in the real window
+- Long name (70 characters) ellipsized on hover, gear and star do not overlap the shortcut.
+- Edit dialog with three git folders and one plain folder: each git folder shows branch select and Worktree box, the plain one shows the note. Ticking an extra folder's box saves to `extra_choices` and reloads. A seeded branch (`dev`) shows in the select after reopening.
+- Removing the first and then another folder keeps the right names, selects and boxes; saved `folders` and `extra_choices` stay aligned.
+- Folder popover fully visible at 900x560 and 900x420, list scrolls.
+
+### Not checked
+- Changing a branch through the native select was not driven live (keys do not reach the native popup).
+- An end-to-end start with extra worktrees was not run.
+- A long or empty known-folder popover list was not checked live (the fixture has only 3 or 4 entries).
+
+### Known limit
+- Archiving a session removes only the first folder's worktree. Extra worktrees stay on disk and in the `worktrees` records.
+- The notice for a failed extra worktree does not name the folder.
+
+### What is left
+- `폴더 없음`: the desktop app runs such a session in an empty scratch folder it makes (seen in Round 22); Forge needs a design for it.
