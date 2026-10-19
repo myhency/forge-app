@@ -41,7 +41,7 @@ pub use keys::{SHOW_IN_FILE_MANAGER, KEY_ADD_FILES, KEY_ALLOW_ALWAYS, KEY_ANSWER
 pub use paths::{file_name, has_parent_part, is_absolute_path, path_parts};
 pub use trusted::{add_trusted, is_trusted, without_extended_prefix};
 pub use layout::{
-    keep_peek, layout_for, workspace_class, DockMode, Layout, SidebarMode, MIN_CHAT_WIDTH, MIN_WINDOW_WIDTH, NARROW_CHAT_BELOW, SIDEBAR_OVERLAY_UP_TO,
+    keep_peek, layout_for, pane_class, workspace_class, DockMode, Layout, SidebarMode, MIN_CHAT_WIDTH, MIN_WINDOW_WIDTH, NARROW_CHAT_BELOW, SIDEBAR_OVERLAY_UP_TO,
     SIDEBAR_RAIL_WIDTH,
 };
 pub use extension::{local_mcp_servers, ActiveExtensions, LocalMcpServer, McpServerDefinition, PluginDefinition, SkillDefinition};

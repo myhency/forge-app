@@ -66,10 +66,20 @@ pub fn workspace_class(layout: Layout, resizing: bool) -> String {
     if layout.sidebar == SidebarMode::Overlay {
         class.push_str(" sidebar-overlay");
     }
-    if layout.dock == DockMode::Float {
+    class
+}
+
+/// The class list of one pane: the responsive rules that depend on the pane's own width. With one
+/// pane `pane_width` is the whole main area, so this is what the workspace used to say.
+pub fn pane_class(pane_width: u32, dock_width: u32) -> String {
+    let pushed = pane_width.saturating_sub(dock_width);
+    let floats = dock_width > 0 && pushed < MIN_CHAT_WIDTH;
+    let chat_width = if floats { pane_width } else { pushed };
+    let mut class = String::from("pane");
+    if floats {
         class.push_str(" dock-float");
     }
-    if layout.chat_width < NARROW_CHAT_BELOW {
+    if chat_width < NARROW_CHAT_BELOW {
         class.push_str(" chat-narrow");
     }
     class
@@ -136,21 +146,29 @@ mod tests {
     }
 
     #[test]
-    fn the_class_list_names_each_mode_that_is_on() {
+    fn the_workspace_class_names_the_sidebar_mode_and_the_drag() {
         assert_eq!(workspace_class(layout_for(1500, 264, 0), false), "workspace");
         assert_eq!(workspace_class(layout_for(1500, 264, 0), true), "workspace resizing");
-        // 650 pt: overlay sidebar, a 350 pt dock still pushes (chat exactly 300), the chat is narrow.
-        assert_eq!(workspace_class(layout_for(650, 264, 350), false), "workspace sidebar-overlay chat-narrow");
-        // 1000 pt: the 480 pt dock would leave 240 pt, so it floats and the chat keeps 720 pt.
-        assert_eq!(workspace_class(layout_for(1000, 280, 480), false), "workspace dock-float");
-        // 601 pt: overlay sidebar, floating dock, the chat has all 601 pt so it is not narrow.
-        assert_eq!(workspace_class(layout_for(601, 264, 480), false), "workspace sidebar-overlay dock-float");
+        assert_eq!(workspace_class(layout_for(650, 264, 350), false), "workspace sidebar-overlay");
+    }
+
+    #[test]
+    fn a_pane_names_each_mode_that_is_on() {
+        assert_eq!(pane_class(1236, 0), "pane");
+        // 650 wide with a 350 dock still pushes (the chat keeps exactly 300) and is narrow.
+        assert_eq!(pane_class(650, 350), "pane chat-narrow");
+        // A 480 dock would leave 240, so it floats and the chat keeps the whole 720.
+        assert_eq!(pane_class(720, 480), "pane dock-float");
+        // 1000 wide: the dock pushes, the chat keeps 520, which is narrow.
+        assert_eq!(pane_class(1000, 480), "pane chat-narrow");
+        // Floating over a 601 wide pane: the chat has all 601, which is not narrow.
+        assert_eq!(pane_class(601, 480), "pane dock-float");
     }
 
     #[test]
     fn the_header_is_narrow_under_560() {
-        assert_eq!(workspace_class(layout_for(823, 264, 0), false), "workspace chat-narrow"); // chat 559
-        assert_eq!(workspace_class(layout_for(824, 264, 0), false), "workspace"); // chat 560
+        assert_eq!(pane_class(559, 0), "pane chat-narrow");
+        assert_eq!(pane_class(560, 0), "pane");
     }
 
     #[test]
