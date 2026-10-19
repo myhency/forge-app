@@ -580,6 +580,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Slash commands", "슬래시 명령"),
     ("Small", "작게"),
     ("Smarter", "더 스마트하게"),
+    ("Some worktrees made for this message could not be removed: {paths}", "이 메시지를 위해 만든 워크트리 중 일부를 제거할 수 없습니다: {paths}"),
     ("Sort", "정렬"),
     ("Sort by", "정렬 기준"),
     ("Source", "소스"),

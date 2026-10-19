@@ -11,6 +11,16 @@ pub struct FolderChoice {
     pub worktree: bool,
 }
 
+/// A bad value reads as no choices and a bad entry as the default choice, so one wrong field never
+/// costs the whole environment (its folders and variables).
+fn lenient_choices<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<FolderChoice>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let serde_json::Value::Array(items) = value else {
+        return Ok(Vec::new());
+    };
+    Ok(items.into_iter().map(|item| serde_json::from_value(item).unwrap_or_default()).collect())
+}
+
 /// A saved set of folders and variables a new session can start from. `folders[0]` is the working
 /// folder; the others are added directories. `branch` and `worktree` belong to the first folder.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,7 +34,7 @@ pub struct Environment {
     #[serde(default)]
     pub worktree: bool,
     /// Choices of folders[1..], entry i for folders[i + 1]; missing entries read as the default.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_choices")]
     pub extra_choices: Vec<FolderChoice>,
     /// `.env` text, as typed.
     #[serde(default)]
@@ -298,6 +308,20 @@ mod tests {
         let normalized = environment.normalized();
         assert_eq!(normalized.extra_choices, vec![FolderChoice::default()]);
         assert_eq!(normalized.branch.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn a_malformed_extra_choices_field_keeps_the_folders_and_variables() {
+        for bad in ["null", r#""x""#, "5", r#"{"branch":5}"#] {
+            let text = format!(r#"{{"id":"e","name":"n","folders":["/a","/b"],"env_vars":"K=v","extra_choices":{bad}}}"#);
+            let environment: Environment = serde_json::from_str(&text).unwrap();
+            assert_eq!(environment.folders.len(), 2);
+            assert_eq!(environment.env_vars, "K=v");
+            assert!(environment.extra_choices.is_empty());
+        }
+        let text = r#"{"id":"e","name":"n","folders":["/a","/b","/c"],"extra_choices":[{"branch":5},{"branch":"x","worktree":true}]}"#;
+        let environment: Environment = serde_json::from_str(text).unwrap();
+        assert_eq!(environment.extra_choices, vec![FolderChoice::default(), FolderChoice { branch: Some("x".into()), worktree: true }]);
     }
 
     #[test]

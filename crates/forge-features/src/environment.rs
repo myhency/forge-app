@@ -244,8 +244,74 @@ pub fn extra_paths(extra: &[PathBuf], made: &[Option<PathBuf>]) -> Vec<PathBuf> 
     extra.iter().enumerate().map(|(index, folder)| made.get(index).cloned().flatten().unwrap_or_else(|| folder.clone())).collect()
 }
 
+/// The worktrees a send made so far: the first folder's, then each extra folder's.
+pub fn worktrees_made(first: Option<&PathBuf>, made: &[Option<PathBuf>]) -> Vec<PathBuf> {
+    first.into_iter().cloned().chain(made.iter().flatten().cloned()).collect()
+}
+
+/// The notice of a failed send, with the worktrees that could not be removed named when there are any.
+pub fn failed_send_notice(notice: String, left: &[PathBuf]) -> String {
+    if left.is_empty() {
+        return notice;
+    }
+    let paths = left.iter().map(|path| path.display().to_string()).collect::<Vec<_>>().join(", ");
+    format!("{notice}\n{}", forge_shared::tr!("Some worktrees made for this message could not be removed: {paths}", paths = paths))
+}
+
+/// The added directories of a session: the composer's folders, then the environment's extras. A
+/// composer folder that an extra folder's worktree replaced is skipped, so the folder and its
+/// worktree are not both added.
+pub fn merge_added_dirs(composer: Vec<PathBuf>, extra: &[PathBuf], made: &[Option<PathBuf>]) -> Vec<PathBuf> {
+    let replaced = |folder: &PathBuf| extra.iter().enumerate().any(|(index, original)| original == folder && made.get(index).is_some_and(Option::is_some));
+    let mut merged: Vec<PathBuf> = composer.into_iter().filter(|folder| !replaced(folder)).collect();
+    for path in extra_paths(extra, made) {
+        if !merged.contains(&path) {
+            merged.push(path);
+        }
+    }
+    merged
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_failed_send_releases_the_first_worktree_and_every_extra_one_that_was_made() {
+        let made = vec![None, Some(PathBuf::from("/b/w")), None, Some(PathBuf::from("/d/w"))];
+        assert_eq!(worktrees_made(Some(&PathBuf::from("/a/w")), &made), vec![PathBuf::from("/a/w"), "/b/w".into(), "/d/w".into()]);
+        assert_eq!(worktrees_made(None, &made), vec![PathBuf::from("/b/w"), "/d/w".into()]);
+        assert!(worktrees_made(None, &[]).is_empty());
+    }
+
+    #[test]
+    fn the_failed_send_notice_names_the_worktrees_left_behind_only_when_there_are_some() {
+        assert_eq!(failed_send_notice("boom".into(), &[]), "boom");
+        let text = failed_send_notice("boom".into(), &[PathBuf::from("/a/w"), "/b/w".into()]);
+        assert!(text.starts_with("boom\n") && text.contains("/a/w, /b/w"));
+    }
+
+    #[test]
+    fn a_composer_folder_that_an_extra_worktree_replaced_is_not_added_twice() {
+        let extra: Vec<PathBuf> = vec!["/b".into(), "/c".into()];
+        let made = vec![Some(PathBuf::from("/b/.claude/worktrees/x")), None];
+        let merged = merge_added_dirs(vec!["/b".into(), "/c".into(), "/z".into()], &extra, &made);
+        assert_eq!(merged, vec![PathBuf::from("/c"), "/z".into(), "/b/.claude/worktrees/x".into()]);
+        assert_eq!(merge_added_dirs(vec!["/b".into()], &extra, &[]), vec![PathBuf::from("/b"), "/c".into()]);
+    }
+
+    #[test]
+    fn a_stage_a_environment_asks_no_worktree_for_its_extras_and_a_repeated_first_folder_is_dropped() {
+        let mut environment = env("a", "app", false, 0);
+        environment.folders = vec!["/a".into(), "/b".into()];
+        environment.worktree = true;
+        let plan = start_plan(&environment).unwrap();
+        assert_eq!(plan.extra_worktrees, vec![None]);
+        assert_eq!(plan.worktree, Some(NewWorktree { base: None }));
+        environment.folders = vec!["/a".into(), "/a".into(), "/b".into()];
+        let plan = start_plan(&environment).unwrap();
+        assert_eq!(plan.extra, vec![std::path::PathBuf::from("/b")]);
+        assert_eq!(plan.extra_worktrees.len(), 1);
+    }
+
     #[test]
     fn an_extra_folder_becomes_its_worktree_when_one_was_made_and_stays_itself_otherwise() {
         let extra: Vec<PathBuf> = vec!["/b".into(), "/c".into(), "/d".into()];
@@ -395,9 +461,10 @@ mod tests {
         draft.push_folder("/a".into());
         assert_eq!(draft.folders.len(), 2);
         assert_eq!(draft.choices, vec![FolderChoice { branch: None, worktree: true }, FolderChoice { branch: None, worktree: false }]);
+        draft.choices[1].branch = Some("x".into());
         draft.remove_folder(0);
         assert_eq!(draft.folders, vec![std::path::PathBuf::from("/b")]);
-        assert_eq!(draft.choices.len(), 1);
+        assert_eq!(draft.choices, vec![FolderChoice { branch: Some("x".into()), worktree: false }]);
     }
 
     #[test]

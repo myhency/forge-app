@@ -1803,6 +1803,7 @@ impl Workspace {
                 (Some(_), Some(request)) => services.worktrees.branches(project.path.clone()).await.ok().map(|_| request),
                 (_, other) => other,
             };
+            let mut first_made: Option<PathBuf> = None;
             let project = match worktree {
                 None => project,
                 Some(request) => {
@@ -1812,6 +1813,7 @@ impl Workspace {
                         Ok(record) => {
                             let mut records = this.worktrees;
                             records.write().push(record.clone());
+                            first_made = Some(record.path.clone());
                             ProjectSummary { path: record.path, last_active: String::new(), session_count: 0, exists: true }
                         }
                         Err(error) => {
@@ -1844,9 +1846,8 @@ impl Workspace {
                             made.push(Some(record.path));
                         }
                         Err(error) => {
-                            this.report(tr!("Could not create the worktree: {error}", error = crate::worktree_view::creation_error_text(&error)));
-                            let mut unsent = this.new_unsent;
-                            unsent.set(Some(text));
+                            let notice = tr!("Could not create the worktree: {error}", error = crate::worktree_view::creation_error_text(&error));
+                            this.abandon_start(&services, crate::environment::worktrees_made(first_made.as_ref(), &made), notice, Some(text)).await;
                             return;
                         }
                     }
@@ -1857,7 +1858,8 @@ impl Workspace {
                 None => match services.settings.saved_model().await {
                     Ok(model) => model,
                     Err(error) => {
-                        this.report(tr!("failed to load the Forge config: {error}", error = error));
+                        let notice = tr!("failed to load the Forge config: {error}", error = error);
+                        this.abandon_start(&services, crate::environment::worktrees_made(first_made.as_ref(), &made), notice, None).await;
                         return;
                     }
                 },
@@ -1868,11 +1870,7 @@ impl Workspace {
                     let id = this.attach(handle.clone());
                     let mut folders = folders;
                     if let Some(environment) = &environment {
-                        for extra in crate::environment::extra_paths(&environment.extra, &made) {
-                            if !folders.contains(&extra) {
-                                folders.push(extra);
-                            }
-                        }
+                        folders = crate::environment::merge_added_dirs(folders, &environment.extra, &made);
                         if !environment.env.0.is_empty() {
                             handle.set_env(environment.env.clone());
                         }
@@ -1883,9 +1881,33 @@ impl Workspace {
                     handle.send_with(text, attachments);
                     this.show_started(id);
                 }
-                Err(error) => this.report(error.to_string()),
+                Err(error) => {
+                    this.abandon_start(&services, crate::environment::worktrees_made(first_made.as_ref(), &made), error.to_string(), None).await;
+                }
             }
         });
+    }
+
+    /// A send that failed after it made worktrees: removes them (they are new and clean), drops their
+    /// records, and shows the notice, naming any worktree that could not be removed. `unsent` is the
+    /// text to give back to the composer.
+    async fn abandon_start(&self, services: &WorkspaceServices, made: Vec<PathBuf>, notice: String, unsent: Option<String>) {
+        let mut left: Vec<PathBuf> = Vec::new();
+        for path in made {
+            match services.worktrees.release(&path).await {
+                Ok(forge_application::Release::Removed | forge_application::Release::NotTracked) => {
+                    let mut records = self.worktrees;
+                    records.write().retain(|record| record.path != path);
+                }
+                Ok(forge_application::Release::Kept(_)) | Err(_) => left.push(path),
+            }
+        }
+        self.reload_past();
+        self.report(crate::environment::failed_send_notice(notice, &left));
+        if let Some(text) = unsent {
+            let mut slot = self.new_unsent;
+            slot.set(Some(text));
+        }
     }
 
     /// Opens the session closed last again (or focuses it when it is open once more). Does
