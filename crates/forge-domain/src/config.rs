@@ -872,6 +872,25 @@ mod tests {
     }
 
     #[test]
+    fn the_config_debug_output_hides_environment_variable_values() {
+        let config = AppConfig {
+            environments: vec![crate::Environment {
+                id: "env-1".into(),
+                name: "work".into(),
+                folders: Vec::new(),
+                branch: None,
+                worktree: false,
+                env_vars: "TOKEN=s3cret".into(),
+                pinned: false,
+                created_at: 1,
+                last_used_at: 2,
+            }],
+            ..AppConfig::default()
+        };
+        assert!(!format!("{config:?}").contains("s3cret"));
+    }
+
+    #[test]
     fn environments_are_saved_and_read_back() {
         let config = AppConfig {
             environments: vec![crate::Environment {

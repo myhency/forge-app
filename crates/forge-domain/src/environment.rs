@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// A saved set of folders and variables a new session can start from. `folders[0]` is the working
 /// folder; the others are added directories. `branch` and `worktree` belong to the first folder.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Environment {
     pub id: String,
     pub name: String,
@@ -24,6 +24,23 @@ pub struct Environment {
     pub created_at: i64,
     #[serde(default)]
     pub last_used_at: i64,
+}
+
+// `env_vars` holds secret values, so `Debug` shows its length only.
+impl std::fmt::Debug for Environment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Environment")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("folders", &self.folders)
+            .field("branch", &self.branch)
+            .field("worktree", &self.worktree)
+            .field("env_vars", &format!("<redacted, {} chars>", self.env_vars.chars().count()))
+            .field("pinned", &self.pinned)
+            .field("created_at", &self.created_at)
+            .field("last_used_at", &self.last_used_at)
+            .finish()
+    }
 }
 
 impl Environment {
@@ -209,6 +226,24 @@ mod tests {
         environment.folders.clear();
         let empty = environment.normalized();
         assert_eq!((empty.branch, empty.worktree), (None, false));
+    }
+
+    #[test]
+    fn an_environment_debug_output_hides_its_variable_values_but_keeps_its_name() {
+        let environment = Environment {
+            id: "env-1".into(),
+            name: "work".into(),
+            folders: vec!["/a".into()],
+            branch: None,
+            worktree: false,
+            env_vars: "TOKEN=s3cret".into(),
+            pinned: false,
+            created_at: 1,
+            last_used_at: 2,
+        };
+        let shown = format!("{environment:?}");
+        assert!(shown.contains("work"));
+        assert!(!shown.contains("s3cret"));
     }
 
     #[test]
