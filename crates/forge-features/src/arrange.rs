@@ -718,6 +718,26 @@ mod tests {
     }
 
     #[test]
+    fn every_scratch_session_joins_one_group_under_the_scratch_root() {
+        let root = std::path::Path::new("/cfg/scratch-workspaces");
+        let groups = vec![
+            SidebarGroup { project: worktree_project("/cfg/scratch-workspaces/scratch-2026-10-20-aaaaaa"), entries: vec![entry("s1", None, Some("2026-09-29T00:00:00Z"))] },
+            SidebarGroup { project: worktree_project("/work/forge"), entries: vec![entry("f", None, Some("2026-09-28T00:00:00Z"))] },
+            SidebarGroup { project: worktree_project("/cfg/scratch-workspaces/scratch-2026-10-20-bbbbbb"), entries: vec![entry("s2", None, Some("2026-09-30T00:00:00Z"))] },
+            SidebarGroup { project: worktree_project("/cfg/scratch-workspaces/scratch-2026-10-21-cccccc"), entries: vec![entry("s3", None, Some("2026-09-27T00:00:00Z"))] },
+        ];
+        let origin = |path: &std::path::Path| forge_domain::origin_for_grouping(&[], Some(root), path);
+        let arranged = arrange_with_origins(&groups, &SidebarPrefs::default(), now(), None, &origin);
+        assert_eq!(arranged.len(), 2);
+        let scratch = arranged.iter().find(|g| g.id == folder_group_id(root)).expect("one scratch group");
+        assert_eq!(scratch.entries.len(), 3);
+        assert!(matches!(&scratch.heading, Heading::Project(p) if p.path == root && p.session_count == 3));
+        assert_eq!(scratch.entries[0].project.path, PathBuf::from("/cfg/scratch-workspaces/scratch-2026-10-20-bbbbbb"));
+        let forge = arranged.iter().find(|g| g.id == folder_group_id(std::path::Path::new("/work/forge"))).unwrap();
+        assert_eq!(forge.entries.len(), 1);
+    }
+
+    #[test]
     fn a_group_made_only_of_a_worktree_is_headed_by_its_repository() {
         let groups = vec![SidebarGroup { project: worktree_project("/app/.claude/worktrees/x-1"), entries: vec![entry("tree", None, Some("2026-09-30T00:00:00Z"))] }];
         let origin = |_: &std::path::Path| PathBuf::from("/app");

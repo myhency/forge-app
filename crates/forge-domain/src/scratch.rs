@@ -23,6 +23,20 @@ pub fn is_scratch(root: &Path, path: &Path) -> bool {
         .is_some_and(|n| n.strip_prefix("scratch-").is_some_and(|rest| !rest.is_empty()))
 }
 
+/// True for the scratch root itself (the one `This computer` group) or a scratch folder in it.
+pub fn is_scratch_group(root: &Path, path: &Path) -> bool {
+    path.components().eq(root.components()) || is_scratch(root, path)
+}
+
+/// The folder a project is grouped under in the sidebar: every scratch folder shares the scratch
+/// root, anything else follows `origin_of`.
+pub fn origin_for_grouping(records: &[crate::WorktreeRecord], scratch_root: Option<&Path>, path: &Path) -> PathBuf {
+    match scratch_root {
+        Some(root) if is_scratch(root, path) => root.to_path_buf(),
+        _ => crate::origin_of(records, path),
+    }
+}
+
 /// The scratch root next to the config file.
 pub fn scratch_root(config_file: &Path) -> Option<PathBuf> {
     Some(config_file.parent()?.join(SCRATCH_DIR))
@@ -31,6 +45,28 @@ pub fn scratch_root(config_file: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grouping_origin_shares_the_root_for_scratch_children_only() {
+        let root = Path::new("/cfg/scratch-workspaces");
+        let records = vec![crate::WorktreeRecord {
+            name: "n".into(),
+            path: PathBuf::from("/app/.claude/worktrees/n"),
+            repo: PathBuf::from("/app"),
+            branch: "b".into(),
+            base_branch: "m".into(),
+            created_at: 0,
+        }];
+        let child = Path::new("/cfg/scratch-workspaces/scratch-2026-10-20-aaaaaa");
+        assert_eq!(origin_for_grouping(&records, Some(root), child), root);
+        assert_eq!(origin_for_grouping(&records, Some(root), Path::new("/app/.claude/worktrees/n")), Path::new("/app"));
+        assert_eq!(origin_for_grouping(&records, Some(root), Path::new("/zz/plain-folder")), Path::new("/zz/plain-folder"));
+        assert_eq!(origin_for_grouping(&records, None, child), child);
+        assert!(is_scratch_group(root, root));
+        assert!(is_scratch_group(root, child));
+        assert!(!is_scratch(root, root));
+        assert!(!is_scratch_group(root, Path::new("/zz")));
+    }
 
     #[test]
     fn name_is_padded_and_uses_low_24_bits() {

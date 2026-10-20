@@ -19,7 +19,7 @@ pub fn project_label(path: &Path) -> String {
 
 /// The label of a project with the scratch root known: a scratch folder reads `This computer`.
 pub fn project_label_in(scratch_root: Option<&Path>, path: &Path) -> String {
-    if scratch_root.is_some_and(|root| forge_domain::is_scratch(root, path)) {
+    if scratch_root.is_some_and(|root| forge_domain::is_scratch_group(root, path)) {
         tr!("This computer").to_string()
     } else {
         project_label(path)
@@ -41,7 +41,7 @@ fn ancestor_name(path: &Path, depth: usize) -> Option<String> {
 /// the nearest parent name that differs among them: `app (a)` and `app (b)` for `/a/app` and
 /// `/b/app`. A name nobody else uses stays plain.
 pub fn project_labels(paths: &[PathBuf], scratch_root: Option<&Path>) -> Vec<String> {
-    let is_scratch = |path: &Path| scratch_root.is_some_and(|root| forge_domain::is_scratch(root, path));
+    let is_scratch = |path: &Path| scratch_root.is_some_and(|root| forge_domain::is_scratch_group(root, path));
     let labels: Vec<String> = paths
         .iter()
         .enumerate()
@@ -190,7 +190,9 @@ pub fn Sidebar() -> Element {
                                 {group_toggle(workspace, &group.id, group.collapsed, bucket.label().to_string(), String::new(), false)}
                             }
                         },
-                        Heading::Project(project) => rsx! {
+                        Heading::Project(project) => {
+                            let is_scratch_group = workspace.scratch_available() && workspace.is_scratch_group(&project.path);
+                            rsx! {
                             div { class: "sidebar-group-header",
                                 {group_toggle(
                                     workspace,
@@ -198,16 +200,16 @@ pub fn Sidebar() -> Element {
                                     group.collapsed,
                                     labels.get(&project.path).cloned().unwrap_or_default(),
                                     project.path.display().to_string(),
-                                    !project.exists,
+                                    !project.exists && !is_scratch_group,
                                 )}
-                                if project.exists {
+                                if project.exists || is_scratch_group {
                                     button {
                                         class: "group-add",
-                                        title: if workspace.is_scratch_project(&project.path) { tr!("New session") } else { tr!("New session in this folder") },
+                                        title: if is_scratch_group { tr!("New session") } else { tr!("New session in this folder") },
                                         onclick: {
                                             let path = project.path.clone();
                                             move |_| {
-                                                if workspace.is_scratch_project(&path) {
+                                                if workspace.is_scratch_group(&path) {
                                                     workspace.show_new_no_folder_session()
                                                 } else {
                                                     workspace.show_new_session_in(path.clone())
@@ -217,6 +219,7 @@ pub fn Sidebar() -> Element {
                                         "+"
                                     }
                                 }
+                            }
                             }
                         },
                     }

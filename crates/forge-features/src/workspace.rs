@@ -532,7 +532,8 @@ impl Workspace {
             Active::NewSession | Active::Customize | Active::Routines => None,
         };
         let records = self.worktrees.read().clone();
-        arrange_with_origins(&self.sidebar(), &self.prefs.read(), now, active, &|path| forge_domain::origin_of(&records, path))
+        let scratch_root = self.scratch_root();
+        arrange_with_origins(&self.sidebar(), &self.prefs.read(), now, active, &|path| forge_domain::origin_for_grouping(&records, scratch_root.as_deref(), path))
     }
 
     pub fn shortcuts_open(&self) -> bool {
@@ -637,13 +638,14 @@ impl Workspace {
     /// folders added through the dialog.
     pub fn new_session_projects(&self) -> Vec<ProjectSummary> {
         let records = self.worktrees.read().clone();
+        let scratch_root = self.scratch_root();
         let past = self.past.read();
         let listed: Vec<ProjectSummary> = past
             .iter()
             .filter(|(project, _)| project.exists && !self.is_scratch_project(&project.path))
             .map(|(project, _)| project.clone())
             .collect();
-        let mut projects = folder_choices(listed, &|path| forge_domain::origin_of(&records, path));
+        let mut projects = folder_choices(listed, &|path| forge_domain::origin_for_grouping(&records, scratch_root.as_deref(), path));
         for path in self.extra_folders.read().iter() {
             if !projects.iter().any(|project| project.path == *path) {
                 projects.push(ProjectSummary {
@@ -1573,6 +1575,11 @@ impl Workspace {
         self.services.peek().scratch.root().is_some_and(|root| forge_domain::is_scratch(root, path))
     }
 
+    /// Whether `path` is the scratch root or a scratch folder: the one `This computer` group.
+    pub fn is_scratch_group(&self, path: &Path) -> bool {
+        self.services.peek().scratch.root().is_some_and(|root| forge_domain::is_scratch_group(root, path))
+    }
+
     /// Shows the new-session panel with `폴더 없음` chosen (the `+` beside `이 컴퓨터`).
     pub fn show_new_no_folder_session(&self) {
         self.set_new_folder(None);
@@ -2093,7 +2100,8 @@ impl Workspace {
     /// no session is open, so the key press can be left to the page.
     pub fn cycle(&self, forward: bool) -> bool {
         let records = self.worktrees.read().clone();
-        let order = open_session_order_with_origins(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local(), &|path| forge_domain::origin_of(&records, path));
+        let scratch_root = self.scratch_root();
+        let order = open_session_order_with_origins(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local(), &|path| forge_domain::origin_for_grouping(&records, scratch_root.as_deref(), path));
         let current = match self.active() {
             Active::Live(id) => Some(id),
             Active::NewSession | Active::Customize | Active::Routines => None,
@@ -2113,7 +2121,8 @@ impl Workspace {
     /// fewer are open.
     pub fn go_to_session(&self, index: usize) {
         let records = self.worktrees.read().clone();
-        let order = open_session_order_with_origins(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local(), &|path| forge_domain::origin_of(&records, path));
+        let scratch_root = self.scratch_root();
+        let order = open_session_order_with_origins(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local(), &|path| forge_domain::origin_for_grouping(&records, scratch_root.as_deref(), path));
         if let Some(id) = nth_session(&order, index) {
             self.select(id);
         }
@@ -2124,6 +2133,9 @@ impl Workspace {
         if let Active::Live(id) = self.active() {
             if let Some(view) = self.live_view(id) {
                 let folder = view.read().project_path.clone();
+                if self.is_scratch_group(&folder) {
+                    return self.show_new_no_folder_session();
+                }
                 return self.show_new_session_in(self.origin_of(&folder));
             }
         }

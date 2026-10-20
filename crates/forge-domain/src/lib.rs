@@ -58,7 +58,7 @@ pub use transcript_view::TranscriptView;
 pub use permission::{PermissionDecision, PermissionMode};
 pub use background::{parse_task_notification, record_finished, BackgroundTaskInfo, FinishedTask, RunningTask, TaskStatus};
 pub use project::ProjectSummary;
-pub use scratch::{is_scratch, scratch_folder_name, scratch_root, SCRATCH_DIR};
+pub use scratch::{is_scratch, is_scratch_group, origin_for_grouping, scratch_folder_name, scratch_root, SCRATCH_DIR};
 pub use routine::{
     clock, decide, delay_ms, push_run, routine_id, validate_draft, Decision, Routine, RoutineDraft, RoutineRun, RunOutcome, Schedule, SkipReason,
     KEEP_RUNS, MAX_DELAY_MS, MISSED_AFTER_MS,
