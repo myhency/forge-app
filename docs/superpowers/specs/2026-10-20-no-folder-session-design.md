@@ -1,4 +1,4 @@
-# Plan 54: "No folder" sessions (design proposal, not approved)
+# Plan 54: "No folder" sessions
 
 Date: 2026-10-20. Branch `plan-53` (docs only). Evidence: observation Round 22 (`docs/superpowers/roadmap/observations.md`), roadmap row OTH-11 ("Not built: 폴더 없음").
 
@@ -20,11 +20,11 @@ Goal: a person can start a session without choosing a folder and still get a pla
 6. **Cleanup.** A scratch folder that is still empty when its session is archived is removed with it (like a clean worktree). A scratch folder that holds files stays (the files are the person's); archiving never deletes them. No timer, no bulk delete.
 7. **Environments.** An environment always has folders (it is not a "no folder" session). Out of scope: choosing a folder afterwards (`폴더 선택…` in the card is part of stage B's `환경` card).
 
-## Decisions needed from the user
+## Decided with the user (2026-10-20)
 
-- A. Scratch folders live under Forge's data directory (recommended) or under the Claude app's folder as the desktop app does.
-- B. The sidebar group label is `이 컴퓨터` (as in the desktop app).
-- C. Whether archive removes an empty scratch folder (recommended: yes) or never touches it.
+- A. Scratch folders live under Forge's own data directory: `<folder of the config file>/scratch-workspaces/` (so a harness run with `FORGE_CONFIG_PATH` keeps them in its fixture).
+- B. The sidebar group label is `이 컴퓨터`.
+- C. Archiving removes an empty scratch folder; one that holds files stays.
 
 ## Out of scope
 
