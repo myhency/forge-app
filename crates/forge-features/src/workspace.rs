@@ -265,6 +265,22 @@ pub fn use_workspace() -> Workspace {
     use_context::<Workspace>()
 }
 
+/// Where the new-session slash commands are probed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProbePlace {
+    ChosenFolder,
+    ScratchRoot,
+}
+
+/// The scratch root is probed only while `폴더 없음` is chosen, no folder is, and a root exists.
+pub(crate) fn probe_in_scratch_root(chosen: Option<&Path>, no_folder: bool, scratch_available: bool) -> ProbePlace {
+    if chosen.is_none() && no_folder && scratch_available {
+        ProbePlace::ScratchRoot
+    } else {
+        ProbePlace::ChosenFolder
+    }
+}
+
 impl Workspace {
     pub fn active(&self) -> Active {
         *self.active.read()
@@ -1437,6 +1453,31 @@ impl Workspace {
         slot.set_folder(project.as_ref());
     }
 
+    /// Probes the new-session screen's slash commands and models: in the chosen folder, or in the
+    /// scratch root while `폴더 없음` is chosen. Call it inside the Dioxus runtime, from a `spawn`.
+    pub async fn probe_new_commands(&self, no_folder: bool) {
+        let services = (*self.services.peek()).clone();
+        let chosen = self.chosen_new_folder();
+        if probe_in_scratch_root(chosen.as_deref(), no_folder, services.scratch.available()) == ProbePlace::ChosenFolder {
+            self.probe_new_folder(chosen);
+            return;
+        }
+        let root = match services.scratch.ensure_root().await {
+            Ok(root) => root,
+            Err(_) => {
+                self.probe_new_folder(None);
+                return;
+            }
+        };
+        // The person may have chosen a folder while the root was being made.
+        if !self.new_no_folder() {
+            return;
+        }
+        let project = ProjectSummary { path: root, last_active: String::new(), session_count: 0, exists: true };
+        let slot = (*self.probe.peek()).clone();
+        slot.set_folder(Some(&project));
+    }
+
     /// The branches of the chosen folder when it is a git repository (and the probe has answered).
     pub fn new_repo(&self) -> Option<RepoInfo> {
         let chosen = self.chosen_new_folder()?;
@@ -1492,6 +1533,7 @@ impl Workspace {
     pub fn context_project(&self) -> Option<PathBuf> {
         match self.active() {
             Active::Live(id) => self.live_view(id).map(|view| view.read().project_path.clone()),
+            Active::NewSession | Active::Customize | Active::Routines if self.new_no_folder() => None,
             Active::NewSession | Active::Customize | Active::Routines => self
                 .new_folder()
                 .or_else(|| self.new_session_projects().into_iter().next().map(|project| project.path)),
@@ -2475,6 +2517,17 @@ fn set_if_changed<T: PartialEq + 'static>(mut slot: Signal<T>, value: T) {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    use super::{probe_in_scratch_root, ProbePlace};
+
+    #[test]
+    fn the_scratch_root_is_probed_only_with_no_folder_chosen_and_a_root() {
+        let folder = Path::new("/p");
+        assert_eq!(probe_in_scratch_root(None, true, true), ProbePlace::ScratchRoot);
+        assert_eq!(probe_in_scratch_root(Some(folder), true, true), ProbePlace::ChosenFolder);
+        assert_eq!(probe_in_scratch_root(None, false, true), ProbePlace::ChosenFolder);
+        assert_eq!(probe_in_scratch_root(None, true, false), ProbePlace::ChosenFolder);
+    }
 
     use forge_domain::ArchivedRef;
 

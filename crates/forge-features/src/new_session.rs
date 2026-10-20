@@ -71,8 +71,9 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
             let mut previous = previous_folder;
             previous.set(folder.clone());
         }
+        let no_folder = workspace.new_no_folder();
         spawn(async move {
-            workspace.probe_new_folder(folder.clone());
+            workspace.probe_new_commands(no_folder).await;
             workspace.probe_new_repo(folder);
         });
     });

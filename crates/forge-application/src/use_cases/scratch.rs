@@ -37,6 +37,14 @@ impl ScratchUseCase {
         self.root.as_deref()
     }
 
+    /// Makes sure the root itself exists (a folder to probe slash commands in) and returns it.
+    pub async fn ensure_root(&self) -> Result<PathBuf, ScratchError> {
+        let root = self.root.as_ref().ok_or_else(|| ScratchError("No place to make scratch folders".into()))?;
+        // `false` only says it was already there.
+        self.port.create_new_dir(root).await?;
+        Ok(root.clone())
+    }
+
     /// Makes a new empty folder `<root>/scratch-YYYY-MM-DD-xxxxxx`. A name that is taken moves on to
     /// the next seed, so two sessions never share a folder.
     pub async fn create(&self, year: i32, month: u8, day: u8, seed: u64) -> Result<PathBuf, ScratchError> {
@@ -127,6 +135,21 @@ mod tests {
         assert_eq!(made, root.join("scratch-2026-10-20-ab12cd"));
         assert!(made.is_dir());
         assert!(is_scratch(&root, &made));
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[tokio::test]
+    async fn ensure_root_makes_the_root_and_a_second_call_is_fine() {
+        let base = std::env::temp_dir().join(format!("forge-scratchuc-ensure-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let root = base.join("scratch-workspaces");
+        let uc = ScratchUseCase::new(Some(root.clone()), Arc::new(FsPort));
+        assert!(!root.exists());
+        assert_eq!(uc.ensure_root().await.unwrap(), root);
+        assert!(root.is_dir());
+        assert_eq!(uc.ensure_root().await.unwrap(), root);
+        let none = ScratchUseCase::new(None, Arc::new(FsPort));
+        assert!(none.ensure_root().await.is_err());
         fs::remove_dir_all(&base).unwrap();
     }
 
