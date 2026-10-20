@@ -54,3 +54,7 @@ Deferred (not fixed): `폴더 없음` sits under the `최근` heading (the Picke
 
 NOT checked: the end-to-end send of a real message from a `폴더 없음` session (a real turn on the user's account); the effort and model pickers against the real SDK probe in the scratch root; the Windows behaviour of the data directory path; the `+` tooltip text.
 
+
+## Real-session check (2026-10-20, with the user's permission)
+
+Harness app on the final code, one real message (`Run bash: pwd`) from a `폴더 없음` session: the chip read `폴더 없음` and the model and effort pickers were visible; Forge made `<config dir>/scratch-workspaces/scratch-2026-10-20-d73060`; Claude ran in exactly that folder (`pwd` printed it, and its transcript folder under `~/.claude/projects/` is named after that same path, so the cwd Forge starts in equals the transcript's); the sidebar showed one `이 컴퓨터` group with the session and the header tag read `이 컴퓨터`; archiving (⌥⌘A) removed the empty scratch folder. The transcript and the harness fixture were removed afterwards. Still NOT run: Windows (the verbatim `\\?\` prefix is dropped there by `display_path` in `scratch.rs`, commit cce6a42, untested on Windows).
