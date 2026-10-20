@@ -33,3 +33,20 @@ Choosing a folder after the session started; moving a scratch session into a pro
 ## Testing (for the plan)
 
 Pure: scratch folder name from a date and a seed, `is_scratch(path, root)`, the sidebar group key, the folder menu rows with the `폴더 없음` row. Use cases: making the folder, failure notice, archive removing an empty folder and keeping a non-empty one. Window: start a no-folder session in the harness (needs one real message: ask the user first), check the path, the sidebar group and the archive behaviour.
+
+## As built (Plan 54)
+
+Built on branch plan-53 in five tasks, each reviewed:
+
+- Scratch helpers in `forge-domain`: folder name from a date and a seed, `is_scratch(root, path)` (strict: a direct child of the root named `scratch-...`), `is_scratch_group` (the root or a direct child, display only) and `origin_for_grouping`.
+- `ScratchUseCase` (`create`, `ensure_root`, `release`) over a port with `create_new_dir`. The deletion gate in `release` is lexical plus a canonical re-check and a non-recursive `remove_dir` (never follows a symlink): only an empty direct child of the root goes; `Removed`, `Kept` and `NotScratch` are the results. The root is `<folder of the config file>/scratch-workspaces/`.
+- New-session screen: `폴더 없음` row in the folder menu (checked when no folder is chosen), chip `폴더 선택`; the scratch folder is made inside `start_new` and released by `abandon_start` when opening the session fails (the notice `이 세션의 폴더를 만들 수 없습니다` returns the text). The composer no longer dead-ends with an empty folder list. Environments take precedence over `폴더 없음`.
+- Sidebar: every scratch project is one `이 컴퓨터` group (the root is the group key; each row keeps its own scratch folder as project path); the group `+` and ⇧⌘N from a scratch session start another no-folder session.
+- Archive (this task): `archive_session` calls `release_scratch` after `release_worktree`: only for a strict scratch project, skipped while another open or un-archived session lives in the folder (`worktree_in_use`), then `ScratchUseCase::release`; `Removed` re-reads the list; an error shows `폴더 {name}을(를) 삭제할 수 없습니다`. The decision is `should_release_scratch`, tested.
+
+Review-time fixes recorded in the ledger: Task 2 made folder creation atomic through the port (`create_new_dir`; `create` retries five seeds) instead of check-then-create. Task 3: the slash commands and the model/effort pickers vanished while `폴더 없음` was chosen, so the probe now runs in the scratch root (`ensure_root`, `probe_in_scratch_root`), and `context_project` is empty on those screens. Task 4: several scratch folders made several `이 컴퓨터` groups and ⇧⌘N from a scratch session went to an unrelated folder, so all scratch projects now merge into one group and `new_session_here` starts a no-folder session; the `+` shows whenever a scratch root exists.
+
+Checked in a real window (harness, fixture, no message sent): the menu row and chip; one `이 컴퓨터` group with several rows; `+` and ⇧⌘N; commands, effort and model pickers while `폴더 없음` is chosen; ⌥⌘A on a scratch session whose folder is empty removed the folder from disk and the row (and the group when it was the last); with a file in the folder the row went and the folder stayed; with two sessions in one folder, archiving one kept the folder.
+
+NOT checked: the end-to-end send of a real message from a `폴더 없음` session (a real turn on the user's account); the effort and model pickers against the real SDK probe in the scratch root; the Windows behaviour of the data directory path; the `+` tooltip text.
+
