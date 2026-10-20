@@ -735,8 +735,17 @@ pub struct ScratchFs;
 
 #[async_trait::async_trait]
 impl forge_ports::ScratchPort for ScratchFs {
-    async fn create_dir(&self, path: &Path) -> Result<(), forge_ports::ScratchError> {
-        fs::create_dir_all(path).map_err(|e| forge_ports::ScratchError(e.to_string()))
+    async fn create_new_dir(&self, path: &Path) -> Result<bool, forge_ports::ScratchError> {
+        let failed = |e: std::io::Error| forge_ports::ScratchError(e.to_string());
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(failed)?;
+        }
+        // `create_dir` is atomic: it fails when the folder exists, so two callers never share one.
+        match fs::create_dir(path) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+            Err(e) => Err(failed(e)),
+        }
     }
     async fn is_empty_dir(&self, path: &Path) -> Result<bool, forge_ports::ScratchError> {
         match fs::read_dir(path) {
@@ -763,11 +772,14 @@ mod scratch_fs_tests {
     }
 
     #[tokio::test]
-    async fn create_makes_nested_folders() {
+    async fn create_new_dir_makes_the_folder_once() {
         let base = temp("create");
         let target = base.join("a").join("b");
-        ScratchFs.create_dir(&target).await.unwrap();
+        assert!(ScratchFs.create_new_dir(&target).await.unwrap());
         assert!(target.is_dir());
+        fs::write(target.join("f"), "x").unwrap();
+        assert!(!ScratchFs.create_new_dir(&target).await.unwrap());
+        assert!(target.join("f").is_file());
         fs::remove_dir_all(&base).unwrap();
     }
 

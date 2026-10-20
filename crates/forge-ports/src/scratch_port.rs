@@ -15,8 +15,9 @@ pub struct ScratchError(pub String);
 #[cfg_attr(any(test, feature = "mocks"), automock)]
 #[async_trait]
 pub trait ScratchPort: Send + Sync {
-    /// Makes the folder and any missing parents.
-    async fn create_dir(&self, path: &Path) -> Result<(), ScratchError>;
+    /// Makes the folder (and any missing parents of it) atomically: true when this call made it, false
+    /// when it already existed.
+    async fn create_new_dir(&self, path: &Path) -> Result<bool, ScratchError>;
     /// True for a folder with no entries; false for a file, a missing path or a folder with entries.
     async fn is_empty_dir(&self, path: &Path) -> Result<bool, ScratchError>;
     /// Removes an empty folder. Fails on a folder that has entries.

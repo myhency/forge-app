@@ -43,11 +43,9 @@ impl ScratchUseCase {
         let root = self.root.as_ref().ok_or_else(|| ScratchError("No place to make scratch folders".into()))?;
         for attempt in 0..CREATE_ATTEMPTS {
             let path = root.join(scratch_folder_name(year, month, day, seed.wrapping_add(attempt)));
-            if path.symlink_metadata().is_ok() || self.port.is_empty_dir(&path).await? {
-                continue;
+            if self.port.create_new_dir(&path).await? {
+                return Ok(path);
             }
-            self.port.create_dir(&path).await?;
-            return Ok(path);
         }
         Err(ScratchError("Could not find a free scratch folder name".into()))
     }
@@ -94,8 +92,13 @@ mod tests {
 
     #[async_trait]
     impl ScratchPort for FsPort {
-        async fn create_dir(&self, path: &Path) -> Result<(), ScratchError> {
-            fs::create_dir_all(path).map_err(|e| ScratchError(e.to_string()))
+        async fn create_new_dir(&self, path: &Path) -> Result<bool, ScratchError> {
+            fs::create_dir_all(path.parent().unwrap()).map_err(|e| ScratchError(e.to_string()))?;
+            match fs::create_dir(path) {
+                Ok(()) => Ok(true),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+                Err(e) => Err(ScratchError(e.to_string())),
+            }
         }
         async fn is_empty_dir(&self, path: &Path) -> Result<bool, ScratchError> {
             Ok(fs::read_dir(path).map(|mut d| d.next().is_none()).unwrap_or(false))
@@ -226,6 +229,48 @@ mod tests {
         let uc = ScratchUseCase::new(Some(via.clone()), Arc::new(FsPort));
         let made = uc.create(2026, 10, 20, 3).await.unwrap();
         assert_eq!(uc.release(&made).await.unwrap(), ScratchRelease::Removed);
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[tokio::test]
+    async fn create_takes_the_first_seed_the_port_reports_as_new() {
+        let mut port = forge_ports::MockScratchPort::new();
+        let mut seq = mockall::Sequence::new();
+        port.expect_create_new_dir().times(1).in_sequence(&mut seq).returning(|_| Ok(false));
+        port.expect_create_new_dir().times(1).in_sequence(&mut seq).returning(|_| Ok(true));
+        let uc = ScratchUseCase::new(Some(PathBuf::from("/r/scratch-workspaces")), Arc::new(port));
+        let made = uc.create(2026, 10, 20, 0x10).await.unwrap();
+        assert_eq!(made, PathBuf::from("/r/scratch-workspaces/scratch-2026-10-20-000011"));
+    }
+
+    #[tokio::test]
+    async fn create_gives_up_after_five_taken_names() {
+        let mut port = forge_ports::MockScratchPort::new();
+        port.expect_create_new_dir().times(5).returning(|_| Ok(false));
+        let uc = ScratchUseCase::new(Some(PathBuf::from("/r/scratch-workspaces")), Arc::new(port));
+        assert!(uc.create(2026, 10, 20, 1).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn release_with_a_root_that_does_not_exist_removes_nothing() {
+        let base = std::env::temp_dir().join(format!("forge-scratchuc-noroot-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let root = base.join("scratch-workspaces");
+        let uc = ScratchUseCase::new(Some(root.clone()), Arc::new(FsPort));
+        let r = uc.release(&root.join("scratch-x")).await.unwrap();
+        assert!(matches!(r, ScratchRelease::Kept | ScratchRelease::NotScratch));
+        assert!(base.is_dir());
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[tokio::test]
+    async fn release_of_a_regular_file_leaves_it() {
+        let (base, root, uc) = setup("file");
+        let file = root.join("scratch-x");
+        fs::write(&file, "x").unwrap();
+        assert_ne!(uc.release(&file).await.unwrap(), ScratchRelease::Removed);
+        assert!(file.is_file());
         fs::remove_dir_all(&base).unwrap();
     }
 }
