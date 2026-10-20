@@ -153,6 +153,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Could not make a folder for this session: {error}", "이 세션의 폴더를 만들지 못했습니다: {error}"),
     ("Could not read the connectors: {error}", "커넥터를 읽지 못했습니다: {error}"),
     ("Could not read the skills: {error}", "스킬을 읽지 못했습니다: {error}"),
+    ("Could not remove the folder {name}: {error}", "폴더 {name}을(를) 삭제할 수 없습니다: {error}"),
     ("Could not remove the worktree {name}: {error}", "워크트리 {name}을(를) 제거할 수 없습니다: {error}"),
     ("Could not save the environment: {error}", "환경을 저장하지 못했습니다: {error}"),
     ("Could not save the trusted folder: {error}", "신뢰한 폴더를 저장하지 못했습니다: {error}"),

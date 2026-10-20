@@ -272,6 +272,12 @@ pub(crate) enum ProbePlace {
     ScratchRoot,
 }
 
+/// Whether archiving a session should try to remove its folder: only a scratch folder, and only when no
+/// other open or un-archived session lives in it.
+pub(crate) fn should_release_scratch(is_scratch: bool, in_use: bool) -> bool {
+    is_scratch && !in_use
+}
+
 /// The scratch root is probed only while `폴더 없음` is chosen, no folder is, and a root exists.
 pub(crate) fn probe_in_scratch_root(chosen: Option<&Path>, no_folder: bool, scratch_available: bool) -> ProbePlace {
     if chosen.is_none() && no_folder && scratch_available {
@@ -737,7 +743,40 @@ impl Workspace {
     /// session of a worktree Forge made, the worktree is removed if it holds no work.
     pub fn archive_session(&self, project: PathBuf, session: SessionId) {
         self.set_archived(project.clone(), session.clone(), true);
-        self.release_worktree(project, session);
+        self.release_worktree(project.clone(), session.clone());
+        self.release_scratch(project, session);
+    }
+
+    /// When the archived session was the last one in a scratch folder Forge made, the folder is removed
+    /// if it is empty (the use case keeps one that holds anything).
+    fn release_scratch(&self, path: PathBuf, session: SessionId) {
+        if !self.is_scratch_project(&path) {
+            return;
+        }
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        // Root scope: the removal must finish even if the row that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
+            let live: Vec<(PathBuf, Option<SessionId>)> = this
+                .live
+                .peek()
+                .iter()
+                .map(|entry| {
+                    let view = entry.view.peek();
+                    (view.project_path.clone(), view.claude_session_id.clone())
+                })
+                .collect();
+            let in_use = crate::worktree_view::worktree_in_use(&path, &session, &this.past.peek(), &this.archived.peek(), &live);
+            if !should_release_scratch(true, in_use) {
+                return;
+            }
+            let name = path.file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_default();
+            match services.scratch.release(&path).await {
+                Ok(forge_application::ScratchRelease::Removed) => this.reload_past(),
+                Ok(_) => {}
+                Err(error) => this.report(tr!("Could not remove the folder {name}: {error}", name = name, error = error)),
+            }
+        });
     }
 
     fn release_worktree(&self, path: PathBuf, session: SessionId) {
@@ -2547,7 +2586,15 @@ fn set_if_changed<T: PartialEq + 'static>(mut slot: Signal<T>, value: T) {
 mod tests {
     use std::path::Path;
 
-    use super::{probe_in_scratch_root, ProbePlace};
+    use super::{probe_in_scratch_root, should_release_scratch, ProbePlace};
+
+    #[test]
+    fn a_scratch_folder_is_released_only_when_no_other_session_uses_it() {
+        assert!(should_release_scratch(true, false));
+        assert!(!should_release_scratch(true, true));
+        assert!(!should_release_scratch(false, false));
+        assert!(!should_release_scratch(false, true));
+    }
 
     #[test]
     fn the_scratch_root_is_probed_only_with_no_folder_chosen_and_a_root() {
