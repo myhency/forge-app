@@ -36,6 +36,11 @@ pub fn send_ready(text: &str, attachments: usize) -> bool {
     !text.trim().is_empty() || attachments > 0
 }
 
+/// Whether the composer can send: an environment is picked, `폴더 없음` is chosen, or a past project exists.
+pub fn can_send_here(picked_environment: bool, no_folder: bool, projects: usize) -> bool {
+    picked_environment || no_folder || projects > 0
+}
+
 /// The worktree a send asks for: only when the switch is on and the folder being started in is the
 /// repository the panel probed.
 pub fn worktree_request(on: bool, branch: Option<String>, repo: Option<RepoInfo>, folder: &Path) -> Option<NewWorktree> {
@@ -93,7 +98,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
     });
 
     let picked_environment = draft.environment.read().clone().and_then(|id| workspace.environments().into_iter().find(|environment| environment.id == id));
-    let has_folder = picked_environment.is_some() || !workspace.new_session_projects().is_empty();
+    let has_folder = can_send_here(picked_environment.is_some(), workspace.new_no_folder(), workspace.new_session_projects().len());
 
     // `submit` is used by two handlers, so it may capture only `Copy` values (signals): it looks the
     // folder up again instead of capturing a string.
@@ -120,6 +125,10 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
                     return;
                 }
             },
+            None if workspace.new_no_folder() => {
+                // Only a placeholder: `start_new` makes the folder once the text is taken.
+                (ProjectSummary { path: std::path::PathBuf::new(), last_active: String::new(), session_count: 0, exists: true }, None)
+            }
             None => {
                 let projects = workspace.new_session_projects();
                 let project = match workspace.new_folder() {
@@ -135,7 +144,9 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
         let Some(outgoing) = composer.take_for_new_session(&text.read()) else {
             return;
         };
+        let no_folder = environment.is_none() && workspace.new_no_folder();
         let worktree = match &plan {
+            None if no_folder => None,
             Some(plan) => plan.worktree.clone(),
             None => worktree_request(*draft.worktree.peek(), draft.branch.peek().clone(), workspace.new_repo(), &project.path),
         };
@@ -149,6 +160,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
             composer.take_folders(),
             worktree,
             plan,
+            no_folder,
         );
         if let Some(environment) = environment {
             workspace.touch_environment(environment.id);
@@ -195,6 +207,14 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_composer_can_send_with_an_environment_no_folder_or_a_project() {
+        assert!(can_send_here(true, false, 0));
+        assert!(can_send_here(false, true, 0));
+        assert!(can_send_here(false, false, 1));
+        assert!(!can_send_here(false, false, 0));
+    }
 
     #[test]
     fn the_send_button_is_ready_with_text_or_an_attachment() {

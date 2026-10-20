@@ -11,10 +11,14 @@ pub fn FolderChip() -> Element {
     let projects = workspace.new_session_projects();
     let current = workspace.chosen_new_folder();
     let rows = folder_menu_rows(&projects, current.as_deref());
-    let mut items: Vec<PickerItem> = rows
-        .iter()
-        .map(|row| PickerItem { label: row.label.clone(), description: None, key: None, checked: row.checked, divider_before: false })
-        .collect();
+    // With `폴더 없음` first, every index into `paths` is shifted by one.
+    let scratch = workspace.scratch_available();
+    let no_folder = workspace.new_no_folder();
+    let mut items: Vec<PickerItem> = Vec::new();
+    if scratch {
+        items.push(PickerItem { label: tr!("No folder").to_string(), description: None, key: None, checked: no_folder, divider_before: false });
+    }
+    items.extend(rows.iter().map(|row| PickerItem { label: row.label.clone(), description: None, key: None, checked: row.checked, divider_before: false }));
     let mut draft = use_new_session_draft();
     if draft.environment.read().is_some() {
         return rsx! {};
@@ -33,6 +37,13 @@ pub fn FolderChip() -> Element {
             current: current_label,
             items,
             onpick: move |index: usize| {
+                if scratch && index == 0 {
+                    workspace.set_new_no_folder(true);
+                    workspace.set_new_folder(None);
+                    refocus_composer();
+                    return;
+                }
+                let index = if scratch { index - 1 } else { index };
                 match paths.get(index) {
                     Some(path) => workspace.set_new_folder(Some(path.clone())),
                     None if index == paths.len() => workspace.open_folder(),

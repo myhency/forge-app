@@ -136,6 +136,7 @@ pub struct Workspace {
     history: Signal<NavHistory<Active>>,
     notice: Signal<Option<String>>,
     new_folder: Signal<Option<PathBuf>>,
+    new_no_folder: Signal<bool>,
     extra_folders: Signal<Vec<PathBuf>>,
     picking: Signal<bool>,
     probe: Signal<Arc<ProbeSlot>>,
@@ -211,6 +212,7 @@ pub fn use_workspace_provider() -> Workspace {
             history: Signal::new(NavHistory::new(Active::NewSession)),
             notice: Signal::new(None),
             new_folder: Signal::new(None),
+            new_no_folder: Signal::new(false),
             extra_folders: Signal::new(Vec::new()),
             picking: Signal::new(false),
             probe: Signal::new(slot),
@@ -1418,6 +1420,9 @@ impl Workspace {
     /// The folder the new-session panel would start in: the chosen one if it is still offered,
     /// otherwise the first.
     pub fn chosen_new_folder(&self) -> Option<PathBuf> {
+        if self.new_no_folder() {
+            return None;
+        }
         let projects = self.new_session_projects();
         self.new_folder()
             .filter(|path| projects.iter().any(|project| project.path == *path))
@@ -1494,8 +1499,26 @@ impl Workspace {
     }
 
     pub fn set_new_folder(&self, folder: Option<PathBuf>) {
+        if folder.is_some() {
+            self.set_new_no_folder(false);
+        }
         let mut current = self.new_folder;
         current.set(folder);
+    }
+
+    /// Whether `폴더 없음` is chosen on the new-session screen.
+    pub fn new_no_folder(&self) -> bool {
+        *self.new_no_folder.read()
+    }
+
+    pub fn set_new_no_folder(&self, on: bool) {
+        let mut current = self.new_no_folder;
+        current.set(on);
+    }
+
+    /// Whether a no-folder session can be made (a scratch folder root is known).
+    pub fn scratch_available(&self) -> bool {
+        self.services.peek().scratch.available()
     }
 
     /// Shows the new-session panel with `folder` preselected (the `+` beside a project).
@@ -1791,6 +1814,7 @@ impl Workspace {
         folders: Vec<PathBuf>,
         worktree: Option<NewWorktree>,
         environment: Option<crate::EnvironmentStart>,
+        scratch: bool,
     ) {
         let this = *self;
         let services = (*self.services.peek()).clone();
@@ -1848,7 +1872,7 @@ impl Workspace {
                         }
                         Err(error) => {
                             let notice = tr!("Could not create the worktree: {error}", error = crate::worktree_view::creation_error_text(&error));
-                            this.abandon_start(&services, crate::environment::worktrees_made(first_made.as_ref(), &made), notice, Some(text)).await;
+                            this.abandon_start(&services, crate::environment::worktrees_made(first_made.as_ref(), &made), None, notice, Some(text)).await;
                             return;
                         }
                     }
@@ -1860,10 +1884,31 @@ impl Workspace {
                     Ok(model) => model,
                     Err(error) => {
                         let notice = tr!("failed to load the Forge config: {error}", error = error);
-                        this.abandon_start(&services, crate::environment::worktrees_made(first_made.as_ref(), &made), notice, None).await;
+                        this.abandon_start(&services, crate::environment::worktrees_made(first_made.as_ref(), &made), None, notice, None).await;
                         return;
                     }
                 },
+            };
+            // Made as late as possible so an earlier failure leaves nothing behind; the folder is empty,
+            // so any failure after this releases it again.
+            let mut scratch_made: Option<PathBuf> = None;
+            let project = if scratch && environment.is_none() {
+                // UTC date: the local offset is not at hand here.
+                let now = time::OffsetDateTime::now_utc();
+                let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_nanos() as u64).unwrap_or(0);
+                match services.scratch.create(now.year(), now.month() as u8, now.day(), seed).await {
+                    Ok(path) => {
+                        scratch_made = Some(path.clone());
+                        ProjectSummary { path, last_active: String::new(), session_count: 0, exists: true }
+                    }
+                    Err(error) => {
+                        let notice = tr!("Could not make a folder for this session: {error}", error = error);
+                        this.abandon_start(&services, crate::environment::worktrees_made(first_made.as_ref(), &made), None, notice, Some(text)).await;
+                        return;
+                    }
+                }
+            } else {
+                project
             };
             let commands = slot.end();
             match services.registry.open_new_with_effort(&project, mode, model, effort, commands) {
@@ -1883,7 +1928,7 @@ impl Workspace {
                     this.show_started(id);
                 }
                 Err(error) => {
-                    this.abandon_start(&services, crate::environment::worktrees_made(first_made.as_ref(), &made), error.to_string(), None).await;
+                    this.abandon_start(&services, crate::environment::worktrees_made(first_made.as_ref(), &made), scratch_made, error.to_string(), None).await;
                 }
             }
         });
@@ -1892,7 +1937,11 @@ impl Workspace {
     /// A send that failed after it made worktrees: removes them (they are new and clean), drops their
     /// records, and shows the notice, naming any worktree that could not be removed. `unsent` is the
     /// text to give back to the composer.
-    async fn abandon_start(&self, services: &WorkspaceServices, made: Vec<PathBuf>, notice: String, unsent: Option<String>) {
+    async fn abandon_start(&self, services: &WorkspaceServices, made: Vec<PathBuf>, scratch: Option<PathBuf>, notice: String, unsent: Option<String>) {
+        if let Some(path) = scratch {
+            // Empty and made for this send only; a folder that cannot be removed is harmless.
+            let _ = services.scratch.release(&path).await;
+        }
         let mut left: Vec<PathBuf> = Vec::new();
         for path in made {
             match services.worktrees.release(&path).await {
