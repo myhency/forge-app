@@ -71,7 +71,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
             let mut previous = previous_folder;
             previous.set(folder.clone());
         }
-        let no_folder = workspace.new_no_folder();
+        let no_folder = workspace.effective_no_folder();
         spawn(async move {
             workspace.probe_new_commands(no_folder).await;
             workspace.probe_new_repo(folder);
@@ -99,7 +99,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
     });
 
     let picked_environment = draft.environment.read().clone().and_then(|id| workspace.environments().into_iter().find(|environment| environment.id == id));
-    let has_folder = can_send_here(picked_environment.is_some(), workspace.new_no_folder(), workspace.new_session_projects().len());
+    let has_folder = can_send_here(picked_environment.is_some(), workspace.effective_no_folder(), workspace.new_session_projects().len());
 
     // `submit` is used by two handlers, so it may capture only `Copy` values (signals): it looks the
     // folder up again instead of capturing a string.
@@ -126,7 +126,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
                     return;
                 }
             },
-            None if workspace.new_no_folder() => {
+            None if workspace.effective_no_folder() => {
                 // Only a placeholder: `start_new` makes the folder once the text is taken.
                 (ProjectSummary { path: std::path::PathBuf::new(), last_active: String::new(), session_count: 0, exists: true }, None)
             }
@@ -145,7 +145,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
         let Some(outgoing) = composer.take_for_new_session(&text.read()) else {
             return;
         };
-        let no_folder = environment.is_none() && workspace.new_no_folder();
+        let no_folder = environment.is_none() && workspace.effective_no_folder();
         let worktree = match &plan {
             None if no_folder => None,
             Some(plan) => plan.worktree.clone(),

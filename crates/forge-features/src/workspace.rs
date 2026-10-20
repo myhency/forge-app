@@ -287,6 +287,12 @@ pub(crate) fn probe_in_scratch_root(chosen: Option<&Path>, no_folder: bool, scra
     }
 }
 
+/// Whether the new-session screen starts without a folder: `폴더 없음` was picked, or nothing else can
+/// be (no project offered, no folder chosen) and a scratch root exists, so it is checked from the start.
+pub(crate) fn effective_no_folder(flag: bool, scratch_available: bool, project_count: usize, folder_chosen: bool) -> bool {
+    flag || (scratch_available && project_count == 0 && !folder_chosen)
+}
+
 impl Workspace {
     pub fn active(&self) -> Active {
         *self.active.read()
@@ -1477,7 +1483,7 @@ impl Workspace {
     /// The folder the new-session panel would start in: the chosen one if it is still offered,
     /// otherwise the first.
     pub fn chosen_new_folder(&self) -> Option<PathBuf> {
-        if self.new_no_folder() {
+        if self.effective_no_folder() {
             return None;
         }
         let projects = self.new_session_projects();
@@ -1511,7 +1517,7 @@ impl Workspace {
             }
         };
         // The person may have chosen a folder while the root was being made.
-        if !self.new_no_folder() {
+        if !self.effective_no_folder() {
             return;
         }
         let project = ProjectSummary { path: root, last_active: String::new(), session_count: 0, exists: true };
@@ -1574,7 +1580,7 @@ impl Workspace {
     pub fn context_project(&self) -> Option<PathBuf> {
         match self.active() {
             Active::Live(id) => self.live_view(id).map(|view| view.read().project_path.clone()),
-            Active::NewSession | Active::Customize | Active::Routines if self.new_no_folder() => None,
+            Active::NewSession | Active::Customize | Active::Routines if self.effective_no_folder() => None,
             Active::NewSession | Active::Customize | Active::Routines => self
                 .new_folder()
                 .or_else(|| self.new_session_projects().into_iter().next().map(|project| project.path)),
@@ -1592,6 +1598,12 @@ impl Workspace {
     /// Whether `폴더 없음` is chosen on the new-session screen.
     pub fn new_no_folder(&self) -> bool {
         *self.new_no_folder.read()
+    }
+
+    /// Whether the new-session screen starts without a folder: the picked flag, or `폴더 없음` as the
+    /// only way to start. Behaviour reads this; `new_no_folder` is only the stored pick.
+    pub fn effective_no_folder(&self) -> bool {
+        effective_no_folder(self.new_no_folder(), self.scratch_available(), self.new_session_projects().len(), self.new_folder().is_some())
     }
 
     pub fn set_new_no_folder(&self, on: bool) {
@@ -1998,8 +2010,7 @@ impl Workspace {
             // so any failure after this releases it again.
             let mut scratch_made: Option<PathBuf> = None;
             let project = if scratch && environment.is_none() {
-                // UTC date: the local offset is not at hand here.
-                let now = time::OffsetDateTime::now_utc();
+                let now = crate::arrange::now_local();
                 let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_nanos() as u64).unwrap_or(0);
                 match services.scratch.create(now.year(), now.month() as u8, now.day(), seed).await {
                     Ok(path) => {
@@ -2586,7 +2597,16 @@ fn set_if_changed<T: PartialEq + 'static>(mut slot: Signal<T>, value: T) {
 mod tests {
     use std::path::Path;
 
-    use super::{probe_in_scratch_root, should_release_scratch, ProbePlace};
+    use super::{effective_no_folder, probe_in_scratch_root, should_release_scratch, ProbePlace};
+
+    #[test]
+    fn no_folder_counts_as_chosen_while_nothing_else_is_offered() {
+        assert!(effective_no_folder(true, false, 3, true));
+        assert!(effective_no_folder(false, true, 0, false));
+        assert!(!effective_no_folder(false, true, 2, false));
+        assert!(!effective_no_folder(false, false, 0, false));
+        assert!(!effective_no_folder(false, true, 0, true));
+    }
 
     #[test]
     fn a_scratch_folder_is_released_only_when_no_other_session_uses_it() {

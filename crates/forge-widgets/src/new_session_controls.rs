@@ -13,7 +13,7 @@ pub fn FolderChip() -> Element {
     let rows = folder_menu_rows(&projects, current.as_deref());
     // With `폴더 없음` first, every index into `paths` is shifted by one.
     let scratch = workspace.scratch_available();
-    let no_folder = workspace.new_no_folder();
+    let no_folder = workspace.effective_no_folder();
     let mut items: Vec<PickerItem> = Vec::new();
     if scratch {
         items.push(PickerItem { label: tr!("No folder").to_string(), description: None, key: None, checked: no_folder, divider_before: false });
@@ -28,7 +28,11 @@ pub fn FolderChip() -> Element {
     if repo.is_some() {
         items.push(PickerItem { label: tr!("Worktree").to_string(), description: None, key: None, checked: *draft.worktree.read(), divider_before: true });
     }
-    let current_label = rows.iter().find(|row| row.checked).map_or_else(|| tr!("Choose a folder").to_string(), |row| row.label.clone());
+    let current_label = if scratch && no_folder {
+        tr!("No folder").to_string()
+    } else {
+        rows.iter().find(|row| row.checked).map_or_else(|| tr!("Choose a folder").to_string(), |row| row.label.clone())
+    };
     let paths: Vec<_> = rows.iter().map(|row| row.path.clone()).collect();
     rsx! {
         Picker {

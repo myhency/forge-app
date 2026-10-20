@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use forge_domain::{is_scratch, scratch_folder_name};
 use forge_ports::{ScratchError, ScratchPort};
@@ -21,12 +21,29 @@ pub enum ScratchRelease {
 /// Makes and releases the empty folders for sessions started without a project folder.
 pub struct ScratchUseCase {
     root: Option<PathBuf>,
+    /// The root with symlinks resolved, once it exists: Claude Code records the real path as a
+    /// session's folder, so that is the one sessions must start in and be matched against.
+    canonical: OnceLock<PathBuf>,
     port: Arc<dyn ScratchPort>,
 }
 
 impl ScratchUseCase {
     pub fn new(root: Option<PathBuf>, port: Arc<dyn ScratchPort>) -> Self {
-        Self { root, port }
+        let uc = Self { root, canonical: OnceLock::new(), port };
+        uc.resolve();
+        uc
+    }
+
+    /// The canonical root when the root exists, otherwise the configured one.
+    fn resolve(&self) -> Option<&Path> {
+        let root = self.root.as_deref()?;
+        if let Some(real) = self.canonical.get() {
+            return Some(real);
+        }
+        match root.canonicalize() {
+            Ok(real) => Some(self.canonical.get_or_init(|| real)),
+            Err(_) => Some(root),
+        }
     }
 
     pub fn available(&self) -> bool {
@@ -34,7 +51,7 @@ impl ScratchUseCase {
     }
 
     pub fn root(&self) -> Option<&Path> {
-        self.root.as_deref()
+        self.resolve()
     }
 
     /// Makes sure the root itself exists (a folder to probe slash commands in) and returns it.
@@ -42,17 +59,21 @@ impl ScratchUseCase {
         let root = self.root.as_ref().ok_or_else(|| ScratchError("No place to make scratch folders".into()))?;
         // `false` only says it was already there.
         self.port.create_new_dir(root).await?;
-        Ok(root.clone())
+        Ok(self.resolve().unwrap_or(root).to_path_buf())
     }
 
     /// Makes a new empty folder `<root>/scratch-YYYY-MM-DD-xxxxxx`. A name that is taken moves on to
     /// the next seed, so two sessions never share a folder.
     pub async fn create(&self, year: i32, month: u8, day: u8, seed: u64) -> Result<PathBuf, ScratchError> {
-        let root = self.root.as_ref().ok_or_else(|| ScratchError("No place to make scratch folders".into()))?;
+        let root = self.resolve().ok_or_else(|| ScratchError("No place to make scratch folders".into()))?.to_path_buf();
         for attempt in 0..CREATE_ATTEMPTS {
             let path = root.join(scratch_folder_name(year, month, day, seed.wrapping_add(attempt)));
             if self.port.create_new_dir(&path).await? {
-                return Ok(path);
+                // The root may only have come into being just now; the made folder resolves to the real path.
+                return Ok(match path.canonicalize() {
+                    Ok(real) if real.file_name() == path.file_name() => real,
+                    _ => path,
+                });
             }
         }
         Err(ScratchError("Could not find a free scratch folder name".into()))
@@ -62,7 +83,7 @@ impl ScratchUseCase {
     /// of the root whose name passes `is_scratch`, and that is still that same direct child after
     /// symlinks resolve; removal never takes contents with it.
     pub async fn release(&self, path: &Path) -> Result<ScratchRelease, ScratchError> {
-        let Some(root) = self.root.as_deref() else {
+        let Some(root) = self.resolve() else {
             return Ok(ScratchRelease::NotScratch);
         };
         if !is_scratch(root, path) {
@@ -118,7 +139,7 @@ mod tests {
 
     /// `<temp>/<base>/scratch-workspaces` as root; `<temp>/<base>` is the base.
     fn setup(name: &str) -> (PathBuf, PathBuf, ScratchUseCase) {
-        let base = std::env::temp_dir().join(format!("forge-scratchuc-{name}-{}", std::process::id()));
+        let base = std::env::temp_dir().canonicalize().unwrap().join(format!("forge-scratchuc-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let root = base.join("scratch-workspaces");
         fs::create_dir_all(&root).unwrap();
@@ -140,7 +161,7 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_root_makes_the_root_and_a_second_call_is_fine() {
-        let base = std::env::temp_dir().join(format!("forge-scratchuc-ensure-{}", std::process::id()));
+        let base = std::env::temp_dir().canonicalize().unwrap().join(format!("forge-scratchuc-ensure-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let root = base.join("scratch-workspaces");
         let uc = ScratchUseCase::new(Some(root.clone()), Arc::new(FsPort));
@@ -252,6 +273,23 @@ mod tests {
         let uc = ScratchUseCase::new(Some(via.clone()), Arc::new(FsPort));
         let made = uc.create(2026, 10, 20, 3).await.unwrap();
         assert_eq!(uc.release(&made).await.unwrap(), ScratchRelease::Removed);
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_root_behind_a_symlink_hands_out_the_canonical_root() {
+        let (base, root, _uc) = setup("canon");
+        let via = base.join("via");
+        std::os::unix::fs::symlink(&root, &via).unwrap();
+        let uc = ScratchUseCase::new(Some(via), Arc::new(FsPort));
+        let canonical = root.canonicalize().unwrap();
+        assert_eq!(uc.root(), Some(canonical.as_path()));
+        let made = uc.create(2026, 10, 20, 5).await.unwrap();
+        assert_eq!(made.parent(), Some(canonical.as_path()));
+        assert!(is_scratch(uc.root().unwrap(), &made));
+        assert_eq!(uc.release(&made).await.unwrap(), ScratchRelease::Removed);
+        assert!(!made.exists());
         fs::remove_dir_all(&base).unwrap();
     }
 
