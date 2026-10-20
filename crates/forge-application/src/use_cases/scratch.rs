@@ -1,11 +1,21 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use forge_domain::{is_scratch, scratch_folder_name};
+use forge_domain::{is_scratch, scratch_folder_name, without_extended_prefix};
 use forge_ports::{ScratchError, ScratchPort};
 
 /// How many seeds `create` tries before it gives up.
 const CREATE_ATTEMPTS: u64 = 5;
+
+/// A resolved path as Forge hands it out and compares it: Windows `canonicalize` gives a `\\?\` verbatim
+/// path, which Claude Code does not write in its transcripts, so the prefix comes off there.
+fn display_path(path: PathBuf) -> PathBuf {
+    if cfg!(windows) {
+        without_extended_prefix(&path)
+    } else {
+        path
+    }
+}
 
 /// What releasing a scratch folder did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +51,7 @@ impl ScratchUseCase {
             return Some(real);
         }
         match root.canonicalize() {
-            Ok(real) => Some(self.canonical.get_or_init(|| real)),
+            Ok(real) => Some(self.canonical.get_or_init(|| display_path(real))),
             Err(_) => Some(root),
         }
     }
@@ -71,7 +81,7 @@ impl ScratchUseCase {
             if self.port.create_new_dir(&path).await? {
                 // The root may only have come into being just now; the made folder resolves to the real path.
                 return Ok(match path.canonicalize() {
-                    Ok(real) if real.file_name() == path.file_name() => real,
+                    Ok(real) if real.file_name() == path.file_name() => display_path(real),
                     _ => path,
                 });
             }
@@ -89,9 +99,10 @@ impl ScratchUseCase {
         if !is_scratch(root, path) {
             return Ok(ScratchRelease::NotScratch);
         }
-        let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let canonical_root = display_path(root.canonicalize().unwrap_or_else(|_| root.to_path_buf()));
         match path.canonicalize() {
             Ok(real) => {
+                let real = display_path(real);
                 // A symlink (or a link in the way) resolves elsewhere or under another name.
                 if real.parent() != Some(canonical_root.as_path()) || real.file_name() != path.file_name() {
                     return Ok(ScratchRelease::NotScratch);
@@ -115,6 +126,12 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use std::fs;
+
+    #[test]
+    fn the_verbatim_prefix_is_taken_off_a_resolved_path() {
+        assert_eq!(without_extended_prefix(Path::new(r"\\?\C:\x\scratch-workspaces")), PathBuf::from(r"C:\x\scratch-workspaces"));
+        assert_eq!(display_path(PathBuf::from("/a/b")), PathBuf::from("/a/b"));
+    }
 
     /// A std-fs port, so the checks run against a real folder tree.
     struct FsPort;
