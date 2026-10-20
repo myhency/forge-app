@@ -5,7 +5,7 @@ use forge_entities::relative_time;
 use forge_features::use_workspace;
 use time::OffsetDateTime;
 
-use crate::sidebar::project_label;
+use crate::sidebar::project_label_in;
 
 /// The search palette: a box over the dimmed window that lists the sessions whose title or message
 /// text contains what is typed. Up and Down move, Enter opens, Escape or a click outside closes.
@@ -102,7 +102,7 @@ fn PaletteBody() -> Element {
                                     },
                                     None => rsx! { "{row.title}" },
                                 }
-                                span { class: "palette-project", "{project_label(&row.project.path)}" }
+                                span { class: "palette-project", "{project_label_in(workspace.scratch_root().as_deref(), &row.project.path)}" }
                             }
                             span { class: "palette-date",
                                 {row.updated_at.as_deref().map(|at| relative_time(at, now)).unwrap_or_default()}

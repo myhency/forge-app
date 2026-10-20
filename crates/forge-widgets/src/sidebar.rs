@@ -17,6 +17,15 @@ pub fn project_label(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
+/// The label of a project with the scratch root known: a scratch folder reads `This computer`.
+pub fn project_label_in(scratch_root: Option<&Path>, path: &Path) -> String {
+    if scratch_root.is_some_and(|root| forge_domain::is_scratch(root, path)) {
+        tr!("This computer").to_string()
+    } else {
+        project_label(path)
+    }
+}
+
 // The name of the `depth`-th ancestor of `path` (depth 1 is the parent). The root is written as
 // `/`, which keeps `/app` apart from `/b/app`.
 fn ancestor_name(path: &Path, depth: usize) -> Option<String> {
@@ -31,16 +40,20 @@ fn ancestor_name(path: &Path, depth: usize) -> Option<String> {
 /// One heading per project, in the order of `paths`. Folders that share a name are told apart by
 /// the nearest parent name that differs among them: `app (a)` and `app (b)` for `/a/app` and
 /// `/b/app`. A name nobody else uses stays plain.
-pub fn project_labels(paths: &[PathBuf]) -> Vec<String> {
+pub fn project_labels(paths: &[PathBuf], scratch_root: Option<&Path>) -> Vec<String> {
+    let is_scratch = |path: &Path| scratch_root.is_some_and(|root| forge_domain::is_scratch(root, path));
     let labels: Vec<String> = paths
         .iter()
         .enumerate()
         .map(|(index, path)| {
+            if is_scratch(path) {
+                return tr!("This computer").to_string();
+            }
             let base = project_label(path);
             let others: Vec<&PathBuf> = paths
                 .iter()
                 .enumerate()
-                .filter(|(other, candidate)| *other != index && project_label(candidate) == base)
+                .filter(|(other, candidate)| *other != index && !is_scratch(candidate) && project_label(candidate) == base)
                 .map(|(_, candidate)| candidate)
                 .collect();
             if others.is_empty() {
@@ -64,7 +77,9 @@ pub fn project_labels(paths: &[PathBuf]) -> Vec<String> {
         .iter()
         .zip(paths)
         .map(|(label, path)| {
-            if labels.iter().filter(|other| *other == label).count() > 1 {
+            if is_scratch(path) {
+                label.clone()
+            } else if labels.iter().filter(|other| *other == label).count() > 1 {
                 format!("{} ({})", project_label(path), path.display())
             } else {
                 label.clone()
@@ -114,7 +129,8 @@ pub fn Sidebar() -> Element {
             _ => None,
         })
         .collect();
-    let labels: HashMap<PathBuf, String> = paths.iter().cloned().zip(project_labels(&paths)).collect();
+    let scratch_root = workspace.scratch_root();
+    let labels: HashMap<PathBuf, String> = paths.iter().cloned().zip(project_labels(&paths, scratch_root.as_deref())).collect();
     let active = workspace.active();
     let shown_targets = workspace.pane_targets();
     let notice = workspace.notice();
@@ -187,10 +203,16 @@ pub fn Sidebar() -> Element {
                                 if project.exists {
                                     button {
                                         class: "group-add",
-                                        title: tr!("New session in this folder"),
+                                        title: if workspace.is_scratch_project(&project.path) { tr!("New session") } else { tr!("New session in this folder") },
                                         onclick: {
                                             let path = project.path.clone();
-                                            move |_| workspace.show_new_session_in(path.clone())
+                                            move |_| {
+                                                if workspace.is_scratch_project(&path) {
+                                                    workspace.show_new_no_folder_session()
+                                                } else {
+                                                    workspace.show_new_session_in(path.clone())
+                                                }
+                                            }
                                         },
                                         "+"
                                     }
@@ -205,7 +227,7 @@ pub fn Sidebar() -> Element {
                             entry: item.entry.clone(),
                             project_name: match group.heading {
                                 Heading::Project(_) => None,
-                                _ => Some(project_label(&item.project.path)),
+                                _ => Some(project_label_in(scratch_root.as_deref(), &item.project.path)),
                             },
                             active: match &item.entry.key {
                                 EntryKey::Live(id) => active == Active::Live(*id),
@@ -287,7 +309,23 @@ mod tests {
 
     fn labels(paths: &[&str]) -> Vec<String> {
         let paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
-        project_labels(&paths)
+        project_labels(&paths, None)
+    }
+
+    #[test]
+    fn a_scratch_folder_is_labelled_this_computer_without_shifting_others() {
+        let root = Path::new("/cfg/scratch-workspaces");
+        let paths: Vec<PathBuf> = ["/a/app", "/cfg/scratch-workspaces/scratch-2026-10-20-aaaaaa", "/b/app"]
+            .iter()
+            .map(PathBuf::from)
+            .collect();
+        assert_eq!(project_labels(&paths, Some(root)), ["app (a)", "This computer", "app (b)"]);
+        assert_eq!(project_label_in(Some(root), &paths[1]), "This computer");
+        assert_eq!(project_label_in(Some(root), &paths[0]), "app");
+        // No root: nothing is scratch.
+        assert_eq!(project_label_in(None, &paths[1]), "scratch-2026-10-20-aaaaaa");
+        // A folder merely named like a scratch folder elsewhere is not one.
+        assert_eq!(project_label_in(Some(root), Path::new("/x/scratch-2026-10-20-aaaaaa")), "scratch-2026-10-20-aaaaaa");
     }
 
     #[test]

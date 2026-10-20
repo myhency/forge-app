@@ -70,6 +70,6 @@ pub use session_tools::SessionTools;
 pub use settings_overlay::SettingsOverlay;
 pub use shortcuts_dialog::ShortcutsDialog;
 pub use environment_dialog::EnvironmentDialog;
-pub use sidebar::{project_label, project_labels, NavButtons, Sidebar};
+pub use sidebar::{project_label, project_label_in, project_labels, NavButtons, Sidebar};
 pub use usage_ring::UsageRing;
 pub use web_view_host::WebViewHost;

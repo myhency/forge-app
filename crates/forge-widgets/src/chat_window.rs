@@ -10,7 +10,7 @@ use crate::plus_menu::PlusMenu;
 use crate::question_panel::QuestionPanel;
 use crate::session_title_menu::SessionTitleMenu;
 use crate::session_tools::SessionTools;
-use crate::sidebar::project_label;
+use crate::sidebar::project_label_in;
 use crate::tasks_panel::use_running_workflows;
 use crate::usage_ring::UsageRing;
 use forge_shared::tr;
@@ -55,7 +55,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
         .is_some_and(|session| workspace.is_archived(&view.project_path, session));
     let dock_expanded = workspace.dock(id).expanded.is_some() && !archived;
     let heading = view.session.title.as_deref().unwrap_or(tr!("Session")).to_string();
-    let folder = project_label(&workspace.origin_of(&view.project_path));
+    let folder = project_label_in(workspace.scratch_root().as_deref(), &workspace.origin_of(&view.project_path));
     let title_menu = workspace.active_title_menu();
     let tag = workspace.worktree_tag(&view.project_path).map(|tag| match tag.branch {
         Some(branch) => format!("{} · {}", tr!("Worktree"), branch),

@@ -640,7 +640,7 @@ impl Workspace {
         let past = self.past.read();
         let listed: Vec<ProjectSummary> = past
             .iter()
-            .filter(|(project, _)| project.exists)
+            .filter(|(project, _)| project.exists && !self.is_scratch_project(&project.path))
             .map(|(project, _)| project.clone())
             .collect();
         let mut projects = folder_choices(listed, &|path| forge_domain::origin_of(&records, path));
@@ -1561,6 +1561,23 @@ impl Workspace {
     /// Whether a no-folder session can be made (a scratch folder root is known).
     pub fn scratch_available(&self) -> bool {
         self.services.peek().scratch.available()
+    }
+
+    /// The scratch folder root, when one is known.
+    pub fn scratch_root(&self) -> Option<PathBuf> {
+        self.services.peek().scratch.root().map(Path::to_path_buf)
+    }
+
+    /// Whether `path` is one of Forge's scratch folders (a session started without a folder).
+    pub fn is_scratch_project(&self, path: &Path) -> bool {
+        self.services.peek().scratch.root().is_some_and(|root| forge_domain::is_scratch(root, path))
+    }
+
+    /// Shows the new-session panel with `폴더 없음` chosen (the `+` beside `이 컴퓨터`).
+    pub fn show_new_no_folder_session(&self) {
+        self.set_new_folder(None);
+        self.set_new_no_folder(true);
+        self.show_new_session();
     }
 
     /// Shows the new-session panel with `folder` preselected (the `+` beside a project).
