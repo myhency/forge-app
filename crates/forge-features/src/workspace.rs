@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
-use forge_application::{WorktreesUseCase, Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
+use forge_application::{WorktreesUseCase, ScratchUseCase, Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::TranscriptView;
 use forge_domain::{ChangeModeRef, ChangesViewPrefs, WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
@@ -81,6 +81,7 @@ pub struct WorkspaceServices {
     pub skill_catalog: Arc<SkillCatalogUseCase>,
     pub connector_catalog: Arc<ConnectorCatalogUseCase>,
     pub worktrees: Arc<WorktreesUseCase>,
+    pub scratch: Arc<ScratchUseCase>,
     pub folder_picker: Arc<dyn FolderPickerPort>,
     pub file_picker: Arc<dyn FilePickerPort>,
     pub terminal: Arc<dyn TerminalPort>,

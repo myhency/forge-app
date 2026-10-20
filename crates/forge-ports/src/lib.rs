@@ -11,6 +11,7 @@ mod mcp_manager_port;
 mod notify_port;
 mod plugin_manager_port;
 mod project_port;
+mod scratch_port;
 mod session_port;
 mod sidecar_factory_port;
 mod skill_catalog_port;
@@ -38,6 +39,7 @@ pub use file_picker_port::FilePickerPort;
 pub use folder_picker_port::FolderPickerPort;
 pub use plugin_manager_port::{PluginManagerError, PluginManagerPort};
 pub use project_port::{ProjectRepositoryError, ProjectRepositoryPort};
+pub use scratch_port::{ScratchError, ScratchPort};
 pub use session_port::{SessionRepositoryError, SessionRepositoryPort};
 pub use sidecar_factory_port::SidecarFactoryPort;
 pub use skill_catalog_port::{SkillCatalogError, SkillCatalogPort};
@@ -90,3 +92,5 @@ pub use sidecar_port::MockSidecarPort;
 pub use skill_catalog_port::MockSkillCatalogPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use worktree_port::MockWorktreePort;
+#[cfg(any(test, feature = "mocks"))]
+pub use scratch_port::MockScratchPort;

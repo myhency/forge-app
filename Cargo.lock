@@ -1566,10 +1566,12 @@ dependencies = [
 name = "forge-adapter-files"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "dunce",
  "forge-ports",
  "regex",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

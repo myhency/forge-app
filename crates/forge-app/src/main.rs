@@ -18,11 +18,11 @@ use forge_adapter_notify::{AttentionSlot, MacNotify};
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
 use forge_adapter_sidecar::SidecarProcessFactory;
 use forge_adapter_browser::SystemBrowser;
-use forge_adapter_files::LocalFiles;
+use forge_adapter_files::{LocalFiles, ScratchFs};
 use forge_adapter_git::GitCli;
 use forge_adapter_terminal::PtyTerminal;
 use forge_adapter_webview::WryWebViews;
-use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, RegistryHost, RoutineRunner, RoutinesUseCase, SessionRegistry, SettingsUseCase, SkillCatalogUseCase, WorktreesUseCase};
+use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, RegistryHost, RoutineRunner, RoutinesUseCase, SessionRegistry, ScratchUseCase, SettingsUseCase, SkillCatalogUseCase, WorktreesUseCase};
 use forge_features::{RoutineServices, WorkspaceServices};
 use forge_pages::WorkspacePage;
 use forge_shared::THEME_CSS;
@@ -158,6 +158,7 @@ fn build_services() -> WorkspaceServices {
         .expect("could not resolve the config directory");
     let runtime::Runtime { node, script } = runtime::locate_here(DEFAULT_SIDECAR_SCRIPT);
 
+    let scratch_root = forge_domain::scratch_root(&config_path);
     let config = Arc::new(ConfigFileAdapter::new(config_path));
     // Every use case that loads, edits and saves the Forge config holds this one lock while it does.
     let config_lock = ConfigLock::default();
@@ -203,6 +204,7 @@ fn build_services() -> WorkspaceServices {
     let runner = Arc::new(RoutineRunner::new(routines.clone(), host.clone()));
     let git = Arc::new(GitCli::new());
     let worktrees = Arc::new(WorktreesUseCase::new(git.clone(), settings.clone()));
+    let scratch = Arc::new(ScratchUseCase::new(scratch_root, Arc::new(ScratchFs)));
     let picker = Arc::new(RfdFolderPicker::new());
     let shell = default_shell(std::env::var("SHELL").ok());
     WorkspaceServices {
@@ -215,6 +217,7 @@ fn build_services() -> WorkspaceServices {
         skill_catalog,
         connector_catalog,
         worktrees,
+        scratch,
         folder_picker: picker.clone(),
         file_picker: picker,
         terminal: Arc::new(PtyTerminal::new(shell)),

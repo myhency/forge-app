@@ -728,3 +728,77 @@ mod tests {
         assert_eq!(hits(&dir, "b", regex).len(), 1);
     }
 }
+
+/// Plain folder work for scratch folders, with `std::fs`.
+#[derive(Default)]
+pub struct ScratchFs;
+
+#[async_trait::async_trait]
+impl forge_ports::ScratchPort for ScratchFs {
+    async fn create_dir(&self, path: &Path) -> Result<(), forge_ports::ScratchError> {
+        fs::create_dir_all(path).map_err(|e| forge_ports::ScratchError(e.to_string()))
+    }
+    async fn is_empty_dir(&self, path: &Path) -> Result<bool, forge_ports::ScratchError> {
+        match fs::read_dir(path) {
+            Ok(mut entries) => Ok(entries.next().is_none()),
+            Err(_) => Ok(false),
+        }
+    }
+    // `remove_dir` (never `remove_dir_all`): it fails on a folder that has entries.
+    async fn remove_empty_dir(&self, path: &Path) -> Result<(), forge_ports::ScratchError> {
+        fs::remove_dir(path).map_err(|e| forge_ports::ScratchError(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod scratch_fs_tests {
+    use super::*;
+    use forge_ports::ScratchPort;
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("forge-scratchfs-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn create_makes_nested_folders() {
+        let base = temp("create");
+        let target = base.join("a").join("b");
+        ScratchFs.create_dir(&target).await.unwrap();
+        assert!(target.is_dir());
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[tokio::test]
+    async fn is_empty_dir_cases() {
+        let base = temp("empty");
+        let full = base.join("full");
+        fs::create_dir_all(&full).unwrap();
+        fs::write(full.join("f"), "x").unwrap();
+        let empty = base.join("empty");
+        fs::create_dir_all(&empty).unwrap();
+        fs::write(base.join("file"), "x").unwrap();
+        assert!(ScratchFs.is_empty_dir(&empty).await.unwrap());
+        assert!(!ScratchFs.is_empty_dir(&full).await.unwrap());
+        assert!(!ScratchFs.is_empty_dir(&base.join("file")).await.unwrap());
+        assert!(!ScratchFs.is_empty_dir(&base.join("missing")).await.unwrap());
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[tokio::test]
+    async fn remove_empty_dir_never_removes_contents() {
+        let base = temp("remove");
+        let empty = base.join("empty");
+        fs::create_dir_all(&empty).unwrap();
+        ScratchFs.remove_empty_dir(&empty).await.unwrap();
+        assert!(!empty.exists());
+        let full = base.join("full");
+        fs::create_dir_all(&full).unwrap();
+        fs::write(full.join("f"), "x").unwrap();
+        assert!(ScratchFs.remove_empty_dir(&full).await.is_err());
+        assert!(full.join("f").is_file());
+        fs::remove_dir_all(&base).unwrap();
+    }
+}

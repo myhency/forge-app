@@ -10,7 +10,7 @@ pub fn scratch_folder_name(year: i32, month: u8, day: u8, seed: u64) -> String {
     format!("scratch-{year:04}-{month:02}-{day:02}-{:06x}", seed & 0xFF_FFFF)
 }
 
-/// True only for a direct child of `root` whose name starts with `scratch-`.
+/// True only for a direct child of `root` whose name is `scratch-` plus a non-empty suffix.
 pub fn is_scratch(root: &Path, path: &Path) -> bool {
     if path.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)) {
         return false;
@@ -20,7 +20,7 @@ pub fn is_scratch(root: &Path, path: &Path) -> bool {
     }
     path.file_name()
         .and_then(|n| n.to_str())
-        .is_some_and(|n| n.starts_with("scratch-"))
+        .is_some_and(|n| n.strip_prefix("scratch-").is_some_and(|rest| !rest.is_empty()))
 }
 
 /// The scratch root next to the config file.
@@ -48,6 +48,16 @@ mod tests {
         assert!(!is_scratch(root, &root.join("other")));
         assert!(!is_scratch(root, Path::new("/elsewhere/scratch-2026-10-20-ab12cd")));
         assert!(!is_scratch(root, &root.join("..").join("scratch-a")));
+    }
+
+    #[test]
+    fn is_scratch_edge_cases() {
+        let root = Path::new("/c/Forge/scratch-workspaces");
+        assert!(!is_scratch(root, &root.join("scratch-")));
+        assert!(!is_scratch(root, &root.join("scratch-a").join("..")));
+        assert!(!is_scratch(Path::new("rel/root"), Path::new("./scratch-a")));
+        assert!(!is_scratch(Path::new("./rel/root"), Path::new("./rel/root/scratch-a")));
+        assert!(is_scratch(Path::new("/c/Forge/scratch-workspaces/"), &root.join("scratch-a")));
     }
 
     #[test]
