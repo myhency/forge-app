@@ -39,7 +39,7 @@ pub use config::{
     MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
 };
 pub use effort::{AvailableModel, EffortLevel};
-pub use environment::{new_environment_id, parse_env, EnvParseError, EnvParseReason, EnvVars, Environment, FolderChoice};
+pub use environment::{environment_of, new_environment_id, parse_env, EnvParseError, EnvParseReason, EnvVars, Environment, FolderChoice};
 pub use keys::{SHOW_IN_FILE_MANAGER, KEY_ADD_FILES, KEY_ALLOW_ALWAYS, KEY_ANSWER, KEY_CLOSE_SESSION, KEY_FIND, KEY_SEARCH, KEY_SETTINGS, KEY_SHORTCUTS};
 pub use paths::{file_name, has_parent_part, is_absolute_path, path_parts};
 pub use trusted::{add_trusted, is_trusted, without_extended_prefix};

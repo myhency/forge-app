@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::EffortLevel;
+use crate::{is_scratch, origin_of, EffortLevel, WorktreeRecord};
 
 /// The branch and worktree choice of one folder of an environment.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -204,6 +204,28 @@ pub fn parse_env(text: &str) -> Result<Vec<(String, String)>, EnvParseError> {
     Ok(out)
 }
 
+/// The saved environment a session in `project` belongs to: the one whose working folder is the
+/// project's origin (a worktree counts as its repository), the most recently used on a tie. A
+/// no-folder scratch session belongs to none.
+pub fn environment_of<'a>(
+    environments: &'a [Environment],
+    records: &[WorktreeRecord],
+    scratch_root: Option<&Path>,
+    project: &Path,
+) -> Option<&'a Environment> {
+    if scratch_root.is_some_and(|root| is_scratch(root, project)) {
+        return None;
+    }
+    let origin = origin_of(records, project);
+    let mut best: Option<&Environment> = None;
+    for environment in environments.iter().filter(|environment| environment.folders.first() == Some(&origin)) {
+        if best.is_none_or(|current| environment.last_used_at > current.last_used_at) {
+            best = Some(environment);
+        }
+    }
+    best
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,5 +424,89 @@ mod tests {
     #[test]
     fn an_id_is_sixteen_hex_digits_after_the_prefix() {
         assert_eq!(new_environment_id(255), "env-00000000000000ff");
+    }
+}
+
+#[cfg(test)]
+mod environment_of_tests {
+    use std::path::Path;
+
+    use super::*;
+    use crate::WorktreeRecord;
+
+    fn saved(id: &str, folders: &[&str], last_used_at: i64) -> Environment {
+        Environment {
+            id: id.to_string(),
+            name: id.to_string(),
+            folders: folders.iter().map(PathBuf::from).collect(),
+            branch: None,
+            worktree: false,
+            extra_choices: Vec::new(),
+            env_vars: String::new(),
+            pinned: false,
+            created_at: 0,
+            last_used_at,
+            model: None,
+            effort: None,
+        }
+    }
+
+    fn id_of<'a>(found: Option<&'a Environment>) -> Option<&'a str> {
+        found.map(|environment| environment.id.as_str())
+    }
+
+    #[test]
+    fn no_environment_matches_a_folder_that_is_nobody_s_first_folder() {
+        let environments = [saved("a", &["/a"], 1)];
+        assert_eq!(environment_of(&environments, &[], None, Path::new("/b")), None);
+    }
+
+    #[test]
+    fn the_first_folder_matches_and_a_later_folder_does_not() {
+        let environments = [saved("a", &["/a", "/b"], 1)];
+        assert_eq!(id_of(environment_of(&environments, &[], None, Path::new("/a"))), Some("a"));
+        assert_eq!(environment_of(&environments, &[], None, Path::new("/b")), None);
+    }
+
+    #[test]
+    fn two_environments_with_one_first_folder_pick_the_most_recently_used() {
+        let environments = [saved("old", &["/a"], 1), saved("new", &["/a"], 9), saved("mid", &["/a"], 5)];
+        assert_eq!(id_of(environment_of(&environments, &[], None, Path::new("/a"))), Some("new"));
+    }
+
+    #[test]
+    fn an_environment_without_folders_never_matches() {
+        let environments = [saved("a", &[], 1)];
+        assert_eq!(environment_of(&environments, &[], None, Path::new("/a")), None);
+        assert_eq!(environment_of(&environments, &[], None, Path::new("")), None);
+    }
+
+    #[test]
+    fn a_recorded_worktree_matches_the_environment_of_its_repository() {
+        let environments = [saved("a", &["/r"], 1)];
+        let records = [WorktreeRecord {
+            name: "x".to_string(),
+            path: PathBuf::from("/r/.claude/worktrees/x"),
+            repo: PathBuf::from("/r"),
+            branch: "claude/x".to_string(),
+            base_branch: "master".to_string(),
+            created_at: 0,
+        }];
+        let found = environment_of(&environments, &records, None, Path::new("/r/.claude/worktrees/x"));
+        assert_eq!(id_of(found), Some("a"));
+    }
+
+    #[test]
+    fn a_path_named_worktree_matches_without_a_record() {
+        let environments = [saved("a", &["/r"], 1)];
+        let found = environment_of(&environments, &[], None, Path::new("/r/.claude/worktrees/x"));
+        assert_eq!(id_of(found), Some("a"));
+    }
+
+    #[test]
+    fn a_scratch_folder_never_matches() {
+        let scratch = "/s/scratch-2026-10-22-abc123";
+        let environments = [saved("a", &[scratch], 1)];
+        assert_eq!(environment_of(&environments, &[], Some(Path::new("/s")), Path::new(scratch)), None);
     }
 }

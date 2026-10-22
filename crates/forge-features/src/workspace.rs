@@ -685,6 +685,13 @@ impl Workspace {
         forge_domain::main_repo_of(path).map(|_| WorktreeTag { branch: None })
     }
 
+    /// The saved environment a session in `project` belongs to, if any.
+    pub fn session_environment(&self, project: &Path) -> Option<forge_domain::Environment> {
+        let environments = self.environments();
+        let scratch_root = self.scratch_root();
+        forge_domain::environment_of(&environments, &self.worktrees.read(), scratch_root.as_deref(), project).cloned()
+    }
+
     /// Reloads one project's session list, leaving every other project as drawn.
     pub fn reload_project(&self, project: PathBuf) {
         let services = (*self.services.peek()).clone();
