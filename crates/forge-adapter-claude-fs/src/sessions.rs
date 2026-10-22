@@ -447,6 +447,42 @@ fn fork_error(path: &Path, e: std::io::Error) -> SessionRepositoryError {
     SessionRepositoryError::ForkFailed(format!("{}: {e}", path.display()))
 }
 
+fn move_error(path: &Path, e: std::io::Error) -> SessionRepositoryError {
+    SessionRepositoryError::MoveFailed(format!("{}: {e}", path.display()))
+}
+
+/// Renames `from` to `to`; across devices a rename is impossible, so the data is copied and the
+/// original removed only once the copy is complete (a failed copy is cleaned up).
+async fn move_path(from: &Path, to: &Path) -> std::io::Result<()> {
+    let Err(e) = tokio::fs::rename(from, to).await else { return Ok(()) };
+    if e.kind() != std::io::ErrorKind::CrossesDevices {
+        return Err(e);
+    }
+    let from_owned = from.to_path_buf();
+    let to_owned = to.to_path_buf();
+    let copied = tokio::task::spawn_blocking(move || copy_recursive(&from_owned, &to_owned))
+        .await
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    if let Err(e) = copied {
+        let _ = if to.is_dir() { tokio::fs::remove_dir_all(to).await } else { tokio::fs::remove_file(to).await };
+        return Err(e);
+    }
+    if from.is_dir() { tokio::fs::remove_dir_all(from).await } else { tokio::fs::remove_file(from).await }
+}
+
+fn copy_recursive(from: &Path, to: &Path) -> std::io::Result<()> {
+    if from.is_dir() {
+        std::fs::create_dir(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            copy_recursive(&entry.path(), &to.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else {
+        std::fs::copy(from, to).map(|_| ())
+    }
+}
+
 #[async_trait]
 impl SessionRepositoryPort for ClaudeSessionAdapter {
     async fn list_sessions(
@@ -736,6 +772,47 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         Ok(SessionId(new))
     }
 
+    async fn move_session(
+        &self,
+        from_project: &Path,
+        to_project: &Path,
+        session_id: &SessionId,
+    ) -> Result<(), SessionRepositoryError> {
+        let id = &session_id.0;
+        if !valid_session_id(id) {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+        let from_dir = self.project_dir(from_project).await;
+        let to_dir = self.project_dir(to_project).await;
+        let source = from_dir.join(format!("{id}.jsonl"));
+        if !tokio::fs::try_exists(&source).await.map_err(|e| move_error(&source, e))? {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+        if from_dir == to_dir {
+            return Ok(());
+        }
+        let target = to_dir.join(format!("{id}.jsonl"));
+        let source_folder = from_dir.join(id);
+        let target_folder = to_dir.join(id);
+        let folder_exists = tokio::fs::try_exists(&source_folder).await.map_err(|e| move_error(&source_folder, e))?;
+        // Never overwrite: a leftover folder of the same name in the target counts as taken too.
+        let taken = tokio::fs::try_exists(&target).await.map_err(|e| move_error(&target, e))?
+            || (folder_exists && tokio::fs::try_exists(&target_folder).await.map_err(|e| move_error(&target_folder, e))?);
+        if taken {
+            return Err(SessionRepositoryError::MoveFailed(format!("{} already exists", target.display())));
+        }
+        tokio::fs::create_dir_all(&to_dir).await.map_err(|e| move_error(&to_dir, e))?;
+        move_path(&source, &target).await.map_err(|e| move_error(&target, e))?;
+        if folder_exists {
+            if let Err(e) = move_path(&source_folder, &target_folder).await {
+                // Put the transcript back so the session is not split in two.
+                let _ = move_path(&target, &source).await;
+                return Err(move_error(&target_folder, e));
+            }
+        }
+        Ok(())
+    }
+
     async fn search_sessions(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>, SessionRepositoryError> {
         let query = query.trim();
         if query.is_empty() || limit == 0 {
@@ -883,6 +960,88 @@ mod tests {
             let result = adapter.fork_session(&project(), &SessionId(id.to_string()), "T").await;
             assert!(matches!(result, Err(SessionRepositoryError::NotFound(_))), "{id:?}");
         }
+    }
+
+    fn other_project() -> PathBuf {
+        PathBuf::from("/Users/test/other")
+    }
+
+    #[tokio::test]
+    async fn move_puts_the_transcript_in_the_new_project_dir_and_removes_the_old_one() {
+        let home = tempfile::tempdir().unwrap();
+        let old = write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        let id = SessionId("s1".to_string());
+
+        adapter.move_session(&project(), &other_project(), &id).await.unwrap();
+
+        assert!(adapter.load_session(&other_project(), &id).await.is_ok());
+        assert!(matches!(adapter.load_session(&project(), &id).await, Err(SessionRepositoryError::NotFound(_))));
+        assert!(!old.exists());
+    }
+
+    #[tokio::test]
+    async fn move_takes_the_same_named_folder_along() {
+        let home = tempfile::tempdir().unwrap();
+        let old = write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        let folder = old.parent().unwrap().join("s1");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("note.txt"), "kept").unwrap();
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        adapter.move_session(&project(), &other_project(), &SessionId("s1".to_string())).await.unwrap();
+
+        let target = home.path().join("projects").join(escape_project_path(&other_project()));
+        assert_eq!(std::fs::read_to_string(target.join("s1").join("note.txt")).unwrap(), "kept");
+        assert!(!folder.exists());
+    }
+
+    #[tokio::test]
+    async fn move_refuses_when_the_target_already_has_the_session_and_changes_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        let old = write_session(home.path(), &project(), "s1", &[message("u1", None, "from")]);
+        let existing = write_session(home.path(), &other_project(), "s1", &[message("u1", None, "target")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let result = adapter.move_session(&project(), &other_project(), &SessionId("s1".to_string())).await;
+
+        assert!(matches!(result, Err(SessionRepositoryError::MoveFailed(_))));
+        assert!(std::fs::read_to_string(&old).unwrap().contains("from"));
+        assert!(std::fs::read_to_string(&existing).unwrap().contains("target"));
+    }
+
+    #[tokio::test]
+    async fn move_of_a_missing_session_is_not_found() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        let result = adapter.move_session(&project(), &other_project(), &SessionId("nope".to_string())).await;
+
+        assert!(matches!(result, Err(SessionRepositoryError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn move_refuses_ids_that_could_leave_the_project_directory() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        for id in ["../s1", "a/b", "..", "", ".hidden"] {
+            let result = adapter.move_session(&project(), &other_project(), &SessionId(id.to_string())).await;
+            assert!(matches!(result, Err(SessionRepositoryError::NotFound(_))), "{id:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn moving_within_the_same_project_dir_is_a_no_op_ok() {
+        let home = tempfile::tempdir().unwrap();
+        let old = write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        adapter.move_session(&project(), &project(), &SessionId("s1".to_string())).await.unwrap();
+
+        assert!(old.exists());
     }
 
     #[tokio::test]

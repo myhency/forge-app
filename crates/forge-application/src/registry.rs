@@ -224,6 +224,16 @@ impl SessionRegistry {
         Ok(self.sessions.fork_session(project_path, session_id, &fork_title(title)).await?)
     }
 
+    /// Moves a session's transcript to another project directory, so it lists under the new folder.
+    pub async fn move_to(
+        &self,
+        from_project: &Path,
+        to_project: &Path,
+        session_id: &SessionId,
+    ) -> Result<(), ManageSessionError> {
+        Ok(self.sessions.move_session(from_project, to_project, session_id).await?)
+    }
+
     fn find_open(&self, session_id: &SessionId) -> Option<LiveSessionHandle> {
         find_in(&self.handles.lock().unwrap(), session_id)
     }
@@ -564,6 +574,10 @@ mod tests {
         async fn delete_session(&self, _project_path: &Path, _session_id: &SessionId) -> Result<(), SessionRepositoryError> {
             Ok(())
         }
+
+        async fn move_session(&self, _from_project: &Path, _to_project: &Path, _session_id: &SessionId) -> Result<(), SessionRepositoryError> {
+            unimplemented!("not used by these tests")
+        }
     }
 
     #[tokio::test]
@@ -639,6 +653,19 @@ mod tests {
         let new_id = registry.fork(Path::new("/work/a"), &SessionId("claude-1".to_string()), "Mine").await.unwrap();
 
         assert_eq!(new_id.0, "claude-2");
+    }
+
+    #[tokio::test]
+    async fn move_to_asks_the_repository_once() {
+        let mut repository = MockSessionRepositoryPort::new();
+        repository
+            .expect_move_session()
+            .withf(|from: &Path, to: &Path, id: &SessionId| from == Path::new("/work/a") && to == Path::new("/work/b") && id.0 == "claude-1")
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+        let (registry, _spawns) = registry(vec![], Arc::new(repository));
+
+        registry.move_to(Path::new("/work/a"), Path::new("/work/b"), &SessionId("claude-1".to_string())).await.unwrap();
     }
 
     #[tokio::test]

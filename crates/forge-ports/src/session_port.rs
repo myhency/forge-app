@@ -21,6 +21,8 @@ pub enum SessionRepositoryError {
     DeleteFailed(String),
     #[error("failed to fork session: {0}")]
     ForkFailed(String),
+    #[error("failed to move session: {0}")]
+    MoveFailed(String),
     #[error("failed to search sessions: {0}")]
     SearchFailed(String),
 }
@@ -60,6 +62,14 @@ pub trait SessionRepositoryPort: Send + Sync {
         session_id: &SessionId,
         title: &str,
     ) -> Result<SessionId, SessionRepositoryError>;
+    /// Moves the session's transcript (and the same-named folder beside it) from one project
+    /// directory to another. Nothing is overwritten; a failure leaves everything as it was.
+    async fn move_session(
+        &self,
+        from_project: &Path,
+        to_project: &Path,
+        session_id: &SessionId,
+    ) -> Result<(), SessionRepositoryError>;
     /// Sessions of every project whose title or message text contains `query` (any case), newest
     /// first, at most `limit`. A blank query finds nothing. Only what the user and the assistant
     /// wrote is searched, not tool input, tool results or thinking.
