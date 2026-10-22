@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use forge_domain::{new_environment_id, parse_env, EnvParseError, EnvVars, Environment, FolderChoice};
+use forge_domain::{new_environment_id, parse_env, EffortLevel, EnvParseError, EnvVars, Environment, FolderChoice};
 
 use crate::worktree_view::NewWorktree;
 
@@ -92,6 +92,8 @@ pub struct EnvironmentDraft {
     /// One entry per folder, aligned with `folders`.
     pub choices: Vec<FolderChoice>,
     pub env_vars: String,
+    pub model: Option<String>,
+    pub effort: Option<EffortLevel>,
 }
 
 impl std::fmt::Debug for EnvironmentDraft {
@@ -101,6 +103,8 @@ impl std::fmt::Debug for EnvironmentDraft {
             .field("name", &self.name)
             .field("folders", &self.folders)
             .field("choices", &self.choices)
+            .field("model", &self.model)
+            .field("effort", &self.effort)
             .field("env_vars", &format!("<redacted, {} chars>", self.env_vars.chars().count()))
             .finish()
     }
@@ -109,11 +113,17 @@ impl std::fmt::Debug for EnvironmentDraft {
 impl EnvironmentDraft {
     /// A new environment: the name and folder suggested, a worktree on for the first folder (as in the folder menu).
     pub fn blank(name: String, folder: Option<PathBuf>) -> Self {
-        let mut draft = Self { id: None, name, folders: Vec::new(), choices: Vec::new(), env_vars: String::new() };
+        let mut draft = Self { id: None, name, folders: Vec::new(), choices: Vec::new(), env_vars: String::new(), model: None, effort: None };
         if let Some(folder) = folder {
             draft.push_folder(folder);
         }
         draft
+    }
+
+    /// A new environment saved from a session: the folder's name, a worktree on for the folder, and the session's model and effort.
+    pub fn from_session(folder: PathBuf, model: Option<String>, effort: Option<EffortLevel>) -> Self {
+        let name = folder.file_name().map_or_else(|| folder.display().to_string(), |name| name.to_string_lossy().to_string());
+        Self { model, effort, ..Self::blank(name, Some(folder)) }
     }
 
     /// Adds a folder with its own choice (a worktree on only for the very first); a folder already there is ignored.
@@ -140,7 +150,7 @@ impl EnvironmentDraft {
             choices.extend(environment.extra_choices.iter().cloned());
         }
         choices.resize(environment.folders.len(), FolderChoice::default());
-        Self { id: Some(environment.id.clone()), name: environment.name.clone(), folders: environment.folders.clone(), choices, env_vars: environment.env_vars.clone() }
+        Self { id: Some(environment.id.clone()), name: environment.name.clone(), folders: environment.folders.clone(), choices, env_vars: environment.env_vars.clone(), model: environment.model.clone(), effort: environment.effort }
     }
 
     pub fn changed_from(&self, initial: &EnvironmentDraft) -> bool {
@@ -170,8 +180,8 @@ impl EnvironmentDraft {
             pinned: previous.is_some_and(|environment| environment.pinned),
             created_at: previous.map_or(now, |environment| environment.created_at),
             last_used_at: previous.map_or(now, |environment| environment.last_used_at),
-            model: None,
-            effort: None,
+            model: self.model.clone(),
+            effort: self.effort,
         }
         .normalized()
     }
@@ -229,6 +239,10 @@ pub enum EnvironmentKey {
 pub enum EnvironmentRequest {
     New { folder: Option<PathBuf> },
     Edit(String),
+    /// Save the session's folder, model and effort as a new environment.
+    NewFromSession { folder: PathBuf, model: Option<String>, effort: Option<EffortLevel> },
+    /// Edit an environment from a session: as `Edit`, but it cannot be deleted there.
+    EditInSession(String),
 }
 
 /// The one-line text for a bad variables line, for the dialog.
@@ -276,6 +290,43 @@ pub fn merge_added_dirs(composer: Vec<PathBuf>, extra: &[PathBuf], made: &[Optio
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_draft_from_a_session_carries_the_folder_name_model_and_effort() {
+        let draft = EnvironmentDraft::from_session("/p/forge-observe-git".into(), Some("m".into()), Some(EffortLevel::High));
+        assert_eq!(draft.name, "forge-observe-git");
+        assert_eq!(draft.folders, vec![PathBuf::from("/p/forge-observe-git")]);
+        assert_eq!(draft.model.as_deref(), Some("m"));
+        assert_eq!(draft.effort, Some(EffortLevel::High));
+        assert!(draft.choices[0].worktree);
+    }
+
+    #[test]
+    fn building_a_draft_keeps_model_and_effort() {
+        let draft = EnvironmentDraft::from_session("/p/app".into(), Some("m".into()), Some(EffortLevel::Low));
+        let built = draft.build(None, 1, 5);
+        assert_eq!(built.model.as_deref(), Some("m"));
+        assert_eq!(built.effort, Some(EffortLevel::Low));
+    }
+
+    #[test]
+    fn editing_keeps_the_stored_model_and_effort() {
+        let mut stored = env("a", "app", false, 0);
+        stored.model = Some("m".into());
+        stored.effort = Some(EffortLevel::Medium);
+        let built = EnvironmentDraft::of(&stored).build(Some(&stored), 1, 5);
+        assert_eq!(built.model, stored.model);
+        assert_eq!(built.effort, stored.effort);
+    }
+
+    #[test]
+    fn a_changed_model_counts_as_a_change() {
+        let initial = EnvironmentDraft::from_session("/p/app".into(), Some("m".into()), None);
+        let mut draft = initial.clone();
+        assert!(!draft.changed_from(&initial));
+        draft.model = Some("n".into());
+        assert!(draft.changed_from(&initial));
+    }
+
     #[test]
     fn a_failed_send_releases_the_first_worktree_and_every_extra_one_that_was_made() {
         let made = vec![None, Some(PathBuf::from("/b/w")), None, Some(PathBuf::from("/d/w"))];
@@ -330,7 +381,7 @@ mod tests {
     }
 
     use super::*;
-    use forge_domain::EnvParseReason;
+    use forge_domain::{EffortLevel, EnvParseReason};
 
     fn env(id: &str, name: &str, pinned: bool, last_used: i64) -> Environment {
         Environment {

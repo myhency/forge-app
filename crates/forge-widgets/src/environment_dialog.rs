@@ -38,16 +38,18 @@ pub fn EnvironmentDialog() -> Element {
 fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
     let workspace = use_workspace();
     let stored = match &request {
-        EnvironmentRequest::Edit(id) => workspace.environments().into_iter().find(|environment| environment.id == *id),
-        EnvironmentRequest::New { .. } => None,
+        EnvironmentRequest::Edit(id) | EnvironmentRequest::EditInSession(id) => workspace.environments().into_iter().find(|environment| environment.id == *id),
+        EnvironmentRequest::New { .. } | EnvironmentRequest::NewFromSession { .. } => None,
     };
     // An environment deleted under an open edit dialog: nothing left to edit. Every hook below
     // still runs (with a blank fallback draft); the effect closes the dialog and nothing renders.
-    let gone = matches!(request, EnvironmentRequest::Edit(_)) && stored.is_none();
+    let in_session = matches!(request, EnvironmentRequest::EditInSession(_) | EnvironmentRequest::NewFromSession { .. });
+    let gone = matches!(request, EnvironmentRequest::Edit(_) | EnvironmentRequest::EditInSession(_)) && stored.is_none();
     let initial = match (&request, &stored) {
-        (EnvironmentRequest::Edit(_), Some(environment)) => EnvironmentDraft::of(environment),
+        (EnvironmentRequest::Edit(_) | EnvironmentRequest::EditInSession(_), Some(environment)) => EnvironmentDraft::of(environment),
+        (EnvironmentRequest::NewFromSession { folder, model, effort }, _) => EnvironmentDraft::from_session(folder.clone(), model.clone(), *effort),
         (EnvironmentRequest::New { folder }, _) => EnvironmentDraft::blank(folder.as_deref().map(folder_name).unwrap_or_default(), folder.clone()),
-        (EnvironmentRequest::Edit(_), None) => EnvironmentDraft::blank(String::new(), None),
+        (EnvironmentRequest::Edit(_) | EnvironmentRequest::EditInSession(_), None) => EnvironmentDraft::blank(String::new(), None),
     };
     use_effect(move || {
         if gone {
@@ -189,7 +191,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                         oninput: move |event| draft.write().name = event.value(),
                     }
                     div { class: "env-folders-head",
-                        label { class: "env-label", {tr!("Folders")} span { class: "hint", " " {tr!("(optional)")} } }
+                        label { class: "env-label", {tr!("Folders")} if !in_session { span { class: "hint", " " {tr!("(optional)")} } } }
                         button { class: "env-add", r#type: "button", onclick: move |_| adding.set(!adding()), {tr!("+ Add")} }
                         if adding() {
                             div { class: "picker-backdrop", onclick: move |_| adding.set(false) }
@@ -238,7 +240,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                         span { class: "env-chevron", "›" }
                     }
                     div { class: "env-buttons",
-                        if editing {
+                        if editing && !in_session {
                             button { class: "env-delete", r#type: "button", onclick: move |_| ask.set(Ask::Delete), {tr!("Delete environment")} }
                         }
                         span { class: "spacer" }
