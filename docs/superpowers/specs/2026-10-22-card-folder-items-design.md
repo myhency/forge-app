@@ -54,3 +54,67 @@ New `tr!` strings with Korean entries in `crates/forge-shared/src/ko.rs`: `Chang
 
 - Unit tests: the actor restarts on the next send after `add_directories` on a running idle session and keeps folders de-duplicated; the actor's cwd change and sidecar discard; the transcript move helper (rename, existing target refused, missing source, moves the same-named folder); `session_environment` with a pin (pinned wins, deleted environment falls back, no pin falls back); lenient reading of `session_environments`; the menu item set by row and busy state (a pure helper).
 - Real window (Forge harness): the menu items on the first and added rows; add a folder, send a probe and see the SDK use it; change the folder (trusted and untrusted), see the card keep the environment's name, the group, header and toast follow, send a probe message on the moved session in the real Claude (resume works), and delete the environment to see the card turn back. Use throwaway folders under `/private/tmp` and a fake Claude home for everything that does not need a real turn. One or two real turns are needed for the resume check (the user allowed several real messages for observations on 2026-10-22; ask again for the build check).
+
+## As built
+
+Plan 53 stage C, branch `plan-53c`, tasks 1 to 6 plus a fix wave after the window check and one after the real turns.
+
+**Menu.** The first folder row's menu is `Finder에서 보기`, `경로 복사`, `폴더 변경…`, `폴더 추가…`, `터미널에서 열기`. An added row has `Finder에서 보기` and `경로 복사` only. The items come from the pure helper `folder_menu` (by row and busy state). While a turn runs, or while a move of the same session is in progress, the two folder items are hidden (not greyed). `폴더 변경…` is also hidden for a worktree session. A scratch session has no rows.
+
+**`폴더 추가…`.** `Workspace::add_session_folder` opens `pick_folder`, ignores the first folder and folders already added, and adds the row (name only, no parent path). No trust question. Added rows are in memory only. The actor (`add_directories`) keeps the new list; when a sidecar was already started and is idle it discards the sidecar, and the next send starts a new one with `resume` and the longer list. While a turn runs the call is ignored, as before.
+
+**`폴더 변경…` flow.** `Workspace::change_session_folder` opens `pick_folder`; if the folder is the one the view already has (`should_move`, compared by component) it stops. If the folder is not trusted it sets `trust_request` and the dialog `WorkspaceTrustDialog` asks `이 워크스페이스를 신뢰하시겠습니까?` with `취소` / `작업 공간 신뢰` (Esc and a click on the backdrop cancel; trusting saves the folder in the trusted list). Then `finish_change` runs: a running turn or a move already in progress gives the plain notice `턴이 끝난 뒤 폴더를 다시 변경해 주세요` and stops; a session with no Claude session id gives `첫 메시지를 보내기 전에는 세션을 옮길 수 없습니다.` (an extra notice the design did not list). Otherwise, in this order: the session id goes into the `moving` set; `registry.move_to` moves the transcript; on an error the notice shows it and nothing else changes (no pin, no actor change); on success `pin_environment`, then `handle.move_to` (the actor `MoveTo` command changes `project_path` and discards the idle sidecar so the next send resumes in the new folder), then the sidebar reload (`reload_project` for old and new folder, or `reload_past` when the new folder has no group yet), then the info notice `세션이 {name}(으)로 이동되었습니다`. While the id is in `moving`, `session_is_busy` is true and the composer cannot send (`can_send`).
+
+**Transcript move (`move_session`).** In `crates/forge-adapter-claude-fs/src/sessions.rs`: validates the id, refuses an existing target file or folder (never overwrites), is a no-op when both folders map to the same project directory, renames `<id>.jsonl` and then its same-named folder (copy and delete when the rename crosses a device; the file is rolled back if the folder move fails), then appends one line `{"type":"relocated","relocatedCwd":"<new folder>"}`. If the append fails everything is moved back. Without this line the moved transcript still names the old folder in its first `cwd` lines, and after a restart the session was listed nowhere (window check defect D).
+
+**Reading the folder (`read_cwd`).** In `transcript_cwd.rs`. It reads the tail of the file (16 KiB; if the window holds no whole line and does not start at byte 0 it doubles, up to 1 MiB, `MAX_TAIL_BYTES`) and parses only lines holding `"relocatedCwd"` or `"cwd"`. The last `relocated` record in the tail decides the folder. Forge honors only records WITHOUT `sessionId`. The Claude CLI writes its own `{"type":"relocated","relocatedCwd":…,"sessionId":…}` record on a resume; its folder is the one the CLI was spawned in (the folder of the directory the transcript was resumed from), which goes stale after a second move (A to B to A: Forge's record says A, the CLI's later record says B, and the old rule listed the session nowhere). Records with a `sessionId` are ignored entirely. Without a Forge record the first `cwd` of the first 60 lines decides as before, except that when that first `cwd` is not of the transcript's own directory and the tail's last `cwd` is, the last one wins (a moved session whose record scrolled out of the window). `escape_project_path` became `pub(crate)`. Side effect: transcripts the desktop app relocated also list correctly. `load_session` skips the record as an unknown type (message count unchanged).
+
+**Pin.** `AppConfig.session_environments: Vec<SessionEnvironmentRef { project, session_id, environment_id }>` (lenient, `#[serde(default)]`, bad entries dropped). `forge_domain::environment_of_session` and `Workspace::session_environment(project, Option<&SessionId>)` return the pinned environment when the ref exists and the environment still exists, else the folder match of stage B. `pins_after` replaces every ref of that session id (never two). The card, the start line and a reopen (`open_past_in` passes the session id) all use it, so a pinned session reopened in its new folder gets the environment's variables and extra folders. `pin_environment` sets the signal at once, saves the config in a root task, and on a failed save restores the previous list and reports `Could not save the environment`.
+
+**`report_info`.** `Workspace::report_info(message)` shows a notice drawn with the grey `banner info` class instead of the error box (`notice_is_info()` is true while the shown notice is that exact text). The move message and the wait message use it. It is still a sidebar banner with `닫기`, not a toast, and stays until dismissed.
+
+**Deviations from the design.**
+- The pin is written after the transcript move succeeds (design 2(a) listed it first); a failed move writes no pin. In the code it comes before `handle.move_to`, so the card does not render the new folder without a pin.
+- The extra notice for a session with no Claude session id (above).
+- Added rows show the name only (window check defect A; Round 24 shows the same in the desktop app).
+- No `터미널에서 열기` on added rows (ruling): the Terminal panel opens only in the session's own folder, and a per-row working folder is out of this stage.
+- The move notice is a banner in the sidebar, not a toast; the dialog title of the system pickers is the default `Open folder`, not `세션에 폴더 추가` / `작업 디렉터리 변경`.
+- Design 3 said the pin is "written only by `폴더 변경…`": still true. The `moving` guard and the busy notice were not in the design.
+
+## Checked
+
+Unit tests: forge-domain 282, forge-application 292, forge-features 608, forge-shared 35, forge-adapter-claude-fs 255 (all passed at the last fix, `49ae9cf`); each task had a RED run before the code.
+
+**Real window** (harness, fake Claude home, throwaway folders under `/private/tmp`, fixture session, no Claude turn, commit `5f754f4`): the first-row menu with all five items; `폴더 추가…` added a row with no trust question and kept it after switching sessions and back; the trust dialog with `취소`, Esc (nothing changed) and `작업 공간 신뢰` (moved); after the move the card kept the environment name and gear (no flash in a capture right after), the first row, sidebar group, header tag and start line followed, added rows stayed, the transcript was in the new project directory, and config held the trusted folder and the pin; deleting the environment turned the card to `이 컴퓨터` + `저장` and kept the new folders; a trusted folder moved with no dialog and re-keyed the pin; the pinned name survived an app restart; the menu at 760 points wide showed no clipping. Defects found: A (added row showed the path), B (no terminal item on added rows, ruled as above), C (notice looked like an error), D (session vanished after a restart). A, C and D were fixed (`715406c`, `eda7ca3`); B stayed.
+
+**Real turns, first run** (4 messages, commit `eda7ca3`): a session started in `forge-r-a` through the environment `r-env`; `폴더 변경…` to `forge-r-b`; the next turn resumed in the new folder (`pwd` gave `forge-r-b`, `b.txt` was read, and Claude remembered the first turn, so the resume carried the conversation and memory); after a restart the session listed under `forge-r-b` with the full conversation and the card showing `r-env`; `폴더 추가…` then a turn reading a file in the added folder answered without an outside-directory permission prompt, and the sidecar's node and claude process ids were the same before and after that turn, so no restart was seen; a move back to `forge-r-a` resumed. Defect E: after A to B to A and a turn, the session was missing from the sidebar after a restart, because Forge took the CLI's stale `relocated` record (it names `forge-r-b`).
+
+**Real turns, second run** (4 messages, commit `49ae9cf`, after the fix for E): start in `forge-r-a`, move to `forge-r-b`, move back to `forge-r-a`, restart 1 (listed under `forge-r-a`, all three exchanges loaded, card showed `r-env`), move to `forge-r-b` again with a fourth turn, restart 2 (listed under `forge-r-b` only, Home counted one session). The transcript showed the pairs of records: Forge's without `sessionId` and the CLI's with it, the latter stale after the move back; the fix ignores the CLI's. Because the harness uses a fake home and the real Claude resumes from the real projects directory, transcripts were copied by hand between the two (real to fake after each turn, fake to the real new-folder directory after each move); the real directories this created were deleted afterwards and the real listing matched the one before the run.
+
+## Left
+
+Not checked in a window or real turn:
+- A worktree session (the item is hidden for it; no git fixture was made).
+- A busy session's hidden items, the grey info banner on a second notice, and the composer being disabled during the rename.
+- Dark mode.
+- Windows (never run).
+- A pinned session after a restart whose environment has a worktree.
+- The system picker titles (`세션에 폴더 추가`, `작업 디렉터리 변경`).
+
+Not built:
+- `터미널에서 열기` on added rows (needs a per-row working folder; ruled out).
+- Persisting added folders over an app restart (the desktop app keeps them in the session file).
+- The hidden note about the new directory in the transcript.
+- The composer's `폴더` chip after `폴더 추가…`.
+- Whether the desktop app keeps the environment name after a restart or after a move to an already trusted folder (not seen).
+
+Not measured: the cost of the extra tail read (16 KiB, up to 1 MiB for a huge last line) of every transcript on each listing.
+
+Deferred minors from the ledger that remain:
+- The actor discards an idle started sidecar when `add_directories` adds nothing new or `MoveTo` targets the same folder; the workspace callers filter both (`add_session_folder` skips duplicates, `should_move`).
+- The duplicate-folder check compares paths exactly (no canonicalize); a handle gone after the pick drops silently.
+- `change_session_folder` and `add_session_folder` use `spawn`, not `spawn_forever`.
+- Overlapping pin saves restore the `previous` list.
+- The pin stays in `config.json` after its environment is deleted (ignored while the environment is gone, and it applies again if the same id returns).
+- On a second move of an already pinned session the old pin is removed before the view moves, so the card can show the old folder's own folder match for a moment.
+- Task 2: the rollback and cross-device branches and the refuse-on-existing-folder branch are untested; the check-then-rename race is accepted.
