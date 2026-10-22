@@ -60,6 +60,9 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
     });
 
     let mut submit = move || {
+        if workspace.session_is_moving(id) {
+            return;
+        }
         let cards = workspace.take_cards(id, line_count);
         let Some(outgoing) = composer.take_for_send(&draft.read(), &cards) else {
             // Refused (a chip could not be read): the cards stay where they were.

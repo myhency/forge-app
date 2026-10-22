@@ -715,6 +715,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Value", "값"),
     ("Variables", "환경 변수"),
     ("View logs", "로그 보기"),
+    ("Wait for the turn to finish, then change the folder again", "턴이 끝난 뒤 폴더를 다시 변경해 주세요"),
     ("Waiting for approval", "승인 대기 중"),
     ("Waiting…", "대기 중…"),
     ("Web searches", "웹 검색"),

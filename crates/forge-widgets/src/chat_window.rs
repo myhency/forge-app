@@ -150,7 +150,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     }
                 }
             } else if view.can_send {
-                SendMessageBox { id, running: view.phase == Phase::Running, can_send: true,
+                SendMessageBox { id, running: view.phase == Phase::Running, can_send: !workspace.session_is_moving(id),
                     PlusMenu { project: Some(view.project_path.clone()), add_folder_enabled: true }
                     ModePicker { id }
                     ModelPicker { id }
