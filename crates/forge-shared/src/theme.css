@@ -1158,3 +1158,19 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .env-folder-popover .env-folder-list { overflow: auto; min-height: 0; flex: 1 1 auto; }
 .env-folder-popover > * { flex: none; }
 .env-folder-popover > .env-folder-list { flex: 1 1 auto; }
+
+.details-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
+.env-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); padding: 4px; }
+.env-card-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 6px 8px; border: none; background: transparent; color: var(--fg); font: inherit; font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; }
+.env-card-chevron { color: var(--fg-muted); }
+.env-card-chevron.folded { transform: rotate(-90deg); }
+.env-card-row { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 4px 8px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 13px; text-align: left; }
+.env-card-folder { position: relative; }
+.env-card-folder-button { cursor: pointer; }
+.env-card-folder-button:hover { background: var(--bg-hover); }
+.env-card-name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.env-card-parent { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
+.env-card-row .icon-button { margin-left: auto; }
+.env-card-save { margin-left: auto; border: none; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+.env-card-save:hover { text-decoration: underline; }
+.env-card-menu { position: absolute; top: 100%; left: 8px; z-index: 30; min-width: 160px; }

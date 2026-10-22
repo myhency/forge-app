@@ -1,7 +1,7 @@
 //! What the environment menu, the environment dialog and a send from an environment decide, apart
 //! from any signal, so each rule is tested on its own.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use forge_domain::{new_environment_id, parse_env, EffortLevel, EnvParseError, EnvVars, Environment, FolderChoice};
 
@@ -25,6 +25,17 @@ pub struct EnvironmentMenu {
 
 /// ⌥⌘1 is this computer, so at most eight saved environments are numbered.
 const MAX_SAVED_NUMBERED: usize = 8;
+
+/// The folders the Details card lists: the origin first, then each added folder once.
+pub fn card_folders(origin: &Path, added: &[PathBuf]) -> Vec<PathBuf> {
+    let mut folders = vec![origin.to_path_buf()];
+    for folder in added {
+        if !folders.contains(folder) {
+            folders.push(folder.clone());
+        }
+    }
+    folders
+}
 
 // Pinned first, then the one used last; a name breaks a tie.
 fn ordered(environments: &[Environment]) -> Vec<&Environment> {
@@ -382,6 +393,23 @@ mod tests {
 
     use super::*;
     use forge_domain::{EffortLevel, EnvParseReason};
+
+    #[test]
+    fn the_card_lists_the_origin_first_then_the_added_folders() {
+        let added = vec![PathBuf::from("/b"), PathBuf::from("/c")];
+        assert_eq!(card_folders(Path::new("/a"), &added), vec![PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/c")]);
+    }
+
+    #[test]
+    fn the_card_skips_the_origin_and_repeats() {
+        let added = vec![PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/b")];
+        assert_eq!(card_folders(Path::new("/a"), &added), vec![PathBuf::from("/a"), PathBuf::from("/b")]);
+    }
+
+    #[test]
+    fn the_card_with_nothing_added_lists_only_the_origin() {
+        assert_eq!(card_folders(Path::new("/a"), &[]), vec![PathBuf::from("/a")]);
+    }
 
     fn env(id: &str, name: &str, pinned: bool, last_used: i64) -> Environment {
         Environment {

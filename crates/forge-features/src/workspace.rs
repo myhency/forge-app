@@ -168,6 +168,8 @@ pub struct Workspace {
     cards: Signal<Cards>,
     files_stores: Signal<HashMap<LiveSessionId, FilesStore>>,
     queued_files: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
+    added_folders: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
+    card_folded: Signal<HashMap<LiveSessionId, bool>>,
     comment_focus: Signal<HashMap<LiveSessionId, u64>>,
     search_open: Signal<bool>,
     shortcuts_open: Signal<bool>,
@@ -242,6 +244,8 @@ pub fn use_workspace_provider() -> Workspace {
             cards: Signal::new(Cards::default()),
             files_stores: Signal::new(HashMap::new()),
             queued_files: Signal::new(HashMap::new()),
+            added_folders: Signal::new(HashMap::new()),
+            card_folded: Signal::new(HashMap::new()),
             comment_focus: Signal::new(HashMap::new()),
             search_open: Signal::new(false),
             shortcuts_open: Signal::new(false),
@@ -1239,6 +1243,21 @@ impl Workspace {
         self.queued_files.read().get(&id).cloned().unwrap_or_default()
     }
 
+    /// The folders a session was started with besides its own; none for one opened from the sidebar.
+    pub fn session_added_folders(&self, id: LiveSessionId) -> Vec<PathBuf> {
+        self.added_folders.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    /// Whether the Details panel's Environment card is folded for this session.
+    pub fn environment_card_folded(&self, id: LiveSessionId) -> bool {
+        self.card_folded.read().get(&id).copied().unwrap_or(false)
+    }
+
+    pub fn set_environment_card_folded(&self, id: LiveSessionId, folded: bool) {
+        let mut map = self.card_folded;
+        map.write().insert(id, folded);
+    }
+
     pub fn clear_queued_files(&self, id: LiveSessionId) {
         let mut queued = self.queued_files;
         queued.write().remove(&id);
@@ -2045,6 +2064,8 @@ impl Workspace {
                         }
                     }
                     if !folders.is_empty() {
+                        let mut added = this.added_folders;
+                        added.write().insert(id, folders.clone());
                         handle.add_directories(folders);
                     }
                     handle.send_with(text, attachments);
@@ -2115,6 +2136,10 @@ impl Workspace {
         // What the session left behind: the Files panel's tabs and drafts, and unsent cards.
         let mut stores = self.files_stores;
         stores.write().remove(&id);
+        let mut added = self.added_folders;
+        added.write().remove(&id);
+        let mut folded = self.card_folded;
+        folded.write().remove(&id);
         let mut cards = self.cards;
         cards.write().take(id);
         let mut changes = self.changes_sessions;
