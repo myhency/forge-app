@@ -1176,7 +1176,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .env-card-row .icon-button { margin-left: auto; }
 .env-card-save { margin-left: auto; border: none; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
 .env-card-save:hover { text-decoration: underline; }
-.env-card-menu { position: absolute; top: 100%; left: 8px; z-index: 30; min-width: 160px; }
+.env-card-menu { position: absolute; top: 100%; bottom: auto; left: 8px; z-index: 30; min-width: 160px; }
 .env-card-icon { flex: none; color: var(--fg-muted); }
 .env-card-chevron { display: inline-flex; }
 .env-card-row .icon-button { display: inline-flex; align-items: center; justify-content: center; }
