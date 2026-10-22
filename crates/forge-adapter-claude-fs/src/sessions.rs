@@ -35,10 +35,7 @@ impl ClaudeSessionAdapter {
     // on-disk Unicode form), so resolve the caller's path the same way; a path that no longer
     // exists is used as given.
     pub(crate) async fn project_dir(&self, project_path: &Path) -> PathBuf {
-        let resolved = tokio::fs::canonicalize(project_path)
-            .await
-            .map(|path| dunce::simplified(&path).to_path_buf())
-            .unwrap_or_else(|_| project_path.to_path_buf());
+        let resolved = folder_key(project_path).await;
         self.claude_home
             .join("projects")
             .join(escape_project_path(&resolved))
@@ -439,6 +436,15 @@ async fn lacks_trailing_newline(file: &mut tokio::fs::File) -> std::io::Result<b
     Ok(last[0] != b'\n')
 }
 
+// A move that failed half way: when putting the transcript back failed too, the error says so and
+// where the transcript now is.
+fn failed_move(error: SessionRepositoryError, undone: std::io::Result<()>, target: &Path) -> SessionRepositoryError {
+    match undone {
+        Ok(()) => error,
+        Err(back) => SessionRepositoryError::MoveFailed(format!("{error}; moving it back failed too ({back}); the transcript is at {}", target.display())),
+    }
+}
+
 // One JSON line at the end of a transcript, in a single write on a file opened in append mode.
 async fn append_record(path: &Path, record: &Value) -> std::io::Result<()> {
     let mut file = tokio::fs::OpenOptions::new().read(true).append(true).open(path).await?;
@@ -822,8 +828,8 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         if folder_exists {
             if let Err(e) = move_path(&source_folder, &target_folder).await {
                 // Put the transcript back so the session is not split in two.
-                let _ = move_path(&target, &source).await;
-                return Err(move_error(&target_folder, e));
+                let undone = move_path(&target, &source).await;
+                return Err(failed_move(move_error(&target_folder, e), undone, &target));
             }
         }
         if let Err(e) = append_record(&target, &record).await {
@@ -831,8 +837,8 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
             if folder_exists {
                 let _ = move_path(&target_folder, &source_folder).await;
             }
-            let _ = move_path(&target, &source).await;
-            return Err(move_error(&target, e));
+            let undone = move_path(&target, &source).await;
+            return Err(failed_move(move_error(&target, e), undone, &target));
         }
         Ok(())
     }
@@ -1099,6 +1105,22 @@ mod tests {
         let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
 
         assert_eq!(adapter.list_sessions(&project()).await.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_failed_move_back_names_both_errors_and_where_the_transcript_is() {
+        let error = SessionRepositoryError::MoveFailed("/b/s1: denied".to_string());
+        let back = std::io::Error::other("busy");
+
+        let message = failed_move(error, Err(back), Path::new("/b/s1.jsonl")).to_string();
+
+        assert!(message.contains("/b/s1: denied") && message.contains("busy") && message.contains("the transcript is at /b/s1.jsonl"), "{message}");
+    }
+
+    #[test]
+    fn a_move_put_back_keeps_its_own_error() {
+        let error = SessionRepositoryError::MoveFailed("/b/s1: denied".to_string());
+        assert_eq!(failed_move(error, Ok(()), Path::new("/b/s1.jsonl")).to_string(), SessionRepositoryError::MoveFailed("/b/s1: denied".to_string()).to_string());
     }
 
     #[tokio::test]

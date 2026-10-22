@@ -48,7 +48,7 @@ pub(crate) async fn transcripts_newest_first(dir: &Path) -> Vec<(SystemTime, Pat
 
 // How many bytes at the end of a transcript are searched for a folder change. A `relocated` record
 // further back is covered by the turns that followed it, whose `cwd` lines name the new folder. A
-// window holding no whole line (one huge last line) is doubled, up to `MAX_TAIL_BYTES`.
+// window with neither (one huge last line, say) is doubled, up to `MAX_TAIL_BYTES`.
 const TAIL_BYTES: u64 = 16 * 1024;
 const MAX_TAIL_BYTES: u64 = 1024 * 1024;
 
@@ -57,11 +57,19 @@ const MAX_TAIL_BYTES: u64 = 1024 * 1024;
 // `cwd` of the tail only when the first is of another directory and the last is of this one: a
 // session moved long ago. Later `cwd` lines are not trusted otherwise, as a turn may `cd` elsewhere.
 async fn read_cwd(path: &Path) -> Option<PathBuf> {
+    let first = read_first_cwd(path).await;
+    // A moved transcript sits in its newest folder's directory, so a first `cwd` of this directory
+    // needs no tail (moved away and back again still lands here).
+    if let Some(first) = &first {
+        if in_own_directory(path, first).await {
+            return Some(first.clone());
+        }
+    }
     let tail = read_tail(path).await;
     if let Some(relocated) = tail.relocated {
         return Some(relocated);
     }
-    let first = read_first_cwd(path).await?;
+    let first = first?;
     if let Some(last) = tail.last_cwd.filter(|last| *last != first) {
         if !in_own_directory(path, &first).await && in_own_directory(path, &last).await {
             return Some(last);
@@ -94,12 +102,12 @@ async fn read_tail(path: &Path) -> Tail {
             // The window starts inside a line.
             lines.next();
         }
-        let mut lines = lines.filter(|line| !line.is_empty()).peekable();
-        if lines.peek().is_none() && start > 0 && window < MAX_TAIL_BYTES {
+        let tail = scan_tail(lines.filter(|line| !line.is_empty()));
+        if tail.relocated.is_none() && tail.last_cwd.is_none() && start > 0 && window < MAX_TAIL_BYTES {
             window *= 2;
             continue;
         }
-        return scan_tail(lines);
+        return tail;
     }
 }
 
@@ -274,8 +282,7 @@ mod tests {
     async fn the_last_relocated_record_decides_the_folder() {
         let root = tempfile::tempdir().unwrap();
         let dir = dir_of(root.path(), Path::new("/work/c"));
-        let relocated = |to: &str| serde_json::json!({ "type": "relocated", "relocatedCwd": to }).to_string();
-        let content = [cwd_line(Path::new("/work/a")), relocated("/work/b"), relocated("/work/c")].join("\n");
+        let content = [cwd_line(Path::new("/work/a")), forge_relocated("/work/b"), forge_relocated("/work/c")].join("\n");
         let moved = file(&dir, "s.jsonl", &content);
 
         let assigned = assign_cwds(vec![(at(1), moved)]).await;
@@ -370,6 +377,20 @@ mod tests {
         let dir = dir_of(root.path(), Path::new("/work/b"));
         let huge = serde_json::json!({ "type": "attachment", "content": "y".repeat(200 * 1024) }).to_string();
         let content = [cwd_line(Path::new("/work/a")), forge_relocated("/work/b"), huge].join("\n") + "\n";
+        let moved = file(&dir, "s.jsonl", &content);
+
+        let assigned = assign_cwds(vec![(at(1), moved)]).await;
+
+        assert_eq!(assigned[0].cwd, PathBuf::from("/work/b"));
+    }
+
+    #[tokio::test]
+    async fn a_tail_with_neither_a_move_record_nor_a_cwd_is_widened() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = dir_of(root.path(), Path::new("/work/b"));
+        let long = serde_json::json!({ "type": "attachment", "content": "z".repeat(20 * 1024) }).to_string();
+        let short = serde_json::json!({ "type": "summary" }).to_string();
+        let content = [cwd_line(Path::new("/work/a")), forge_relocated("/work/b"), long, short].join("\n");
         let moved = file(&dir, "s.jsonl", &content);
 
         let assigned = assign_cwds(vec![(at(1), moved)]).await;
