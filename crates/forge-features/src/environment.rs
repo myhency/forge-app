@@ -310,8 +310,32 @@ pub fn merge_added_dirs(composer: Vec<PathBuf>, extra: &[PathBuf], made: &[Optio
     merged
 }
 
+/// What a reopened session runs with: the environment's variables (none when they do not parse, so
+/// a reopen is never blocked) and its folders besides the first. Worktrees are not remade on a reopen.
+pub fn reopen_setup(environment: &Environment, made: &[Option<PathBuf>]) -> (EnvVars, Vec<PathBuf>) {
+    let normalized = environment.clone().normalized();
+    let env = EnvVars(parse_env(&normalized.env_vars).unwrap_or_default());
+    let extra: Vec<PathBuf> = normalized.folders.into_iter().skip(1).collect();
+    (env, extra_paths(&extra, made))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_reopened_session_gets_the_environment_variables_and_extra_folders() {
+        let environment = Environment { folders: vec!["/a".into(), "/b".into()], env_vars: "KEY=1".into(), ..env("a", "app", false, 0) };
+        let (vars, folders) = reopen_setup(&environment, &[]);
+        assert_eq!(vars, EnvVars(parse_env("KEY=1").unwrap()));
+        assert_eq!(folders, vec![PathBuf::from("/b")]);
+    }
+
+    #[test]
+    fn a_reopened_session_with_bad_variables_still_opens() {
+        let environment = Environment { env_vars: "not a variable line".into(), ..env("a", "app", false, 0) };
+        let (vars, _) = reopen_setup(&environment, &[]);
+        assert!(vars.0.is_empty());
+    }
+
     fn with_picks(model: Option<&str>, effort: Option<EffortLevel>) -> Environment {
         Environment { model: model.map(String::from), effort, ..env("a", "app", false, 0) }
     }
