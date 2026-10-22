@@ -294,6 +294,29 @@ pub(crate) fn counting_extensions() -> (Arc<ExtensionsUseCase>, Arc<AtomicUsize>
     (use_case, loads)
 }
 
+/// A skill is enabled; the folders the skill reader was asked about are recorded.
+pub(crate) fn path_recording_extensions() -> (Arc<ExtensionsUseCase>, Arc<Mutex<Vec<PathBuf>>>) {
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let record = asked.clone();
+    let mut config_port = MockConfigRepositoryPort::new();
+    config_port
+        .expect_load()
+        .returning(|| Ok(AppConfig { enabled_skills: vec!["pdf".to_string()], ..AppConfig::default() }));
+    let mut skill_port = MockSkillRepositoryPort::new();
+    skill_port.expect_list_skills().returning(move |project| {
+        record.lock().unwrap().push(project.to_path_buf());
+        Ok(Vec::new())
+    });
+    let use_case = Arc::new(ExtensionsUseCase::new(
+        Arc::new(config_port),
+        Arc::new(skill_port),
+        Arc::new(MockPluginRepositoryPort::new()),
+        Arc::new(MockMcpRegistryPort::new()),
+        PathBuf::from("/home/me"),
+    ));
+    (use_case, asked)
+}
+
 /// Nothing enabled, so no reader is ever called.
 pub(crate) fn no_extensions() -> Arc<ExtensionsUseCase> {
     extensions_with(AppConfig::default(), Vec::new())

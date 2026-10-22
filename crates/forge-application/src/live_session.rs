@@ -74,6 +74,8 @@ pub struct LiveSessionView {
 pub enum LiveCommand {
     Send { text: String, attachments: Vec<Attachment> },
     AddDirectories(Vec<PathBuf>),
+    /// Makes the folder the session's working folder from the next start on.
+    MoveTo(PathBuf),
     /// Permission rules the next start allows without asking.
     AllowTools(Vec<String>),
     /// Variables the next start runs with.
@@ -113,10 +115,17 @@ impl LiveSessionHandle {
         let _ = self.commands.send(LiveCommand::Send { text, attachments });
     }
 
-    /// Folders the session may use besides its own. Only a session whose sidecar has not started
-    /// takes them (the SDK reads them at start); later calls are ignored.
+    /// Folders the session may use besides its own. The SDK reads them at start, so a running
+    /// sidecar is dropped and the next send starts one with the longer list (resuming the session).
+    /// While a turn runs the call is ignored.
     pub fn add_directories(&self, directories: Vec<PathBuf>) {
         let _ = self.commands.send(LiveCommand::AddDirectories(directories));
+    }
+
+    /// Moves the session to another working folder; the next send resumes it there. Ignored while a
+    /// turn runs.
+    pub fn move_to(&self, folder: PathBuf) {
+        let _ = self.commands.send(LiveCommand::MoveTo(folder));
     }
 
     /// Permission rules the next start allows without asking (the SDK reads them once, at start).
@@ -1194,6 +1203,7 @@ mod tests {
         let handle = spawn_live_session(new_init(factory));
         let mut view = handle.subscribe();
         handle.send("one".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
         first_control.push(SidecarEvent::SessionStarted { session_id: "claude-1".to_string() });
         first_control.push(SidecarEvent::Error { message: "boom".to_string() });
         wait_for(&mut view, "the failure", |v| v.phase == Phase::Failed).await;
@@ -1731,9 +1741,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn directories_added_after_a_message_was_sent_are_ignored() {
+    async fn a_folder_added_after_the_first_send_restarts_the_sidecar_on_the_next_send_with_the_longer_list() {
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.add_directories(vec!["/a".into()]);
+        handle.send("one".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        first_control.push(SidecarEvent::SessionStarted { session_id: "claude-9".to_string() });
+        first_control.push(turn_complete());
+        wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle && v.claude_session_id.is_some()).await;
+        handle.add_directories(vec!["/x".into()]);
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second turn", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 2);
+        assert!(first_control.calls().contains(&Call::Shutdown));
+        let mut expected = start_params(Some("claude-9"));
+        expected.additional_directories = vec!["/a".to_string(), "/x".to_string()];
+        assert_eq!(second_control.calls(), vec![Call::Start(expected), Call::Send("two".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn a_folder_added_while_a_turn_runs_is_ignored() {
         let (sidecar, control) = fake_sidecar();
-        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let (factory, spawns) = factory_returning(vec![Ok(sidecar)]);
         let handle = spawn_live_session(new_init(factory));
         let mut view = handle.subscribe();
 
@@ -1743,10 +1778,101 @@ mod tests {
         handle.send("two".to_string());
         wait_for(&mut view, "the second message", |v| v.session.messages.len() == 2).await;
 
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
         assert_eq!(
             control.calls(),
             vec![Call::Start(start_params(None)), Call::Send("one".to_string()), Call::Send("two".to_string())]
         );
+    }
+
+    #[tokio::test]
+    async fn a_folder_added_twice_is_listed_once() {
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("one".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        first_control.push(turn_complete());
+        wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle).await;
+        handle.add_directories(vec!["/x".into()]);
+        handle.add_directories(vec!["/x".into()]);
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second turn", |v| v.phase == Phase::Running).await;
+
+        let mut expected = start_params(None);
+        expected.additional_directories = vec!["/x".to_string()];
+        assert_eq!(second_control.calls(), vec![Call::Start(expected), Call::Send("two".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn moving_changes_the_working_folder_and_the_next_send_resumes_there() {
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("one".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        first_control.push(SidecarEvent::SessionStarted { session_id: "claude-9".to_string() });
+        first_control.push(turn_complete());
+        wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle && v.claude_session_id.is_some()).await;
+        handle.move_to(PathBuf::from("/new"));
+        let seen = wait_for(&mut view, "the move", |v| v.project_path == PathBuf::from("/new")).await;
+        assert_eq!(seen.session.project_path, PathBuf::from("/new"));
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second turn", |v| v.phase == Phase::Running).await;
+
+        assert!(first_control.calls().contains(&Call::Shutdown));
+        let mut expected = start_params(Some("claude-9"));
+        expected.cwd = "/new".to_string();
+        assert_eq!(second_control.calls(), vec![Call::Start(expected), Call::Send("two".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn moving_while_a_turn_runs_is_ignored() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("one".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        handle.move_to(PathBuf::from("/new"));
+        handle.send("two".to_string());
+        let seen = wait_for(&mut view, "the second message", |v| v.session.messages.len() == 2).await;
+
+        assert_eq!(seen.project_path, PathBuf::from("/work/a"));
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            control.calls(),
+            vec![Call::Start(start_params(None)), Call::Send("one".to_string()), Call::Send("two".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn moving_drops_the_cached_extensions_so_they_are_resolved_again_for_the_new_folder() {
+        let (first, first_control) = fake_sidecar();
+        let (second, _second_control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let (extensions, asked) = crate::test_support::path_recording_extensions();
+        let mut init = new_init(factory);
+        init.extensions = extensions;
+        let handle = spawn_live_session(init);
+        let mut view = handle.subscribe();
+
+        handle.send("one".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        first_control.push(turn_complete());
+        wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle).await;
+        handle.move_to(PathBuf::from("/new"));
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second turn", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(*asked.lock().unwrap(), vec![PathBuf::from("/work/a"), PathBuf::from("/new")]);
     }
 
     #[tokio::test]

@@ -109,6 +109,7 @@ impl Actor {
         match command {
             LiveCommand::Send { text, attachments } => self.send(text, attachments).await,
             LiveCommand::AddDirectories(directories) => self.add_directories(directories).await,
+            LiveCommand::MoveTo(folder) => self.move_to(folder).await,
             LiveCommand::AllowTools(tools) => self.allow_tools(tools).await,
             LiveCommand::SetEnv(env) => self.set_env(env).await,
             LiveCommand::WarmUp => self.warm_up().await,
@@ -129,9 +130,11 @@ impl Actor {
 
     // The SDK reads the folders once, at start. A sidecar that only a warm-up started (nothing sent
     // yet, and `open_new` warms every new session up before its folders can be added) is dropped so
-    // the first send starts one that has them. After a message was sent they are ignored.
+    // the first send starts one that has them. A sidecar that has served a turn is dropped too, once
+    // the turn is over: the next send resumes the session on a new one. While a turn runs the
+    // folders are ignored.
     async fn add_directories(&mut self, directories: Vec<std::path::PathBuf>) {
-        if self.sidecar.is_some() && !self.warm_only {
+        if self.sidecar.is_some() && !self.warm_only && self.view.phase == Phase::Running {
             return;
         }
         for directory in directories {
@@ -140,10 +143,25 @@ impl Actor {
                 self.additional_directories.push(directory);
             }
         }
-        if self.warm_only {
+        if self.sidecar.is_some() {
             self.warm_only = false;
             self.discard_sidecar(true).await;
         }
+    }
+
+    // The next send resumes the session in the new folder. The extensions that depend on the folder
+    // are resolved again then.
+    async fn move_to(&mut self, folder: std::path::PathBuf) {
+        if self.view.phase == Phase::Running {
+            return;
+        }
+        self.view.project_path = folder.clone();
+        self.view.session.project_path = folder;
+        self.active = None;
+        self.defaults = None;
+        self.warm_only = false;
+        self.discard_sidecar(true).await;
+        self.dirty = true;
     }
 
     // Like folders, the SDK reads these once, at start: a warm-up sidecar is dropped so the first send
