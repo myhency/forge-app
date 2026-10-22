@@ -142,6 +142,8 @@ pub struct Workspace {
     main_size: Signal<(u32, u32)>,
     history: Signal<NavHistory<Active>>,
     notice: Signal<Option<String>>,
+    /// The text `report_info` last showed; the notice is drawn plain while it is still that text.
+    info_notice: Signal<Option<String>>,
     new_folder: Signal<Option<PathBuf>>,
     new_no_folder: Signal<bool>,
     extra_folders: Signal<Vec<PathBuf>>,
@@ -223,6 +225,7 @@ pub fn use_workspace_provider() -> Workspace {
             main_size: Signal::new((1200, 800)),
             history: Signal::new(NavHistory::new(Active::NewSession)),
             notice: Signal::new(None),
+            info_notice: Signal::new(None),
             new_folder: Signal::new(None),
             new_no_folder: Signal::new(false),
             extra_folders: Signal::new(Vec::new()),
@@ -318,6 +321,12 @@ impl Workspace {
     /// A message for the user (a failed open, a failed listing), shown until dismissed.
     pub fn notice(&self) -> Option<String> {
         self.notice.read().clone()
+    }
+
+    /// Whether the notice is news rather than a failure (see `report_info`).
+    pub fn notice_is_info(&self) -> bool {
+        let notice = self.notice.read();
+        notice.is_some() && *notice == *self.info_notice.read()
     }
 
     pub fn dismiss_notice(&self) {
@@ -2445,7 +2454,7 @@ impl Workspace {
             };
             // A turn started while the trust question was open: the session cannot move under it.
             if running || this.moving.peek().contains(&id) {
-                this.report(tr!("Wait for the turn to finish, then change the folder again").to_string());
+                this.report_info(tr!("Wait for the turn to finish, then change the folder again").to_string());
                 return;
             }
             let Some(session_id) = session_id else {
@@ -2475,7 +2484,7 @@ impl Workspace {
                 // A folder with no group yet: only a full reload adds one.
                 this.reload_past();
             }
-            this.report(crate::environment::moved_message(&folder));
+            this.report_info(crate::environment::moved_message(&folder));
         });
     }
 
@@ -2659,6 +2668,13 @@ impl Workspace {
     pub fn report(&self, message: String) {
         let mut notice = self.notice;
         notice.set(Some(message));
+    }
+
+    /// Like `report`, for news that is not a failure: the sidebar draws it plain instead of red.
+    pub fn report_info(&self, message: String) {
+        let mut info = self.info_notice;
+        info.set(Some(message.clone()));
+        self.report(message);
     }
 
     fn ensure_attached(&self, handle: LiveSessionHandle) -> LiveSessionId {

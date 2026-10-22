@@ -127,7 +127,10 @@ fn FolderRow(id: LiveSessionId, folder: PathBuf, first: bool, busy: bool, worktr
             button { class: "env-card-row env-card-folder-button", r#type: "button", onclick: move |_| on_open.call(!open),
                 CardIcon { kind: "folder" }
                 span { class: "env-card-name", "{name}" }
-                span { class: "env-card-parent", " · {parent}" }
+                // The desktop app names the parent on the session's own folder only.
+                if first {
+                    span { class: "env-card-parent", " · {parent}" }
+                }
             }
             if open {
                 div { class: "picker-backdrop", onclick: move |_| on_open.call(false) }

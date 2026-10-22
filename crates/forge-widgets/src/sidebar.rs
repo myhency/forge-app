@@ -176,7 +176,7 @@ pub fn Sidebar() -> Element {
             }
             div { class: "sidebar-scroll",
             if let Some(message) = notice {
-                div { class: "banner error",
+                div { class: if workspace.notice_is_info() { "banner info" } else { "banner error" },
                     "{message} "
                     Button { label: tr!("Dismiss"), onclick: move |_| workspace.dismiss_notice() }
                 }
