@@ -311,11 +311,19 @@ pub fn merge_added_dirs(composer: Vec<PathBuf>, extra: &[PathBuf], made: &[Optio
 }
 
 /// What a reopened session runs with: the environment's variables (none when they do not parse, so
-/// a reopen is never blocked) and its folders besides the first. Worktrees are not remade on a reopen.
+/// a reopen is never blocked) and its folders besides the first. Worktrees are not remade on a reopen,
+/// so an extra folder that ran in a worktree is skipped rather than added as the main checkout.
 pub fn reopen_setup(environment: &Environment, made: &[Option<PathBuf>]) -> (EnvVars, Vec<PathBuf>) {
     let normalized = environment.clone().normalized();
     let env = EnvVars(parse_env(&normalized.env_vars).unwrap_or_default());
-    let extra: Vec<PathBuf> = normalized.folders.into_iter().skip(1).collect();
+    let extra: Vec<PathBuf> = normalized
+        .folders
+        .into_iter()
+        .skip(1)
+        .enumerate()
+        .filter(|(index, _)| !normalized.extra_choices.get(*index).is_some_and(|choice| choice.worktree))
+        .map(|(_, folder)| folder)
+        .collect();
     (env, extra_paths(&extra, made))
 }
 
@@ -327,6 +335,17 @@ mod tests {
         let (vars, folders) = reopen_setup(&environment, &[]);
         assert_eq!(vars, EnvVars(parse_env("KEY=1").unwrap()));
         assert_eq!(folders, vec![PathBuf::from("/b")]);
+    }
+
+    #[test]
+    fn a_reopened_session_skips_extra_folders_that_ran_in_a_worktree() {
+        let environment = Environment {
+            folders: vec!["/a".into(), "/b".into(), "/c".into()],
+            extra_choices: vec![FolderChoice { branch: Some("dev".into()), worktree: true }, FolderChoice::default()],
+            ..env("a", "app", false, 0)
+        };
+        let (_, folders) = reopen_setup(&environment, &[]);
+        assert_eq!(folders, vec![PathBuf::from("/c")]);
     }
 
     #[test]

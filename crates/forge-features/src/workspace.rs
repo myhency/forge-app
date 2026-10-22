@@ -1933,9 +1933,9 @@ impl Workspace {
         dioxus::core::spawn_forever(async move {
             match services.registry.open_existing(&project, session_id).await {
                 Ok(outcome) => {
-                    let handle = outcome.handle;
+                    let handle = outcome.handle.clone();
                     // A session already open has started its sidecar: variables and folders only reach the first start.
-                    let fresh = this.handle(handle.id()).is_none();
+                    let fresh = !outcome.already_open;
                     let id = this.ensure_attached(handle.clone());
                     if fresh {
                         if let Some(environment) = this.session_environment(&project.path) {
@@ -1944,6 +1944,8 @@ impl Workspace {
                                 handle.set_env(env);
                             }
                             if !folders.is_empty() {
+                                let mut added = this.added_folders;
+                                added.write().insert(id, folders.clone());
                                 handle.add_directories(folders);
                             }
                         }

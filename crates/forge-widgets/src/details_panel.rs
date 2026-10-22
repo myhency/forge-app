@@ -148,7 +148,7 @@ fn FolderRow(id: LiveSessionId, folder: PathBuf, first: bool, open: bool, on_ope
                                 workspace.reveal(&folder);
                             }
                         },
-                        span { class: "picker-text", {tr!("Show in Finder")} }
+                        span { class: "picker-text", {forge_features::show_in_file_manager()} }
                     }
                     div { class: "picker-divider" }
                     button {
