@@ -47,11 +47,13 @@ pub(crate) async fn transcripts_newest_first(dir: &Path) -> Vec<(SystemTime, Pat
 }
 
 // How many bytes at the end of a transcript are searched for a folder change. A `relocated` record
-// further back is covered by the turns that followed it, whose `cwd` lines name the new folder.
+// further back is covered by the turns that followed it, whose `cwd` lines name the new folder. A
+// window holding no whole line (one huge last line) is doubled, up to `MAX_TAIL_BYTES`.
 const TAIL_BYTES: u64 = 16 * 1024;
+const MAX_TAIL_BYTES: u64 = 1024 * 1024;
 
-// The folder a transcript belongs to: the last `relocated` record (written when `폴더 변경…` moves
-// the session) when the tail has one, else the first `cwd`. That first `cwd` gives way to the last
+// The folder a transcript belongs to: the last move record (written when `폴더 변경…` moves the
+// session) when the tail has one, else the first `cwd`. That first `cwd` gives way to the last
 // `cwd` of the tail only when the first is of another directory and the last is of this one: a
 // session moved long ago. Later `cwd` lines are not trusted otherwise, as a turn may `cd` elsewhere.
 async fn read_cwd(path: &Path) -> Option<PathBuf> {
@@ -75,22 +77,34 @@ struct Tail {
 }
 
 async fn read_tail(path: &Path) -> Tail {
+    let Ok(mut file) = tokio::fs::File::open(path).await else { return Tail::default() };
+    let Ok(len) = file.metadata().await.map(|metadata| metadata.len()) else { return Tail::default() };
+    let mut window = TAIL_BYTES;
+    loop {
+        let start = len.saturating_sub(window);
+        if file.seek(SeekFrom::Start(start)).await.is_err() {
+            return Tail::default();
+        }
+        let mut bytes = Vec::new();
+        if file.read_to_end(&mut bytes).await.is_err() {
+            return Tail::default();
+        }
+        let mut lines = bytes.split(|byte| *byte == b'\n');
+        if start > 0 {
+            // The window starts inside a line.
+            lines.next();
+        }
+        let mut lines = lines.filter(|line| !line.is_empty()).peekable();
+        if lines.peek().is_none() && start > 0 && window < MAX_TAIL_BYTES {
+            window *= 2;
+            continue;
+        }
+        return scan_tail(lines);
+    }
+}
+
+fn scan_tail<'a>(lines: impl Iterator<Item = &'a [u8]>) -> Tail {
     let mut tail = Tail::default();
-    let Ok(mut file) = tokio::fs::File::open(path).await else { return tail };
-    let Ok(len) = file.metadata().await.map(|metadata| metadata.len()) else { return tail };
-    let start = len.saturating_sub(TAIL_BYTES);
-    if file.seek(SeekFrom::Start(start)).await.is_err() {
-        return tail;
-    }
-    let mut bytes = Vec::new();
-    if file.read_to_end(&mut bytes).await.is_err() {
-        return tail;
-    }
-    let mut lines = bytes.split(|byte| *byte == b'\n');
-    if start > 0 {
-        // The window starts inside a line.
-        lines.next();
-    }
     for line in lines {
         let relocation = contains(line, b"\"relocatedCwd\"");
         if !relocation && !contains(line, b"\"cwd\"") {
@@ -99,8 +113,13 @@ async fn read_tail(path: &Path) -> Tail {
         let Ok(value) = serde_json::from_slice::<Value>(line) else { continue };
         let named = |key: &str| value.get(key).and_then(Value::as_str).filter(|text| !text.is_empty()).map(PathBuf::from);
         if value.get("type").and_then(Value::as_str) == Some("relocated") {
-            if let Some(folder) = named("relocatedCwd") {
-                tail.relocated = Some(folder);
+            // The Claude CLI writes its own `relocated` record on resume, with a `sessionId` and the
+            // folder it last knew, which is stale after a second move. Only a move record (Forge's,
+            // or the desktop app's, which has the same shape) carries no `sessionId`.
+            if value.get("sessionId").is_none() {
+                if let Some(folder) = named("relocatedCwd") {
+                    tail.relocated = Some(folder);
+                }
             }
         } else if let Some(cwd) = named("cwd") {
             tail.last_cwd = Some(cwd);
@@ -286,6 +305,76 @@ mod tests {
         let assigned = assign_cwds(vec![(at(1), plain)]).await;
 
         assert_eq!(assigned[0].cwd, PathBuf::from("/work/a"));
+    }
+
+    fn forge_relocated(to: &str) -> String {
+        serde_json::json!({ "type": "relocated", "relocatedCwd": to }).to_string()
+    }
+
+    // The record the Claude CLI writes itself when it resumes; it names the folder it last knew.
+    fn cli_relocated(to: &str) -> String {
+        serde_json::json!({ "type": "relocated", "relocatedCwd": to, "sessionId": "8b1a56e1-f7b2-464b-8208-6bb9668a4b41" }).to_string()
+    }
+
+    #[tokio::test]
+    async fn a_stale_cli_record_after_the_last_move_back_is_ignored() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = dir_of(root.path(), Path::new("/work/a"));
+        let content = [
+            cwd_line(Path::new("/work/a")),
+            forge_relocated("/work/b"),
+            cli_relocated("/work/b"),
+            cwd_line(Path::new("/work/b")),
+            forge_relocated("/work/a"),
+            cli_relocated("/work/b"),
+            cwd_line(Path::new("/work/a")),
+        ]
+        .join("\n");
+        let moved = file(&dir, "s.jsonl", &content);
+
+        let assigned = assign_cwds(vec![(at(1), moved)]).await;
+
+        assert_eq!(assigned[0].cwd, PathBuf::from("/work/a"));
+    }
+
+    #[tokio::test]
+    async fn a_cli_record_alone_leaves_the_first_cwd_in_charge() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = dir_of(root.path(), Path::new("/work/a"));
+        let content = [cwd_line(Path::new("/work/a")), cli_relocated("/work/z")].join("\n");
+        let plain = file(&dir, "s.jsonl", &content);
+
+        let assigned = assign_cwds(vec![(at(1), plain)]).await;
+
+        assert_eq!(assigned[0].cwd, PathBuf::from("/work/a"));
+    }
+
+    #[tokio::test]
+    async fn once_the_move_record_scrolled_out_the_new_turns_cwd_still_decides() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = dir_of(root.path(), Path::new("/work/b"));
+        let filler = "x".repeat(1024);
+        let turn = serde_json::json!({ "type": "user", "cwd": "/work/b", "note": filler }).to_string();
+        let mut lines = vec![cwd_line(Path::new("/work/a")), forge_relocated("/work/b"), cli_relocated("/work/a")];
+        lines.extend(std::iter::repeat_n(turn, 40));
+        let moved = file(&dir, "s.jsonl", &lines.join("\n"));
+
+        let assigned = assign_cwds(vec![(at(1), moved)]).await;
+
+        assert_eq!(assigned[0].cwd, PathBuf::from("/work/b"));
+    }
+
+    #[tokio::test]
+    async fn a_huge_last_line_widens_the_tail_until_the_move_record_is_seen() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = dir_of(root.path(), Path::new("/work/b"));
+        let huge = serde_json::json!({ "type": "attachment", "content": "y".repeat(200 * 1024) }).to_string();
+        let content = [cwd_line(Path::new("/work/a")), forge_relocated("/work/b"), huge].join("\n") + "\n";
+        let moved = file(&dir, "s.jsonl", &content);
+
+        let assigned = assign_cwds(vec![(at(1), moved)]).await;
+
+        assert_eq!(assigned[0].cwd, PathBuf::from("/work/b"));
     }
 
     #[tokio::test]
