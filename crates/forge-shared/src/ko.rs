@@ -43,6 +43,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Add connector", "커넥터 추가"),
     ("Add file or photo", "파일 또는 사진 추가"),
     ("Add folder", "폴더 추가"),
+    ("Add folder…", "폴더 추가…"),
     ("Add marketplace", "마켓플레이스 추가"),
     ("Add this time", "이번만 추가"),
     ("Added by you", "직접 추가함"),

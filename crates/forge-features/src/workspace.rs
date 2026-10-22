@@ -2351,6 +2351,28 @@ impl Workspace {
         services.folder_picker.pick_folder().await
     }
 
+    /// Whether a turn is running in the session; the card's folder items wait for it to end.
+    pub fn session_is_busy(&self, id: LiveSessionId) -> bool {
+        self.live_view(id).is_some_and(|view| view.read().phase == Phase::Running)
+    }
+
+    /// Asks for a folder and gives it to the session at its next start. The session's own folder and
+    /// one already added are ignored. The desktop app asks no trust question here.
+    pub fn add_session_folder(&self, id: LiveSessionId) {
+        let this = *self;
+        spawn(async move {
+            let Some(folder) = this.pick_folder().await else { return };
+            let Some(handle) = this.handle(id) else { return };
+            let origin = this.origin_of(&handle.snapshot().project_path);
+            if folder == origin || this.session_added_folders(id).contains(&folder) {
+                return;
+            }
+            handle.add_directories(vec![folder.clone()]);
+            let mut added = this.added_folders;
+            added.write().entry(id).or_default().push(folder);
+        });
+    }
+
     /// Whether `folder` is off the trusted list, so the person must be asked. A list that cannot be
     /// read counts as empty, like the composer's add-folder.
     pub async fn needs_trust(&self, folder: PathBuf) -> bool {

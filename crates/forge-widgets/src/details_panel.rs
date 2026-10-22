@@ -61,6 +61,8 @@ fn EnvironmentCard(id: LiveSessionId) -> Element {
     let folded = workspace.environment_card_folded(id);
     let folders = if scratch { Vec::new() } else { card_folders(&origin, &workspace.session_added_folders(id)) };
     let mut menu = use_signal(|| None::<usize>);
+    let busy = workspace.session_is_busy(id);
+    let worktree_session = workspace.worktree_tag(&view.project_path).is_some();
 
     rsx! {
         div { class: "env-card",
@@ -108,7 +110,7 @@ fn EnvironmentCard(id: LiveSessionId) -> Element {
                     }
                 }
                 for (index, folder) in folders.iter().cloned().enumerate() {
-                    FolderRow { key: "{folder.display()}", id, folder, first: index == 0, open: menu() == Some(index), on_open: move |open: bool| menu.set(if open { Some(index) } else { None }) }
+                    FolderRow { key: "{folder.display()}", id, folder, first: index == 0, busy, worktree_session, open: menu() == Some(index), on_open: move |open: bool| menu.set(if open { Some(index) } else { None }) }
                 }
             }
         }
@@ -116,9 +118,10 @@ fn EnvironmentCard(id: LiveSessionId) -> Element {
 }
 
 #[component]
-fn FolderRow(id: LiveSessionId, folder: PathBuf, first: bool, open: bool, on_open: EventHandler<bool>) -> Element {
+fn FolderRow(id: LiveSessionId, folder: PathBuf, first: bool, busy: bool, worktree_session: bool, open: bool, on_open: EventHandler<bool>) -> Element {
     let workspace = use_workspace();
     let (name, parent) = folder_parts(&folder);
+    let items = forge_features::folder_menu(first, busy, worktree_session);
     rsx! {
         div { class: "env-card-folder",
             button { class: "env-card-row env-card-folder-button", r#type: "button", onclick: move |_| on_open.call(!open),
@@ -164,8 +167,20 @@ fn FolderRow(id: LiveSessionId, folder: PathBuf, first: bool, open: bool, on_ope
                         },
                         span { class: "picker-text", {tr!("Copy path")} }
                     }
-                    // The Terminal panel opens in the session's own folder, so only the first row can use it.
-                    if first {
+                    if items.add {
+                        button {
+                            class: "picker-item",
+                            r#type: "button",
+                            role: "menuitem",
+                            onclick: move |_| {
+                                on_open.call(false);
+                                workspace.add_session_folder(id);
+                            },
+                            span { class: "picker-text", {tr!("Add folder…")} }
+                        }
+                    }
+                    if items.terminal {
+                        div { class: "picker-divider" }
                         button {
                             class: "picker-item",
                             r#type: "button",

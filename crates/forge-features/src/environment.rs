@@ -27,6 +27,21 @@ pub struct EnvironmentMenu {
 /// ⌥⌘1 is this computer, so at most eight saved environments are numbered.
 const MAX_SAVED_NUMBERED: usize = 8;
 
+/// Which items a folder row's menu shows beyond the always-present reveal and copy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FolderMenu {
+    pub change: bool,
+    pub add: bool,
+    pub terminal: bool,
+}
+
+/// Change and add belong to the session's own folder and wait for an idle turn; a worktree session
+/// cannot change its folder. The Terminal panel opens in the session's folder, so only that row has it.
+pub fn folder_menu(first: bool, busy: bool, worktree_session: bool) -> FolderMenu {
+    let idle_first = first && !busy;
+    FolderMenu { change: idle_first && !worktree_session, add: idle_first, terminal: first }
+}
+
 /// The folders the Details card lists: the origin first, then each added folder once.
 pub fn card_folders(origin: &Path, added: &[PathBuf]) -> Vec<PathBuf> {
     let mut folders = vec![origin.to_path_buf()];
@@ -677,5 +692,25 @@ mod tests {
         let plan = |folder: PathBuf| EnvironmentStart { folder, extra: Vec::new(), env: EnvVars(Vec::new()), worktree: None, extra_worktrees: Vec::new() };
         assert!(folder_missing(&plan(std::env::temp_dir().join("forge-no-such-folder-8f3a1c"))));
         assert!(!folder_missing(&plan(std::env::temp_dir())));
+    }
+
+    #[test]
+    fn an_added_row_has_no_change_or_add_item() {
+        assert_eq!(folder_menu(false, false, false), FolderMenu { change: false, add: false, terminal: false });
+    }
+
+    #[test]
+    fn the_first_row_has_both_items_when_idle() {
+        assert_eq!(folder_menu(true, false, false), FolderMenu { change: true, add: true, terminal: true });
+    }
+
+    #[test]
+    fn a_running_turn_disables_both_items() {
+        assert_eq!(folder_menu(true, true, false), FolderMenu { change: false, add: false, terminal: true });
+    }
+
+    #[test]
+    fn a_worktree_session_has_no_change_item_but_keeps_add() {
+        assert_eq!(folder_menu(true, false, true), FolderMenu { change: false, add: true, terminal: true });
     }
 }
