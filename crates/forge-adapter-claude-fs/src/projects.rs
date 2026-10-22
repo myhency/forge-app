@@ -170,6 +170,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_session_moved_by_a_folder_change_lists_under_its_new_folder() {
+        let home = tempfile::tempdir().unwrap();
+        let (old, new) = (Path::new("/work/old"), Path::new("/work/new"));
+        add_transcript(home.path(), old, "s-1", cwd_line(old).as_bytes(), at(10)).await;
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        forge_ports::SessionRepositoryPort::move_session(&adapter, old, new, &forge_domain::SessionId("s-1".to_string())).await.unwrap();
+
+        let projects = list(home.path()).await.unwrap();
+
+        assert_eq!(projects.iter().map(|project| project.path.clone()).collect::<Vec<_>>(), vec![PathBuf::from("/work/new")]);
+    }
+
+    #[tokio::test]
     async fn list_projects_formats_last_active_as_rfc3339_of_the_newest_transcript() {
         let home = tempfile::tempdir().unwrap();
         let project = Path::new("/work/a");

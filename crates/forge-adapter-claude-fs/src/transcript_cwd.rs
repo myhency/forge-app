@@ -1,8 +1,9 @@
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, BufReader};
 
 // How many lines of one transcript are searched for a `cwd`. Real transcripts carry one within
 // their first few lines; the bound only stops a pathological file from being read in full.
@@ -45,10 +46,83 @@ pub(crate) async fn transcripts_newest_first(dir: &Path) -> Vec<(SystemTime, Pat
     transcripts
 }
 
+// How many bytes at the end of a transcript are searched for a folder change. A `relocated` record
+// further back is covered by the turns that followed it, whose `cwd` lines name the new folder.
+const TAIL_BYTES: u64 = 16 * 1024;
+
+// The folder a transcript belongs to: the last `relocated` record (written when `폴더 변경…` moves
+// the session) when the tail has one, else the first `cwd`. That first `cwd` gives way to the last
+// `cwd` of the tail only when the first is of another directory and the last is of this one: a
+// session moved long ago. Later `cwd` lines are not trusted otherwise, as a turn may `cd` elsewhere.
+async fn read_cwd(path: &Path) -> Option<PathBuf> {
+    let tail = read_tail(path).await;
+    if let Some(relocated) = tail.relocated {
+        return Some(relocated);
+    }
+    let first = read_first_cwd(path).await?;
+    if let Some(last) = tail.last_cwd.filter(|last| *last != first) {
+        if !in_own_directory(path, &first).await && in_own_directory(path, &last).await {
+            return Some(last);
+        }
+    }
+    Some(first)
+}
+
+#[derive(Default)]
+struct Tail {
+    relocated: Option<PathBuf>,
+    last_cwd: Option<PathBuf>,
+}
+
+async fn read_tail(path: &Path) -> Tail {
+    let mut tail = Tail::default();
+    let Ok(mut file) = tokio::fs::File::open(path).await else { return tail };
+    let Ok(len) = file.metadata().await.map(|metadata| metadata.len()) else { return tail };
+    let start = len.saturating_sub(TAIL_BYTES);
+    if file.seek(SeekFrom::Start(start)).await.is_err() {
+        return tail;
+    }
+    let mut bytes = Vec::new();
+    if file.read_to_end(&mut bytes).await.is_err() {
+        return tail;
+    }
+    let mut lines = bytes.split(|byte| *byte == b'\n');
+    if start > 0 {
+        // The window starts inside a line.
+        lines.next();
+    }
+    for line in lines {
+        let relocation = contains(line, b"\"relocatedCwd\"");
+        if !relocation && !contains(line, b"\"cwd\"") {
+            continue;
+        }
+        let Ok(value) = serde_json::from_slice::<Value>(line) else { continue };
+        let named = |key: &str| value.get(key).and_then(Value::as_str).filter(|text| !text.is_empty()).map(PathBuf::from);
+        if value.get("type").and_then(Value::as_str) == Some("relocated") {
+            if let Some(folder) = named("relocatedCwd") {
+                tail.relocated = Some(folder);
+            }
+        } else if let Some(cwd) = named("cwd") {
+            tail.last_cwd = Some(cwd);
+        }
+    }
+    tail
+}
+
+fn contains(line: &[u8], needle: &[u8]) -> bool {
+    line.windows(needle.len()).any(|window| window == needle)
+}
+
+// Whether Claude Code would keep a session of `folder` in the directory `transcript` lies in.
+async fn in_own_directory(transcript: &Path, folder: &Path) -> bool {
+    let Some(dir) = transcript.parent().and_then(Path::file_name) else { return false };
+    crate::sessions::escape_project_path(&folder_key(folder).await) == dir.to_string_lossy()
+}
+
 // The first non-empty `cwd` string in the first `MAX_CWD_SCAN_LINES` lines. A line that is not
 // valid JSON (a partial final line of a transcript still being appended to, or invalid UTF-8) is
 // skipped rather than failing the scan.
-async fn read_cwd(path: &Path) -> Option<PathBuf> {
+async fn read_first_cwd(path: &Path) -> Option<PathBuf> {
     let file = tokio::fs::File::open(path).await.ok()?;
     let mut lines = BufReader::new(file).split(b'\n');
     for _ in 0..MAX_CWD_SCAN_LINES {
@@ -169,6 +243,49 @@ mod tests {
 
         assert_ne!(assigned[0].cwd, assigned[1].cwd, "the cwd keeps the spelling it was written in");
         assert_eq!(assigned[0].key, assigned[1].key);
+    }
+
+    fn dir_of(root: &Path, project: &Path) -> PathBuf {
+        let dir = root.join(crate::sessions::escape_project_path(project));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn the_last_relocated_record_decides_the_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = dir_of(root.path(), Path::new("/work/c"));
+        let relocated = |to: &str| serde_json::json!({ "type": "relocated", "relocatedCwd": to }).to_string();
+        let content = [cwd_line(Path::new("/work/a")), relocated("/work/b"), relocated("/work/c")].join("\n");
+        let moved = file(&dir, "s.jsonl", &content);
+
+        let assigned = assign_cwds(vec![(at(1), moved)]).await;
+
+        assert_eq!(assigned[0].cwd, PathBuf::from("/work/c"));
+    }
+
+    #[tokio::test]
+    async fn a_later_cwd_of_this_directory_wins_when_the_first_cwd_is_of_another() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = dir_of(root.path(), Path::new("/work/b"));
+        let content = [cwd_line(Path::new("/work/a")), cwd_line(Path::new("/work/b"))].join("\n");
+        let moved = file(&dir, "s.jsonl", &content);
+
+        let assigned = assign_cwds(vec![(at(1), moved)]).await;
+
+        assert_eq!(assigned[0].cwd, PathBuf::from("/work/b"));
+    }
+
+    #[tokio::test]
+    async fn without_a_relocated_record_the_first_cwd_stays_even_when_a_later_line_moved_on() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = dir_of(root.path(), Path::new("/work/a"));
+        let content = [cwd_line(Path::new("/work/a")), cwd_line(Path::new("/work/a/sub"))].join("\n");
+        let plain = file(&dir, "s.jsonl", &content);
+
+        let assigned = assign_cwds(vec![(at(1), plain)]).await;
+
+        assert_eq!(assigned[0].cwd, PathBuf::from("/work/a"));
     }
 
     #[tokio::test]

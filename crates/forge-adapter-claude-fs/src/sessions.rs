@@ -49,7 +49,7 @@ const MAX_ESCAPED_LEN: usize = 200;
 
 // Mirrors Claude Code's own project-directory naming: every character that is not an ASCII
 // letter or digit becomes '-', and names over 200 characters are cut and given a hash suffix.
-fn escape_project_path(project_path: &Path) -> String {
+pub(crate) fn escape_project_path(project_path: &Path) -> String {
     let original = project_path.to_string_lossy();
     let escaped: String = original
         .encode_utf16()
@@ -439,6 +439,19 @@ async fn lacks_trailing_newline(file: &mut tokio::fs::File) -> std::io::Result<b
     Ok(last[0] != b'\n')
 }
 
+// One JSON line at the end of a transcript, in a single write on a file opened in append mode.
+async fn append_record(path: &Path, record: &Value) -> std::io::Result<()> {
+    let mut file = tokio::fs::OpenOptions::new().read(true).append(true).open(path).await?;
+    let mut entry = String::new();
+    if lacks_trailing_newline(&mut file).await? {
+        entry.push('\n');
+    }
+    entry.push_str(&record.to_string());
+    entry.push('\n');
+    file.write_all(entry.as_bytes()).await?;
+    file.flush().await
+}
+
 fn rename_error(path: &Path, e: std::io::Error) -> SessionRepositoryError {
     SessionRepositoryError::RenameFailed(format!("{}: {e}", path.display()))
 }
@@ -791,6 +804,9 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         if from_dir == to_dir {
             return Ok(());
         }
+        // A `relocated` record (as the desktop app writes) tells the listing the session's new
+        // folder; the earlier lines keep the `cwd` they were written with.
+        let record = serde_json::json!({"type": "relocated", "relocatedCwd": to_project.to_string_lossy()});
         let target = to_dir.join(format!("{id}.jsonl"));
         let source_folder = from_dir.join(id);
         let target_folder = to_dir.join(id);
@@ -809,6 +825,14 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
                 let _ = move_path(&target, &source).await;
                 return Err(move_error(&target_folder, e));
             }
+        }
+        if let Err(e) = append_record(&target, &record).await {
+            // Without the record the session would list under no folder: undo the move.
+            if folder_exists {
+                let _ = move_path(&target_folder, &source_folder).await;
+            }
+            let _ = move_path(&target, &source).await;
+            return Err(move_error(&target, e));
         }
         Ok(())
     }
@@ -1031,6 +1055,50 @@ mod tests {
             let result = adapter.move_session(&project(), &other_project(), &SessionId(id.to_string())).await;
             assert!(matches!(result, Err(SessionRepositoryError::NotFound(_))), "{id:?}");
         }
+    }
+
+    fn with_cwd(mut line: Value, cwd: &Path) -> Value {
+        line["cwd"] = json!(cwd.to_string_lossy());
+        line
+    }
+
+    #[tokio::test]
+    async fn move_appends_a_relocated_record_naming_the_new_folder() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        adapter.move_session(&project(), &other_project(), &SessionId("s1".to_string())).await.unwrap();
+
+        let target = home.path().join("projects").join(escape_project_path(&other_project())).join("s1.jsonl");
+        let text = std::fs::read_to_string(target).unwrap();
+        let last: Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+        assert_eq!(last, json!({"type": "relocated", "relocatedCwd": other_project().to_string_lossy()}));
+    }
+
+    #[tokio::test]
+    async fn a_moved_transcript_lists_under_the_new_folder_and_loads_without_an_extra_message() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[with_cwd(message("u1", None, "hello"), &project())]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        let id = SessionId("s1".to_string());
+        let before = adapter.load_session(&project(), &id).await.unwrap().messages.len();
+
+        adapter.move_session(&project(), &other_project(), &id).await.unwrap();
+
+        let listed = adapter.list_sessions(&other_project()).await.unwrap();
+        assert_eq!(listed.iter().map(|summary| summary.id.0.as_str()).collect::<Vec<_>>(), vec!["s1"]);
+        assert_eq!(adapter.load_session(&other_project(), &id).await.unwrap().messages.len(), before);
+    }
+
+    #[tokio::test]
+    async fn a_transcript_never_moved_lists_under_its_first_cwd_as_before() {
+        let home = tempfile::tempdir().unwrap();
+        let sub = project().join("sub");
+        write_session(home.path(), &project(), "s1", &[with_cwd(message("u1", None, "hello"), &project()), with_cwd(message("u2", Some("u1"), "again"), &sub)]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+
+        assert_eq!(adapter.list_sessions(&project()).await.unwrap().len(), 1);
     }
 
     #[tokio::test]
