@@ -896,6 +896,8 @@ mod tests {
                 pinned: false,
                 created_at: 1,
                 last_used_at: 2,
+                model: None,
+                effort: None,
                 extra_choices: Vec::new(),
             }],
             ..AppConfig::default()
@@ -931,6 +933,8 @@ mod tests {
                 pinned: true,
                 created_at: 5,
                 last_used_at: 9,
+                model: None,
+                effort: None,
                 extra_choices: vec![crate::FolderChoice { branch: Some("x".into()), worktree: true }],
             }],
             ..AppConfig::default()

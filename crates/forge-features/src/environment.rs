@@ -170,6 +170,8 @@ impl EnvironmentDraft {
             pinned: previous.is_some_and(|environment| environment.pinned),
             created_at: previous.map_or(now, |environment| environment.created_at),
             last_used_at: previous.map_or(now, |environment| environment.last_used_at),
+            model: None,
+            effort: None,
         }
         .normalized()
     }
@@ -341,6 +343,8 @@ mod tests {
             pinned,
             created_at: 0,
             last_used_at: last_used,
+            model: None,
+            effort: None,
             extra_choices: Vec::new(),
         }
     }

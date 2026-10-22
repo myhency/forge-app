@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::EffortLevel;
+
 /// The branch and worktree choice of one folder of an environment.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct FolderChoice {
@@ -19,6 +21,18 @@ fn lenient_choices<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<
         return Ok(Vec::new());
     };
     Ok(items.into_iter().map(|item| serde_json::from_value(item).unwrap_or_default()).collect())
+}
+
+fn lenient_model<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::String(model) => Some(model),
+        _ => None,
+    })
+}
+
+fn lenient_effort<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<EffortLevel>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
 }
 
 /// A saved set of folders and variables a new session can start from. `folders[0]` is the working
@@ -46,6 +60,11 @@ pub struct Environment {
     pub created_at: i64,
     #[serde(default)]
     pub last_used_at: i64,
+    /// A model id for new sessions; `None` keeps the app's choice.
+    #[serde(default, deserialize_with = "lenient_model")]
+    pub model: Option<String>,
+    #[serde(default, deserialize_with = "lenient_effort")]
+    pub effort: Option<EffortLevel>,
 }
 
 // `env_vars` holds secret values, so `Debug` shows its length only.
@@ -62,6 +81,8 @@ impl std::fmt::Debug for Environment {
             .field("pinned", &self.pinned)
             .field("created_at", &self.created_at)
             .field("last_used_at", &self.last_used_at)
+            .field("model", &self.model)
+            .field("effort", &self.effort)
             .finish()
     }
 }
@@ -252,6 +273,8 @@ mod tests {
             pinned: false,
             created_at: 1,
             last_used_at: 2,
+            model: None,
+            effort: None,
             extra_choices: Vec::new(),
         };
         let kept = environment.clone().normalized();
@@ -275,6 +298,8 @@ mod tests {
             pinned: false,
             created_at: 1,
             last_used_at: 2,
+            model: None,
+            effort: None,
             extra_choices: Vec::new(),
         };
         let shown = format!("{environment:?}");
@@ -293,11 +318,38 @@ mod tests {
             pinned: false,
             created_at: 0,
             last_used_at: 0,
+            model: None,
+            effort: None,
             extra_choices: vec![
                 FolderChoice { branch: Some("dev".into()), worktree: true },
                 FolderChoice { branch: None, worktree: false },
             ],
         }
+    }
+
+    #[test]
+    fn an_environment_without_model_and_effort_loads_with_none() {
+        let environment: Environment = serde_json::from_str(r#"{"id":"e","name":"n"}"#).unwrap();
+        assert!(environment.model.is_none() && environment.effort.is_none());
+    }
+
+    #[test]
+    fn model_and_effort_round_trip() {
+        let mut environment = two_folder_env();
+        environment.model = Some("claude-sonnet-5-5".into());
+        environment.effort = Some(crate::EffortLevel::Medium);
+        let text = serde_json::to_string(&environment).unwrap();
+        assert!(text.contains(r#""effort":"medium""#));
+        let back: Environment = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, environment);
+    }
+
+    #[test]
+    fn a_bad_model_or_effort_reads_as_none_and_keeps_the_folders() {
+        let text = r#"{"id":"e","name":"n","folders":["/a"],"model":5,"effort":"huge"}"#;
+        let environment: Environment = serde_json::from_str(text).unwrap();
+        assert!(environment.model.is_none() && environment.effort.is_none());
+        assert_eq!(environment.folders, vec![std::path::PathBuf::from("/a")]);
     }
 
     #[test]
