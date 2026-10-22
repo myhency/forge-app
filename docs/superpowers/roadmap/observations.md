@@ -767,3 +767,12 @@ Desktop app, one real message (allowed by the user) with the folder menu on `폴
 - **Second and later git folders:** in `새 환경` and in `환경 편집` the first git folder shows `master ⌄` and a checked `워크트리` box; a second git folder (`forge`) shows only an unchecked `워크트리` box and no branch picker. The saved preset (`ccd-session-presets.json`) holds `target.additionalFolders` and one `settings.worktree` (true, the first folder's box); nothing per extra folder. The docs say a folder added to a running session is worked in "itself, with no worktree".
 - **Delete confirmation without sessions:** `환경을 삭제하시겠습니까?` / "“my-app” 환경이 삭제됩니다. 이 환경에서 시작한 세션은 유지됩니다. 이 작업은 되돌릴 수 없습니다." with `취소` and a red `환경 삭제` (no third button when no session came from it).
 - **`폴더 없음`:** the folder chip menu is: search `폴더 검색…`, `폴더 없음` (checked when none is chosen), `최근` with the recent folders, `폴더 열기…`. With none chosen the chip reads `선택…`. A session started that way runs in an empty folder the app makes: `~/Library/Application Support/Claude/scratch-workspaces/<account>/<org>/scratch-<YYYY-MM-DD>-<6 hex>` (`cwd` = `originCwd`; `envScopeId: "builtin_local"`; no `startedFromEnvironmentId`). The transcript went under `~/.claude/projects/-Users-james-Library-Application-Support-Claude-scratch-workspaces-…`. In the sidebar the session sits in a group named `이 컴퓨터` (with `+`). Its `환경` card shows `이 컴퓨터`, a row `폴더 선택…` (to choose a folder afterwards) and the Remote Control switch.
+
+## Round 23 (2026-10-22): the `환경` card in a saved environment's session (stage B)
+
+Desktop app 3.1623.1, an existing session in the saved environment `mywork` (nothing sent, nothing changed; dialog cancelled).
+
+- **Card:** `환경 ⌄`, then the environment name `mywork` with a laptop icon and a **gear** at the right end (always visible, not only on hover), then the folder row `mywork · ~/Developer`, then `Remote Control` with a switch. No `저장` link (already saved).
+- **Gear:** opens `환경 편집` (name, `폴더` with `+ 추가`, the folder row with `Git 저장소가 아님`, the `환경 변수` card `이 환경에는 없음`). In this copy the footer has only `취소` and `저장`: no `환경 삭제` (Round 21 saw it from the chip menu's gear).
+- **Folder row menu:** `Finder에서 보기`, line, `경로 복사`, `폴더 변경…`, `폴더 추가…`, line, `터미널에서 열기`. In a saved-environment session `폴더 변경…` is there; Round 21 saw only `폴더 추가…` in a plain session.
+- Not seen this round: the `저장` link result and the grey `시작 위치 … 환경으로 저장` line (see Round 21); what `폴더 변경…` does.
