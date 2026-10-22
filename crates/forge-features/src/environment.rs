@@ -66,6 +66,24 @@ pub fn pins_after(
     pins
 }
 
+/// The pins as `project` sees them: this session's pin, stored under the folder's resolved path, is
+/// taken as `project`'s when both resolve to the same folder (a symlink spelling, `/tmp` and
+/// `/private/tmp`). `resolve` runs only when the spellings differ.
+pub fn pins_seen_from(
+    pins: &[forge_domain::SessionEnvironmentRef],
+    project: &Path,
+    session_id: &str,
+    resolve: impl Fn(&Path) -> PathBuf,
+) -> Vec<forge_domain::SessionEnvironmentRef> {
+    let mut pins = pins.to_vec();
+    if let Some(pin) = pins.iter_mut().find(|pin| pin.session_id == session_id && pin.project != project) {
+        if resolve(&pin.project) == resolve(project) {
+            pin.project = project.to_path_buf();
+        }
+    }
+    pins
+}
+
 /// The folders the Details card lists: the origin first, then each added folder once.
 pub fn card_folders(origin: &Path, added: &[PathBuf]) -> Vec<PathBuf> {
     let mut folders = vec![origin.to_path_buf()];
@@ -758,6 +776,26 @@ mod tests {
     fn a_new_pin_is_added_keyed_to_the_new_folder() {
         let list = vec![pin("/other", "t", "B")];
         assert_eq!(pins_after(&list, Path::new("/new"), "s", "A"), vec![pin("/other", "t", "B"), pin("/new", "s", "A")]);
+    }
+
+    fn fake_resolve(path: &Path) -> PathBuf {
+        match path.strip_prefix("/tmp") {
+            Ok(rest) => Path::new("/private/tmp").join(rest),
+            Err(_) => path.to_path_buf(),
+        }
+    }
+
+    #[test]
+    fn a_pin_stored_under_the_resolved_path_is_found_from_the_symlink_spelling() {
+        let pins = vec![pin("/private/tmp/new", "s", "A"), pin("/private/tmp/new", "t", "B")];
+        let seen = pins_seen_from(&pins, Path::new("/tmp/new"), "s", fake_resolve);
+        assert_eq!(seen, vec![pin("/tmp/new", "s", "A"), pin("/private/tmp/new", "t", "B")]);
+    }
+
+    #[test]
+    fn a_pin_of_another_folder_is_left_as_it_is() {
+        let pins = vec![pin("/work/old", "s", "A")];
+        assert_eq!(pins_seen_from(&pins, Path::new("/work/new"), "s", fake_resolve), pins);
     }
 
     #[test]

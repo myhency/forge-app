@@ -66,9 +66,11 @@ pub fn Dock(id: LiveSessionId, cwd: PathBuf) -> Element {
                                 }
                                 for panel in column.panels.iter().copied() {
                                     match panel {
+                                        // Keyed by panel only: `폴더 변경…` keeps open shells in the old folder; a new tab starts in `cwd`.
                                         Panel::Terminal => rsx! { TerminalPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
-                                        Panel::Changes => rsx! { ChangesPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
-                                        Panel::Files => rsx! { FilesPanel { key: "{panel:?}", id, cwd: cwd.clone() } },
+                                        // Keyed by folder too, so a moved session builds them again for its new folder.
+                                        Panel::Changes => rsx! { ChangesPanel { key: "{panel:?}-{cwd.display()}", id, cwd: cwd.clone() } },
+                                        Panel::Files => rsx! { FilesPanel { key: "{panel:?}-{cwd.display()}", id, cwd: cwd.clone() } },
                                         Panel::Preview => rsx! { PreviewPanel { key: "{panel:?}", id } },
                                         Panel::Tasks => rsx! { TasksPanel { key: "{panel:?}", id } },
                                         Panel::Details => rsx! { DetailsPanel { key: "{panel:?}", id } },

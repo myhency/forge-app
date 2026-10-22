@@ -719,6 +719,10 @@ impl Workspace {
         let environments = self.environments();
         let scratch_root = self.scratch_root();
         let pins = self.session_environments.read();
+        let pins = match session {
+            Some(session) => crate::environment::pins_seen_from(&pins, project, &session.0, crate::trust::resolved),
+            None => pins.clone(),
+        };
         forge_domain::environment_of_session(&environments, &pins, &self.worktrees.read(), scratch_root.as_deref(), project, session.map(|id| id.0.as_str())).cloned()
     }
 
@@ -2182,6 +2186,10 @@ impl Workspace {
         added.write().remove(&id);
         let mut folded = self.card_folded;
         folded.write().remove(&id);
+        let mut trust = self.trust_request;
+        if trust.peek().as_ref().is_some_and(|request| request.id == id) {
+            trust.set(None);
+        }
         let mut cards = self.cards;
         cards.write().take(id);
         let mut changes = self.changes_sessions;
@@ -2380,7 +2388,11 @@ impl Workspace {
     /// Whether a turn is running in the session or its folder is being changed; the card's folder
     /// items wait for it to end.
     pub fn session_is_busy(&self, id: LiveSessionId) -> bool {
-        self.session_is_moving(id) || self.live_view(id).is_some_and(|view| view.read().phase == Phase::Running)
+        // Background tasks run in the sidecar that both items stop.
+        self.session_is_moving(id) || self.live_view(id).is_some_and(|view| {
+            let view = view.read();
+            view.phase == Phase::Running || !view.background_tasks.is_empty()
+        })
     }
 
     /// Whether `폴더 변경…` is moving the session's transcript right now; the composer holds sends meanwhile.
@@ -2392,9 +2404,15 @@ impl Workspace {
     /// one already added are ignored. The desktop app asks no trust question here.
     pub fn add_session_folder(&self, id: LiveSessionId) {
         let this = *self;
-        spawn(async move {
+        dioxus::core::spawn_forever(async move {
             let Some(folder) = this.pick_folder().await else { return };
             let Some(handle) = this.handle(id) else { return };
+            // A turn or task that started while the dialog was open makes the actor ignore the folder,
+            // so no row is added for it either.
+            if this.session_is_busy(id) {
+                this.report_info(tr!("Wait for the turn to finish, then add the folder again").to_string());
+                return;
+            }
             let origin = this.origin_of(&handle.snapshot().project_path);
             if folder == origin || this.session_added_folders(id).contains(&folder) {
                 return;
@@ -2409,7 +2427,7 @@ impl Workspace {
     /// asked about first (`trust_request`); the answer carries on in `answer_trust_request`.
     pub fn change_session_folder(&self, id: LiveSessionId) {
         let this = *self;
-        spawn(async move {
+        dioxus::core::spawn_forever(async move {
             let Some(folder) = this.pick_folder().await else { return };
             let Some(view) = this.live_view(id) else { return };
             let current = view.peek().project_path.clone();
@@ -2447,13 +2465,16 @@ impl Workspace {
         let services = (*self.services.peek()).clone();
         // Root scope: a disk mutation must finish even if the card that asked for it unmounts.
         dioxus::core::spawn_forever(async move {
-            let (Some(view), Some(handle)) = (this.live_view(id), this.handle(id)) else { return };
-            let (old, session_id, running) = {
+            let (Some(view), Some(handle)) = (this.live_view(id), this.handle(id)) else {
+                this.report_info(tr!("The session was closed, so its folder was not changed.").to_string());
+                return;
+            };
+            let (old, session_id) = {
                 let view = view.peek();
-                (view.project_path.clone(), view.claude_session_id.clone(), view.phase == Phase::Running)
+                (view.project_path.clone(), view.claude_session_id.clone())
             };
             // A turn started while the trust question was open: the session cannot move under it.
-            if running || this.moving.peek().contains(&id) {
+            if this.session_is_busy(id) {
                 this.report_info(tr!("Wait for the turn to finish, then change the folder again").to_string());
                 return;
             }
@@ -2462,20 +2483,36 @@ impl Workspace {
                 return;
             };
             let shown = this.session_environment(&old, Some(&session_id));
-            // The composer holds sends while the transcript is renamed under the sidecar.
+            // The composer holds sends from here on. The sidecar is stopped before the rename, so the
+            // CLI cannot write to the old transcript path afterwards and leave a ghost session there.
             let mut moving = this.moving;
             moving.write().insert(id);
+            if !handle.suspend().await {
+                moving.write().remove(&id);
+                this.report_info(tr!("Wait for the turn to finish, then change the folder again").to_string());
+                return;
+            }
             let moved = services.registry.move_to(&old, &folder, &session_id).await;
-            moving.write().remove(&id);
             if let Err(error) = moved {
+                // Only the sidecar was stopped: the next send starts one again in the old folder.
+                moving.write().remove(&id);
                 this.report(error.to_string());
                 return;
             }
             // Pinned before the view moves, so the card never shows the folder without its environment.
             if let Some(environment) = shown {
-                this.pin_environment(folder.clone(), session_id.0.clone(), environment.id);
+                let key = crate::run_blocking({
+                    let folder = folder.clone();
+                    move || crate::trust::resolved(&folder)
+                })
+                .await
+                .unwrap_or_else(|| folder.clone());
+                this.pin_environment(key, session_id.0.clone(), environment.id);
             }
+            // No sidecar is left after `suspend`, so the actor takes the move.
             handle.move_to(folder.clone());
+            moving.write().remove(&id);
+            this.forget_folder_state(id);
             let listed = this.past.peek().iter().any(|(project, _)| project.path == folder);
             if listed {
                 this.reload_project(old);
@@ -2486,6 +2523,20 @@ impl Workspace {
             }
             this.report_info(crate::environment::moved_message(&folder));
         });
+    }
+
+    // What the Files, Changes and comment state of a session hold is relative to its old folder.
+    // Open terminals keep the shell they have, in the old folder (a new tab starts in the new one).
+    fn forget_folder_state(&self, id: LiveSessionId) {
+        let mut stores = self.files_stores;
+        stores.write().remove(&id);
+        self.clear_queued_files(id);
+        self.clear_file_request(id);
+        self.clear_comment_focus(id);
+        let mut cards = self.cards;
+        cards.write().take(id);
+        let mut changes = self.changes_sessions;
+        crate::change_rows::forget_changes_session(&mut changes.write(), &id);
     }
 
     /// Keeps `session_id` (now in `project`) on the environment, replacing the pin it had. The list
