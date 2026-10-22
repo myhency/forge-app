@@ -11,6 +11,7 @@ use crate::question_panel::QuestionPanel;
 use crate::session_title_menu::SessionTitleMenu;
 use crate::session_tools::SessionTools;
 use crate::sidebar::project_label_in;
+use crate::start_line::StartLine;
 use crate::tasks_panel::use_running_workflows;
 use crate::usage_ring::UsageRing;
 use forge_shared::tr;
@@ -90,6 +91,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 SessionTools { id, terminal: !archived }
             }
             div { class: "messages",
+                StartLine { id }
                 Turns {
                     messages: view.session.messages.clone(),
                     view: mode,

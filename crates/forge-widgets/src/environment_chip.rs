@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::Environment;
-use forge_features::{environment_menu, numbered_ids, refocus_composer, use_new_session_draft, use_workspace, EnvRow, EnvironmentKey, EnvironmentRequest};
+use forge_features::{environment_menu, numbered_ids, picker_choices, refocus_composer, use_new_session_draft, use_workspace, EnvRow, EnvironmentKey, EnvironmentRequest};
 use forge_shared::tr;
 
 /// The chip at the left of the new-session chips: the environment the session starts from, and a menu
@@ -19,6 +19,16 @@ pub fn EnvironmentChip() -> Element {
     let label = picked.as_ref().map_or_else(|| this_computer.clone(), |environment| environment.name.clone());
 
     let mut pick = move |id: Option<String>| {
+        // This computer leaves the pickers as they are. Before the SDK lists models, the environment's own model is taken as it is.
+        if let Some(environment) = id.as_ref().and_then(|id| workspace.environments().into_iter().find(|environment| &environment.id == id)) {
+            let mut known: Vec<String> = workspace.new_models().into_iter().flat_map(|model| std::iter::once(model.value).chain(model.resolved_model)).collect();
+            if known.is_empty() {
+                known.extend(environment.model.clone());
+            }
+            let (model, effort) = picker_choices(&environment, &draft.model.peek(), *draft.effort.peek(), &known);
+            draft.model.set(model);
+            draft.effort.set(effort);
+        }
         draft.environment.set(id);
         open.set(false);
         more.set(false);

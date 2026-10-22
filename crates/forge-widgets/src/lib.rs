@@ -28,6 +28,7 @@ mod new_session_controls;
 mod new_session_panel;
 mod panel_frame;
 mod permission_panel;
+mod start_line;
 mod plus_menu;
 mod preview_panel;
 mod question_panel;

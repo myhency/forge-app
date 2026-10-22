@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use forge_domain::{new_environment_id, parse_env, EffortLevel, EnvParseError, EnvVars, Environment, FolderChoice};
 
+use crate::new_session::ModelChoice;
 use crate::worktree_view::NewWorktree;
 
 /// One row of the environment menu. `id` is `None` for this computer.
@@ -86,6 +87,16 @@ pub fn environment_menu(environments: &[Environment], query: &str, this_computer
     let mut visible = vec![EnvRow { id: None, name: this_computer.to_string(), number: Some(1), pinned: false }];
     visible.extend(shown.into_iter().enumerate().map(|(index, environment)| row(environment, Some(index + 2))));
     EnvironmentMenu { visible, more: more.into_iter().map(|environment| row(environment, None)).collect() }
+}
+
+/// What the model and effort pickers show after an environment is picked: its model when it has one
+/// the SDK lists, its effort when it has one; otherwise what they showed.
+pub fn picker_choices(environment: &Environment, current_model: &ModelChoice, current_effort: Option<EffortLevel>, known_models: &[String]) -> (ModelChoice, Option<EffortLevel>) {
+    let model = match &environment.model {
+        Some(model) if known_models.contains(model) => Some(Some(model.clone())),
+        _ => current_model.clone(),
+    };
+    (model, environment.effort.or(current_effort))
 }
 
 /// The ids the keys ⌥⌘1…⌥⌘9 pick, in order; index 0 is this computer (`None`).
@@ -301,6 +312,37 @@ pub fn merge_added_dirs(composer: Vec<PathBuf>, extra: &[PathBuf], made: &[Optio
 
 #[cfg(test)]
 mod tests {
+    fn with_picks(model: Option<&str>, effort: Option<EffortLevel>) -> Environment {
+        Environment { model: model.map(String::from), effort, ..env("a", "app", false, 0) }
+    }
+
+    #[test]
+    fn an_environment_model_replaces_the_picker_when_it_is_listed() {
+        let known = vec!["opus".to_string(), "sonnet".to_string()];
+        let picked = picker_choices(&with_picks(Some("opus"), None), &Some(Some("sonnet".into())), None, &known);
+        assert_eq!(picked.0, Some(Some("opus".to_string())));
+    }
+
+    #[test]
+    fn an_unlisted_environment_model_keeps_the_current_picker() {
+        let known = vec!["sonnet".to_string()];
+        let current = Some(Some("sonnet".to_string()));
+        assert_eq!(picker_choices(&with_picks(Some("gone"), None), &current, None, &known).0, current);
+    }
+
+    #[test]
+    fn an_environment_without_model_or_effort_changes_nothing() {
+        let current = Some(None);
+        let picked = picker_choices(&with_picks(None, None), &current, Some(EffortLevel::Low), &["opus".to_string()]);
+        assert_eq!(picked, (current, Some(EffortLevel::Low)));
+    }
+
+    #[test]
+    fn an_environment_effort_replaces_the_current_effort() {
+        let picked = picker_choices(&with_picks(None, Some(EffortLevel::High)), &None, Some(EffortLevel::Low), &[]);
+        assert_eq!(picked.1, Some(EffortLevel::High));
+    }
+
     #[test]
     fn a_draft_from_a_session_carries_the_folder_name_model_and_effort() {
         let draft = EnvironmentDraft::from_session("/p/forge-observe-git".into(), Some("m".into()), Some(EffortLevel::High));
