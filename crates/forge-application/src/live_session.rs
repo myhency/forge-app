@@ -70,12 +70,14 @@ pub struct LiveSessionView {
     pub allowed_rules: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum LiveCommand {
     Send { text: String, attachments: Vec<Attachment> },
     AddDirectories(Vec<PathBuf>),
     /// Makes the folder the session's working folder from the next start on.
     MoveTo(PathBuf),
+    /// Stops the sidecar of an idle session; answers whether it did (see `LiveSessionHandle::suspend`).
+    Suspend(tokio::sync::oneshot::Sender<bool>),
     /// Permission rules the next start allows without asking.
     AllowTools(Vec<String>),
     /// Variables the next start runs with.
@@ -123,9 +125,20 @@ impl LiveSessionHandle {
     }
 
     /// Moves the session to another working folder; the next send resumes it there. Ignored while a
-    /// turn runs.
+    /// sidecar is running a turn or background tasks; after `suspend` it always applies.
     pub fn move_to(&self, folder: PathBuf) {
         let _ = self.commands.send(LiveCommand::MoveTo(folder));
+    }
+
+    /// Stops the sidecar so nothing writes to the transcript any more; the next send resumes the
+    /// session on a new one. False (and nothing done) while a turn or a background task runs, or
+    /// when the session is gone.
+    pub async fn suspend(&self) -> bool {
+        let (answer, answered) = tokio::sync::oneshot::channel();
+        if self.commands.send(LiveCommand::Suspend(answer)).is_err() {
+            return false;
+        }
+        answered.await.unwrap_or(false)
     }
 
     /// Permission rules the next start allows without asking (the SDK reads them once, at start).
@@ -1851,6 +1864,123 @@ mod tests {
             control.calls(),
             vec![Call::Start(start_params(None)), Call::Send("one".to_string()), Call::Send("two".to_string())]
         );
+    }
+
+    // One finished turn on the first sidecar, which named the Claude session `claude-9`.
+    async fn after_one_turn(handle: &LiveSessionHandle, view: &mut watch::Receiver<LiveSessionView>, control: &crate::test_support::FakeControl) {
+        handle.send("one".to_string());
+        wait_for(view, "the turn to start", |v| v.phase == Phase::Running).await;
+        control.push(SidecarEvent::SessionStarted { session_id: "claude-9".to_string() });
+        control.push(turn_complete());
+        wait_for(view, "the turn to end", |v| v.phase == Phase::Idle && v.claude_session_id.is_some()).await;
+    }
+
+    #[tokio::test]
+    async fn suspend_stops_an_idle_sidecar_and_the_next_send_resumes_on_a_new_one() {
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        after_one_turn(&handle, &mut view, &first_control).await;
+
+        assert!(handle.suspend().await);
+        assert!(first_control.calls().contains(&Call::Shutdown));
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second turn", |v| v.phase == Phase::Running).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 2);
+        assert_eq!(second_control.calls(), vec![Call::Start(start_params(Some("claude-9"))), Call::Send("two".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn suspend_is_refused_while_a_turn_runs() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("one".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        assert!(!handle.suspend().await);
+        assert!(!control.calls().contains(&Call::Shutdown));
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_running_background_task_refuses_suspend_folders_and_moves() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        after_one_turn(&handle, &mut view, &control).await;
+        control.push(SidecarEvent::BackgroundTasks { tasks: vec![task("b1")] });
+        wait_for(&mut view, "the task", |v| v.background_tasks.len() == 1).await;
+
+        assert!(!handle.suspend().await);
+        handle.add_directories(vec!["/x".into()]);
+        handle.move_to(PathBuf::from("/new"));
+        handle.send("two".to_string());
+        let seen = wait_for(&mut view, "the second message", |v| v.session.messages.len() == 2).await;
+
+        assert_eq!(seen.project_path, PathBuf::from("/work/a"));
+        assert_eq!(seen.background_tasks.len(), 1, "the task is still there");
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+        assert!(!control.calls().contains(&Call::Shutdown));
+    }
+
+    #[tokio::test]
+    async fn a_move_after_suspend_applies_and_the_next_send_resumes_in_the_new_folder() {
+        let (first, first_control) = fake_sidecar();
+        let (second, second_control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(first), Ok(second)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        after_one_turn(&handle, &mut view, &first_control).await;
+
+        assert!(handle.suspend().await);
+        handle.move_to(PathBuf::from("/new"));
+        wait_for(&mut view, "the move", |v| v.project_path == PathBuf::from("/new")).await;
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second turn", |v| v.phase == Phase::Running).await;
+
+        let mut expected = start_params(Some("claude-9"));
+        expected.cwd = "/new".to_string();
+        assert_eq!(second_control.calls(), vec![Call::Start(expected), Call::Send("two".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn adding_a_folder_the_session_already_has_keeps_the_sidecar() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.add_directories(vec!["/x".into()]);
+        after_one_turn(&handle, &mut view, &control).await;
+
+        handle.add_directories(vec!["/x".into()]);
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second message", |v| v.session.messages.len() == 2).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+        assert!(!control.calls().contains(&Call::Shutdown));
+    }
+
+    #[tokio::test]
+    async fn moving_to_the_folder_the_session_is_in_keeps_the_sidecar() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        after_one_turn(&handle, &mut view, &control).await;
+
+        handle.move_to(PathBuf::from("/work/a"));
+        handle.send("two".to_string());
+        wait_for(&mut view, "the second message", |v| v.session.messages.len() == 2).await;
+
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+        assert!(!control.calls().contains(&Call::Shutdown));
     }
 
     #[tokio::test]

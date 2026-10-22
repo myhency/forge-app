@@ -110,6 +110,10 @@ impl Actor {
             LiveCommand::Send { text, attachments } => self.send(text, attachments).await,
             LiveCommand::AddDirectories(directories) => self.add_directories(directories).await,
             LiveCommand::MoveTo(folder) => self.move_to(folder).await,
+            LiveCommand::Suspend(answer) => {
+                let done = self.suspend().await;
+                let _ = answer.send(done);
+            }
             LiveCommand::AllowTools(tools) => self.allow_tools(tools).await,
             LiveCommand::SetEnv(env) => self.set_env(env).await,
             LiveCommand::WarmUp => self.warm_up().await,
@@ -133,26 +137,29 @@ impl Actor {
     // the first send starts one that has them. A sidecar that has served a turn is dropped too, once
     // the turn is over: the next send resumes the session on a new one. While a turn runs the
     // folders are ignored.
+    // Background tasks live in the sidecar too, so a session running any is busy as well.
     async fn add_directories(&mut self, directories: Vec<std::path::PathBuf>) {
-        if self.sidecar.is_some() && !self.warm_only && self.view.phase == Phase::Running {
+        if self.sidecar_busy() {
             return;
         }
+        let mut grew = false;
         for directory in directories {
             let directory = directory.to_string_lossy().to_string();
             if !self.additional_directories.contains(&directory) {
                 self.additional_directories.push(directory);
+                grew = true;
             }
         }
-        if self.sidecar.is_some() {
+        if self.sidecar.is_some() && (grew || self.warm_only) {
             self.warm_only = false;
-            self.discard_sidecar(true).await;
+            self.restart_on_next_send("a folder was added").await;
         }
     }
 
     // The next send resumes the session in the new folder. The extensions that depend on the folder
-    // are resolved again then.
+    // are resolved again then. With no sidecar (after `suspend`) nothing can refuse it.
     async fn move_to(&mut self, folder: std::path::PathBuf) {
-        if self.view.phase == Phase::Running {
+        if self.sidecar_busy() || folder == self.view.project_path {
             return;
         }
         self.view.project_path = folder.clone();
@@ -160,8 +167,29 @@ impl Actor {
         self.active = None;
         self.defaults = None;
         self.warm_only = false;
-        self.discard_sidecar(true).await;
+        self.restart_on_next_send("the session moved to another folder").await;
         self.dirty = true;
+    }
+
+    async fn suspend(&mut self) -> bool {
+        if self.sidecar_busy() {
+            return false;
+        }
+        self.warm_only = false;
+        self.restart_on_next_send("the session's transcript is about to move").await;
+        true
+    }
+
+    fn sidecar_busy(&self) -> bool {
+        self.sidecar.is_some() && (self.view.phase == Phase::Running || !self.view.background_tasks.is_empty())
+    }
+
+    // The sidecar's stderr goes to the app's, so this line shows when a restart was asked for.
+    async fn restart_on_next_send(&mut self, reason: &str) {
+        if self.sidecar.is_some() {
+            eprintln!("forge: session {} stops its sidecar ({reason}); the next send resumes it", self.view.id.0);
+        }
+        self.discard_sidecar(true).await;
     }
 
     // Like folders, the SDK reads these once, at start: a warm-up sidecar is dropped so the first send
