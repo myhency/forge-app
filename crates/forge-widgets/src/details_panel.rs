@@ -14,6 +14,36 @@ pub fn DetailsPanel(id: LiveSessionId) -> Element {
     }
 }
 
+#[component]
+fn CardIcon(kind: &'static str) -> Element {
+    rsx! {
+        svg {
+            class: "env-card-icon",
+            view_box: "0 0 16 16",
+            width: "14",
+            height: "14",
+            fill: "none",
+            stroke: "currentColor",
+            stroke_width: "1.3",
+            stroke_linecap: "round",
+            stroke_linejoin: "round",
+            "aria-hidden": "true",
+            match kind {
+                "laptop" => rsx! {
+                    rect { x: "3", y: "3", width: "10", height: "7", rx: "1" }
+                    path { d: "M1.5 12.5h13" }
+                },
+                "folder" => rsx! { path { d: "M2 4.5A1 1 0 0 1 3 3.5h3l1.5 1.5H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" } },
+                "gear" => rsx! {
+                    circle { cx: "8", cy: "8", r: "2" }
+                    path { d: "M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" }
+                },
+                _ => rsx! { path { d: "M4 6l4 4 4-4" } },
+            }
+        }
+    }
+}
+
 fn folder_parts(path: &Path) -> (String, String) {
     let name = path.file_name().map_or_else(|| path.to_string_lossy().to_string(), |name| name.to_string_lossy().to_string());
     let parent = path.parent().map(|parent| parent.to_string_lossy().to_string()).unwrap_or_default();
@@ -40,20 +70,25 @@ fn EnvironmentCard(id: LiveSessionId) -> Element {
                 "aria-expanded": "{!folded}",
                 onclick: move |_| workspace.set_environment_card_folded(id, !folded),
                 span { {tr!("Environment")} }
-                span { class: if folded { "env-card-chevron folded" } else { "env-card-chevron" }, "⌄" }
+                span { class: if folded { "env-card-chevron folded" } else { "env-card-chevron" }, CardIcon { kind: "chevron" } }
             }
             if !folded {
                 div { class: "env-card-row",
-                    span { class: "env-card-icon", "💻" }
+                    CardIcon { kind: "laptop" }
                     if let Some(environment) = environment.clone() {
+                        {
+                            let environment_id = environment.id.clone();
+                            rsx! {
                         span { class: "env-card-name", "{environment.name}" }
                         button {
                             class: "icon-button",
                             r#type: "button",
                             title: tr!("Edit"),
                             "aria-label": tr!("Edit"),
-                            onclick: move |_| workspace.open_environment_dialog(EnvironmentRequest::EditInSession(environment.id.clone())),
-                            "⚙"
+                            onclick: move |_| workspace.open_environment_dialog(EnvironmentRequest::EditInSession(environment_id.clone())),
+                            CardIcon { kind: "gear" }
+                        }
+                            }
                         }
                     } else {
                         span { class: "env-card-name", {tr!("This computer")} }
@@ -87,7 +122,7 @@ fn FolderRow(id: LiveSessionId, folder: PathBuf, first: bool, open: bool, on_ope
     rsx! {
         div { class: "env-card-folder",
             button { class: "env-card-row env-card-folder-button", r#type: "button", onclick: move |_| on_open.call(!open),
-                span { class: "env-card-icon", "📁" }
+                CardIcon { kind: "folder" }
                 span { class: "env-card-name", "{name}" }
                 span { class: "env-card-parent", " · {parent}" }
             }
