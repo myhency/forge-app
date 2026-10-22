@@ -13,10 +13,22 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
     let mut open = use_signal(|| false);
     let terminal_open = workspace.dock(id).is_open(Panel::Terminal);
     let changes_open = workspace.dock(id).is_open(Panel::Changes);
+    let details_open = workspace.dock(id).is_open(Panel::Details);
     let files_open = workspace.dock(id).is_open(Panel::Files);
     let preview_open = workspace.dock(id).is_open(Panel::Preview);
     rsx! {
         div { class: "pane-tools",
+            if terminal {
+                button {
+                    class: if details_open { "icon-button active" } else { "icon-button" },
+                    r#type: "button",
+                    title: tr!("Environment"),
+                    "aria-label": tr!("Environment"),
+                    "aria-pressed": "{details_open}",
+                    onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Details)),
+                    "☰"
+                }
+            }
             if terminal {
                 button {
                     class: if terminal_open { "icon-button active" } else { "icon-button" },

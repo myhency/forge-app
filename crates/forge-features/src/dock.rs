@@ -15,6 +15,7 @@ pub enum Panel {
     Preview,
     Files,
     Tasks,
+    Details,
 }
 
 impl Panel {
@@ -25,6 +26,7 @@ impl Panel {
             Panel::Preview => tr!("Preview"),
             Panel::Files => tr!("Files"),
             Panel::Tasks => tr!("Background tasks"),
+            Panel::Details => tr!("Environment"),
         }
     }
 
@@ -33,7 +35,7 @@ impl Panel {
         match self {
             Panel::Changes => Some(Panel::Preview),
             Panel::Preview => Some(Panel::Changes),
-            Panel::Terminal | Panel::Files | Panel::Tasks => None,
+            Panel::Terminal | Panel::Files | Panel::Tasks | Panel::Details => None,
         }
     }
 }
@@ -315,5 +317,20 @@ mod tests {
         dock.toggle(Panel::Tasks);
         assert!(!dock.is_open(Panel::Tasks));
         assert_eq!(dock.columns.len(), 1);
+    }
+
+    #[test]
+    fn details_opens_in_its_own_column_and_closes() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Details);
+        assert_eq!(dock.columns.len(), 1);
+        assert_eq!(dock.columns[0].panels, vec![Panel::Details]);
+        dock.toggle(Panel::Details);
+        assert!(dock.columns.is_empty());
+    }
+
+    #[test]
+    fn details_has_the_environment_title() {
+        assert_eq!(Panel::Details.title(), "Environment");
     }
 }
