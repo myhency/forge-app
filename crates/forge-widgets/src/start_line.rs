@@ -16,7 +16,7 @@ pub fn StartLine(id: LiveSessionId) -> Element {
     let origin = workspace.origin_of(&view.project_path);
     let folder = origin.file_name().map_or_else(|| origin.to_string_lossy().to_string(), |name| name.to_string_lossy().to_string());
     let lead = tr!("Starts in: {computer} · {folder} · ", computer = tr!("This computer"), folder = folder);
-    let environment = workspace.session_environment(&view.project_path);
+    let environment = workspace.session_environment(&view.project_path, view.claude_session_id.as_ref());
     rsx! {
         div { class: "start-line",
             span { "{lead}" }

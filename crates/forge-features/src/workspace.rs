@@ -118,6 +118,13 @@ pub struct Picture {
     pub relative: String,
 }
 
+/// `폴더 변경…` waiting for the person to trust the picked folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustRequest {
+    pub id: LiveSessionId,
+    pub folder: PathBuf,
+}
+
 /// The UI-side session store: the sidebar's past sessions, the open sessions and the active one.
 /// It is `Copy` (every field is a signal), so event handlers can capture it freely.
 #[derive(Clone, Copy)]
@@ -155,6 +162,8 @@ pub struct Workspace {
     archived: Signal<Vec<ArchivedRef>>,
     worktrees: Signal<Vec<WorktreeRecord>>,
     environments: Signal<Vec<forge_domain::Environment>>,
+    session_environments: Signal<Vec<forge_domain::SessionEnvironmentRef>>,
+    trust_request: Signal<Option<TrustRequest>>,
     environment_key: Signal<Option<crate::EnvironmentKey>>,
     environment_request: Signal<Option<crate::EnvironmentRequest>>,
     new_repo: Signal<Option<RepoInfo>>,
@@ -231,6 +240,8 @@ pub fn use_workspace_provider() -> Workspace {
             archived: Signal::new(Vec::new()),
             worktrees: Signal::new(Vec::new()),
             environments: Signal::new(Vec::new()),
+            session_environments: Signal::new(Vec::new()),
+            trust_request: Signal::new(None),
             environment_key: Signal::new(None),
             environment_request: Signal::new(None),
             new_repo: Signal::new(None),
@@ -523,6 +534,7 @@ impl Workspace {
         let mut archived = self.archived;
         let mut worktrees = self.worktrees;
         let mut environments = self.environments;
+        let mut session_environments = self.session_environments;
         let mut editor = self.editor;
         let mut changes_view = self.changes_view;
         let mut changes_modes = self.changes_modes;
@@ -537,6 +549,7 @@ impl Workspace {
                 changes_modes_loaded.set(true);
                 worktrees.set(config.worktrees);
                 environments.set(config.environments);
+                session_environments.set(config.session_environments);
             }
         });
     }
@@ -689,11 +702,13 @@ impl Workspace {
         forge_domain::main_repo_of(path).map(|_| WorktreeTag { branch: None })
     }
 
-    /// The saved environment a session in `project` belongs to, if any.
-    pub fn session_environment(&self, project: &Path) -> Option<forge_domain::Environment> {
+    /// The saved environment a session in `project` belongs to, if any: the one `폴더 변경…` pinned it
+    /// to, else the one whose folder it is in.
+    pub fn session_environment(&self, project: &Path, session: Option<&SessionId>) -> Option<forge_domain::Environment> {
         let environments = self.environments();
         let scratch_root = self.scratch_root();
-        forge_domain::environment_of(&environments, &self.worktrees.read(), scratch_root.as_deref(), project).cloned()
+        let pins = self.session_environments.read();
+        forge_domain::environment_of_session(&environments, &pins, &self.worktrees.read(), scratch_root.as_deref(), project, session.map(|id| id.0.as_str())).cloned()
     }
 
     /// Reloads one project's session list, leaving every other project as drawn.
@@ -1931,14 +1946,14 @@ impl Workspace {
         // Root scope: the search palette closes the moment it opens a session, and a task of the
         // palette's own scope would be cancelled with it before the session ever opened.
         dioxus::core::spawn_forever(async move {
-            match services.registry.open_existing(&project, session_id).await {
+            match services.registry.open_existing(&project, session_id.clone()).await {
                 Ok(outcome) => {
                     let handle = outcome.handle.clone();
                     // A session already open has started its sidecar: variables and folders only reach the first start.
                     let fresh = !outcome.already_open;
                     let id = this.ensure_attached(handle.clone());
                     if fresh {
-                        if let Some(environment) = this.session_environment(&project.path) {
+                        if let Some(environment) = this.session_environment(&project.path, Some(&session_id)) {
                             let (env, folders) = crate::environment::reopen_setup(&environment, &[]);
                             if !env.0.is_empty() {
                                 handle.set_env(env);
@@ -2370,6 +2385,100 @@ impl Workspace {
             handle.add_directories(vec![folder.clone()]);
             let mut added = this.added_folders;
             added.write().entry(id).or_default().push(folder);
+        });
+    }
+
+    /// `폴더 변경…`: asks for a folder and moves the session there. A folder off the trusted list is
+    /// asked about first (`trust_request`); the answer carries on in `answer_trust_request`.
+    pub fn change_session_folder(&self, id: LiveSessionId) {
+        let this = *self;
+        spawn(async move {
+            let Some(folder) = this.pick_folder().await else { return };
+            let Some(view) = this.live_view(id) else { return };
+            let current = view.peek().project_path.clone();
+            if !crate::environment::should_move(&current, &folder) {
+                return;
+            }
+            if this.needs_trust(folder.clone()).await {
+                let mut request = this.trust_request;
+                request.set(Some(TrustRequest { id, folder }));
+                return;
+            }
+            this.finish_change(id, folder);
+        });
+    }
+
+    /// The folder `폴더 변경…` is asking about, while its trust question is open.
+    pub fn trust_request(&self) -> Option<TrustRequest> {
+        self.trust_request.read().clone()
+    }
+
+    /// Closes the trust question; trusting saves the folder and moves the session, cancelling does nothing.
+    pub fn answer_trust_request(&self, trust: bool) {
+        let mut request = self.trust_request;
+        let Some(asked) = request.write().take() else { return };
+        if trust {
+            self.trust_folder(asked.folder.clone());
+            self.finish_change(asked.id, asked.folder);
+        }
+    }
+
+    // The transcript moves first: when that fails nothing else changes, so the session stays whole
+    // where it was. The environment shown before the move is pinned so the card keeps its name.
+    fn finish_change(&self, id: LiveSessionId, folder: PathBuf) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        // Root scope: a disk mutation must finish even if the card that asked for it unmounts.
+        dioxus::core::spawn_forever(async move {
+            let (Some(view), Some(handle)) = (this.live_view(id), this.handle(id)) else { return };
+            let (old, session_id, busy) = {
+                let view = view.peek();
+                (view.project_path.clone(), view.claude_session_id.clone(), view.phase == Phase::Running)
+            };
+            // A turn started while the trust question was open: the session cannot move under it.
+            if busy {
+                return;
+            }
+            let Some(session_id) = session_id else {
+                this.report(tr!("The session cannot move before its first message.").to_string());
+                return;
+            };
+            let shown = this.session_environment(&old, Some(&session_id));
+            if let Err(error) = services.registry.move_to(&old, &folder, &session_id).await {
+                this.report(error.to_string());
+                return;
+            }
+            handle.move_to(folder.clone());
+            if let Some(environment) = shown {
+                this.pin_environment(folder.clone(), session_id.0.clone(), environment.id);
+            }
+            let listed = this.past.peek().iter().any(|(project, _)| project.path == folder);
+            if listed {
+                this.reload_project(old);
+                this.reload_project(folder.clone());
+            } else {
+                // A folder with no group yet: only a full reload adds one.
+                this.reload_past();
+            }
+            this.report(crate::environment::moved_message(&folder));
+        });
+    }
+
+    /// Keeps `session_id` (now in `project`) on the environment, replacing the pin it had.
+    fn pin_environment(&self, project: PathBuf, session_id: String, environment_id: String) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        dioxus::core::spawn_forever(async move {
+            let saved = services.settings.save_code_settings(|config| {
+                config.session_environments = crate::environment::pins_after(&config.session_environments, &project, &session_id, &environment_id);
+            });
+            match saved.await {
+                Ok(config) => {
+                    let mut pins = this.session_environments;
+                    pins.set(config.session_environments);
+                }
+                Err(error) => this.report(tr!("Could not save the environment: {error}", error = error)),
+            }
         });
     }
 

@@ -57,7 +57,7 @@ fn EnvironmentCard(id: LiveSessionId) -> Element {
     let view = view.read().clone();
     let origin = workspace.origin_of(&view.project_path);
     let scratch = workspace.is_scratch_project(&view.project_path);
-    let environment = workspace.session_environment(&view.project_path);
+    let environment = workspace.session_environment(&view.project_path, view.claude_session_id.as_ref());
     let folded = workspace.environment_card_folded(id);
     let folders = if scratch { Vec::new() } else { card_folders(&origin, &workspace.session_added_folders(id)) };
     let mut menu = use_signal(|| None::<usize>);
@@ -166,6 +166,18 @@ fn FolderRow(id: LiveSessionId, folder: PathBuf, first: bool, busy: bool, worktr
                             }
                         },
                         span { class: "picker-text", {tr!("Copy path")} }
+                    }
+                    if items.change {
+                        button {
+                            class: "picker-item",
+                            r#type: "button",
+                            role: "menuitem",
+                            onclick: move |_| {
+                                on_open.call(false);
+                                workspace.change_session_folder(id);
+                            },
+                            span { class: "picker-text", {tr!("Change folder…")} }
+                        }
                     }
                     if items.add {
                         button {

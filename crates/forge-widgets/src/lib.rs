@@ -52,6 +52,7 @@ mod terminal_panel;
 mod usage_card;
 mod usage_ring;
 mod web_view_host;
+mod workspace_trust_dialog;
 
 pub use chat_window::ChatWindow;
 pub use customize_page::CustomizePage;
@@ -72,6 +73,7 @@ pub use session_tools::SessionTools;
 pub use settings_overlay::SettingsOverlay;
 pub use shortcuts_dialog::ShortcutsDialog;
 pub use environment_dialog::EnvironmentDialog;
+pub use workspace_trust_dialog::WorkspaceTrustDialog;
 pub use sidebar::{project_label, project_label_in, project_labels, NavButtons, Sidebar};
 pub use usage_ring::UsageRing;
 pub use web_view_host::WebViewHost;

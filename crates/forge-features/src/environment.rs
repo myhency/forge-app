@@ -42,6 +42,30 @@ pub fn folder_menu(first: bool, busy: bool, worktree_session: bool) -> FolderMen
     FolderMenu { change: idle_first && !worktree_session, add: idle_first, terminal: first }
 }
 
+/// Whether `폴더 변경…` has anywhere to go. Paths compare by component, so a trailing slash is the same folder.
+pub fn should_move(current: &Path, picked: &Path) -> bool {
+    current != picked
+}
+
+/// The notice after `폴더 변경…`: it names the folder only, as the desktop app's toast does.
+pub fn moved_message(folder: &Path) -> String {
+    let name = folder.file_name().map_or_else(|| folder.display().to_string(), |name| name.to_string_lossy().to_string());
+    forge_shared::tr!("Session moved to {name}", name = name)
+}
+
+/// The pins once `session_id` is pinned to `environment_id` in `new_project`. A session has one pin at
+/// most, so an earlier one (under the folder it moved from) is replaced.
+pub fn pins_after(
+    list: &[forge_domain::SessionEnvironmentRef],
+    new_project: &Path,
+    session_id: &str,
+    environment_id: &str,
+) -> Vec<forge_domain::SessionEnvironmentRef> {
+    let mut pins: Vec<_> = list.iter().filter(|pin| pin.session_id != session_id).cloned().collect();
+    pins.push(forge_domain::SessionEnvironmentRef { project: new_project.to_path_buf(), session_id: session_id.to_string(), environment_id: environment_id.to_string() });
+    pins
+}
+
 /// The folders the Details card lists: the origin first, then each added folder once.
 pub fn card_folders(origin: &Path, added: &[PathBuf]) -> Vec<PathBuf> {
     let mut folders = vec![origin.to_path_buf()];
@@ -712,5 +736,33 @@ mod tests {
     #[test]
     fn a_worktree_session_has_no_change_item_but_keeps_add() {
         assert_eq!(folder_menu(true, false, true), FolderMenu { change: false, add: true, terminal: true });
+    }
+
+    #[test]
+    fn picking_the_same_folder_is_no_move() {
+        assert!(!should_move(Path::new("/work/a"), Path::new("/work/a")));
+        assert!(!should_move(Path::new("/work/a"), Path::new("/work/a/")));
+        assert!(should_move(Path::new("/work/a"), Path::new("/work/b")));
+    }
+
+    #[test]
+    fn the_moved_message_names_the_last_folder_component() {
+        assert_eq!(moved_message(Path::new("/work/projects/new-app")), "Session moved to new-app");
+    }
+
+    fn pin(project: &str, session_id: &str, environment_id: &str) -> forge_domain::SessionEnvironmentRef {
+        forge_domain::SessionEnvironmentRef { project: project.into(), session_id: session_id.to_string(), environment_id: environment_id.to_string() }
+    }
+
+    #[test]
+    fn a_new_pin_is_added_keyed_to_the_new_folder() {
+        let list = vec![pin("/other", "t", "B")];
+        assert_eq!(pins_after(&list, Path::new("/new"), "s", "A"), vec![pin("/other", "t", "B"), pin("/new", "s", "A")]);
+    }
+
+    #[test]
+    fn moving_again_replaces_the_session_pin_and_keeps_the_others() {
+        let list = vec![pin("/old", "s", "A"), pin("/other", "t", "B")];
+        assert_eq!(pins_after(&list, Path::new("/new"), "s", "A"), vec![pin("/other", "t", "B"), pin("/new", "s", "A")]);
     }
 }

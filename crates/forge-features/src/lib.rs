@@ -113,7 +113,7 @@ pub use sidebar::{
 pub use terminal_tabs::{TabId, TerminalTabs};
 pub use routines::{cards, history_rows, run_state_text, local_when_label, notices, offset_at, skip_text, start_failed_notice, waiting_notice, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};
 pub use routines_state::{use_routines, use_routines_provider, RoutineDialog, RoutineScreen, Routines};
-pub use workspace::{preview_key_from_event, shortcut_from_event, use_workspace, use_workspace_provider, Active, PaneGeometry, Picture, RoutineServices, Workspace, WorkspaceServices};
+pub use workspace::{preview_key_from_event, shortcut_from_event, use_workspace, use_workspace_provider, Active, PaneGeometry, Picture, RoutineServices, TrustRequest, Workspace, WorkspaceServices};
 pub use blocking::run_blocking;
 pub use file_tree::{parse_files_query, FileTree, FilesQuery, TreeRow};
 pub use browser_host::{should_show, ShowInput};
