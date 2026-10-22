@@ -226,6 +226,33 @@ pub fn environment_of<'a>(
     best
 }
 
+/// An environment chosen for one session by moving it, which beats the folder match.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionEnvironmentRef {
+    pub project: PathBuf,
+    pub session_id: String,
+    pub environment_id: String,
+}
+
+/// `environment_of`, except that a pin for this session wins when its environment still exists.
+pub fn environment_of_session<'a>(
+    environments: &'a [Environment],
+    pins: &[SessionEnvironmentRef],
+    records: &[WorktreeRecord],
+    scratch_root: Option<&Path>,
+    project: &Path,
+    session_id: Option<&str>,
+) -> Option<&'a Environment> {
+    if scratch_root.is_some_and(|root| is_scratch(root, project)) {
+        return None;
+    }
+    let pinned = session_id.and_then(|session_id| {
+        let pin = pins.iter().find(|pin| pin.project == project && pin.session_id == session_id)?;
+        environments.iter().find(|environment| environment.id == pin.environment_id)
+    });
+    pinned.or_else(|| environment_of(environments, records, scratch_root, project))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -508,5 +535,78 @@ mod environment_of_tests {
         let scratch = "/s/scratch-2026-10-22-abc123";
         let environments = [saved("a", &[scratch], 1)];
         assert_eq!(environment_of(&environments, &[], Some(Path::new("/s")), Path::new(scratch)), None);
+    }
+}
+
+#[cfg(test)]
+mod environment_of_session_tests {
+    use std::path::Path;
+
+    use super::*;
+
+    fn saved(id: &str, folders: &[&str]) -> Environment {
+        Environment {
+            id: id.to_string(),
+            name: id.to_string(),
+            folders: folders.iter().map(PathBuf::from).collect(),
+            branch: None,
+            worktree: false,
+            extra_choices: Vec::new(),
+            env_vars: String::new(),
+            pinned: false,
+            created_at: 0,
+            last_used_at: 0,
+            model: None,
+            effort: None,
+        }
+    }
+
+    fn pin(project: &str, session_id: &str, environment_id: &str) -> SessionEnvironmentRef {
+        SessionEnvironmentRef { project: PathBuf::from(project), session_id: session_id.to_string(), environment_id: environment_id.to_string() }
+    }
+
+    fn id_of(found: Option<&Environment>) -> Option<&str> {
+        found.map(|environment| environment.id.as_str())
+    }
+
+    fn envs() -> [Environment; 2] {
+        [saved("A", &["/a"]), saved("B", &["/b"])]
+    }
+
+    #[test]
+    fn a_pin_for_this_session_wins_over_the_folder_match() {
+        let environments = envs();
+        let found = environment_of_session(&environments, &[pin("/a", "s", "B")], &[], None, Path::new("/a"), Some("s"));
+        assert_eq!(id_of(found), Some("B"));
+    }
+
+    #[test]
+    fn a_pin_for_another_session_or_project_is_ignored() {
+        let environments = envs();
+        let pins = [pin("/a", "s", "B")];
+        assert_eq!(id_of(environment_of_session(&environments, &pins, &[], None, Path::new("/a"), Some("t"))), Some("A"));
+        assert_eq!(environment_of_session(&environments, &pins, &[], None, Path::new("/c"), Some("s")), None);
+    }
+
+    #[test]
+    fn a_pin_whose_environment_is_gone_falls_back_to_the_folder_match() {
+        let environments = envs();
+        let found = environment_of_session(&environments, &[pin("/a", "s", "zzz")], &[], None, Path::new("/a"), Some("s"));
+        assert_eq!(id_of(found), Some("A"));
+    }
+
+    #[test]
+    fn without_a_session_id_only_the_folder_match_applies() {
+        let environments = envs();
+        let found = environment_of_session(&environments, &[pin("/a", "s", "B")], &[], None, Path::new("/a"), None);
+        assert_eq!(id_of(found), Some("A"));
+    }
+
+    #[test]
+    fn a_scratch_session_ignores_pins() {
+        let environments = envs();
+        let scratch = "/s/scratch-2026-10-22-abc123";
+        let found = environment_of_session(&environments, &[pin(scratch, "s", "B")], &[], Some(Path::new("/s")), Path::new(scratch), Some("s"));
+        assert_eq!(found, None);
     }
 }

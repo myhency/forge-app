@@ -358,6 +358,9 @@ pub struct AppConfig {
     /// Saved environments of the new-session screen.
     #[serde(default, deserialize_with = "lenient_entries")]
     pub environments: Vec<crate::Environment>,
+    /// Sessions moved to another environment by `폴더 변경…`.
+    #[serde(default, deserialize_with = "lenient_entries")]
+    pub session_environments: Vec<crate::SessionEnvironmentRef>,
 }
 
 fn default_true() -> bool {
@@ -417,6 +420,7 @@ impl Default for AppConfig {
             worktree_location: crate::WorktreeLocation::Project,
             auto_archive_days: None,
             environments: Vec::new(),
+            session_environments: Vec::new(),
         }
     }
 }
@@ -903,6 +907,20 @@ mod tests {
             ..AppConfig::default()
         };
         assert!(!format!("{config:?}").contains("s3cret"));
+    }
+
+    #[test]
+    fn old_configs_without_session_environments_load_with_none() {
+        let config: AppConfig = serde_json::from_str(r#"{"base_url":"https://x.test","api_key":null}"#).unwrap();
+        assert!(config.session_environments.is_empty());
+    }
+
+    #[test]
+    fn a_bad_session_environments_entry_is_dropped_and_the_rest_kept() {
+        let text = r#"{"base_url":null,"api_key":null,"session_environments":[{"project":"/a","session_id":"s","environment_id":"B"},{"project":"/a"},"junk"]}"#;
+        let config: AppConfig = serde_json::from_str(text).unwrap();
+        assert_eq!(config.session_environments.len(), 1);
+        assert_eq!(config.session_environments[0].environment_id, "B");
     }
 
     #[test]
