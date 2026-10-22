@@ -16,7 +16,7 @@
 - Every user-visible string goes through `tr!` with a Korean entry in `crates/forge-shared/src/ko.rs` (use `python3 scripts/i18n_add.py`, which does NOT escape double quotes: check the entry by hand; run `cargo test -p forge-shared`). Korean: `폴더 변경…`, `폴더 추가…`, `이 워크스페이스를 신뢰하시겠습니까?`, `작업 공간 신뢰`, `세션이 {name}(으)로 이동되었습니다`. English keys: `Change folder…`, `Add folder…`, `Do you trust this workspace?`, `Trust workspace`, `Session moved to {name}`. Reuse the existing `Cancel`.
 - The session record format (transcript) does not change; the only new stored data is `AppConfig.session_environments`. Configs without it must load unchanged; a bad entry is dropped (`lenient_entries`).
 - No trust question for `폴더 추가…`; a trust question for `폴더 변경…` when `Workspace::needs_trust` says so.
-- `폴더 变更…`/`폴더 추가…` are disabled while a turn runs (`Phase::Running`) and `폴더 변경…` is hidden for a worktree session and absent on added rows and scratch sessions.
+- `폴더 변경…`/`폴더 추가…` are disabled while a turn runs (`Phase::Running`) and `폴더 변경…` is hidden for a worktree session and absent on added rows and scratch sessions.
 - A failed move leaves the session exactly where it was (folder, transcript, sidecar, pin) and shows a notice.
 - Not built: the composer `폴더` chip, persisting added folders across a restart, a hidden note about the new directory in the transcript, moving a worktree session, Windows (never run).
 - Per-session state keyed by project path that does not move with the session (Changes mode `changes_modes`) is left behind on a move; accepted.
