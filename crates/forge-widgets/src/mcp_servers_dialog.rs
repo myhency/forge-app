@@ -22,7 +22,6 @@ pub fn McpServersDialog(id: LiveSessionId, on_close: EventHandler<()>) -> Elemen
         let view = view.read();
         (view.project_path.display().to_string(), view.mcp_servers.clone().unwrap_or_default())
     };
-    // The plugin name lookup is not available yet, so no subtitle shows.
     // The workspace has no lookup from a server to its plugin's name, so the subtitle is left out.
     let table = connector_table(&servers, &|_| None);
     let close = move || {
