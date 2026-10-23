@@ -18,8 +18,13 @@ pub fn CustomizePage() -> Element {
     let workspace = use_workspace();
     use_hook(move || {
         customize.open_page(workspace.context_project());
-        if let Some(tab) = workspace.take_customize_tab_request() {
-            customize.set_tab(tab);
+    });
+    // A card's request, at mount and while the page is already open.
+    use_effect(move || {
+        if workspace.customize_tab_requested() {
+            if let Some(tab) = workspace.take_customize_tab_request() {
+                customize.set_tab(tab);
+            }
         }
     });
     // Coming back to the window (from the terminal, say) reads the connectors again. One listener at a time: a

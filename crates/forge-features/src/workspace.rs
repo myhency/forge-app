@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 use crate::change_rows::{ChangeView, ChangesSession};
 use crate::cards::{clamp_cards, Cards};
 use crate::customize::CustomizeTab;
-use crate::details::{change_counts, ChangeCounts, DetailsCard};
+use crate::details::{change_counts, ChangeCounts, DetailsCard, OneShot};
 use crate::closed_sessions::ClosedSessions;
 use crate::editor_tabs::EditorTabs;
 use crate::files_store::{FilesStore, Restore};
@@ -188,7 +188,7 @@ pub struct Workspace {
     change_counts: Signal<HashMap<LiveSessionId, ChangeCounts>>,
     change_count_tickets: Signal<HashMap<LiveSessionId, u64>>,
     /// The Customize tab a details card asked for; the page takes it when it appears.
-    customize_tab_request: Signal<Option<CustomizeTab>>,
+    customize_tab_request: Signal<OneShot<CustomizeTab>>,
     comment_focus: Signal<HashMap<LiveSessionId, u64>>,
     search_open: Signal<bool>,
     shortcuts_open: Signal<bool>,
@@ -271,7 +271,7 @@ pub fn use_workspace_provider() -> Workspace {
             card_folded: Signal::new(HashMap::new()),
             change_counts: Signal::new(HashMap::new()),
             change_count_tickets: Signal::new(HashMap::new()),
-            customize_tab_request: Signal::new(None),
+            customize_tab_request: Signal::new(OneShot::default()),
             comment_focus: Signal::new(HashMap::new()),
             search_open: Signal::new(false),
             shortcuts_open: Signal::new(false),
@@ -1325,6 +1325,7 @@ impl Workspace {
             if workspace.change_count_tickets.peek().get(&id) != Some(&ticket) {
                 return;
             }
+            // A git error is dropped on purpose: the card just hides, there is no error UI.
             let counts = read.ok().and_then(|files| {
                 let files: Vec<_> = files.into_iter().map(|change| change.file).collect();
                 change_counts(&files)
@@ -1356,8 +1357,17 @@ impl Workspace {
 
     fn open_customize_on(&self, tab: CustomizeTab) {
         let mut request = self.customize_tab_request;
-        request.set(Some(tab));
+        request.write().set(tab);
         self.show_customize();
+        // No Customize page to apply it: it must not wait for a later visit.
+        if self.active() != Active::Customize {
+            request.write().take();
+        }
+    }
+
+    /// Whether a card asked the Customize page for a tab and it is not applied yet.
+    pub fn customize_tab_requested(&self) -> bool {
+        self.customize_tab_request.read().pending()
     }
 
     /// The tab a card asked the Customize page to show, once.

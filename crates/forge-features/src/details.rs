@@ -20,6 +20,30 @@ pub struct ChangeCounts {
     pub removed: usize,
 }
 
+/// A request that is applied once: `take` hands it out and forgets it, a new `set` replaces the old.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OneShot<T>(Option<T>);
+
+impl<T: Copy> OneShot<T> {
+    pub fn set(&mut self, value: T) {
+        self.0 = Some(value);
+    }
+
+    pub fn take(&mut self) -> Option<T> {
+        self.0.take()
+    }
+
+    pub fn pending(&self) -> bool {
+        self.0.is_some()
+    }
+}
+
+impl<T> Default for OneShot<T> {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
 /// `None` when nothing changed. A file git gave no line count for (binary, untracked) is still a
 /// file and adds nothing to the sums.
 pub fn change_counts(files: &[ChangedFile]) -> Option<ChangeCounts> {
@@ -68,6 +92,18 @@ mod tests {
     fn a_missing_line_count_counts_as_zero() {
         let files = [file(None, None), file(Some(2), None)];
         assert_eq!(change_counts(&files), Some(ChangeCounts { files: 2, added: 2, removed: 0 }));
+    }
+
+    #[test]
+    fn a_one_shot_request_is_taken_once_and_a_new_one_replaces_the_old() {
+        let mut request = OneShot::default();
+        assert!(!request.pending());
+        request.set(1);
+        request.set(2);
+        assert!(request.pending());
+        assert_eq!(request.take(), Some(2));
+        assert_eq!(request.take(), None);
+        assert!(!request.pending());
     }
 
     #[test]
