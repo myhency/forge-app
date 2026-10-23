@@ -13,9 +13,11 @@ if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
   exit 1
 fi
 
-# A fresh worktree has no sidecar build.
+# A fresh worktree has no sidecar build; a build older than the sources is rebuilt (an old one lacks new events).
 if [[ ! -f "$root/sidecar/dist/index.js" ]]; then
   (cd "$root/sidecar" && npm ci && npm run build)
+elif [[ -n "$(find "$root/sidecar/src" -name '*.ts' -newer "$root/sidecar/dist/index.js" | head -1)" ]]; then
+  (cd "$root/sidecar" && npm run build)
 fi
 (cd "$root" && cargo build -p forge-app)
 
