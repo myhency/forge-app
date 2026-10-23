@@ -55,6 +55,14 @@ fn per_mille(tokens: u64, window: u64) -> u64 {
     (tokens as u128 * 1000 / window as u128).min(1000) as u64
 }
 
+/// `tokens` out of `window` in tenths of a percent, rounded to nearest and capped at 1000.
+fn rounded_tenths(tokens: u64, window: u64) -> u64 {
+    if window == 0 {
+        return 0;
+    }
+    ((tokens as u128 * 1000 + window as u128 / 2) / window as u128).min(1000) as u64
+}
+
 fn item_view(item: &ContextItem) -> ContextItemView {
     let label = match &item.group {
         Some(group) => format!("{group} · {}", item.name),
@@ -78,7 +86,7 @@ pub fn context_card(usage: Option<ContextUsage>, detail: Option<&ContextBreakdow
     };
     let percent = match usage {
         Some(usage) => usage.percent(),
-        None => ((per_mille(used, window) + 5) / 10).min(100) as u8,
+        None => (if window == 0 { 0 } else { (used as u128 * 100 + window as u128 / 2) / window as u128 }).min(100) as u8,
     };
 
     let ordered = |kind: fn(ContextKind) -> bool| detail.rows.iter().filter(move |row| kind(row.kind));
@@ -114,7 +122,7 @@ pub fn context_card(usage: Option<ContextUsage>, detail: Option<&ContextBreakdow
 
 fn row_view(row: &ContextRow, window: Option<u64>, color: Option<usize>) -> ContextRowView {
     let percent = window.map(|window| {
-        let tenths = per_mille(row.tokens, window);
+        let tenths = rounded_tenths(row.tokens, window);
         format!("{}.{}%", tenths / 10, tenths % 10)
     });
     ContextRowView { name: row.name.clone(), tokens: format_tokens_short(row.tokens), percent, color }
@@ -272,11 +280,21 @@ mod tests {
         assert_eq!(card.rows[0].color, Some(0));
         assert_eq!(card.rows[1].color, Some(1));
         assert_eq!(card.rows[2].color, None);
-        assert_eq!(card.rows[2].percent.as_deref(), Some("88.8%"));
+        assert_eq!(card.rows[2].percent.as_deref(), Some("88.9%"));
         assert_eq!(card.rows[3].tokens, "33k");
         assert_eq!(card.deferred.len(), 1);
         assert_eq!(card.deferred[0].percent, None);
         assert_eq!(card.deferred[0].tokens, "123.9k");
+    }
+
+    #[test]
+    fn a_row_percent_rounds_to_the_nearest_tenth() {
+        let usage = ContextUsage { total_tokens: 2_000, max_tokens: 1_000_000 };
+        let rows = vec![row("A", 1_999, ContextKind::Used), row("B", 1, ContextKind::Used), row("C", 1_000_000, ContextKind::Free)];
+        let card = context_card(Some(usage), Some(&detail(rows))).unwrap();
+        assert_eq!(card.rows[0].percent.as_deref(), Some("0.2%"));
+        assert_eq!(card.rows[1].percent.as_deref(), Some("0.0%"));
+        assert_eq!(card.rows[2].percent.as_deref(), Some("100.0%"));
     }
 
     #[test]
