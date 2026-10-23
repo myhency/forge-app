@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{card_folders, use_workspace, EnvironmentRequest, Panel};
+use forge_features::{card_folders, use_workspace, DetailsCard, EnvironmentRequest, Panel};
 use forge_shared::tr;
 
 use crate::panel_frame::PanelFrame;
@@ -58,7 +58,7 @@ fn EnvironmentCard(id: LiveSessionId) -> Element {
     let origin = workspace.origin_of(&view.project_path);
     let scratch = workspace.is_scratch_project(&view.project_path);
     let environment = workspace.session_environment(&view.project_path, view.claude_session_id.as_ref());
-    let folded = workspace.environment_card_folded(id);
+    let folded = workspace.details_card_folded(id, DetailsCard::Environment);
     let folders = if scratch { Vec::new() } else { card_folders(&origin, &workspace.session_added_folders(id)) };
     let mut menu = use_signal(|| None::<usize>);
     let busy = workspace.session_is_busy(id);
@@ -70,7 +70,7 @@ fn EnvironmentCard(id: LiveSessionId) -> Element {
                 class: "env-card-head",
                 r#type: "button",
                 "aria-expanded": "{!folded}",
-                onclick: move |_| workspace.set_environment_card_folded(id, !folded),
+                onclick: move |_| workspace.set_details_card_folded(id, DetailsCard::Environment, !folded),
                 span { {tr!("Environment")} }
                 span { class: if folded { "env-card-chevron folded" } else { "env-card-chevron" }, CardIcon { kind: "chevron" } }
             }

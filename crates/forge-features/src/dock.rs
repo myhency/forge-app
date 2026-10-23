@@ -77,6 +77,13 @@ impl DockState {
         self.columns.push(Column { panels: vec![panel], width: DEFAULT_COLUMN_WIDTH });
     }
 
+    /// Opens a closed panel as `toggle` does; an open one stays open.
+    pub fn open(&mut self, panel: Panel) {
+        if !self.is_open(panel) {
+            self.toggle(panel);
+        }
+    }
+
     pub fn close(&mut self, panel: Panel) {
         for column in &mut self.columns {
             column.panels.retain(|open| *open != panel);
@@ -169,6 +176,16 @@ mod tests {
         assert_eq!(dock.expanded, Some(Panel::Preview));
         dock.toggle_expanded();
         assert_eq!(dock.expanded, None);
+    }
+
+    #[test]
+    fn open_changes_panel_does_not_close_an_open_panel() {
+        let mut dock = DockState::default();
+        dock.open(Panel::Changes);
+        assert!(dock.is_open(Panel::Changes));
+        dock.open(Panel::Changes);
+        assert!(dock.is_open(Panel::Changes));
+        assert_eq!(dock.columns.len(), 1);
     }
 
     #[test]

@@ -16,7 +16,12 @@ const TABS: [(CustomizeTab, &str); 3] =
 pub fn CustomizePage() -> Element {
     let customize = use_customize();
     let workspace = use_workspace();
-    use_hook(move || customize.open_page(workspace.context_project()));
+    use_hook(move || {
+        customize.open_page(workspace.context_project());
+        if let Some(tab) = workspace.take_customize_tab_request() {
+            customize.set_tab(tab);
+        }
+    });
     // Coming back to the window (from the terminal, say) reads the connectors again. One listener at a time: a
     // visit that replaces another takes its place.
     use_future(move || async move {

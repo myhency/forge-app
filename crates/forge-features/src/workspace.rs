@@ -8,11 +8,13 @@ use forge_application::{WorktreesUseCase, ScratchUseCase, Phase, ConnectorCatalo
 use forge_entities::TranscriptView;
 use forge_domain::{ChangeModeRef, ChangesViewPrefs, WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
-use forge_ports::Surface;
+use forge_ports::{ChangeSource, DiffOptions, Surface};
 use time::OffsetDateTime;
 
 use crate::change_rows::{ChangeView, ChangesSession};
 use crate::cards::{clamp_cards, Cards};
+use crate::customize::CustomizeTab;
+use crate::details::{change_counts, ChangeCounts, DetailsCard};
 use crate::closed_sessions::ClosedSessions;
 use crate::editor_tabs::EditorTabs;
 use crate::files_store::{FilesStore, Restore};
@@ -181,7 +183,12 @@ pub struct Workspace {
     files_stores: Signal<HashMap<LiveSessionId, FilesStore>>,
     queued_files: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
     added_folders: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
-    card_folded: Signal<HashMap<LiveSessionId, bool>>,
+    card_folded: Signal<HashMap<(LiveSessionId, DetailsCard), bool>>,
+    /// The Changes card's count per session, and the ticket of its latest read.
+    change_counts: Signal<HashMap<LiveSessionId, ChangeCounts>>,
+    change_count_tickets: Signal<HashMap<LiveSessionId, u64>>,
+    /// The Customize tab a details card asked for; the page takes it when it appears.
+    customize_tab_request: Signal<Option<CustomizeTab>>,
     comment_focus: Signal<HashMap<LiveSessionId, u64>>,
     search_open: Signal<bool>,
     shortcuts_open: Signal<bool>,
@@ -262,6 +269,9 @@ pub fn use_workspace_provider() -> Workspace {
             queued_files: Signal::new(HashMap::new()),
             added_folders: Signal::new(HashMap::new()),
             card_folded: Signal::new(HashMap::new()),
+            change_counts: Signal::new(HashMap::new()),
+            change_count_tickets: Signal::new(HashMap::new()),
+            customize_tab_request: Signal::new(None),
             comment_focus: Signal::new(HashMap::new()),
             search_open: Signal::new(false),
             shortcuts_open: Signal::new(false),
@@ -1278,14 +1288,83 @@ impl Workspace {
         self.added_folders.read().get(&id).cloned().unwrap_or_default()
     }
 
-    /// Whether the Details panel's Environment card is folded for this session.
-    pub fn environment_card_folded(&self, id: LiveSessionId) -> bool {
-        self.card_folded.read().get(&id).copied().unwrap_or(false)
+    /// Whether a card of the Details panel is folded for this session.
+    pub fn details_card_folded(&self, id: LiveSessionId, card: DetailsCard) -> bool {
+        crate::details::card_folded(&self.card_folded.read(), id, card)
     }
 
-    pub fn set_environment_card_folded(&self, id: LiveSessionId, folded: bool) {
+    pub fn set_details_card_folded(&self, id: LiveSessionId, card: DetailsCard, folded: bool) {
         let mut map = self.card_folded;
-        map.write().insert(id, folded);
+        map.write().insert((id, card), folded);
+    }
+
+    /// The files and lines the session's folder has changed and not committed; `None` while unread or
+    /// when there is nothing to show (no changes, not a repository, git failed).
+    pub fn session_change_counts(&self, id: LiveSessionId) -> Option<ChangeCounts> {
+        self.change_counts.read().get(&id).copied()
+    }
+
+    /// Reads the uncommitted changes of the session's folder again, as the Changes panel does. A read
+    /// that a later one overtook, or one finishing after the session closed, writes nothing.
+    pub fn refresh_change_counts(&self, id: LiveSessionId) {
+        let Some(view) = self.live_view(id) else { return };
+        let cwd = view.peek().project_path.clone();
+        let mut tickets = self.change_count_tickets;
+        let ticket = tickets.peek().get(&id).copied().unwrap_or(0).wrapping_add(1);
+        tickets.write().insert(id, ticket);
+        let git = self.git();
+        let workspace = self.clone();
+        dioxus::core::spawn_forever(async move {
+            let Some(read) = crate::run_blocking(move || {
+                git.changes(&cwd, &ChangeSource::Uncommitted, &DiffOptions::default())
+            })
+            .await
+            else {
+                return;
+            };
+            if workspace.change_count_tickets.peek().get(&id) != Some(&ticket) {
+                return;
+            }
+            let counts = read.ok().and_then(|files| {
+                let files: Vec<_> = files.into_iter().map(|change| change.file).collect();
+                change_counts(&files)
+            });
+            let mut map = workspace.change_counts;
+            match counts {
+                Some(counts) => {
+                    map.write().insert(id, counts);
+                }
+                None => {
+                    map.write().remove(&id);
+                }
+            }
+        });
+    }
+
+    /// Opens the Changes panel in the session's dock; an open one stays open.
+    pub fn open_changes_panel(&self, id: LiveSessionId) {
+        self.change_dock(id, |dock| dock.open(Panel::Changes));
+    }
+
+    pub fn open_skills_page(&self) {
+        self.open_customize_on(CustomizeTab::Skills);
+    }
+
+    pub fn open_connectors_page(&self) {
+        self.open_customize_on(CustomizeTab::Connectors);
+    }
+
+    fn open_customize_on(&self, tab: CustomizeTab) {
+        let mut request = self.customize_tab_request;
+        request.set(Some(tab));
+        self.show_customize();
+    }
+
+    /// The tab a card asked the Customize page to show, once.
+    pub fn take_customize_tab_request(&self) -> Option<CustomizeTab> {
+        let mut request = self.customize_tab_request;
+        let taken = request.write().take();
+        taken
     }
 
     pub fn clear_queued_files(&self, id: LiveSessionId) {
@@ -2185,7 +2264,12 @@ impl Workspace {
         let mut added = self.added_folders;
         added.write().remove(&id);
         let mut folded = self.card_folded;
-        folded.write().remove(&id);
+        crate::details::forget_card_flags(&mut folded.write(), id);
+        let mut counts = self.change_counts;
+        counts.write().remove(&id);
+        // Dropping the ticket makes a read still running find none, so it writes nothing.
+        let mut tickets = self.change_count_tickets;
+        tickets.write().remove(&id);
         let mut trust = self.trust_request;
         if trust.peek().as_ref().is_some_and(|request| request.id == id) {
             trust.set(None);
