@@ -1730,7 +1730,19 @@ mod tests {
         // An empty list, or only rows of an unknown kind, is no value and keeps the good one.
         control.push(SidecarEvent::ContextDetail { categories: vec![], mcp_tools: vec![], agents: vec![] });
         control.push(detail("weird", "Mystery"));
-        control.push(detail("buffer", "Autocompact buffer"));
+        control.push(SidecarEvent::ContextUsage { total_tokens: 1, max_tokens: 2 });
+        let seen = wait_for(&mut view, "the marker", |v| v.context.is_some()).await;
+        assert_eq!(seen.context_detail.as_ref().unwrap().rows[0].name, "Free space");
+
+        // A weird row next to a valid one: only the valid row survives.
+        control.push(SidecarEvent::ContextDetail {
+            categories: vec![
+                ContextCategory { name: "Mystery".to_string(), tokens: 1, kind: "weird".to_string() },
+                ContextCategory { name: "Autocompact buffer".to_string(), tokens: 9, kind: "buffer".to_string() },
+            ],
+            mcp_tools: vec![],
+            agents: vec![],
+        });
         let seen = wait_for(&mut view, "the buffer breakdown", |v| {
             v.context_detail.as_ref().is_some_and(|d| d.rows[0].name == "Autocompact buffer")
         })
