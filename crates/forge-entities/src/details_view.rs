@@ -65,7 +65,8 @@ fn rounded_tenths(tokens: u64, window: u64) -> u64 {
 
 fn item_view(item: &ContextItem) -> ContextItemView {
     let label = match &item.group {
-        Some(group) => format!("{group} · {}", item.name),
+        // The SDK names an MCP tool `mcp__<server>__<tool>`; the row already shows the server.
+        Some(group) => format!("{group} · {}", item.name.strip_prefix(&format!("mcp__{group}__")).unwrap_or(&item.name)),
         None => item.name.clone(),
     };
     ContextItemView { label, tokens: format_tokens_short(item.tokens) }
@@ -374,6 +375,14 @@ mod tests {
         let card = context_card(None, Some(&breakdown)).unwrap();
         assert_eq!(card.mcp_tools[0], ContextItemView { label: "figma · whoami".into(), tokens: "1.5k".into() });
         assert_eq!(card.agents[0], ContextItemView { label: "reviewer".into(), tokens: "80".into() });
+    }
+
+    #[test]
+    fn an_mcp_tool_label_drops_the_sdk_prefix() {
+        let mut breakdown = detail(vec![row("Messages", 1, ContextKind::Used)]);
+        breakdown.mcp_tools = vec![ContextItem { group: Some("obs-demo".into()), name: "mcp__obs-demo__ping".into(), tokens: 5 }];
+        let card = context_card(None, Some(&breakdown)).unwrap();
+        assert_eq!(card.mcp_tools[0].label, "obs-demo · ping");
     }
 
     #[test]
