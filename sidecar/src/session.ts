@@ -5,7 +5,24 @@ import type { SidecarCommand, SidecarEvent, WireAvailableModel, WireEffort, Wire
 
 export type QueryHandle = AsyncIterable<unknown> & {
   interrupt: () => Promise<unknown>;
-  getContextUsage?: () => Promise<{ totalTokens: number; maxTokens: number }>;
+  getContextUsage?: () => Promise<{
+    totalTokens: number;
+    maxTokens: number;
+    categories?: Array<{ name: string; tokens: number; kind: string }>;
+    mcpTools?: Array<{ name: string; serverName: string; tokens: number }>;
+    agents?: Array<{ agentType: string; tokens: number }>;
+  }>;
+  mcpServerStatus?: () => Promise<
+    Array<{
+      name: string;
+      status: string;
+      error?: string;
+      scope?: string;
+      source?: string;
+      config?: { type?: string };
+      tools?: unknown[];
+    }>
+  >;
   supportedCommands?: () => Promise<unknown>;
   setPermissionMode?: (mode: string) => Promise<unknown>;
   setModel?: (model?: string) => Promise<unknown>;
@@ -447,8 +464,51 @@ export class SidecarSession {
       if (Number.isFinite(totalTokens) && Number.isFinite(maxTokens) && maxTokens > 0 && totalTokens >= 0) {
         this.emit({ type: "context_usage", total_tokens: totalTokens, max_tokens: maxTokens });
       }
+      this.emitContextDetail(context);
     } catch {
       // No context value this turn.
+    }
+  }
+
+  // The breakdown behind the ring, from the same answer. Nothing is sent when the SDK gave no categories.
+  private emitContextDetail(context: NonNullable<Awaited<ReturnType<NonNullable<QueryHandle["getContextUsage"]>>>>): void {
+    if (!Array.isArray(context.categories)) return;
+    const kinds = ["used", "free", "buffer", "deferred"];
+    const categories = context.categories
+      .filter((c) => c && typeof c.name === "string" && kinds.includes(c.kind) && Number.isFinite(c.tokens) && c.tokens >= 0)
+      .map((c) => ({ name: c.name, tokens: c.tokens, kind: c.kind }));
+    const mcp_tools = (Array.isArray(context.mcpTools) ? context.mcpTools : [])
+      .filter((t) => t && typeof t.name === "string" && Number.isFinite(t.tokens) && t.tokens >= 0)
+      .map((t) => ({ server: t.serverName, name: t.name, tokens: t.tokens }));
+    const agents = (Array.isArray(context.agents) ? context.agents : [])
+      .filter((a) => a && typeof a.agentType === "string" && Number.isFinite(a.tokens) && a.tokens >= 0)
+      .map((a) => ({ name: a.agentType, tokens: a.tokens }));
+    this.emit({ type: "context_detail", categories, mcp_tools, agents });
+  }
+
+  // Same rule as the context value: a failure or a slow answer only means no event this turn.
+  private async emitMcpStatus(): Promise<void> {
+    const query = this.activeQuery;
+    if (!query?.mcpServerStatus) return;
+    try {
+      const servers = await withTimeout(query.mcpServerStatus(), this.contextUsageTimeoutMs);
+      if (this.shuttingDown || !Array.isArray(servers)) return;
+      this.emit({
+        type: "mcp_status",
+        servers: servers
+          .filter((s) => s && typeof s.name === "string" && typeof s.status === "string")
+          .map((s) => ({
+            name: s.name,
+            status: s.status,
+            scope: s.scope ?? null,
+            source: s.source ?? null,
+            type: s.config?.type ?? null,
+            tool_count: Array.isArray(s.tools) ? s.tools.length : 0,
+            error: s.error ?? null,
+          })),
+      });
+    } catch {
+      // No server states this turn.
     }
   }
 
@@ -542,6 +602,7 @@ export class SidecarSession {
         this.mainModel = null;
         this.pendingSearches = 0;
         void this.emitContextUsage();
+        void this.emitMcpStatus();
         return;
       }
       default:

@@ -30,6 +30,40 @@ pub struct StartSessionParams {
     pub defaults: SessionDefaults,
 }
 
+/// One row of the SDK's context breakdown. `kind` is `used`, `free`, `buffer` or `deferred`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContextCategory {
+    pub name: String,
+    pub tokens: u64,
+    pub kind: String,
+}
+
+/// An MCP tool (with its server) or an agent (no server) and what it costs in the context.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContextItemReport {
+    #[serde(default)]
+    pub server: Option<String>,
+    pub name: String,
+    pub tokens: u64,
+}
+
+/// One MCP server as the SDK reports it. `status` is the SDK's word, mapped later.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct McpServerReport {
+    pub name: String,
+    pub status: String,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default, rename = "type")]
+    pub transport: Option<String>,
+    #[serde(default)]
+    pub tool_count: u64,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SidecarEvent {
@@ -57,6 +91,16 @@ pub enum SidecarEvent {
     },
     /// How full the context window is, sent after each `TurnComplete` when the SDK could say.
     ContextUsage { total_tokens: u64, max_tokens: u64 },
+    /// The breakdown behind the context ring, sent right after `ContextUsage` when the SDK listed categories.
+    ContextDetail {
+        categories: Vec<ContextCategory>,
+        #[serde(default)]
+        mcp_tools: Vec<ContextItemReport>,
+        #[serde(default)]
+        agents: Vec<ContextItemReport>,
+    },
+    /// The state of every MCP server, sent after each `TurnComplete`; each event replaces the earlier one.
+    McpStatus { servers: Vec<McpServerReport> },
     /// The slash commands the SDK reports; each event replaces the earlier list.
     CommandsAvailable { commands: Vec<SlashCommand> },
     /// The SDK accepted a `set_permission_mode`.
@@ -214,6 +258,55 @@ mod tests {
         assert_eq!(model, SidecarEvent::ModelSet { model: Some("claude-opus-5-5".to_string()) });
         assert_eq!(default, SidecarEvent::ModelSet { model: None });
         assert_eq!(failed, SidecarEvent::SettingFailed { message: "nope".to_string() });
+    }
+
+    #[test]
+    fn context_detail_event_parses() {
+        let event: SidecarEvent = serde_json::from_str(
+            r#"{"type":"context_detail","categories":[{"name":"Messages","tokens":20100,"kind":"used"}],"mcp_tools":[{"server":"Claude Docs","name":"Make","tokens":152}],"agents":[{"name":"Explore","tokens":80}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            event,
+            SidecarEvent::ContextDetail {
+                categories: vec![ContextCategory { name: "Messages".to_string(), tokens: 20_100, kind: "used".to_string() }],
+                mcp_tools: vec![ContextItemReport { server: Some("Claude Docs".to_string()), name: "Make".to_string(), tokens: 152 }],
+                agents: vec![ContextItemReport { server: None, name: "Explore".to_string(), tokens: 80 }],
+            }
+        );
+    }
+
+    #[test]
+    fn mcp_status_event_parses() {
+        let event: SidecarEvent = serde_json::from_str(
+            r#"{"type":"mcp_status","servers":[{"name":"figma","status":"connected","scope":"user","source":"user","type":"http","tool_count":12,"error":null},{"name":"x","status":"failed","tool_count":0}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            event,
+            SidecarEvent::McpStatus {
+                servers: vec![
+                    McpServerReport {
+                        name: "figma".to_string(),
+                        status: "connected".to_string(),
+                        scope: Some("user".to_string()),
+                        source: Some("user".to_string()),
+                        transport: Some("http".to_string()),
+                        tool_count: 12,
+                        error: None,
+                    },
+                    McpServerReport {
+                        name: "x".to_string(),
+                        status: "failed".to_string(),
+                        scope: None,
+                        source: None,
+                        transport: None,
+                        tool_count: 0,
+                        error: None,
+                    },
+                ]
+            }
+        );
     }
 
     #[test]

@@ -494,6 +494,131 @@ describe("SidecarSession", () => {
     expect(events.map((e) => e.type)).not.toContain("context_usage");
   });
 
+  function detailQuery(extra: Record<string, unknown>): QueryFn {
+    return () =>
+      toQueryHandle(
+        (async function* () {
+          yield { type: "result", subtype: "success", usage: {} };
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        })(),
+        extra,
+      );
+  }
+
+  const usageWith = (extra: Record<string, unknown>) => async () => ({ totalTokens: 100, maxTokens: 1000, ...extra });
+
+  it("sends context_detail with its categories after context_usage", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      detailQuery({
+        getContextUsage: usageWith({
+          categories: [
+            { name: "Messages", tokens: 20100, kind: "used" },
+            { name: "Free space", tokens: 888900, kind: "free" },
+          ],
+          mcpTools: [
+            { name: "Make", serverName: "Claude Docs", tokens: 152 },
+            { name: "Read", serverName: "Claude Docs", tokens: 90 },
+          ],
+          agents: [{ agentType: "Explore", source: "built-in", tokens: 80 }],
+        }),
+      }),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    const types = events.map((e) => e.type);
+    expect(types.indexOf("context_detail")).toBeGreaterThan(types.indexOf("context_usage"));
+    expect(events).toContainEqual({
+      type: "context_detail",
+      categories: [
+        { name: "Messages", tokens: 20100, kind: "used" },
+        { name: "Free space", tokens: 888900, kind: "free" },
+      ],
+      mcp_tools: [
+        { server: "Claude Docs", name: "Make", tokens: 152 },
+        { server: "Claude Docs", name: "Read", tokens: 90 },
+      ],
+      agents: [{ name: "Explore", tokens: 80 }],
+    });
+  });
+
+  it("drops categories with a bad kind or a non-finite token count", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      detailQuery({
+        getContextUsage: usageWith({
+          categories: [
+            { name: "Messages", tokens: 5, kind: "used" },
+            { name: "Odd", tokens: 5, kind: "weird" },
+            { name: "Nan", tokens: Number.NaN, kind: "used" },
+            { name: "Neg", tokens: -1, kind: "free" },
+            { name: "Buf", tokens: 7, kind: "buffer" },
+            { name: "Def", tokens: 9, kind: "deferred" },
+          ],
+        }),
+      }),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    const detail = events.find((e) => e.type === "context_detail") as Extract<SidecarEvent, { type: "context_detail" }>;
+    expect(detail.categories.map((c) => c.name)).toEqual(["Messages", "Buf", "Def"]);
+    expect(detail.mcp_tools).toEqual([]);
+    expect(detail.agents).toEqual([]);
+  });
+
+  it("sends no context_detail when the SDK sent no categories", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(detailQuery({ getContextUsage: usageWith({}) }), (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const types = events.map((e) => e.type);
+    expect(types).toContain("context_usage");
+    expect(types).not.toContain("context_detail");
+  });
+
+  it("sends mcp_status after a turn", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      detailQuery({
+        mcpServerStatus: async () => [
+          { name: "figma", status: "connected", scope: "user", source: "user", config: { type: "http" }, tools: [{ name: "a" }, { name: "b" }, { name: "c" }] },
+          { name: "broken", status: "failed", error: "boom" },
+        ],
+      }),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    const types = events.map((e) => e.type);
+    expect(types.indexOf("mcp_status")).toBeGreaterThan(types.indexOf("turn_complete"));
+    expect(events).toContainEqual({
+      type: "mcp_status",
+      servers: [
+        { name: "figma", status: "connected", scope: "user", source: "user", type: "http", tool_count: 3, error: null },
+        { name: "broken", status: "failed", scope: null, source: null, type: null, tool_count: 0, error: "boom" },
+      ],
+    });
+  });
+
+  it("sends no mcp_status when mcpServerStatus rejects or times out", async () => {
+    for (const mcpServerStatus of [async () => { throw new Error("nope"); }, () => new Promise<never>(() => {})]) {
+      const events: SidecarEvent[] = [];
+      const session = new SidecarSession(
+        detailQuery({ mcpServerStatus }),
+        (e) => events.push(e),
+        { contextUsageTimeoutMs: 10 },
+      );
+      await session.handle(startCommand);
+
+      const types = events.map((e) => e.type);
+      expect(types).toContain("turn_complete");
+      expect(types).not.toContain("mcp_status");
+      expect(types).not.toContain("error");
+    }
+  });
+
   function commandsQuery(
     supportedCommands: () => Promise<unknown>,
     initCommands?: string[],

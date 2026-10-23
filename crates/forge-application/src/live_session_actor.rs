@@ -498,7 +498,8 @@ impl Actor {
             SessionUpdate::MessageDelta { .. }
             | SessionUpdate::ThinkingDelta { .. }
             | SessionUpdate::ToolCallStarted { .. }
-            | SessionUpdate::ToolCallCompleted { .. } => {}
+            | SessionUpdate::ToolCallCompleted { .. }
+            | SessionUpdate::Unused => {}
         }
         self.dirty = true;
     }

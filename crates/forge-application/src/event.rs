@@ -13,6 +13,8 @@ pub enum SessionUpdate {
     PermissionCancelled { id: String },
     TurnCompleted,
     ContextUsage(ContextUsage),
+    /// An event nothing consumes yet (the context breakdown, the MCP server states); Task 2 gives it meaning.
+    Unused,
     CommandsAvailable(Vec<SlashCommand>),
     /// The SDK accepted a mode change; the session already holds the new mode.
     PermissionModeChanged { mode: PermissionMode },
@@ -125,6 +127,7 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             total_tokens: *total_tokens,
             max_tokens: *max_tokens,
         }),
+        SidecarEvent::ContextDetail { .. } | SidecarEvent::McpStatus { .. } => SessionUpdate::Unused,
         SidecarEvent::CommandsAvailable { commands } => SessionUpdate::CommandsAvailable(commands.clone()),
         SidecarEvent::PermissionModeSet { mode } => {
             session.permission_mode = *mode;

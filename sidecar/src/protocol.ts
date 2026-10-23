@@ -79,6 +79,24 @@ export type SidecarEvent =
   | { type: "permission_cancelled"; permission_request_id: string }
   | { type: "turn_complete"; usage: Record<string, WireTokenUsage> }
   | { type: "context_usage"; total_tokens: number; max_tokens: number }
+  | {
+      type: "context_detail";
+      categories: Array<{ name: string; tokens: number; kind: string }>;
+      mcp_tools: Array<{ server: string; name: string; tokens: number }>;
+      agents: Array<{ name: string; tokens: number }>;
+    }
+  | {
+      type: "mcp_status";
+      servers: Array<{
+        name: string;
+        status: string;
+        scope: string | null;
+        source: string | null;
+        type: string | null;
+        tool_count: number;
+        error: string | null;
+      }>;
+    }
   | { type: "commands_available"; commands: WireSlashCommand[] }
   // The answer to set_permission_mode / set_model: what the SDK accepted, or why it did not. A
   // refusal is not an `error`: that ends the session.
