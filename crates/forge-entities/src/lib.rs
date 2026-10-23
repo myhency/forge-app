@@ -3,6 +3,7 @@ mod clipboard;
 mod card_view;
 mod command_menu;
 mod csv_table;
+mod details_view;
 mod diff;
 mod diff_view;
 mod patch;
@@ -59,3 +60,8 @@ pub use usage_card::{
     ChartLayout, LegendRow, Tile,
 };
 pub use usage_view::{format_cost, format_tokens, ring_dash, ring_level, ContextView, ModelLine, RingLevel, UsageView};
+
+pub use details_view::{
+    connector_rows, connector_table, context_card, format_tokens_short, BarSegment, ConnectorRowView, ConnectorState, ConnectorTableRow, ContextCardView,
+    ContextItemView, ContextRowView, ServerTag, TableStatus, TransportLabel,
+};
