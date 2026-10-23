@@ -77,11 +77,19 @@ In the real window on macOS, light mode, in a throwaway folder with 5 real turns
 - Changes: `+1 −0`, then `+3 −1`, equal to the chat's counts; no card for a clean worktree.
 - Switching to another session and back kept the values.
 
+Second window check (macOS, 4 more real turns in throwaway folders under /private/tmp):
+
+- Non-git folder: after a turn the `컨텍스트` and `커넥터` cards show values (`1% 사용됨`, `11.5k / 1M`, `커넥터 없음`), there is no `변경 사항` card and no error text.
+- `커스텀 에이전트` row: in a git folder with `.claude/agents/demo-agent.md` the card shows a fold row `커스텀 에이전트` with `1`, expanded `demo-agent` `18` as plain text.
+- `Skills` link row: the underlined `Skills` row appeared (`17`, `0.0%`) with an enabled user skill; clicking it opens Customize on `스킬`. `커넥터 관리` from the `MCP 서버` modal switched Customize from a remembered `스킬` tab to `커넥터`. The SDK listed the enabled stdio server's tools only as the `MCP 도구` fold row (deferred), so no `MCP tools` link row came up; it is covered by unit tests. A native hover title does not show in a screenshot, so the `Manage Skills` title was read from the source only.
+- Changes card: clicking `변경 사항` (`+1 −0`) opens the Changes panel with `y.txt +1 −0`; clicking it again keeps it open.
+- Dark mode (Settings > 테마 > 다크): the three cards, the bar, the rows and the `MCP 서버` modal read well. One defect, fixed (09cc5f4): the grey squares and the bar track were nearly invisible; both now use a mix of the text colour.
+- A relaunched app showed the cards again after the next turn without a crash (new session; the earlier sessions are not in the fixture's Claude home).
+
 ## Left
 
-- Dark mode.
-- The underlined `MCP tools` / `Skills` link rows live (the breakdowns seen had no such rows; unit tests cover the rule), and the `커스텀 에이전트` row (no agents).
-- A click on the changes card, and a non-git folder.
+- The underlined `MCP tools` link row live (the SDK shows deferred MCP tools as a fold row; unit tests cover the rule), the hover titles, and the click while Customize is the open page (the cards are on the session page, so that state cannot be reached from a card).
+- Dark mode: the brown `인증` / `다시 연결` state texts (no needs-auth server to show them).
 - Windows.
 - The grey-cards flake: once both cards stayed on the grey sentences after a turn and did not come back in a later identical run. It was not reproduced; the likely cause was the shared 3 s timeout, which is now 10 s for these two calls and leaves a stderr line when it fires.
 - The count does not refresh after a folder change or after edits made outside tool calls; the live list changing causes extra git reads.
