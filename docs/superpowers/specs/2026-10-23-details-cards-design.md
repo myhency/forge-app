@@ -86,10 +86,17 @@ Second window check (macOS, 4 more real turns in throwaway folders under /privat
 - Dark mode (Settings > 테마 > 다크): the three cards, the bar, the rows and the `MCP 서버` modal read well. One defect, fixed (09cc5f4): the grey squares and the bar track were nearly invisible; both now use a mix of the text colour.
 - A relaunched app showed the cards again after the next turn without a crash (new session; the earlier sessions are not in the fixture's Claude home).
 
+Third window check (macOS, 4 more real turns in throwaway folders under /private/tmp; no defect found, no code change):
+
+- Needs-auth server: a local 127.0.0.1 server answering `401` with `WWW-Authenticate: Bearer resource_metadata=...` and OAuth metadata made the SDK report `needs-auth`. The `커넥터` card row `Needauth` shows `인증` and the `MCP 서버` table row `needauth` / `웹` shows `인증`, both in the warning colour: brown in light mode, yellow in dark mode (`--warning` is `#b45309` and `#facc15`), readable in both. The stdio server `fakey` showed a check (`데스크톱`). `다시 연결` (failed) was not seen.
+- Hover titles: with `screencapture -R` around the pointer after a real mouse-moved event and a 2 s wait the native tooltips show: `연결됨` on the table's check and `Skills 관리` on the underlined `Skills` row.
+- Customize already open: with Customize in the right pane (on `플러그인`) and the session with its details panel in the left pane, the modal's `커넥터 관리` switched the open Customize pane to `커넥터` and left the session pane alone (the `customize_tab_request` effect, seen live).
+- Reopened session: after an app restart the session (its transcript copied into the fixture's projects folder) showed the grey sentences `컨텍스트 사용량을 확인하려면 메시지를 보내세요.` and `메시지를 보내면 커넥터를 확인할 수 있습니다.` and no crash; after one message the values came back (`3% 사용됨`, `30.1k / 1M`, the rows, `Needauth 인증`).
+- `MCP tools` link row: cannot appear in a Forge session. A temporary probe in the sidecar (removed) logged the SDK's answer after a turn in which the model had called `mcp__fakey__ping`: the categories were System prompt, System tools, Skills, Messages, Autocompact buffer, Free space (no `MCP tools` category), and `mcpTools` was `[{name: mcp__fakey__ping, serverName: fakey, tokens: 0, isLoaded: false}]`. So the tool always arrives as the deferred fold row `MCP 도구`, also with `ENABLE_TOOL_SEARCH=false` in the app environment and in the environment's variables. The link row stays covered by unit tests.
+- Harness note: with `FORGE_CLAUDE_HOME` the session reads servers from `<home>/../.claude.json` (beside the `.claude` folder) while Customize reads `<home>/.claude.json`; a fake server must be written to both. The real home has one file, so this is a harness detail, not a defect.
+
 ## Left
 
-- The underlined `MCP tools` link row live (the SDK shows deferred MCP tools as a fold row; unit tests cover the rule), the hover titles, and the click while Customize is the open page (the cards are on the session page, so that state cannot be reached from a card).
-- Dark mode: the brown `인증` / `다시 연결` state texts (no needs-auth server to show them).
 - Windows.
 - The grey-cards flake: once both cards stayed on the grey sentences after a turn and did not come back in a later identical run. It was not reproduced; the likely cause was the shared 3 s timeout, which is now 10 s for these two calls and leaves a stderr line when it fires.
 - The count does not refresh after a folder change or after edits made outside tool calls; the live list changing causes extra git reads.
