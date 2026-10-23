@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_entities::{connector_rows, context_card, ContextItemView, ContextRowView};
+use forge_entities::{connector_rows, context_card, row_link, ContextItemView, ContextRowView, RowLink};
 use forge_features::{card_folders, use_workspace, DetailsCard, EnvironmentRequest, Panel};
 use forge_shared::tr;
 
@@ -63,6 +63,7 @@ fn folder_parts(path: &Path) -> (String, String) {
 #[component]
 fn EnvironmentCard(id: LiveSessionId) -> Element {
     let workspace = use_workspace();
+    let mut menu = use_signal(|| None::<usize>);
     let Some(view) = workspace.live_view(id) else { return rsx! {} };
     let view = view.read().clone();
     let origin = workspace.origin_of(&view.project_path);
@@ -70,7 +71,6 @@ fn EnvironmentCard(id: LiveSessionId) -> Element {
     let environment = workspace.session_environment(&view.project_path, view.claude_session_id.as_ref());
     let folded = workspace.details_card_folded(id, DetailsCard::Environment);
     let folders = if scratch { Vec::new() } else { card_folders(&origin, &workspace.session_added_folders(id)) };
-    let mut menu = use_signal(|| None::<usize>);
     let busy = workspace.session_is_busy(id);
     let worktree_session = workspace.worktree_tag(&view.project_path).is_some();
 
@@ -269,25 +269,21 @@ fn ContextRow(row: ContextRowView) -> Element {
         None => "ctx-none".to_string(),
     };
     // The desktop app links these two rows to the page that manages them.
-    let link = match row.name.as_str() {
-        "MCP tools" => Some((tr!("Manage connectors"), true)),
-        "Skills" => Some((tr!("Manage Skills"), false)),
-        _ => None,
-    };
+    let link = row_link(&row.name);
     rsx! {
         div { class: "ctx-row",
             span { class: "ctx-square {square}" }
-            if let Some((title, connectors)) = link {
+            if let Some(link) = link {
                 button {
                     class: "ctx-name ctx-link",
                     r#type: "button",
-                    title,
-                    onclick: move |_| {
-                        if connectors {
-                            workspace.open_connectors_page();
-                        } else {
-                            workspace.open_skills_page();
-                        }
+                    title: match link {
+                        RowLink::Connectors => tr!("Manage connectors"),
+                        RowLink::Skills => tr!("Manage Skills"),
+                    },
+                    onclick: move |_| match link {
+                        RowLink::Connectors => workspace.open_connectors_page(),
+                        RowLink::Skills => workspace.open_skills_page(),
                     },
                     "{row.name}"
                 }
@@ -384,11 +380,11 @@ const CONNECTORS_SHOWN: usize = 3;
 #[component]
 fn ConnectorsCard(id: LiveSessionId) -> Element {
     let workspace = use_workspace();
+    let mut all = use_signal(|| false);
+    let mut dialog = use_signal(|| false);
     let Some(view) = workspace.live_view(id) else { return rsx! {} };
     let servers = view.read().mcp_servers.clone();
     let folded = workspace.details_card_folded(id, DetailsCard::Connectors);
-    let mut all = use_signal(|| false);
-    let mut dialog = use_signal(|| false);
     let rows = servers.as_deref().map(connector_rows);
     rsx! {
         div { class: "env-card",
@@ -412,7 +408,7 @@ fn ConnectorsCard(id: LiveSessionId) -> Element {
                             }
                             if hidden {
                                 button { class: "conn-more", r#type: "button", onclick: move |_| all.set(!all()),
-                                    if all() { {tr!("Show less")} } else { {tr!("Show more")} }
+                                    if all() { {tr!("Show less|connectors")} } else { {tr!("Show more")} }
                                 }
                             }
                         }

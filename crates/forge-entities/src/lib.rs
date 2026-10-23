@@ -62,6 +62,6 @@ pub use usage_card::{
 pub use usage_view::{format_cost, format_tokens, ring_dash, ring_level, ContextView, ModelLine, RingLevel, UsageView};
 
 pub use details_view::{
-    connector_rows, connector_table, context_card, format_tokens_short, BarSegment, ConnectorRowView, ConnectorState, ConnectorTableRow, ContextCardView,
-    ContextItemView, ContextRowView, ServerTag, TableStatus, TransportLabel,
+    connector_rows, connector_table, context_card, format_tokens_short, row_link, BarSegment, ConnectorRowView, ConnectorState, ConnectorTableRow, ContextCardView,
+    ContextItemView, ContextRowView, RowLink, ServerTag, TableStatus, TransportLabel,
 };

@@ -22,6 +22,7 @@ pub fn McpServersDialog(id: LiveSessionId, on_close: EventHandler<()>) -> Elemen
         let view = view.read();
         (view.project_path.display().to_string(), view.mcp_servers.clone().unwrap_or_default())
     };
+    // The plugin name lookup is not available yet, so no subtitle shows.
     // The workspace has no lookup from a server to its plugin's name, so the subtitle is left out.
     let table = connector_table(&servers, &|_| None);
     let close = move || {
@@ -33,6 +34,7 @@ pub fn McpServersDialog(id: LiveSessionId, on_close: EventHandler<()>) -> Elemen
             div {
                 class: "mcp-dialog",
                 role: "dialog",
+                "aria-modal": "true",
                 tabindex: "0",
                 "aria-label": tr!("MCP servers"),
                 // Key events reach the dialog only while it has focus.

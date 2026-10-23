@@ -129,6 +129,24 @@ fn row_view(row: &ContextRow, window: Option<u64>, color: Option<usize>) -> Cont
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowLink {
+    Connectors,
+    Skills,
+}
+
+/// Where a context row's name leads. The SDK gives these rows no id and `kind` cannot tell them
+/// apart, so the English name is matched; a renamed category only loses its link.
+pub fn row_link(name: &str) -> Option<RowLink> {
+    const MCP_TOOLS: &str = "MCP tools";
+    const SKILLS: &str = "Skills";
+    match name {
+        MCP_TOOLS => Some(RowLink::Connectors),
+        SKILLS => Some(RowLink::Skills),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectorState {
     SignIn,
     Reconnect,
@@ -251,6 +269,14 @@ mod tests {
 
     fn server(name: &str, status: McpStatus, scope: Option<&str>) -> McpServerState {
         McpServerState { name: name.into(), status, scope: scope.map(String::from), source: None, remote: None, tool_count: 0, error: None }
+    }
+
+    #[test]
+    fn only_the_mcp_tools_and_skills_rows_link() {
+        assert_eq!(row_link("MCP tools"), Some(RowLink::Connectors));
+        assert_eq!(row_link("Skills"), Some(RowLink::Skills));
+        assert_eq!(row_link("Messages"), None);
+        assert_eq!(row_link("MCP tools (deferred)"), None);
     }
 
     #[test]

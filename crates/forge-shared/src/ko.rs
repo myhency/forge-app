@@ -579,6 +579,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Show in file tree", "파일 트리에서 보기"),
     ("Show in folder", "폴더에서 보기"),
     ("Show less", "간단히 보기"),
+    ("Show less|connectors", "간략히 보기"),
     ("Show more", "더 보기"),
     ("Show more lines", "더 많은 줄 보기"),
     ("Show or hide the file list", "파일 목록 표시/숨기기"),
