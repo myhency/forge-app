@@ -63,10 +63,27 @@ fn rounded_tenths(tokens: u64, window: u64) -> u64 {
     ((tokens as u128 * 1000 + window as u128 / 2) / window as u128).min(1000) as u64
 }
 
+/// The SDK normalizes a server name in a tool name: every character outside `[A-Za-z0-9_-]` becomes `_`.
+/// Strips `mcp__<normalized server>__`, else a general `mcp__<any>__` when something is left after it.
+fn strip_mcp_prefix<'a>(name: &'a str, server: &str) -> &'a str {
+    let normalized: String = server.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' }).collect();
+    for candidate in [server, normalized.as_str()] {
+        if let Some(rest) = name.strip_prefix("mcp__").and_then(|r| r.strip_prefix(candidate)).and_then(|r| r.strip_prefix("__")) {
+            if !rest.is_empty() {
+                return rest;
+            }
+        }
+    }
+    match name.strip_prefix("mcp__").and_then(|r| r.split_once("__")) {
+        Some((_, rest)) if !rest.is_empty() => rest,
+        _ => name,
+    }
+}
+
 fn item_view(item: &ContextItem) -> ContextItemView {
     let label = match &item.group {
         // The SDK names an MCP tool `mcp__<server>__<tool>`; the row already shows the server.
-        Some(group) => format!("{group} · {}", item.name.strip_prefix(&format!("mcp__{group}__")).unwrap_or(&item.name)),
+        Some(group) => format!("{group} · {}", strip_mcp_prefix(&item.name, group)),
         None => item.name.clone(),
     };
     ContextItemView { label, tokens: format_tokens_short(item.tokens) }
@@ -383,6 +400,26 @@ mod tests {
         breakdown.mcp_tools = vec![ContextItem { group: Some("obs-demo".into()), name: "mcp__obs-demo__ping".into(), tokens: 5 }];
         let card = context_card(None, Some(&breakdown)).unwrap();
         assert_eq!(card.mcp_tools[0].label, "obs-demo · ping");
+    }
+
+    fn tool_label(group: &str, name: &str) -> String {
+        let mut breakdown = detail(vec![row("Messages", 1, ContextKind::Used)]);
+        breakdown.mcp_tools = vec![ContextItem { group: Some(group.into()), name: name.into(), tokens: 5 }];
+        context_card(None, Some(&breakdown)).unwrap().mcp_tools[0].label.clone()
+    }
+
+    #[test]
+    fn an_mcp_tool_label_drops_a_prefix_with_a_normalized_server_name() {
+        assert_eq!(tool_label("Claude Docs", "mcp__Claude_Docs__make"), "Claude Docs · make");
+        assert_eq!(tool_label("claude.ai Claude Docs", "mcp__claude_ai_Claude_Docs__make"), "claude.ai Claude Docs · make");
+        assert_eq!(tool_label("my.server!", "mcp__my_server___x"), "my.server! · x");
+    }
+
+    #[test]
+    fn an_mcp_tool_label_without_a_prefix_stays_and_a_double_underscore_later_is_kept() {
+        assert_eq!(tool_label("figma", "whoami"), "figma · whoami");
+        assert_eq!(tool_label("figma", "mcp__figma__get__design"), "figma · get__design");
+        assert_eq!(tool_label("figma", "mcp__figma__"), "figma · mcp__figma__");
     }
 
     #[test]
