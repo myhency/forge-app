@@ -52,6 +52,7 @@ mod terminal_panel;
 mod usage_card;
 mod usage_ring;
 mod web_view_host;
+mod mcp_servers_dialog;
 mod workspace_trust_dialog;
 
 pub use chat_window::ChatWindow;

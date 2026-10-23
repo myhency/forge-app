@@ -2,15 +2,22 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
+use forge_entities::{connector_rows, context_card, ContextItemView, ContextRowView};
 use forge_features::{card_folders, use_workspace, DetailsCard, EnvironmentRequest, Panel};
 use forge_shared::tr;
 
+use crate::mcp_servers_dialog::{connector_state_text, McpServersDialog};
 use crate::panel_frame::PanelFrame;
 
 #[component]
 pub fn DetailsPanel(id: LiveSessionId) -> Element {
     rsx! {
-        PanelFrame { id, panel: Panel::Details, tools: rsx! {}, div { class: "details-body", EnvironmentCard { id } } }
+        PanelFrame { id, panel: Panel::Details, tools: rsx! {}, div { class: "details-body",
+            EnvironmentCard { id }
+            ContextCard { id }
+            ConnectorsCard { id }
+            ChangesCard { id }
+        } }
     }
 }
 
@@ -34,6 +41,9 @@ fn CardIcon(kind: &'static str) -> Element {
                     path { d: "M1.5 12.5h13" }
                 },
                 "folder" => rsx! { path { d: "M2 4.5A1 1 0 0 1 3 3.5h3l1.5 1.5H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" } },
+                "diff" => rsx! {
+                    path { d: "M8 2.5v6M5 5.5h6M5 12.5h6" }
+                },
                 "gear" => rsx! {
                     circle { cx: "8", cy: "8", r: "2" }
                     path { d: "M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" }
@@ -211,6 +221,230 @@ fn FolderRow(id: LiveSessionId, folder: PathBuf, first: bool, busy: bool, worktr
                             span { class: "picker-text", {tr!("Open in terminal")} }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/// The colours of the context bar and its row squares; an index past the end wraps around.
+const PALETTE_LEN: usize = 8;
+
+fn palette_class(index: usize) -> String {
+    format!("ctx-c{}", index % PALETTE_LEN)
+}
+
+#[component]
+fn CardHead(id: LiveSessionId, card: DetailsCard, title: String, folded: bool, trailing: Element) -> Element {
+    let workspace = use_workspace();
+    rsx! {
+        button {
+            class: "env-card-head",
+            r#type: "button",
+            "aria-expanded": "{!folded}",
+            onclick: move |_| workspace.set_details_card_folded(id, card, !folded),
+            span { "{title}" }
+            span { class: if folded { "env-card-chevron folded" } else { "env-card-chevron" }, CardIcon { kind: "chevron" } }
+            {trailing}
+        }
+    }
+}
+
+#[component]
+fn ContextBar(segments: Vec<(usize, u16)>, mini: bool) -> Element {
+    rsx! {
+        div { class: if mini { "ctx-bar mini" } else { "ctx-bar" },
+            for (color, per_mille) in segments {
+                span { class: "ctx-seg {palette_class(color)}", style: "width: {f32::from(per_mille) / 10.0}%" }
+            }
+        }
+    }
+}
+
+#[component]
+fn ContextRow(row: ContextRowView) -> Element {
+    let workspace = use_workspace();
+    let square = match row.color {
+        Some(color) => palette_class(color),
+        None => "ctx-none".to_string(),
+    };
+    // The desktop app links these two rows to the page that manages them.
+    let link = match row.name.as_str() {
+        "MCP tools" => Some((tr!("Manage connectors"), true)),
+        "Skills" => Some((tr!("Manage Skills"), false)),
+        _ => None,
+    };
+    rsx! {
+        div { class: "ctx-row",
+            span { class: "ctx-square {square}" }
+            if let Some((title, connectors)) = link {
+                button {
+                    class: "ctx-name ctx-link",
+                    r#type: "button",
+                    title,
+                    onclick: move |_| {
+                        if connectors {
+                            workspace.open_connectors_page();
+                        } else {
+                            workspace.open_skills_page();
+                        }
+                    },
+                    "{row.name}"
+                }
+            } else {
+                span { class: "ctx-name", "{row.name}" }
+            }
+            span { class: "ctx-tokens", "{row.tokens}" }
+            span { class: "ctx-percent", {row.percent.clone().unwrap_or_else(|| "\u{2014}".to_string())} }
+        }
+    }
+}
+
+#[component]
+fn ContextFold(title: String, items: Vec<ContextItemView>) -> Element {
+    let mut open = use_signal(|| false);
+    if items.is_empty() {
+        return rsx! {};
+    }
+    rsx! {
+        button { class: "ctx-fold", r#type: "button", "aria-expanded": "{open()}", onclick: move |_| open.set(!open()),
+            span { class: if open() { "env-card-chevron" } else { "env-card-chevron folded" }, CardIcon { kind: "chevron" } }
+            span { class: "ctx-name", "{title}" }
+            span { class: "ctx-tokens", "{items.len()}" }
+        }
+        if open() {
+            for (index, item) in items.iter().enumerate() {
+                div { class: "ctx-row ctx-item", key: "{index}",
+                    span { class: "ctx-name", title: "{item.label}", "{item.label}" }
+                    span { class: "ctx-tokens", "{item.tokens}" }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn ContextCard(id: LiveSessionId) -> Element {
+    let workspace = use_workspace();
+    let Some(view) = workspace.live_view(id) else { return rsx! {} };
+    let (usage, detail) = {
+        let view = view.read();
+        (view.context, view.context_detail.clone())
+    };
+    let card = context_card(usage, detail.as_ref());
+    let folded = workspace.details_card_folded(id, DetailsCard::Context);
+    let title = tr!("Context");
+    rsx! {
+        div { class: "env-card",
+            CardHead {
+                id,
+                card: DetailsCard::Context,
+                title,
+                folded,
+                trailing: match (&card, folded) {
+                    (Some(card), true) => rsx! {
+                        span { class: "ctx-folded-percent", "{card.percent}%" }
+                        div { class: "ctx-bar mini", span { class: "ctx-seg ctx-c0", style: "width: {f32::from(card.folded_bar) / 10.0}%" } }
+                    },
+                    _ => rsx! {},
+                },
+            }
+            if !folded {
+                if let Some(card) = card {
+                    div { class: "ctx-summary",
+                        span { class: "ctx-summary-percent", {tr!("{percent}% used", percent = card.percent)} }
+                        span { class: "ctx-summary-label", "{card.used_label}" }
+                    }
+                    ContextBar { segments: card.bar.iter().map(|segment| (segment.color, segment.per_mille)).collect::<Vec<_>>(), mini: false }
+                    div { class: "ctx-rows",
+                        for row in card.rows.iter().cloned() {
+                            ContextRow { key: "{row.name}", row }
+                        }
+                    }
+                    if !card.deferred.is_empty() {
+                        div { class: "ctx-rows ctx-deferred",
+                            for row in card.deferred.iter().cloned() {
+                                ContextRow { key: "{row.name}", row }
+                            }
+                        }
+                    }
+                    ContextFold { title: tr!("MCP tools"), items: card.mcp_tools.clone() }
+                    ContextFold { title: tr!("Custom agents"), items: card.agents.clone() }
+                } else {
+                    div { class: "env-card-note", {tr!("Send a message to see the context usage.")} }
+                }
+            }
+        }
+    }
+}
+
+/// The rows shown before `더 보기`.
+const CONNECTORS_SHOWN: usize = 3;
+
+#[component]
+fn ConnectorsCard(id: LiveSessionId) -> Element {
+    let workspace = use_workspace();
+    let Some(view) = workspace.live_view(id) else { return rsx! {} };
+    let servers = view.read().mcp_servers.clone();
+    let folded = workspace.details_card_folded(id, DetailsCard::Connectors);
+    let mut all = use_signal(|| false);
+    let mut dialog = use_signal(|| false);
+    let rows = servers.as_deref().map(connector_rows);
+    rsx! {
+        div { class: "env-card",
+            CardHead { id, card: DetailsCard::Connectors, title: tr!("Connectors"), folded, trailing: rsx! {} }
+            if !folded {
+                match rows {
+                    None => rsx! { div { class: "env-card-note", {tr!("Send a message to see the connectors.")} } },
+                    Some(rows) if rows.is_empty() => rsx! { div { class: "env-card-note", {tr!("No connectors")} } },
+                    Some(rows) => {
+                        let hidden = rows.len() > CONNECTORS_SHOWN;
+                        let shown = if all() { rows.len() } else { CONNECTORS_SHOWN };
+                        rsx! {
+                            for row in rows.into_iter().take(shown) {
+                                button { class: "env-card-row conn-row", r#type: "button", key: "{row.name}", onclick: move |_| dialog.set(true),
+                                    span { class: "conn-icon", "{row.initial}" }
+                                    span { class: "env-card-name", "{row.name}" }
+                                    if let Some(state) = row.state {
+                                        span { class: "conn-state", {connector_state_text(state)} }
+                                    }
+                                }
+                            }
+                            if hidden {
+                                button { class: "conn-more", r#type: "button", onclick: move |_| all.set(!all()),
+                                    if all() { {tr!("Show less")} } else { {tr!("Show more")} }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if dialog() {
+                McpServersDialog { id, on_close: move |_| dialog.set(false) }
+            }
+        }
+    }
+}
+
+#[component]
+fn ChangesCard(id: LiveSessionId) -> Element {
+    let workspace = use_workspace();
+    // A memo, so streaming chunks do not rerun the effect.
+    let finished = use_memo(move || workspace.finished_tool_calls(id));
+    use_effect(move || {
+        let _ = finished();
+        workspace.refresh_change_counts(id);
+    });
+    let Some(counts) = workspace.session_change_counts(id) else { return rsx! {} };
+    let folded = workspace.details_card_folded(id, DetailsCard::Changes);
+    rsx! {
+        div { class: "env-card",
+            CardHead { id, card: DetailsCard::Changes, title: tr!("Changes"), folded, trailing: rsx! {} }
+            if !folded {
+                button { class: "env-card-row changes-row", r#type: "button", onclick: move |_| workspace.open_changes_panel(id),
+                    CardIcon { kind: "diff" }
+                    span { class: "cd-add", "+{counts.added}" }
+                    span { class: "cd-del", "\u{2212}{counts.removed}" }
                 }
             }
         }
