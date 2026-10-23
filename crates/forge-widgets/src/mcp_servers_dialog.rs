@@ -83,7 +83,7 @@ pub fn McpServersDialog(id: LiveSessionId, on_close: EventHandler<()>) -> Elemen
                                 }
                             }
                             match row.status {
-                                TableStatus::Connected => rsx! { span { class: "mcp-status ok", {tr!("Connected")} } },
+                                TableStatus::Connected => rsx! { span { class: "mcp-status ok", title: tr!("Connected"), "\u{2713}" } },
                                 TableStatus::State(state) => rsx! { span { class: "mcp-status action", {connector_state_text(state)} } },
                             }
                         }
