@@ -608,7 +608,7 @@ describe("SidecarSession", () => {
       const session = new SidecarSession(
         detailQuery({ mcpServerStatus }),
         (e) => events.push(e),
-        { contextUsageTimeoutMs: 10 },
+        { detailTimeoutMs: 10, log: () => {} },
       );
       await session.handle(startCommand);
 
@@ -617,6 +617,104 @@ describe("SidecarSession", () => {
       expect(types).not.toContain("mcp_status");
       expect(types).not.toContain("error");
     }
+  });
+
+  it("rounds fractional tokens in context_detail and still sends it", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      detailQuery({
+        getContextUsage: usageWith({
+          categories: [{ name: "Messages", tokens: 12.5, kind: "used" }],
+          mcpTools: [{ name: "Make", serverName: "Docs", tokens: 3.4 }],
+          agents: [{ agentType: "Explore", tokens: 7.6 }],
+        }),
+      }),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    expect(events).toContainEqual({
+      type: "context_detail",
+      categories: [{ name: "Messages", tokens: 13, kind: "used" }],
+      mcp_tools: [{ server: "Docs", name: "Make", tokens: 3 }],
+      agents: [{ name: "Explore", tokens: 8 }],
+    });
+  });
+
+  it("drops MCP tool rows without a string server name and agent rows with bad tokens or names", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      detailQuery({
+        getContextUsage: usageWith({
+          categories: [{ name: 5, tokens: 1, kind: "used" }, { name: "Ok", tokens: 1, kind: "used" }],
+          mcpTools: [
+            { name: "A", tokens: 1 },
+            { name: "B", serverName: 4, tokens: 1 },
+            { name: "C", serverName: "s", tokens: Number.NaN },
+            { name: "D", serverName: "s", tokens: 2 },
+          ],
+          agents: [
+            { agentType: "Good", tokens: 1 },
+            { agentType: 9, tokens: 1 },
+            { agentType: "Bad", tokens: Number.POSITIVE_INFINITY },
+            { agentType: "Neg", tokens: -2 },
+          ],
+        }),
+      }),
+      (e) => events.push(e),
+    );
+    await session.handle(startCommand);
+
+    const detail = events.find((e) => e.type === "context_detail") as Extract<SidecarEvent, { type: "context_detail" }>;
+    expect(detail.categories.map((c) => c.name)).toEqual(["Ok"]);
+    expect(detail.mcp_tools).toEqual([{ server: "s", name: "D", tokens: 2 }]);
+    expect(detail.agents).toEqual([{ name: "Good", tokens: 1 }]);
+  });
+
+  it("sends mcp_status with an empty server list", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(detailQuery({ mcpServerStatus: async () => [] }), (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events).toContainEqual({ type: "mcp_status", servers: [] });
+  });
+
+  it("logs to stderr when the detail calls time out or reject, and the ring keeps its short timeout", async () => {
+    const events: SidecarEvent[] = [];
+    const lines: string[] = [];
+    const session = new SidecarSession(
+      detailQuery({
+        getContextUsage: () => new Promise<never>(() => {}),
+        mcpServerStatus: async () => { throw new Error("boom"); },
+      }),
+      (e) => events.push(e),
+      { contextUsageTimeoutMs: 5, detailTimeoutMs: 20, log: (l) => lines.push(l) },
+    );
+    await session.handle(startCommand);
+
+    expect(lines.some((l) => l.includes("getContextUsage"))).toBe(true);
+    expect(lines.some((l) => l.includes("mcpServerStatus failed: boom"))).toBe(true);
+    expect(events.map((e) => e.type)).not.toContain("error");
+  });
+
+  it("sends the breakdown after the ring has given up, when the answer comes within the detail timeout", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(
+      detailQuery({
+        getContextUsage: () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ totalTokens: 1, maxTokens: 10, categories: [{ name: "Messages", tokens: 1, kind: "used" }] }), 25),
+          ),
+      }),
+      (e) => events.push(e),
+      { contextUsageTimeoutMs: 5, detailTimeoutMs: 500, log: () => {} },
+    );
+    await session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain("context_usage");
+    expect(types).toContain("context_detail");
   });
 
   function commandsQuery(

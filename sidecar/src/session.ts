@@ -51,6 +51,8 @@ interface PendingPermission {
 
 const CONTEXT_USAGE_TIMEOUT_MS = 3000;
 const COMMANDS_TIMEOUT_MS = 10000;
+// The details panel's breakdown and server states wait longer than the ring: a slow answer there left both cards grey.
+const DETAIL_TIMEOUT_MS = 10000;
 
 // The SDK may list a name with or without its slash; Forge keeps it without.
 function toWireCommands(raw: unknown): WireSlashCommand[] {
@@ -163,14 +165,23 @@ export class SidecarSession {
   private knownCommands = new Map<string, WireSlashCommand>();
   private readonly contextUsageTimeoutMs: number;
   private readonly commandsTimeoutMs: number;
+  private readonly detailTimeoutMs: number;
+  private readonly log: (line: string) => void;
 
   constructor(
     private readonly queryFn: QueryFn,
     private readonly emit: (event: SidecarEvent) => void,
-    options: { contextUsageTimeoutMs?: number; commandsTimeoutMs?: number } = {},
+    options: {
+      contextUsageTimeoutMs?: number;
+      commandsTimeoutMs?: number;
+      detailTimeoutMs?: number;
+      log?: (line: string) => void;
+    } = {},
   ) {
     this.contextUsageTimeoutMs = options.contextUsageTimeoutMs ?? CONTEXT_USAGE_TIMEOUT_MS;
     this.commandsTimeoutMs = options.commandsTimeoutMs ?? COMMANDS_TIMEOUT_MS;
+    this.detailTimeoutMs = options.detailTimeoutMs ?? DETAIL_TIMEOUT_MS;
+    this.log = options.log ?? ((line) => process.stderr.write(`${line}\n`));
   }
 
   async handle(command: SidecarCommand): Promise<void> {
@@ -453,36 +464,64 @@ export class SidecarSession {
     }
   }
 
-  // A failure or a slow answer only means no ring value this turn; it never touches the turn.
+  // One SDK call feeds two readers: the ring gives up after the short timeout, the breakdown after the long one.
   private async emitContextUsage(): Promise<void> {
     const query = this.activeQuery;
     if (!query?.getContextUsage) return;
+    let answer: ReturnType<NonNullable<QueryHandle["getContextUsage"]>>;
     try {
-      const context = await withTimeout(query.getContextUsage(), this.contextUsageTimeoutMs);
+      answer = query.getContextUsage();
+    } catch {
+      return;
+    }
+    answer.catch(() => {});
+    await Promise.all([this.emitContextRing(answer), this.emitContextDetailFrom(answer)]);
+  }
+
+  // A failure or a slow answer only means no ring value this turn; it never touches the turn.
+  private async emitContextRing(answer: ReturnType<NonNullable<QueryHandle["getContextUsage"]>>): Promise<void> {
+    try {
+      const context = await withTimeout(answer, this.contextUsageTimeoutMs);
       if (this.shuttingDown || !context) return;
       const { totalTokens, maxTokens } = context;
       if (Number.isFinite(totalTokens) && Number.isFinite(maxTokens) && maxTokens > 0 && totalTokens >= 0) {
         this.emit({ type: "context_usage", total_tokens: totalTokens, max_tokens: maxTokens });
       }
-      this.emitContextDetail(context);
     } catch {
       // No context value this turn.
     }
   }
 
+  private async emitContextDetailFrom(answer: ReturnType<NonNullable<QueryHandle["getContextUsage"]>>): Promise<void> {
+    try {
+      const context = await withTimeout(answer, this.detailTimeoutMs);
+      if (!context) {
+        if (!this.shuttingDown) this.log("forge-sidecar: getContextUsage gave no answer in time; no context_detail this turn");
+        return;
+      }
+      if (this.shuttingDown) return;
+      this.emitContextDetail(context);
+    } catch (error) {
+      this.log(`forge-sidecar: getContextUsage failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   // The breakdown behind the ring, from the same answer. Nothing is sent when the SDK gave no categories.
+  // Every token count is rounded: the Rust side reads integers and one fractional value would fail the
+  // whole line, which ends the session.
   private emitContextDetail(context: NonNullable<Awaited<ReturnType<NonNullable<QueryHandle["getContextUsage"]>>>>): void {
     if (!Array.isArray(context.categories)) return;
     const kinds = ["used", "free", "buffer", "deferred"];
+    const tokensOk = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
     const categories = context.categories
-      .filter((c) => c && typeof c.name === "string" && kinds.includes(c.kind) && Number.isFinite(c.tokens) && c.tokens >= 0)
-      .map((c) => ({ name: c.name, tokens: c.tokens, kind: c.kind }));
+      .filter((c) => c && typeof c.name === "string" && kinds.includes(c.kind) && tokensOk(c.tokens))
+      .map((c) => ({ name: c.name, tokens: Math.round(c.tokens), kind: c.kind }));
     const mcp_tools = (Array.isArray(context.mcpTools) ? context.mcpTools : [])
-      .filter((t) => t && typeof t.name === "string" && Number.isFinite(t.tokens) && t.tokens >= 0)
-      .map((t) => ({ server: t.serverName, name: t.name, tokens: t.tokens }));
+      .filter((t) => t && typeof t.name === "string" && typeof t.serverName === "string" && tokensOk(t.tokens))
+      .map((t) => ({ server: t.serverName, name: t.name, tokens: Math.round(t.tokens) }));
     const agents = (Array.isArray(context.agents) ? context.agents : [])
-      .filter((a) => a && typeof a.agentType === "string" && Number.isFinite(a.tokens) && a.tokens >= 0)
-      .map((a) => ({ name: a.agentType, tokens: a.tokens }));
+      .filter((a) => a && typeof a.agentType === "string" && tokensOk(a.tokens))
+      .map((a) => ({ name: a.agentType, tokens: Math.round(a.tokens) }));
     this.emit({ type: "context_detail", categories, mcp_tools, agents });
   }
 
@@ -491,8 +530,12 @@ export class SidecarSession {
     const query = this.activeQuery;
     if (!query?.mcpServerStatus) return;
     try {
-      const servers = await withTimeout(query.mcpServerStatus(), this.contextUsageTimeoutMs);
-      if (this.shuttingDown || !Array.isArray(servers)) return;
+      const servers = await withTimeout(query.mcpServerStatus(), this.detailTimeoutMs);
+      if (this.shuttingDown) return;
+      if (!Array.isArray(servers)) {
+        this.log("forge-sidecar: mcpServerStatus gave no answer in time; no mcp_status this turn");
+        return;
+      }
       this.emit({
         type: "mcp_status",
         servers: servers
@@ -500,15 +543,15 @@ export class SidecarSession {
           .map((s) => ({
             name: s.name,
             status: s.status,
-            scope: s.scope ?? null,
-            source: s.source ?? null,
-            type: s.config?.type ?? null,
-            tool_count: Array.isArray(s.tools) ? s.tools.length : 0,
-            error: s.error ?? null,
+            scope: typeof s.scope === "string" ? s.scope : null,
+            source: typeof s.source === "string" ? s.source : null,
+            type: typeof s.config?.type === "string" ? s.config.type : null,
+            tool_count: Array.isArray(s.tools) ? Math.round(s.tools.length) : 0,
+            error: typeof s.error === "string" ? s.error : null,
           })),
       });
-    } catch {
-      // No server states this turn.
+    } catch (error) {
+      this.log(`forge-sidecar: mcpServerStatus failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
