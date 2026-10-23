@@ -9,6 +9,8 @@ Runs the real Forge window against a fake Claude home so its UI can be checked w
     scripts/harness/stop.sh              # quit the app, remove the fixture
     python3 -m unittest discover -s scripts/harness   # tests of the fixture builder and the click math
 
+`launch.sh` also builds the sidecar when `sidecar/dist` is missing or older than a file in `sidecar/src`; an old build lacks new events, so a card waits on a grey sentence forever.
+
 The app runs with `FORGE_CLAUDE_HOME` and `FORGE_CONFIG_PATH` pointing into `/private/tmp/forge-harness-home`,
 so the real `~/.claude` and the real Forge config are never read or written. The fixture holds
 `my-app` and the missing `my_app` (one Claude directory, two headings), and `a/app` and `b/app`

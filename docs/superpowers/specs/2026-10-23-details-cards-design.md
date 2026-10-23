@@ -56,3 +56,35 @@ All three come from the running session, not from files.
 ## What is left
 
 `결과물` card (observed in Round 26 part 2), the commit button and prompt, sign-in or reconnect from the card, reordering cards by hand, a link from `Custom agents`, Windows.
+
+## As built
+
+- **Events:** the sidecar sends `context_detail` (categories with `name`, `tokens`, `kind`; MCP tools; agents) and `mcp_status` (per server `name`, `status`, `scope`, `source`, `type`, `tool_count`, `error`) after each turn. Token counts are rounded and a row with a missing or non-string server or agent name is dropped, because one line that fails serde ends the session. The port's structs are `ContextItemReport` and friends so they do not clash with the domain `ContextItem`; the domain has `ContextBreakdown`, `ContextRow`, `ContextKind`, `McpServerState`, `McpStatus`, and `LiveSessionView` keeps the last of each. A breakdown with no rows counts as no value, and the last good breakdown is kept (the keep-last-breakdown rule); an empty server list is a real value.
+- **Timeouts:** the ring keeps its 3 s wait. The breakdown and the server states wait 10 s (their own constant) and write one line to stderr when a call times out or fails.
+- **Pure views** (`forge-entities/src/details_view.rs`): `context_card` (percent in tenths, bar segments that never add to more than 1000, used rows, free, buffer, deferred with a dash) and `connector_rows` / `connector_table` (servers needing action first, `claudeai` scope last). The `mcp__<server>__` prefix is dropped from an MCP tool's label, also when the SDK normalized the server name.
+- **Features** (`forge-features/src/details.rs`, `workspace.rs`): a fold flag per card and per session (`DetailsCard`), the change counts from git (`session_change_counts`, refreshed when a tool call finishes, hidden when there is no count), and a one-shot Customize tab request (`OneShot<T>`) so `Manage connectors` and the `MCP tools` / `Skills` rows open Customize on the right tab once.
+- **Widgets:** the cards in `details_panel.rs` and the modal in `mcp_servers_dialog.rs` (title `MCP 서버`, columns `서버` / `유형` / `상태`, a check for a connected server, `커넥터 관리` and `완료`).
+- **Wording and tags:** the state text for `needs-auth` is `Authenticate` / `인증`; the `App` tag was dropped (an unknown source shows no tag). The `MCP tools` and `Skills` context rows are matched by the SDK's English name for their links (the rows themselves are classified by `kind`), kept in named constants.
+- **Window-check fixes:** the MCP tool row drops the SDK prefix (7cd0155), a connected server shows a check in the table (523e9a0), and `launch.sh` rebuilds a sidecar build older than its sources (063fb02).
+
+## Checked
+
+In the real window on macOS, light mode, in a throwaway folder with 5 real turns (and one SDK probe) and the fake connector servers of the harness fixture:
+
+- Before a message: the two grey sentences, no changes card; each card folds on its own.
+- After a turn: `1% 사용됨`, `11.9k / 1M`, the bar, rows adding to 100.0, the deferred rows, the `MCP 도구` fold row and its list (after the prefix fix), the folded form.
+- Connectors: failed servers first, `더 보기` / `간략히 보기`, the modal over the whole window (also with the floating dock), Escape closes it, `커넥터 관리` lands on Customize, tab `커넥터`.
+- Changes: `+1 −0`, then `+3 −1`, equal to the chat's counts; no card for a clean worktree.
+- Switching to another session and back kept the values.
+
+## Left
+
+- Dark mode.
+- The underlined `MCP tools` / `Skills` link rows live (the breakdowns seen had no such rows; unit tests cover the rule), and the `커스텀 에이전트` row (no agents).
+- A click on the changes card, and a non-git folder.
+- Windows.
+- The grey-cards flake: once both cards stayed on the grey sentences after a turn and did not come back in a later identical run. It was not reproduced; the likely cause was the shared 3 s timeout, which is now 10 s for these two calls and leaves a stderr line when it fires.
+- The count does not refresh after a folder change or after edits made outside tool calls; the live list changing causes extra git reads.
+- No focus trap in the modal.
+- A plugin subtitle under a server's name never shows (the status has no plugin name).
+- The `결과물` card, the commit button, sign-in or reconnect from the card, reordering cards by hand, a link from `Custom agents` (backlog OTH-14 to OTH-18).
