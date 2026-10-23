@@ -98,6 +98,7 @@ Third window check (macOS, 4 more real turns in throwaway folders under /private
 ## Left
 
 - Windows.
+- The `다시 연결` (failed) state text was not seen live (needs-auth was); same colour rule.
 - The grey-cards flake: once both cards stayed on the grey sentences after a turn and did not come back in a later identical run. It was not reproduced; the likely cause was the shared 3 s timeout, which is now 10 s for these two calls and leaves a stderr line when it fires.
 - The count does not refresh after a folder change or after edits made outside tool calls; the live list changing causes extra git reads.
 - No focus trap in the modal.
