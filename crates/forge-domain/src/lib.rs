@@ -1,6 +1,7 @@
 mod attachment;
 mod auto_archive;
 mod card;
+mod context_detail;
 mod background;
 mod command;
 mod config;
@@ -69,6 +70,7 @@ pub use session::{
     ToolResult,
 };
 pub use worktree::{branch_name, first_line, main_repo_of, origin_of, slug, suffix, worktree_dir, worktree_name, WorktreeLocation, WorktreeRecord};
+pub use context_detail::{ContextBreakdown, ContextItem, ContextKind, ContextRow, McpServerState, McpStatus};
 pub use usage::{ContextUsage, Cost, CostSummary, PriceTable, Rates, SessionUsage, TokenUsage};
 pub use usage_stats::{
     all_tokens, Day, ModelTotals, RangeStats, SessionStats, StatsRange, StatsRow, UsageStats, HEATMAP_WEEKS, NO_MODEL,

@@ -1,4 +1,4 @@
-use forge_domain::{Attachment, AvailableModel, ContextUsage, EffortLevel, Message, MessageRole, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand, ToolCall, ToolResult};
+use forge_domain::{Attachment, AvailableModel, ContextBreakdown, ContextItem, ContextKind, ContextRow, ContextUsage, McpServerState, McpStatus, EffortLevel, Message, MessageRole, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand, ToolCall, ToolResult};
 use forge_ports::SidecarEvent;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -13,8 +13,10 @@ pub enum SessionUpdate {
     PermissionCancelled { id: String },
     TurnCompleted,
     ContextUsage(ContextUsage),
-    /// An event nothing consumes yet (the context breakdown, the MCP server states); Task 2 gives it meaning.
-    Unused,
+    /// The breakdown behind the context ring; rows of an unknown kind are already dropped.
+    ContextDetail(ContextBreakdown),
+    /// The state of every MCP server; an empty list means there are none.
+    McpStatus(Vec<McpServerState>),
     CommandsAvailable(Vec<SlashCommand>),
     /// The SDK accepted a mode change; the session already holds the new mode.
     PermissionModeChanged { mode: PermissionMode },
@@ -127,7 +129,28 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             total_tokens: *total_tokens,
             max_tokens: *max_tokens,
         }),
-        SidecarEvent::ContextDetail { .. } | SidecarEvent::McpStatus { .. } => SessionUpdate::Unused,
+        SidecarEvent::ContextDetail { categories, mcp_tools, agents } => SessionUpdate::ContextDetail(ContextBreakdown {
+            rows: categories
+                .iter()
+                .filter_map(|c| Some(ContextRow { name: c.name.clone(), tokens: c.tokens, kind: ContextKind::from_sdk(&c.kind)? }))
+                .collect(),
+            mcp_tools: mcp_tools.iter().map(context_item).collect(),
+            agents: agents.iter().map(context_item).collect(),
+        }),
+        SidecarEvent::McpStatus { servers } => SessionUpdate::McpStatus(
+            servers
+                .iter()
+                .map(|s| McpServerState {
+                    name: s.name.clone(),
+                    status: McpStatus::from_sdk(&s.status),
+                    scope: s.scope.clone(),
+                    source: s.source.clone(),
+                    remote: McpServerState::remote_from_transport(s.transport.as_deref()),
+                    tool_count: s.tool_count,
+                    error: s.error.clone(),
+                })
+                .collect(),
+        ),
         SidecarEvent::CommandsAvailable { commands } => SessionUpdate::CommandsAvailable(commands.clone()),
         SidecarEvent::PermissionModeSet { mode } => {
             session.permission_mode = *mode;
@@ -152,6 +175,10 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
         SidecarEvent::Error { message } => SessionUpdate::Errored { message: message.clone() },
         SidecarEvent::SessionEnded => SessionUpdate::SessionEnded,
     }
+}
+
+fn context_item(item: &forge_ports::ContextItemReport) -> ContextItem {
+    ContextItem { group: item.server.clone(), name: item.name.clone(), tokens: item.tokens }
 }
 
 #[cfg(test)]

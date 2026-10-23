@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_domain::{Attachment, AvailableModel, ContextUsage, EffortLevel, PermissionDecision, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand};
+use forge_domain::{Attachment, AvailableModel, ContextBreakdown, ContextUsage, McpServerState, EffortLevel, PermissionDecision, PermissionMode, PermissionRequest, Session, SessionId, SlashCommand};
 use forge_ports::SidecarFactoryPort;
 use tokio::sync::{mpsc, watch};
 
@@ -64,6 +64,10 @@ pub struct LiveSessionView {
     /// finished in this run: the sidecar starts on the first send, so an opened-but-idle session
     /// has no value yet.
     pub context: Option<ContextUsage>,
+    /// The last non-empty context breakdown; a restarted sidecar leaves it until a new one arrives.
+    pub context_detail: Option<ContextBreakdown>,
+    /// The last MCP server states; `Some(vec![])` is "no servers", `None` is "not reported yet".
+    pub mcp_servers: Option<Vec<McpServerState>>,
     /// The slash commands the SDK reported; empty until the first report.
     pub commands: Vec<SlashCommand>,
     /// The rules of every request the person answered "always allow" in this session, in order.
@@ -266,6 +270,8 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         unsent_attachments: Vec::new(),
         failed_sends: 0,
         context: None,
+        context_detail: None,
+        mcp_servers: None,
         commands: init.commands,
         allowed_rules: Vec::new(),
     };
@@ -287,7 +293,7 @@ mod tests {
     use std::time::Duration;
 
     use forge_domain::{ActiveExtensions, AppConfig, ContextUsage, MessageRole, OutputStyle, PermissionMode, SessionDefaults, SkillDefinition, TokenUsage};
-    use forge_ports::{SidecarError, SidecarEvent, StartSessionParams};
+    use forge_ports::{ContextCategory, ContextItemReport, McpServerReport, SidecarError, SidecarEvent, StartSessionParams};
 
     use super::*;
     use crate::test_support::{
@@ -1679,6 +1685,88 @@ mod tests {
         .await;
 
         assert_eq!(seen.context.map(|c| c.percent()), Some(20));
+    }
+
+    fn detail(kind: &str, name: &str) -> SidecarEvent {
+        SidecarEvent::ContextDetail {
+            categories: vec![ContextCategory { name: name.to_string(), tokens: 5, kind: kind.to_string() }],
+            mcp_tools: vec![ContextItemReport { server: Some("figma".to_string()), name: "t".to_string(), tokens: 3 }],
+            agents: vec![ContextItemReport { server: None, name: "Explore".to_string(), tokens: 2 }],
+        }
+    }
+
+    fn server(name: &str, status: &str, transport: &str) -> McpServerReport {
+        McpServerReport {
+            name: name.to_string(),
+            status: status.to_string(),
+            scope: Some("user".to_string()),
+            source: None,
+            transport: Some(transport.to_string()),
+            tool_count: 4,
+            error: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_context_detail_event_is_kept_and_replaced() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        assert_eq!(handle.snapshot().context_detail, None);
+
+        handle.send("go".to_string());
+        control.push(detail("used", "Messages"));
+        control.push(detail("free", "Free space"));
+        let seen = wait_for(&mut view, "the second breakdown", |v| {
+            v.context_detail.as_ref().is_some_and(|d| d.rows[0].name == "Free space")
+        })
+        .await;
+        let breakdown = seen.context_detail.unwrap();
+        assert_eq!(breakdown.rows[0].kind, forge_domain::ContextKind::Free);
+        assert_eq!(breakdown.mcp_tools[0].group.as_deref(), Some("figma"));
+        assert_eq!(breakdown.agents[0].group, None);
+
+        // An empty list, or only rows of an unknown kind, is no value and keeps the good one.
+        control.push(SidecarEvent::ContextDetail { categories: vec![], mcp_tools: vec![], agents: vec![] });
+        control.push(detail("weird", "Mystery"));
+        control.push(detail("buffer", "Autocompact buffer"));
+        let seen = wait_for(&mut view, "the buffer breakdown", |v| {
+            v.context_detail.as_ref().is_some_and(|d| d.rows[0].name == "Autocompact buffer")
+        })
+        .await;
+        assert_eq!(seen.context_detail.unwrap().rows.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_mcp_status_event_replaces_the_server_list() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        assert_eq!(handle.snapshot().mcp_servers, None);
+
+        handle.send("go".to_string());
+        control.push(SidecarEvent::McpStatus { servers: vec![server("a", "connected", "stdio"), server("b", "needs-auth", "http")] });
+        control.push(SidecarEvent::McpStatus { servers: vec![server("c", "failed", "sse")] });
+        let seen = wait_for(&mut view, "the second list", |v| v.mcp_servers.as_ref().is_some_and(|s| s[0].name == "c")).await;
+        let servers = seen.mcp_servers.unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].status, forge_domain::McpStatus::Failed);
+        assert_eq!(servers[0].remote, Some(true));
+    }
+
+    #[tokio::test]
+    async fn an_empty_server_list_is_kept_as_empty() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("go".to_string());
+        control.push(SidecarEvent::McpStatus { servers: vec![] });
+        let seen = wait_for(&mut view, "an empty list", |v| v.mcp_servers.is_some()).await;
+        assert_eq!(seen.mcp_servers, Some(vec![]));
     }
 
     #[tokio::test]

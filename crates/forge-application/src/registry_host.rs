@@ -270,6 +270,8 @@ mod tests {
             unsent_attachments: Vec::new(),
             failed_sends: 0,
             context: None,
+            context_detail: None,
+            mcp_servers: None,
             commands: Vec::new(),
             allowed_rules: Vec::new(),
         }

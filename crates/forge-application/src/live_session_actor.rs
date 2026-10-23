@@ -468,6 +468,13 @@ impl Actor {
             }
             SessionUpdate::PromptSuggestion(text) => self.view.suggestion = Some(text),
             SessionUpdate::ContextUsage(context) => self.view.context = Some(context),
+            // A breakdown with no rows is "nothing measured", not a value: the last good one stays.
+            SessionUpdate::ContextDetail(detail) => {
+                if !detail.rows.is_empty() {
+                    self.view.context_detail = Some(detail);
+                }
+            }
+            SessionUpdate::McpStatus(servers) => self.view.mcp_servers = Some(servers),
             SessionUpdate::CommandsAvailable(commands) => self.view.commands = commands,
             // The session already holds the new mode (`apply_sidecar_event`); the model lives here
             // too, so a restarted sidecar starts on it.
@@ -498,8 +505,7 @@ impl Actor {
             SessionUpdate::MessageDelta { .. }
             | SessionUpdate::ThinkingDelta { .. }
             | SessionUpdate::ToolCallStarted { .. }
-            | SessionUpdate::ToolCallCompleted { .. }
-            | SessionUpdate::Unused => {}
+            | SessionUpdate::ToolCallCompleted { .. } => {}
         }
         self.dirty = true;
     }

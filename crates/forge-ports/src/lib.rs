@@ -46,7 +46,7 @@ pub use skill_catalog_port::{SkillCatalogError, SkillCatalogPort};
 pub use terminal_port::{TerminalError, TerminalEvent, TerminalId, TerminalPort, TerminalSession, TerminalSize, OUTPUT_BATCH_LIMIT};
 pub use usage_stats_port::{UsageStatsError, UsageStatsPort};
 pub use sidecar_port::{
-    PermissionRequestId, SidecarError, SidecarEvent, SidecarPort, StartSessionParams,
+    ContextCategory, ContextItemReport, McpServerReport, PermissionRequestId, SidecarError, SidecarEvent, SidecarPort, StartSessionParams,
 };
 
 #[cfg(any(test, feature = "mocks"))]
