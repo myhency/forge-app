@@ -84,6 +84,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Auto save", "자동 저장"),
     ("Automatically accept all file edits", "모든 파일 편집을 자동으로 수락"),
     ("Back", "이전"),
+    ("Back to choices", "뒤로"),
     ("Back to routines", "루틴으로 돌아가기"),
     ("Background tasks", "백그라운드 작업"),
     ("Back|browser", "뒤로"),

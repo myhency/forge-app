@@ -152,7 +152,7 @@ pub fn PlanCard(id: LiveSessionId, request_id: String) -> Element {
                         class: "perm-button",
                         r#type: "button",
                         onclick: move |_| step.set(PlanStep::Choose),
-                        {tr!("Back")}
+                        {tr!("Back to choices")}
                     }
                     span { class: "spacer" }
                     button {
