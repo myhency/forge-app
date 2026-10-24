@@ -909,3 +909,5 @@ Desktop 3.6556, the session `wordstat.py --top N과 불용어 제외` from Round
 - **Plan panel header:** title `계획`, icons: open folder, copy, expand, close. The hint line at the top: `텍스트를 선택하여 Claude에게 댓글을 남기세요`.
 - **Plan data:** the real transcript has a `Write` of `~/.claude/plans/<name>.md` and then `ExitPlanMode` with `input: { plan: "<the markdown>" }`.
 - **Not clicked:** `수락 및 편집 허용`, `수락 및 자동 모드`, and the `수정` button (what Claude receives).
+
+Plan 56A built and checked on 2026-10-24 (see the spec's "As built"); the three desktop buttons not clicked in Round 29 are still unclicked.

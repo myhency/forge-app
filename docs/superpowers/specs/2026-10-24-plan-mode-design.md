@@ -88,3 +88,47 @@ The panel's width and header look (follow the Files panel), the exact CSS, the c
 - **`거부` and `수정`** both answer with a refusal that does not interrupt the turn, so Claude stays in plan mode and replies. `거부` has no text: the default reason says the person declined the plan and Claude should ask what to change. `수정` sends the person's text, or the default reason when empty.
 - **The `⌄` menu** repeats `수락 및 자동 모드` as the desktop app does; both entries are kept.
 - **Several requests:** one open request per session, as the permission queue already works; if a second `ExitPlanMode` arrives while one is open it waits its turn. When a session is shown in several panes the Plan panel opens in the pane that shows the session that sent the plan.
+
+## As built (Plan 56A, 2026-10-24)
+
+### What was built, per task
+
+1. **Refusal with a reason** (sidecar): `permission_response` carries `reason?`; `decisionToResult` uses the trimmed reason as the deny message, else the old text. Files: `sidecar/src/protocol.ts`, `sidecar/src/session.ts`.
+2. **Rust plumbing**: `PermissionResponse.reason`, `LiveSessionHandle::refuse_with_reason`, `Workspace::refuse_plan`. Files: `crates/forge-adapter-sidecar/src/protocol.rs`, `live_session.rs`.
+3. **Entities**: `PermissionView.plan`/`PlanAsk`, `PlanItem`, `Item::Plan` built in `build_turns` (ExitPlanMode calls leave the folded activity), `latest_plan`, `PlanKey`/`plan_key`, `PlanChoice::mode`, `plan_reason`. Files in `crates/forge-entities`.
+4. **Plan dock panel**: `Panel::Plan`, `Workspace::plan_text` (pending request first, else the latest plan in the transcript), `PlanPanel` with copy button, hint line and rendered markdown. Files: `crates/forge-features/src/dock.rs`, `crates/forge-widgets/src/plan_panel.rs`, `crates/forge-shared/src/theme.css`.
+5. **Plan card**: `PlanCard` (Choose and Revise steps): 거부, 수정…, 수락, 수락 및 자동 모드 with the `⌄` menu; keys by physical code. Accept answers allow, then sets the mode. Files: `crates/forge-widgets/src/plan_card.rs`, `ko.rs`.
+6. **Transcript row**: the grey `계획 제안됨 ▸` row opens the Plan panel. Files: `crates/forge-widgets/src/turn.rs`, `chat_window.rs`, `theme.css`.
+7. **Window check, tests, docs**: this section; the spike script is removed.
+
+### Spike answers (real SDK, haiku, throwaway folders)
+
+- (a) A plain allow of `ExitPlanMode` followed by `setPermissionMode("auto")` leaves the session in auto: YES.
+- (b) Allow with `updatedPermissions` `setMode auto` also does: YES.
+- Mechanism used: (a), allow then `set_permission_mode`, the same pattern as `switch_to_auto`. No `mode` field was needed in the protocol.
+- Caveat from the spike: "not asked" was judged by Bash never reaching `canUseTool` and by the SDK's status/init events saying auto; there was no default-mode control run.
+
+### Window check (real Forge window, real SDK, throwaway folder)
+
+Ten checks, all passed (two with observations): the panel opens by itself with rendered markdown and the card shows four buttons, `Esc` opens the revise box and does not refuse; `뒤로` returns to the choices and the typed text survives; `수정` with text makes Claude propose a second plan that reflects it and the panel shows the newer plan, composer still `계획`; `수락` leaves the composer on `수동`; `수락 및 자동 모드` leaves `자동`; `수락 및 편집 허용` leaves `편집 자동 수락`; the `계획 제안됨 ▸` row opens the panel with the plan; ⌘↩ typed in the composer while the card is pending does not accept the plan; after a restart the row and the panel text come back; nothing broken beyond the minors below. Dark mode was left to the user.
+
+Tests: `cargo test --workspace` hit the known flaky plugin test once (`a_process_left_behind_holding_the_pipe_does_not_hang_the_command`; passed on rerun). `--no-fail-fast` also showed `crates/forge-adapter-claude-plugins/tests/round_trip.rs` failing twice because it compares against the machine's real plugin state; that crate is not touched by this branch. `cd sidecar && npm test`: 127 passed.
+
+### Left
+
+From the window check:
+- A long inline-code line in the plan panel can touch the right edge (cosmetic, depends on the plan text).
+- The `계획 제안됨 ▸` row appears only after the turn ends, because `Item::Plan` is built from the finished transcript; the refused plan's row showed only after the next plan was answered.
+- A message sent with ⌘↩ from the composer while the card is pending is queued and lost (not in the transcript after a restart). The window report does not say whether this is pre-existing; it only calls it probably out of scope for plan mode.
+
+Deferred code minors from the task reviews:
+- `plan_key`'s Enter ignores `other_modifier`, like `permission_key` does.
+- The plan card's English label is `Back to choices`; the `|context` key convention would keep `Back`.
+- `plan_text_of_view` sits after the test module in `workspace.rs`.
+- The copy button uses a text glyph.
+- `.plan-row` has no `:focus-visible` style.
+- There is no component-test pattern in forge-widgets, so the card and the row are covered by the window check only.
+
+Still to do:
+- 56B: comments on selected plan text and the sidebar `플랜 준비됨` tooltip.
+- `수락 및 편집 허용`, `수락 및 자동 모드` and the `수정` button were never clicked in the desktop app (only in Forge).

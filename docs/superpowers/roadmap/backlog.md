@@ -102,7 +102,7 @@ Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Mode
 
 | Id | Feature | Seen | Forge | Size | Plan | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| NEW-01 | Plan mode: plan file row, `계획` panel with comments, accept / edit / accept and switch to auto card | seen | partial | L | Plan 56 (planned) | Forge shows only `Claude가 ExitPlanMode을(를) 사용하려고 합니다`; the plan text is nowhere. |
+| NEW-01 | Plan mode: plan file row, `계획` panel with comments, accept / edit / accept and switch to auto card | seen | partial | L | Plan 56A (built, checked in the real window); 56B left | Plan panel, plan card and the `계획 제안됨` row are built; comments on selected plan text and the sidebar `플랜 준비됨` tooltip (56B) are left. |
 | NEW-02 | xlsx viewer in the Files panel; result paths in chat as links | seen | none | M | Plan 57 (planned) | Forge says the file is binary. Formula cells that were not calculated show empty in the desktop app. |
 | NEW-03 | `@` mention list (sessions, folder files, open windows) and queued-message card | seen | none | M | Plan 58 (planned) | Forge puts a queued message in the chat at once. |
 | NEW-04 | Slash command list like the desktop app, `/compact` result line, `/btw`, `/rewind` | seen | partial | M | Plan 58 (planned) | In Forge `/compact` worked but nothing is shown after it. |
