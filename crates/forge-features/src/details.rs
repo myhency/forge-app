@@ -9,6 +9,7 @@ pub enum DetailsCard {
     Environment,
     Context,
     Connectors,
+    Outputs,
     Changes,
 }
 

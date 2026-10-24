@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, pane_class, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
 use forge_features::{drag_ratio, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
-use forge_widgets::{ChatWindow, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
+use forge_widgets::{ChatWindow, OutsideFileDialog, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
 use forge_shared::tr;
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
@@ -183,6 +183,7 @@ pub fn WorkspacePage() -> Element {
             EnvironmentDialog {}
             WorkspaceTrustDialog {}
             Lightbox {}
+            OutsideFileDialog {}
             WebViewHost {}
             FileLinkWatcher {}
         }

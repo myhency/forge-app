@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
-use forge_application::LiveSessionId;
-use forge_entities::{connector_rows, context_card, row_link, ContextItemView, ContextRowView, RowLink};
+use forge_application::{LiveSessionId, Phase};
+use forge_entities::{connector_rows, context_card, icon_of, row_link, ContextItemView, ContextRowView, RowLink};
 use forge_features::{card_folders, use_workspace, DetailsCard, EnvironmentRequest, Panel};
 use forge_shared::tr;
 
 use crate::mcp_servers_dialog::{connector_state_text, McpServersDialog};
+use crate::files_icons::FileTypeIcon;
 use crate::panel_frame::PanelFrame;
 
 #[component]
@@ -16,6 +17,7 @@ pub fn DetailsPanel(id: LiveSessionId) -> Element {
             EnvironmentCard { id }
             ContextCard { id }
             ConnectorsCard { id }
+            OutputsCard { id }
             ChangesCard { id }
         } }
     }
@@ -422,6 +424,47 @@ fn ConnectorsCard(id: LiveSessionId) -> Element {
     }
 }
 
+/// The files the session wrote or named that still exist; nothing is drawn while there are none.
+#[component]
+fn OutputsCard(id: LiveSessionId) -> Element {
+    let workspace = use_workspace();
+    // A memo, so streaming chunks do not rerun the effect: it follows a finished tool call and a
+    // turn that starts or ends.
+    let progress = use_memo(move || (workspace.finished_tool_calls(id), workspace.live_view(id).is_some_and(|view| view.read().phase == Phase::Running)));
+    use_effect(move || {
+        let _ = progress();
+        workspace.refresh_outputs(id);
+    });
+    let paths = workspace.session_outputs(id);
+    if paths.is_empty() {
+        return rsx! {};
+    }
+    let folded = workspace.details_card_folded(id, DetailsCard::Outputs);
+    rsx! {
+        div { class: "env-card",
+            CardHead { id, card: DetailsCard::Outputs, title: tr!("Outputs"), folded, trailing: rsx! {} }
+            if !folded {
+                for path in paths {
+                    OutputRow { key: "{path}", id, path }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn OutputRow(id: LiveSessionId, path: String) -> Element {
+    let workspace = use_workspace();
+    let (name, _) = folder_parts(Path::new(&path));
+    let target = path.clone();
+    rsx! {
+        button { class: "env-card-row", r#type: "button", title: "{path}", onclick: move |_| workspace.open_file(id, target.clone()),
+            FileTypeIcon { icon: icon_of(&path) }
+            span { class: "env-card-name", "{name}" }
+        }
+    }
+}
+
 #[component]
 fn ChangesCard(id: LiveSessionId) -> Element {
     let workspace = use_workspace();
@@ -444,5 +487,18 @@ fn ChangesCard(id: LiveSessionId) -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod output_row_tests {
+    use super::*;
+
+    // The row needs a workspace context, which the crate cannot render in a test: the check is on the
+    // name the row shows; its `title` is the path itself.
+    #[test]
+    fn an_output_row_shows_the_file_name() {
+        let (name, _) = folder_parts(Path::new("/Users/me/out/report.docx"));
+        assert_eq!(name, "report.docx");
     }
 }

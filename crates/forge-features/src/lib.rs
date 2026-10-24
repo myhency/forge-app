@@ -3,6 +3,7 @@ mod change_comments;
 mod change_rows;
 mod session_notices;
 mod details;
+mod output_files;
 mod developer;
 mod settings_pages;
 mod window_height;

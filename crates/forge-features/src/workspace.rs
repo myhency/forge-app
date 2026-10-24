@@ -14,6 +14,7 @@ use time::OffsetDateTime;
 use crate::change_rows::{ChangeView, ChangesSession};
 use crate::cards::{clamp_cards, Cards};
 use crate::customize::CustomizeTab;
+use crate::output_files::{existing_outputs, open_place, OpenPlace};
 use crate::details::{change_counts, ChangeCounts, DetailsCard, OneShot};
 use crate::closed_sessions::ClosedSessions;
 use crate::editor_tabs::EditorTabs;
@@ -187,6 +188,11 @@ pub struct Workspace {
     /// The Changes card's count per session, and the ticket of its latest read.
     change_counts: Signal<HashMap<LiveSessionId, ChangeCounts>>,
     change_count_tickets: Signal<HashMap<LiveSessionId, u64>>,
+    /// The Outputs card's files per session, and the ticket of its latest read.
+    outputs: Signal<HashMap<LiveSessionId, Vec<String>>>,
+    output_tickets: Signal<HashMap<LiveSessionId, u64>>,
+    /// The file outside the session folder that the note asks about.
+    outside_file: Signal<Option<String>>,
     /// The Customize tab a details card asked for; the page takes it when it appears.
     customize_tab_request: Signal<OneShot<CustomizeTab>>,
     comment_focus: Signal<HashMap<LiveSessionId, u64>>,
@@ -271,6 +277,9 @@ pub fn use_workspace_provider() -> Workspace {
             card_folded: Signal::new(HashMap::new()),
             change_counts: Signal::new(HashMap::new()),
             change_count_tickets: Signal::new(HashMap::new()),
+            outputs: Signal::new(HashMap::new()),
+            output_tickets: Signal::new(HashMap::new()),
+            outside_file: Signal::new(None),
             customize_tab_request: Signal::new(OneShot::default()),
             comment_focus: Signal::new(HashMap::new()),
             search_open: Signal::new(false),
@@ -1109,14 +1118,14 @@ impl Workspace {
     }
 
     /// Opens a file in the session's Files panel. The path must be absolute and inside the session
-    /// folder; anything else only sets a notice. The panel opens if it is closed and shows the file
+    /// folder; anything else is kept for the note that asks what to do with it. The panel opens if it is closed and shows the file
     /// once it is mounted. A picture opens in the lightbox instead.
     pub fn open_file(&self, id: LiveSessionId, absolute_path: String) {
         let Some(view) = self.live_view(id) else { return };
         let folder = view.read().project_path.clone();
-        let Some(relative) = forge_entities::relative_to_folder(&folder, &absolute_path) else {
-            let mut notice = self.notice;
-            notice.set(Some(tr!("Only files inside the session folder can be opened here.").to_string()));
+        let OpenPlace::Inside(relative) = open_place(&folder, &absolute_path) else {
+            let mut outside = self.outside_file;
+            outside.set(Some(absolute_path));
             return;
         };
         match forge_entities::open_target(&relative) {
@@ -1162,6 +1171,47 @@ impl Workspace {
     /// The picture shown over the window, if any.
     pub fn lightbox(&self) -> Option<Picture> {
         self.lightbox.read().clone()
+    }
+
+    /// The file outside the session folder that was asked for, if any.
+    pub fn outside_file(&self) -> Option<String> {
+        self.outside_file.read().clone()
+    }
+
+    pub fn close_outside_file(&self) {
+        let mut outside = self.outside_file;
+        outside.set(None);
+    }
+
+    /// The files the session wrote or named that are still on disk, newest first.
+    pub fn session_outputs(&self, id: LiveSessionId) -> Vec<String> {
+        self.outputs.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    /// Reads the session's output paths again and keeps those that exist. The stat runs off the
+    /// render path; a read that a later one overtook, or one finishing after the session closed,
+    /// writes nothing.
+    pub fn refresh_outputs(&self, id: LiveSessionId) {
+        let Some(view) = self.live_view(id) else { return };
+        let paths = forge_entities::output_paths(&view.peek().session.messages);
+        let mut tickets = self.output_tickets;
+        let ticket = tickets.peek().get(&id).copied().unwrap_or(0).wrapping_add(1);
+        tickets.write().insert(id, ticket);
+        let workspace = self.clone();
+        dioxus::core::spawn_forever(async move {
+            let Some(kept) = crate::run_blocking(move || existing_outputs(paths, |path| Path::new(path).is_file())).await else {
+                return;
+            };
+            if workspace.output_tickets.peek().get(&id) != Some(&ticket) {
+                return;
+            }
+            let mut map = workspace.outputs;
+            if kept.is_empty() {
+                map.write().remove(&id);
+            } else {
+                map.write().insert(id, kept);
+            }
+        });
     }
 
     pub fn close_lightbox(&self) {
@@ -2292,6 +2342,10 @@ impl Workspace {
         crate::details::forget_card_flags(&mut folded.write(), id);
         let mut counts = self.change_counts;
         counts.write().remove(&id);
+        let mut outputs = self.outputs;
+        outputs.write().remove(&id);
+        let mut output_tickets = self.output_tickets;
+        output_tickets.write().remove(&id);
         // Dropping the ticket makes a read still running find none, so it writes nothing.
         let mut tickets = self.change_count_tickets;
         tickets.write().remove(&id);
