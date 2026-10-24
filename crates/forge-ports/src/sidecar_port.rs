@@ -153,6 +153,7 @@ pub trait SidecarPort: Send + Sync {
         &self,
         permission_request_id: PermissionRequestId,
         decision: PermissionDecision,
+        reason: Option<String>,
     ) -> Result<(), SidecarError>;
     /// Answers a pending `AskUserQuestion` request: each question's text maps to the chosen
     /// label(s) (several labels joined by `,`) or the text typed under "Other".

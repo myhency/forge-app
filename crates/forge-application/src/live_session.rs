@@ -87,7 +87,7 @@ pub enum LiveCommand {
     /// Variables the next start runs with.
     SetEnv(forge_domain::EnvVars),
     WarmUp,
-    Approve { id: String, decision: PermissionDecision },
+    Approve { id: String, decision: PermissionDecision, reason: Option<String> },
     AnswerQuestion { id: String, answers: std::collections::BTreeMap<String, String> },
     StopTask { task_id: String },
     Interrupt,
@@ -166,6 +166,16 @@ impl LiveSessionHandle {
         let _ = self.commands.send(LiveCommand::Approve {
             id: permission_request_id,
             decision,
+            reason: None,
+        });
+    }
+
+    /// Refuses a request and tells the model why (the sidecar uses `reason` as the deny message).
+    pub fn refuse_with_reason(&self, permission_request_id: String, reason: Option<String>) {
+        let _ = self.commands.send(LiveCommand::Approve {
+            id: permission_request_id,
+            decision: PermissionDecision::Deny,
+            reason,
         });
     }
 
@@ -932,7 +942,28 @@ mod tests {
         assert_eq!(after.pending_permissions[0].id, "p-2");
         assert!(control
             .calls()
-            .contains(&Call::Permission("p-1".to_string(), PermissionDecision::AllowOnce)));
+            .contains(&Call::Permission("p-1".to_string(), PermissionDecision::AllowOnce, None)));
+    }
+
+    #[tokio::test]
+    async fn refuse_with_reason_reaches_the_sidecar_as_a_deny_with_the_reason() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("plan it".to_string());
+        control.push(permission_request("p-1"));
+        wait_for(&mut view, "the request", |v| v.pending_permissions.len() == 1).await;
+
+        handle.refuse_with_reason("p-1".to_string(), Some("add tests".to_string()));
+        wait_for(&mut view, "the request gone", |v| v.pending_permissions.is_empty()).await;
+
+        assert!(control.calls().contains(&Call::Permission(
+            "p-1".to_string(),
+            PermissionDecision::Deny,
+            Some("add tests".to_string())
+        )));
     }
 
     #[tokio::test]

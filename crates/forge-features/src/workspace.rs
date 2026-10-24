@@ -2003,6 +2003,13 @@ impl Workspace {
         }
     }
 
+    /// Refuses a pending plan (or any request) and sends the person's note as the reason.
+    pub fn refuse_plan(&self, id: LiveSessionId, request_id: String, reason: Option<String>) {
+        if let Some(handle) = self.handle(id) {
+            handle.refuse_with_reason(request_id, reason);
+        }
+    }
+
     pub fn stop_task(&self, id: LiveSessionId, task_id: String) {
         if let Some(handle) = self.handle(id) {
             handle.stop_task(task_id);

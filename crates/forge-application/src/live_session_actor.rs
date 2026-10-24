@@ -117,7 +117,7 @@ impl Actor {
             LiveCommand::AllowTools(tools) => self.allow_tools(tools).await,
             LiveCommand::SetEnv(env) => self.set_env(env).await,
             LiveCommand::WarmUp => self.warm_up().await,
-            LiveCommand::Approve { id, decision } => self.approve(id, decision).await,
+            LiveCommand::Approve { id, decision, reason } => self.approve(id, decision, reason).await,
             LiveCommand::AnswerQuestion { id, answers } => self.answer_question(id, answers).await,
             LiveCommand::StopTask { task_id } => self.stop_task(task_id).await,
             LiveCommand::Interrupt => self.interrupt().await,
@@ -346,7 +346,7 @@ impl Actor {
         }
     }
 
-    async fn approve(&mut self, id: String, decision: PermissionDecision) {
+    async fn approve(&mut self, id: String, decision: PermissionDecision, reason: Option<String>) {
         let Some(position) = self.view.pending_permissions.iter().position(|request| request.id == id) else {
             return;
         };
@@ -362,7 +362,7 @@ impl Actor {
         }
         self.view.pending_permissions.remove(position);
         self.dirty = true;
-        if let Err(error) = ApprovePermissionUseCase::new(sidecar).execute(id, decision).await {
+        if let Err(error) = ApprovePermissionUseCase::new(sidecar).execute(id, decision, reason).await {
             self.fail(error.to_string(), false).await;
         }
     }

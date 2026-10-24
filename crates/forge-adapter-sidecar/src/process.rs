@@ -129,12 +129,14 @@ impl SidecarPort for SidecarProcess {
         &self,
         permission_request_id: String,
         decision: PermissionDecision,
+        reason: Option<String>,
     ) -> Result<(), SidecarError> {
         let id = self.next_id();
         self.send_command(SidecarCommand::PermissionResponse {
             id,
             permission_request_id,
             decision: decision.into(),
+            reason,
         })
     }
 

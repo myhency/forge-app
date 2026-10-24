@@ -34,7 +34,13 @@ pub enum SidecarCommand {
         #[serde(skip_serializing_if = "Vec::is_empty")]
         attachments: Vec<WireAttachment>,
     },
-    PermissionResponse { id: String, permission_request_id: String, decision: WireDecision },
+    PermissionResponse {
+        id: String,
+        permission_request_id: String,
+        decision: WireDecision,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     AnswerQuestion { id: String, permission_request_id: String, answers: BTreeMap<String, String> },
     Interrupt { id: String },
     StopTask { id: String, task_id: String },
@@ -410,6 +416,7 @@ mod tests {
             id: "2".to_string(),
             permission_request_id: "perm-1".to_string(),
             decision: PermissionDecision::AllowAlways.into(),
+            reason: None,
         };
 
         let json = serde_json::to_value(&command).unwrap();
@@ -422,6 +429,20 @@ mod tests {
                 "decision": "allow_always"
             })
         );
+    }
+
+    #[test]
+    fn permission_response_with_a_reason_serializes_the_reason() {
+        let command = SidecarCommand::PermissionResponse {
+            id: "2".to_string(),
+            permission_request_id: "perm-1".to_string(),
+            decision: PermissionDecision::Deny.into(),
+            reason: Some("x".to_string()),
+        };
+
+        let json = serde_json::to_value(&command).unwrap();
+        assert_eq!(json["reason"], "x");
+        assert_eq!(json["decision"], "deny");
     }
 
     #[test]

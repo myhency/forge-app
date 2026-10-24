@@ -38,8 +38,9 @@ impl ApprovePermissionUseCase {
         &self,
         permission_request_id: String,
         decision: PermissionDecision,
+        reason: Option<String>,
     ) -> Result<(), SidecarError> {
-        self.sidecar.respond_to_permission(permission_request_id, decision).await
+        self.sidecar.respond_to_permission(permission_request_id, decision, reason).await
     }
 }
 
@@ -139,15 +140,15 @@ mod tests {
     async fn approve_permission_use_case_delegates_to_the_sidecar_port() {
         let mut mock = MockSidecarPort::new();
         mock.expect_respond_to_permission()
-            .withf(|id: &String, decision: &PermissionDecision| {
-                id == "perm-1" && *decision == PermissionDecision::AllowOnce
+            .withf(|id: &String, decision: &PermissionDecision, reason: &Option<String>| {
+                id == "perm-1" && *decision == PermissionDecision::AllowOnce && reason.is_none()
             })
             .times(1)
-            .returning(|_, _| Ok(()));
+            .returning(|_, _, _| Ok(()));
 
         let use_case = ApprovePermissionUseCase::new(Arc::new(mock));
         assert!(use_case
-            .execute("perm-1".to_string(), PermissionDecision::AllowOnce)
+            .execute("perm-1".to_string(), PermissionDecision::AllowOnce, None)
             .await
             .is_ok());
     }
