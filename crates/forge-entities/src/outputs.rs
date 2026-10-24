@@ -48,7 +48,7 @@ pub fn output_paths(messages: &[Message]) -> Vec<String> {
     for (index, message) in messages.iter().enumerate() {
         for call in message.tool_calls().filter(|call| matches!(call.name.as_str(), "Write" | "Edit" | "MultiEdit" | "NotebookEdit")) {
             let path = ["file_path", "notebook_path"].iter().find_map(|key| call.input.get(*key).and_then(|value| value.as_str()));
-            mentions.extend(path.filter(|path| is_absolute_path(path)).map(str::to_string));
+            mentions.extend(path.filter(|path| is_absolute_path(path) && !path.contains(['"', '\'', '<', '>', '&']) && !path.chars().any(char::is_control)).map(str::to_string));
         }
         if closing.contains(&index) {
             mentions.extend(absolute_paths_in(&message.text()).into_iter().filter(|path| is_output_extension(path)));
@@ -122,6 +122,25 @@ mod tests {
     fn the_newest_mention_comes_first_and_duplicates_collapse() {
         let messages = vec![user(), tool("Write", "file_path", "/p/a.csv"), tool("Write", "file_path", "/p/b.csv"), said("/p/a.csv is ready")];
         assert_eq!(output_paths(&messages), vec!["/p/a.csv", "/p/b.csv"]);
+    }
+
+    #[test]
+    fn a_write_path_with_an_attribute_breaking_character_is_dropped() {
+        let messages = vec![
+            user(),
+            tool("Write", "file_path", "/p/a\"onmouseover=x.txt"),
+            tool("Write", "file_path", "/p/<b>&.md"),
+            tool("Write", "file_path", "/p/it's.md"),
+            tool("Write", "file_path", "/p/bell\u{7}.md"),
+            tool("Write", "file_path", "/p/ok.md"),
+        ];
+        assert_eq!(output_paths(&messages), vec!["/p/ok.md"]);
+    }
+
+    #[test]
+    fn korean_and_windows_paths_named_in_text_count() {
+        let messages = vec![user(), said("저장: C:\\Users\\나\\보고서.xlsx 그리고 /p/보고서.md를 확인")];
+        assert_eq!(output_paths(&messages), vec!["/p/보고서.md", "C:\\Users\\나\\보고서.xlsx"]);
     }
 
     #[test]
