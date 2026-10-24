@@ -4,7 +4,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use forge_ports::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, SearchOptions, Sheet, SheetBook, SheetCell, WriteError, READ_LIMIT};
-use calamine::{Data, Range, Reader, Xlsx};
+use calamine::{Data, Reader, Xlsx};
 use chrono::NaiveTime;
 use regex::{Regex, RegexBuilder};
 
@@ -97,38 +97,40 @@ fn cell_text(data: &Data) -> String {
     }
 }
 
-// Cells are placed by their sheet position, so a sheet whose data starts at C3 keeps its blank
-// rows and columns; the caps count from A1.
-fn read_sheet(name: String, values: &Range<Data>, formulas: &Range<String>) -> Sheet {
-    let ends = [values.end(), formulas.end()];
-    let last_row = ends.iter().flatten().map(|end| end.0 as usize).max();
-    let last_column = ends.iter().flatten().map(|end| end.1 as usize).max();
-    let (Some(last_row), Some(last_column)) = (last_row, last_column) else {
-        return Sheet { name, rows: Vec::new(), truncated: false };
-    };
-    let truncated = last_row >= SHEET_MAX_ROWS || last_column >= SHEET_MAX_COLUMNS;
-    let rows = (0..=last_row.min(SHEET_MAX_ROWS - 1))
-        .map(|row| {
-            (0..=last_column.min(SHEET_MAX_COLUMNS - 1))
-                .map(|column| {
-                    let position = (row as u32, column as u32);
-                    let text = values.get_value(position).map(cell_text).unwrap_or_default();
-                    let formula = formulas.get_value(position).filter(|formula| !formula.is_empty()).map(|formula| format!("={formula}"));
-                    SheetCell { text, formula }
-                })
-                .collect()
-        })
-        .collect();
-    Sheet { name, rows, truncated }
+// Cells are streamed and placed by their sheet position, so a sheet whose data starts at C3 keeps
+// its blank rows and columns; the caps count from A1. Nothing is sized by the sheet's declared
+// extent, so one stray cell at XFD1048576 costs nothing; it only marks the sheet cut.
+fn read_sheet(book: &mut Xlsx<Cursor<Vec<u8>>>, name: String) -> Result<Sheet, FilesError> {
+    let mut reader = book.worksheet_cells_reader(&name).map_err(failed)?;
+    let mut cells: Vec<((usize, usize), SheetCell)> = Vec::new();
+    let mut truncated = false;
+    while let Some(cell) = reader.next_cell_with_formula().map_err(failed)? {
+        let text = cell_text(&Data::from(cell.value));
+        let formula = cell.formula.filter(|formula| !formula.is_empty()).map(|formula| format!("={formula}"));
+        if text.is_empty() && formula.is_none() {
+            continue;
+        }
+        let (row, column) = (cell.pos.0 as usize, cell.pos.1 as usize);
+        if row >= SHEET_MAX_ROWS || column >= SHEET_MAX_COLUMNS {
+            truncated = true;
+        } else {
+            cells.push(((row, column), SheetCell { text, formula }));
+        }
+    }
+    let row_count = cells.iter().map(|((row, _), _)| row + 1).max().unwrap_or(0);
+    let column_count = cells.iter().map(|((_, column), _)| column + 1).max().unwrap_or(0);
+    let mut rows = vec![vec![SheetCell { text: String::new(), formula: None }; column_count]; row_count];
+    for ((row, column), cell) in cells {
+        rows[row][column] = cell;
+    }
+    Ok(Sheet { name, rows, truncated })
 }
 
 fn read_xlsx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
     let mut book: Xlsx<_> = Xlsx::new(Cursor::new(bytes)).map_err(failed)?;
     let mut sheets = Vec::new();
     for name in book.sheet_names() {
-        let values = book.worksheet_range(&name).map_err(failed)?;
-        let formulas = book.worksheet_formula(&name).map_err(failed)?;
-        sheets.push(read_sheet(name, &values, &formulas));
+        sheets.push(read_sheet(&mut book, name)?);
     }
     Ok(FileContent::Sheet(SheetBook { sheets }))
 }
@@ -920,6 +922,60 @@ mod tests {
         fs::write(dir.path().join("bad.xlsx"), "just words").unwrap();
         let Err(FilesError::Failed(message)) = LocalFiles::new().read(dir.path(), "bad.xlsx") else { panic!("did not fail") };
         assert!(!message.is_empty());
+    }
+
+    #[test]
+    fn a_far_corner_cell_does_not_size_the_sheet() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        let sheet = book.add_worksheet();
+        sheet.write_string(0, 0, "top").unwrap();
+        sheet.write_string(1_048_575, 16_383, "far").unwrap();
+        let below = book.add_worksheet();
+        below.write_string(1_000_000, 0, "deep").unwrap();
+        book.save(dir.path().join("far.xlsx")).unwrap();
+        let sheets = read_sheets(&dir, "far.xlsx");
+        assert_eq!(cell_texts(&sheets[0]), vec![vec!["top"]]);
+        assert!(sheets[0].truncated);
+        assert!(sheets[1].rows.is_empty());
+        assert!(sheets[1].truncated);
+    }
+
+    #[test]
+    fn a_sheet_of_only_formulas_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        let sheet = book.add_worksheet();
+        sheet.write_formula(1, 1, rust_xlsxwriter::Formula::new("=1+1").set_result("2")).unwrap();
+        book.save(dir.path().join("o.xlsx")).unwrap();
+        let sheets = read_sheets(&dir, "o.xlsx");
+        assert_eq!(sheets[0].rows.len(), 2);
+        assert_eq!(sheets[0].rows[1][1].formula.as_deref(), Some("=1+1"));
+        assert_eq!(sheets[0].rows[1][1].text, "2");
+        assert_eq!(sheets[0].rows[0][0].text, "");
+    }
+
+    #[test]
+    fn a_truncated_xlsx_fails_with_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        book.add_worksheet().write_string(0, 0, "x").unwrap();
+        let bytes = book.save_to_buffer().unwrap();
+        fs::write(dir.path().join("half.xlsx"), &bytes[..bytes.len() / 2]).unwrap();
+        let Err(FilesError::Failed(message)) = LocalFiles::new().read(dir.path(), "half.xlsx") else { panic!("did not fail") };
+        assert!(!message.is_empty());
+    }
+
+    #[test]
+    fn a_password_protected_xlsx_fails_with_text() {
+        // An encrypted workbook is a compound file that holds an `EncryptedPackage` stream.
+        let dir = tempfile::tempdir().unwrap();
+        let mut compound = cfb::CompoundFile::create_with_version(cfb::Version::V3, fs::File::create(dir.path().join("locked.xlsx")).unwrap()).unwrap();
+        std::io::Write::write_all(&mut compound.create_stream("/EncryptedPackage").unwrap(), &[0u8; 5000]).unwrap();
+        compound.flush().unwrap();
+        drop(compound);
+        let Err(FilesError::Failed(message)) = LocalFiles::new().read(dir.path(), "locked.xlsx") else { panic!("did not fail") };
+        assert!(message.to_lowercase().contains("password"), "{message}");
     }
 
     #[test]

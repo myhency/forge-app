@@ -12,6 +12,7 @@ forge-ports = { path = "../forge-ports" }
 regex = "1"
 
 [dev-dependencies]
+cfb = "0.15.0"
 rust_xlsxwriter = "0.101.0"
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt"] }
