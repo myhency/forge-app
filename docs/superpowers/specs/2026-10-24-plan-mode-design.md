@@ -123,10 +123,8 @@ From the window check:
 - After `뒤로`/Esc from the revise box the focus falls to the body, so the card's keys need a click.
 - The panel opens again whenever the card remounts (switching away and back while a plan is pending).
 - The lost ⌘↩ composer message belongs to NEW-03/Plan 58, not to this branch.
-- A message sent with ⌘↩ from the composer while the card is pending is queued and lost (not in the transcript after a restart). The window report does not say whether this is pre-existing; it only calls it probably out of scope for plan mode.
 
 Deferred code minors from the task reviews:
-- `plan_key`'s Enter ignores `other_modifier`, like `permission_key` does.
 - The plan card's English label is `Back to choices`; the `|context` key convention would keep `Back`.
 - `plan_text_of_view` sits after the test module in `workspace.rs`.
 - The copy button uses a text glyph.
