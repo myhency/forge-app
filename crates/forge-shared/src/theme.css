@@ -1162,6 +1162,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .env-folder-popover > * { flex: none; }
 .env-folder-popover > .env-folder-list { flex: 1 1 auto; }
 
+.plan-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 12px 12px; }
+.plan-body .dock-note { padding: 8px 0; }
 .details-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
 .env-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); padding: 4px; }
 .env-card-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 6px 8px; border: none; background: transparent; color: var(--fg); font: inherit; font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; }

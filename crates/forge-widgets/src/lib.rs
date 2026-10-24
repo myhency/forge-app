@@ -47,6 +47,7 @@ mod environment_dialog;
 mod shortcuts_dialog;
 mod sidebar;
 mod details_panel;
+mod plan_panel;
 mod tasks_panel;
 mod terminal_panel;
 mod usage_card;

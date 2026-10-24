@@ -16,6 +16,7 @@ pub enum Panel {
     Files,
     Tasks,
     Details,
+    Plan,
 }
 
 impl Panel {
@@ -27,6 +28,7 @@ impl Panel {
             Panel::Files => tr!("Files"),
             Panel::Tasks => tr!("Background tasks"),
             Panel::Details => tr!("Environment"),
+            Panel::Plan => tr!("Plan"),
         }
     }
 
@@ -35,7 +37,7 @@ impl Panel {
         match self {
             Panel::Changes => Some(Panel::Preview),
             Panel::Preview => Some(Panel::Changes),
-            Panel::Terminal | Panel::Files | Panel::Tasks | Panel::Details => None,
+            Panel::Terminal | Panel::Files | Panel::Tasks | Panel::Details | Panel::Plan => None,
         }
     }
 }
@@ -320,6 +322,20 @@ mod tests {
         assert_eq!(Panel::Changes.title(), "Changes");
         assert_eq!(Panel::Preview.title(), "Preview");
         assert_eq!(Panel::Files.title(), "Files");
+    }
+
+    #[test]
+    fn the_plan_panel_opens_in_its_own_column_and_closes_again() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Terminal);
+        dock.toggle(Panel::Plan);
+        assert_eq!(dock.columns.len(), 2);
+        assert_eq!(dock.columns[1].panels, vec![Panel::Plan]);
+        assert_eq!(Panel::Plan.title(), "Plan");
+        assert_eq!(Panel::Plan.partner(), None);
+        dock.toggle(Panel::Plan);
+        assert!(!dock.is_open(Panel::Plan));
+        assert_eq!(dock.columns.len(), 1);
     }
 
     #[test]

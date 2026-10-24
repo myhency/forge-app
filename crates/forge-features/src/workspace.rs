@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use dioxus::prelude::*;
 use forge_application::{WorktreesUseCase, ScratchUseCase, Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
-use forge_entities::TranscriptView;
+use forge_entities::{build_turns, latest_plan, plan_text_of_request, TranscriptView};
 use forge_domain::{ChangeModeRef, ChangesViewPrefs, WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
 use forge_ports::{ChangeSource, DiffOptions, Surface};
@@ -1487,6 +1487,14 @@ impl Workspace {
             .iter()
             .find(|entry| entry.handle.id() == id)
             .map(|entry| entry.view)
+    }
+
+    /// The plan the Plan panel shows: the one a pending `ExitPlanMode` request carries, else the
+    /// last plan in the transcript.
+    pub fn plan_text(&self, id: LiveSessionId) -> Option<String> {
+        let view = self.live_view(id)?;
+        let view = view.read();
+        plan_text_of_view(&view)
     }
 
     pub fn handle(&self, id: LiveSessionId) -> Option<LiveSessionHandle> {
@@ -3041,5 +3049,80 @@ mod tests {
         assert_eq!(list.len(), 1, "another project's s1 is a different session");
         toggle_archived(&mut list, Path::new("/a"), "s1", false);
         assert!(list.is_empty());
+    }
+}
+
+/// The plan of a session view: the front pending request's, when it is `ExitPlanMode`, else the
+/// last plan in the transcript.
+fn plan_text_of_view(view: &LiveSessionView) -> Option<String> {
+    if let Some(request) = view.pending_permissions.front() {
+        if let Some(text) = plan_text_of_request(request) {
+            return Some(text);
+        }
+    }
+    latest_plan(&build_turns(&view.session.messages, TranscriptView::Normal, None))
+}
+
+#[cfg(test)]
+mod plan_text_tests {
+    use std::collections::VecDeque;
+
+    use forge_domain::{Block, Message, PermissionRequest, ToolCall};
+
+    use super::*;
+
+    fn request(tool: &str, input: serde_json::Value) -> PermissionRequest {
+        PermissionRequest { id: "p".into(), tool_name: tool.into(), input, rules: Vec::new() }
+    }
+
+    fn view(messages: Vec<Message>, pending: Vec<PermissionRequest>) -> LiveSessionView {
+        LiveSessionView {
+            id: LiveSessionId(1),
+            project_path: PathBuf::from("/work/a"),
+            session: forge_domain::Session {
+                finished_tasks: Vec::new(),
+                id: SessionId(String::new()),
+                project_path: PathBuf::from("/work/a"),
+                title: None,
+                messages,
+                permission_mode: PermissionMode::Default,
+                usage: forge_domain::SessionUsage::default(),
+            },
+            claude_session_id: None,
+            model: None,
+            effort: None,
+            available_models: Vec::new(),
+            phase: Phase::Idle,
+            turn_started: None,
+            background_tasks: Vec::new(),
+            suggestion: None,
+            pending_permissions: VecDeque::from(pending),
+            last_error: None,
+            can_send: true,
+            unsent: None,
+            unsent_attachments: Vec::new(),
+            failed_sends: 0,
+            context: None,
+            context_detail: None,
+            mcp_servers: None,
+            commands: Vec::new(),
+            allowed_rules: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_pending_plan_wins_over_the_transcript() {
+        let ask = request("ExitPlanMode", serde_json::json!({"plan": "# New"}));
+        assert_eq!(plan_text_of_view(&view(Vec::new(), vec![ask])), Some("# New".to_string()));
+        let bash = request("Bash", serde_json::json!({"command": "ls"}));
+        assert_eq!(plan_text_of_view(&view(Vec::new(), vec![bash])), None);
+    }
+
+    #[test]
+    fn without_a_pending_plan_the_last_plan_in_the_transcript_shows() {
+        let mut reply = Message::new(forge_domain::MessageRole::Assistant);
+        reply.blocks = vec![Block::Tool(ToolCall { id: "t".into(), name: "ExitPlanMode".into(), input: serde_json::json!({"plan": "# Old"}), result: None })];
+        let messages = vec![Message::user("go"), reply];
+        assert_eq!(plan_text_of_view(&view(messages, Vec::new())), Some("# Old".to_string()));
     }
 }

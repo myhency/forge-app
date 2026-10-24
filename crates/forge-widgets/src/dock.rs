@@ -8,6 +8,7 @@ use crate::changes_panel::ChangesPanel;
 use crate::files_panel::FilesPanel;
 use crate::preview_panel::PreviewPanel;
 use crate::details_panel::DetailsPanel;
+use crate::plan_panel::PlanPanel;
 use crate::tasks_panel::TasksPanel;
 use crate::terminal_panel::TerminalPanel;
 
@@ -73,6 +74,7 @@ pub fn Dock(id: LiveSessionId, cwd: PathBuf) -> Element {
                                         Panel::Files => rsx! { FilesPanel { key: "{panel:?}-{cwd.display()}", id, cwd: cwd.clone() } },
                                         Panel::Preview => rsx! { PreviewPanel { key: "{panel:?}", id } },
                                         Panel::Tasks => rsx! { TasksPanel { key: "{panel:?}", id } },
+                                        Panel::Plan => rsx! { PlanPanel { key: "{panel:?}", id } },
                                         Panel::Details => rsx! { DetailsPanel { key: "{panel:?}", id } },
                                     }
                                 }

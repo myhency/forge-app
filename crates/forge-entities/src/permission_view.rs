@@ -1,3 +1,4 @@
+use forge_domain::PermissionRequest;
 use serde_json::Value;
 
 use crate::tool_summary::tool_input_summary;
@@ -39,6 +40,11 @@ const WORKFLOW_TOOL: &str = "Workflow";
 
 /// The tool Claude calls to propose a plan.
 const PLAN_TOOL: &str = "ExitPlanMode";
+
+/// The plan text of a request, when it is an `ExitPlanMode` request that carries one.
+pub fn plan_text_of_request(request: &PermissionRequest) -> Option<String> {
+    permission_view(&request.tool_name, &request.input).plan.map(|plan| plan.text)
+}
 
 pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
     let text = |key: &str| input.get(key).and_then(Value::as_str).filter(|text| !text.is_empty()).map(str::to_string);
@@ -190,6 +196,14 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn a_plan_request_gives_its_plan_text_and_other_requests_none() {
+        let plan = PermissionRequest { id: "p".into(), tool_name: "ExitPlanMode".into(), input: json!({"plan": "# Plan"}), rules: Vec::new() };
+        assert_eq!(plan_text_of_request(&plan), Some("# Plan".to_string()));
+        let bash = PermissionRequest { id: "b".into(), tool_name: "Bash".into(), input: json!({"command": "ls"}), rules: Vec::new() };
+        assert_eq!(plan_text_of_request(&bash), None);
+    }
 
     #[test]
     fn a_write_asks_to_create_the_file_by_name() {
