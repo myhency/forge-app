@@ -47,7 +47,8 @@ pub fn kind_of(content: FileContent) -> TabKind {
         FileContent::Pdf { bytes } => {
             TabKind::Pdf { data_url: format!("data:application/pdf;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)) }
         }
-        FileContent::Binary => TabKind::Binary,
+        // Until the sheet view exists an xlsx shows as a binary file.
+        FileContent::Binary | FileContent::Sheet(_) => TabKind::Binary,
         FileContent::TooLarge => TabKind::TooLarge,
     }
 }

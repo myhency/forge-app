@@ -1,8 +1,11 @@
 use std::fs;
+use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use forge_ports::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, SearchOptions, WriteError, READ_LIMIT};
+use forge_ports::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, SearchOptions, Sheet, SheetBook, SheetCell, WriteError, READ_LIMIT};
+use calamine::{Data, Range, Reader, Xlsx};
+use chrono::NaiveTime;
 use regex::{Regex, RegexBuilder};
 
 const SKIPPED: [&str; 2] = [".git", "node_modules"];
@@ -66,6 +69,70 @@ fn is_pdf(path: &Path) -> bool {
     path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
 }
 
+fn is_xlsx(path: &Path) -> bool {
+    path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("xlsx"))
+}
+
+const SHEET_MAX_ROWS: usize = 500;
+const SHEET_MAX_COLUMNS: usize = 50;
+
+// A cell as the sheet shows it: whole numbers without `.0`, dates as `YYYY-MM-DD`.
+fn cell_text(data: &Data) -> String {
+    match data {
+        Data::Empty => String::new(),
+        Data::String(text) => text.clone(),
+        Data::Int(number) => number.to_string(),
+        Data::Float(number) if number.fract() == 0.0 && number.abs() < 1e15 => format!("{}", *number as i64),
+        Data::Float(number) => number.to_string(),
+        Data::Bool(true) => "TRUE".to_string(),
+        Data::Bool(false) => "FALSE".to_string(),
+        Data::DateTime(date) if date.is_duration() => date.as_f64().to_string(),
+        Data::DateTime(date) => match date.as_datetime() {
+            Some(moment) if moment.time() == NaiveTime::MIN => moment.format("%Y-%m-%d").to_string(),
+            Some(moment) => moment.format("%Y-%m-%d %H:%M:%S").to_string(),
+            None => date.as_f64().to_string(),
+        },
+        Data::DateTimeIso(text) | Data::DurationIso(text) => text.clone(),
+        Data::Error(error) => error.to_string(),
+    }
+}
+
+// Cells are placed by their sheet position, so a sheet whose data starts at C3 keeps its blank
+// rows and columns; the caps count from A1.
+fn read_sheet(name: String, values: &Range<Data>, formulas: &Range<String>) -> Sheet {
+    let ends = [values.end(), formulas.end()];
+    let last_row = ends.iter().flatten().map(|end| end.0 as usize).max();
+    let last_column = ends.iter().flatten().map(|end| end.1 as usize).max();
+    let (Some(last_row), Some(last_column)) = (last_row, last_column) else {
+        return Sheet { name, rows: Vec::new(), truncated: false };
+    };
+    let truncated = last_row >= SHEET_MAX_ROWS || last_column >= SHEET_MAX_COLUMNS;
+    let rows = (0..=last_row.min(SHEET_MAX_ROWS - 1))
+        .map(|row| {
+            (0..=last_column.min(SHEET_MAX_COLUMNS - 1))
+                .map(|column| {
+                    let position = (row as u32, column as u32);
+                    let text = values.get_value(position).map(cell_text).unwrap_or_default();
+                    let formula = formulas.get_value(position).filter(|formula| !formula.is_empty()).map(|formula| format!("={formula}"));
+                    SheetCell { text, formula }
+                })
+                .collect()
+        })
+        .collect();
+    Sheet { name, rows, truncated }
+}
+
+fn read_xlsx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
+    let mut book: Xlsx<_> = Xlsx::new(Cursor::new(bytes)).map_err(failed)?;
+    let mut sheets = Vec::new();
+    for name in book.sheet_names() {
+        let values = book.worksheet_range(&name).map_err(failed)?;
+        let formulas = book.worksheet_formula(&name).map_err(failed)?;
+        sheets.push(read_sheet(name, &values, &formulas));
+    }
+    Ok(FileContent::Sheet(SheetBook { sheets }))
+}
+
 fn image_mime(path: &Path) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
     IMAGE_TYPES.iter().find(|(known, _)| *known == extension).map(|(_, mime)| *mime)
@@ -114,6 +181,9 @@ impl FilesPort for LocalFiles {
         let bytes = fs::read(&file).map_err(failed)?;
         if is_pdf(&file) {
             return Ok(FileContent::Pdf { bytes });
+        }
+        if is_xlsx(&file) {
+            return read_xlsx(bytes);
         }
         if let Some(mime) = image_mime(&file) {
             return Ok(FileContent::Image { bytes, mime: mime.to_string() });
@@ -726,6 +796,139 @@ mod tests {
         // `x*` matches the empty string everywhere: no line is a hit.
         assert_eq!(hits(&dir, "x*", regex), vec![]);
         assert_eq!(hits(&dir, "b", regex).len(), 1);
+    }
+
+    fn read_sheets(dir: &TempDir, name: &str) -> Vec<forge_ports::Sheet> {
+        let FileContent::Sheet(book) = LocalFiles::new().read(dir.path(), name).unwrap() else { panic!("not a sheet") };
+        book.sheets
+    }
+
+    fn cell_texts(sheet: &forge_ports::Sheet) -> Vec<Vec<&str>> {
+        sheet.rows.iter().map(|row| row.iter().map(|cell| cell.text.as_str()).collect()).collect()
+    }
+
+    #[test]
+    fn an_xlsx_is_read_as_sheets_with_names_and_cell_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        let first = book.add_worksheet();
+        first.set_name("Sales").unwrap();
+        first.write_string(0, 0, "Name").unwrap();
+        first.write_string(0, 1, "Total").unwrap();
+        first.write_string(1, 0, "Ann").unwrap();
+        first.write_number(1, 1, 2.5).unwrap();
+        first.write_boolean(2, 0, true).unwrap();
+        first.write_boolean(2, 1, false).unwrap();
+        book.add_worksheet().set_name("Empty").unwrap();
+        book.save(dir.path().join("a.xlsx")).unwrap();
+        let sheets = read_sheets(&dir, "a.xlsx");
+        assert_eq!(sheets.iter().map(|sheet| sheet.name.as_str()).collect::<Vec<_>>(), vec!["Sales", "Empty"]);
+        assert_eq!(cell_texts(&sheets[0]), vec![vec!["Name", "Total"], vec!["Ann", "2.5"], vec!["TRUE", "FALSE"]]);
+        assert!(!sheets[0].truncated);
+        assert_eq!(sheets[0].rows[0][0].formula, None);
+    }
+
+    #[test]
+    fn a_whole_number_has_no_decimal_point() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        let sheet = book.add_worksheet();
+        sheet.write_number(0, 0, 42.0).unwrap();
+        sheet.write_number(0, 1, -7.0).unwrap();
+        book.save(dir.path().join("n.xlsx")).unwrap();
+        assert_eq!(cell_texts(&read_sheets(&dir, "n.xlsx")[0]), vec![vec!["42", "-7"]]);
+    }
+
+    #[test]
+    fn a_date_cell_shows_as_iso() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        let sheet = book.add_worksheet();
+        let format = rust_xlsxwriter::Format::new().set_num_format("yyyy-mm-dd");
+        let date = rust_xlsxwriter::ExcelDateTime::from_ymd(2026, 10, 25).unwrap();
+        sheet.write_datetime_with_format(0, 0, &date, &format).unwrap();
+        book.save(dir.path().join("d.xlsx")).unwrap();
+        assert_eq!(cell_texts(&read_sheets(&dir, "d.xlsx")[0]), vec![vec!["2026-10-25"]]);
+    }
+
+    #[test]
+    fn a_formula_cell_keeps_its_formula_and_stored_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        let sheet = book.add_worksheet();
+        sheet.write_number(0, 0, 1.0).unwrap();
+        sheet.write_number(0, 1, 2.0).unwrap();
+        sheet.write_formula(0, 2, rust_xlsxwriter::Formula::new("=A1+B1").set_result("3")).unwrap();
+        book.save(dir.path().join("f.xlsx")).unwrap();
+        let sheets = read_sheets(&dir, "f.xlsx");
+        let cell = &sheets[0].rows[0][2];
+        assert_eq!(cell.text, "3");
+        assert_eq!(cell.formula.as_deref(), Some("=A1+B1"));
+    }
+
+    #[test]
+    fn a_formula_without_a_stored_value_has_empty_text_and_the_formula() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        let sheet = book.add_worksheet();
+        sheet.write_number(0, 0, 1.0).unwrap();
+        sheet.set_formula_result_default("");
+        sheet.write_formula(0, 1, "=A1*2").unwrap();
+        book.save(dir.path().join("g.xlsx")).unwrap();
+        let sheets = read_sheets(&dir, "g.xlsx");
+        let cell = &sheets[0].rows[0][1];
+        assert_eq!(cell.text, "");
+        assert_eq!(cell.formula.as_deref(), Some("=A1*2"));
+    }
+
+    #[test]
+    fn a_sheet_over_500_rows_or_50_columns_is_cut_and_marked() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        let tall = book.add_worksheet();
+        for row in 0..501 {
+            tall.write_number(row, 0, f64::from(row)).unwrap();
+        }
+        let wide = book.add_worksheet();
+        for column in 0..51 {
+            wide.write_number(0, column, f64::from(column)).unwrap();
+        }
+        let exact = book.add_worksheet();
+        exact.write_number(499, 49, 1.0).unwrap();
+        book.save(dir.path().join("big.xlsx")).unwrap();
+        let sheets = read_sheets(&dir, "big.xlsx");
+        assert_eq!((sheets[0].rows.len(), sheets[0].rows[0].len(), sheets[0].truncated), (500, 1, true));
+        assert_eq!((sheets[1].rows.len(), sheets[1].rows[0].len(), sheets[1].truncated), (1, 50, true));
+        assert_eq!((sheets[2].rows.len(), sheets[2].rows[0].len(), sheets[2].truncated), (500, 50, false));
+    }
+
+    #[test]
+    fn an_empty_sheet_has_no_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        book.add_worksheet();
+        book.save(dir.path().join("e.xlsx")).unwrap();
+        let sheets = read_sheets(&dir, "e.xlsx");
+        assert_eq!(sheets.len(), 1);
+        assert!(sheets[0].rows.is_empty());
+        assert!(!sheets[0].truncated);
+    }
+
+    #[test]
+    fn a_file_named_xlsx_that_is_not_a_zip_fails_with_text() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("bad.xlsx"), "just words").unwrap();
+        let Err(FilesError::Failed(message)) = LocalFiles::new().read(dir.path(), "bad.xlsx") else { panic!("did not fail") };
+        assert!(!message.is_empty());
+    }
+
+    #[test]
+    fn an_uppercase_xlsx_extension_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        book.add_worksheet().write_string(0, 0, "x").unwrap();
+        book.save(dir.path().join("UP.XLSX")).unwrap();
+        assert_eq!(cell_texts(&read_sheets(&dir, "UP.XLSX")[0]), vec![vec!["x"]]);
     }
 }
 

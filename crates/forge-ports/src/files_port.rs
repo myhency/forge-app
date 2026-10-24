@@ -32,10 +32,34 @@ pub enum FileContent {
     Image { bytes: Vec<u8>, mime: String },
     /// A PDF, by its extension; shown by the web view's own viewer.
     Pdf { bytes: Vec<u8> },
+    /// An xlsx workbook, by its extension, read into text cells.
+    Sheet(SheetBook),
     /// The file has a NUL byte near its start.
     Binary,
     /// The file is over `READ_LIMIT`.
     TooLarge,
+}
+
+/// The sheets of an xlsx file, each cut to `rows` of at most 500 rows and 50 cells.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SheetBook {
+    pub sheets: Vec<Sheet>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sheet {
+    pub name: String,
+    pub rows: Vec<Vec<SheetCell>>,
+    /// True when the row or the cell cap cut something off.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SheetCell {
+    /// The value as shown; empty for an empty cell or a formula without a stored value.
+    pub text: String,
+    /// The formula text with a leading `=`.
+    pub formula: Option<String>,
 }
 
 /// A line of a file that holds the searched text.

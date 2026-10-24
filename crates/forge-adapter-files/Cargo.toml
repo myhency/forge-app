@@ -5,10 +5,13 @@ edition.workspace = true
 
 [dependencies]
 async-trait = "0.1"
+calamine = { version = "0.37.0", default-features = false, features = ["chrono"] }
+chrono = { version = "=0.4.45", default-features = false, features = ["std"] }
 dunce = "1"
 forge-ports = { path = "../forge-ports" }
 regex = "1"
 
 [dev-dependencies]
+rust_xlsxwriter = "0.101.0"
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt"] }
