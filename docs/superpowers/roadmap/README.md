@@ -88,5 +88,10 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 25A | Files panel as an editor (built, checked in the real window) | PNL-04 | CodeMirror bundle, auto save and conflict banner, tabs; 25B line comments and 25C search and right click items next |
 | 26 | Responsive layout (built) | UI-01 | The user asked for it before any new feature; observation round 10 |
 | 28 | File previews (built) | PNL-04 | Spec `2026-10-08-file-previews-design.md`: csv, html, svg and pdf in the Files panel, tree icons, absolute path links, picture lightbox; observation round 12 |
+| 56 | Plan mode (planned order, set 2026-10-24) | NEW-01 | Observation round 27: plan panel with the rendered plan, `수락 / 수정 / 수락 및 자동 모드` card, plan file row; today Forge shows only the generic ExitPlanMode permission card |
+| 57 | Files for office work | NEW-02 | Round 28: xlsx viewer (grid, formula bar, sheet tabs), result paths in chat as links, `결과물` card (OTH-14) |
+| 58 | Composer | NEW-03, NEW-04 | Round 27 and 28: `@` mentions, queued-message card (send now, edit, remove), big attachment thumbnail, slash command list and `/compact` result, `/btw`, `/rewind` |
+| 59 | Status look | NEW-05, NEW-06, NEW-07 | Rounds 27 and 28: stop shown as stopped (not failed or done), generated session title, details panel opens on first send with branch row and fuller context rows, background task row, message action row, end card buttons |
+| 60 | Small fixes | NEW-08 | pycache and binary entries in Changes, repeated path in the permission card, file card look, the Dioxus Copy value warning, panels covering the chat in a narrow window |
 
 Plan 13's earlier candidates (packaging the app, chat view extras, trash restore, split panes) and Plan 12's deferred minors (spec §23.8) are not in this table; they are in the backlog under `OTH`.
