@@ -91,6 +91,28 @@ pub enum Item {
     Live(LiveLine),
     /// A workflow the turn launched: a card while it runs, one line after.
     Workflow(WorkflowItem),
+    /// The plan Claude proposed with ExitPlanMode.
+    Plan(PlanItem),
+}
+
+/// A plan Claude proposed, as the transcript shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanItem {
+    pub text: String,
+}
+
+/// The plan an ExitPlanMode call proposed, when it carries a non-empty text.
+fn plan_proposal(call: &ToolCall) -> Option<PlanItem> {
+    if call.name != "ExitPlanMode" {
+        return None;
+    }
+    let text = call.input.get("plan")?.as_str()?.to_string();
+    (!text.is_empty()).then_some(PlanItem { text })
+}
+
+/// The text of the last plan in the transcript.
+pub fn latest_plan(items: &[Item]) -> Option<String> {
+    items.iter().rev().find_map(|item| if let Item::Plan(plan) = item { Some(plan.text.clone()) } else { None })
 }
 
 /// What the chat knows of a workflow from the call that started it.
@@ -364,7 +386,7 @@ fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<Too
                     let (kept, rows): (Vec<Block>, Vec<Option<ToolRow>>) = blocks[first..=last]
                         .iter()
                         .zip(&tool_rows[first..=last])
-                        .filter(|(block, _)| !matches!(block, Block::Tool(call) if workflow_launch(call).is_some()))
+                        .filter(|(block, _)| !matches!(block, Block::Tool(call) if workflow_launch(call).is_some() || plan_proposal(call).is_some()))
                         .map(|(block, row)| (block.clone(), row.clone()))
                         .unzip();
                     if kept.iter().any(|block| matches!(block, Block::Tool(_))) {
@@ -377,6 +399,7 @@ fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<Too
                     for block in &blocks[first..=last] {
                         if let Block::Tool(call) = block {
                             items.extend(workflow_launch(call).map(Item::Workflow));
+                            items.extend(plan_proposal(call).map(Item::Plan));
                         }
                     }
                 }
@@ -502,8 +525,25 @@ mod tests {
                 Item::Answers(_) => "answers",
                 Item::Live(_) => "live",
                 Item::Workflow(_) => "workflow",
+                Item::Plan(_) => "plan",
             })
             .collect()
+    }
+
+    fn plan_call(id: &str, plan: &str) -> Block {
+        tool(id, "ExitPlanMode", json!({"plan": plan}), None)
+    }
+
+    #[test]
+    fn an_exit_plan_mode_call_is_a_plan_item_and_latest_plan_takes_the_last() {
+        let messages = vec![Message::user("go"), assistant(vec![plan_call("p", "# P")])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        assert!(items.contains(&Item::Plan(PlanItem { text: "# P".to_string() })));
+        assert_eq!(latest_plan(&items), Some("# P".to_string()));
+        let messages = vec![Message::user("go"), assistant(vec![plan_call("p", "# P"), text("x"), plan_call("q", "# Q")])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        assert_eq!(latest_plan(&items), Some("# Q".to_string()));
+        assert_eq!(latest_plan(&[]), None);
     }
 
     const LAUNCHED: &str = "Workflow launched in background. Task ID: wf1\nSummary: s\nTranscript dir: /h/.claude/projects/-p/s/subagents/workflows/wf_abc\n";

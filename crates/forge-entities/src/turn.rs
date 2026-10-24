@@ -114,6 +114,8 @@ fn TurnItem(
             let ended = finished.iter().find(|task| task.task_id == item.task_id).cloned();
             rsx! { WorkflowLine { item, running, ended, on_open_tasks } }
         }
+        // Task 6 draws the plan.
+        Item::Plan(_) => rsx! {},
     }
 }
 

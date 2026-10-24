@@ -18,6 +18,14 @@ pub struct PermissionView {
     pub command: Option<String>,
     /// Set when the request is to run a workflow: its card has its own text and two choices.
     pub workflow: Option<WorkflowAsk>,
+    /// Set when the request is Claude's plan (ExitPlanMode): its card shows the plan text.
+    pub plan: Option<PlanAsk>,
+}
+
+/// The plan a plan card shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanAsk {
+    pub text: String,
 }
 
 /// What a workflow's own card adds to the title: the one-line description from the script.
@@ -28,6 +36,9 @@ pub struct WorkflowAsk {
 
 /// The tool Claude calls to run a workflow.
 const WORKFLOW_TOOL: &str = "Workflow";
+
+/// The tool Claude calls to propose a plan.
+const PLAN_TOOL: &str = "ExitPlanMode";
 
 pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
     let text = |key: &str| input.get(key).and_then(Value::as_str).filter(|text| !text.is_empty()).map(str::to_string);
@@ -40,6 +51,7 @@ pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
                 path: None,
                 command: None,
                 workflow: Some(WorkflowAsk { description: meta.description }),
+                plan: None,
             };
         }
     }
@@ -64,7 +76,8 @@ pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
         ToolKind::Command => tr!("Claude wants to run {subject}?", subject = subject),
         ToolKind::Other => tr!("Claude wants to use {subject}?", subject = subject),
     };
-    PermissionView { title, subject, path, command, workflow: None }
+    let plan = (tool_name == PLAN_TOOL).then(|| text("plan")).flatten().map(|text| PlanAsk { text });
+    PermissionView { title, subject, path, command, workflow: None, plan }
 }
 
 /// Whether a card that just appeared may take keyboard focus: not while the person is typing.
@@ -114,6 +127,62 @@ pub fn workflow_permission_key(code: &str, shift: bool, meta: bool, other_modifi
         PermissionKey::AllowAlways if matches!(code, "Digit2" | "Numpad2") => Some(PermissionKey::AllowOnce),
         _ => None,
     }
+}
+
+/// What a key does on a plan card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanKey {
+    /// Esc: ask for changes.
+    Revise,
+    /// ⇧⌘↩: accept the plan.
+    Accept,
+    /// ⌘↩: accept the plan and run in auto mode.
+    AcceptAuto,
+}
+
+/// The decision a key press stands for on a plan card, from the physical key (`code`) only.
+/// Esc revises, ⌘↩ accepts in auto mode, ⇧⌘↩ accepts. Esc with ⌘, ⌃ or ⌥ held does nothing.
+pub fn plan_key(code: &str, shift: bool, meta: bool, other_modifier: bool) -> Option<PlanKey> {
+    if matches!(code, "Enter" | "NumpadEnter") {
+        return match (meta, shift) {
+            (true, true) => Some(PlanKey::Accept),
+            (true, false) => Some(PlanKey::AcceptAuto),
+            _ => None,
+        };
+    }
+    if code == "Escape" && !meta && !other_modifier {
+        return Some(PlanKey::Revise);
+    }
+    None
+}
+
+/// How the person accepts a plan: the permission mode the session runs in afterwards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanChoice {
+    Accept,
+    AcceptEdits,
+    AcceptAuto,
+}
+
+impl PlanChoice {
+    pub fn mode(self) -> forge_domain::PermissionMode {
+        match self {
+            PlanChoice::Accept => forge_domain::PermissionMode::Default,
+            PlanChoice::AcceptEdits => forge_domain::PermissionMode::AcceptEdits,
+            PlanChoice::AcceptAuto => forge_domain::PermissionMode::Auto,
+        }
+    }
+}
+
+/// What Claude is told when the person turns a plan down without saying why. It goes to the model,
+/// not the screen.
+pub const DEFAULT_PLAN_REFUSAL: &str =
+    "The user declined this plan or wants changes to it. Stay in plan mode and ask the user what they would like to change.";
+
+/// The reason sent with a refusal: the person's own words, else the default.
+pub fn plan_reason(text: &str) -> String {
+    let text = text.trim();
+    if text.is_empty() { DEFAULT_PLAN_REFUSAL.to_string() } else { text.to_string() }
 }
 
 #[cfg(test)]
@@ -237,5 +306,42 @@ mod tests {
     fn a_digit_with_another_modifier_held_is_not_a_decision() {
         assert_eq!(permission_key("Digit1", false, false, true), None);
         assert_eq!(permission_key("Digit3", false, true, false), None);
+    }
+
+    #[test]
+    fn exit_plan_mode_carries_the_plan_text() {
+        let view = permission_view("ExitPlanMode", &json!({"plan": "# P"}));
+        assert_eq!(view.plan, Some(PlanAsk { text: "# P".to_string() }));
+        for input in [json!({}), json!({"plan": ""}), json!({"plan": 3})] {
+            let view = permission_view("ExitPlanMode", &input);
+            assert_eq!(view.plan, None);
+            assert_eq!(view.title, "Claude wants to use ExitPlanMode?");
+        }
+        assert_eq!(permission_view("Bash", &json!({"plan": "x"})).plan, None);
+    }
+
+    #[test]
+    fn plan_keys_go_by_physical_key() {
+        assert_eq!(plan_key("Escape", false, false, false), Some(PlanKey::Revise));
+        assert_eq!(plan_key("Enter", false, true, false), Some(PlanKey::AcceptAuto));
+        assert_eq!(plan_key("Enter", true, true, false), Some(PlanKey::Accept));
+        assert_eq!(plan_key("Digit1", false, false, false), None);
+        assert_eq!(plan_key("Enter", false, false, false), None);
+        assert_eq!(plan_key("Escape", false, true, false), None);
+    }
+
+    #[test]
+    fn plan_choices_map_to_modes() {
+        use forge_domain::PermissionMode;
+        assert_eq!(PlanChoice::Accept.mode(), PermissionMode::Default);
+        assert_eq!(PlanChoice::AcceptEdits.mode(), PermissionMode::AcceptEdits);
+        assert_eq!(PlanChoice::AcceptAuto.mode(), PermissionMode::Auto);
+    }
+
+    #[test]
+    fn plan_reason_is_the_trimmed_text_or_the_default() {
+        assert_eq!(plan_reason("  "), DEFAULT_PLAN_REFUSAL);
+        assert_eq!(plan_reason(""), DEFAULT_PLAN_REFUSAL);
+        assert_eq!(plan_reason(" no "), "no");
     }
 }

@@ -43,7 +43,7 @@ pub use highlight::{code_html, language_of};
 pub use markdown::render_markdown;
 pub use message::attachment_label;
 pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_options, model_value, ModelRow, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
-pub use permission_view::{card_takes_focus, permission_key, permission_view, workflow_permission_key, PermissionKey, PermissionView, WorkflowAsk};
+pub use permission_view::{card_takes_focus, permission_key, permission_view, plan_key, plan_reason, workflow_permission_key, PermissionKey, PermissionView, PlanAsk, PlanChoice, PlanKey, WorkflowAsk, DEFAULT_PLAN_REFUSAL};
 pub use workflow_progress::{journal_path, parse_journal, steps, workflow_ref, dot_class, AgentState, JournalAgent, Step, WorkflowRef};
 pub use workflow_script::{workflow_meta, WorkflowMeta};
 pub use preview::{file_address, has_rendered_view, icon_of, open_target, page_address, path_of_file_address, web_address, preview_kind, FileIcon, OpenTarget, PreviewKind};
@@ -52,7 +52,7 @@ pub use relative_time::{month_short, relative_time};
 pub use sidebar_item::{SessionMarker, SidebarItem};
 pub use forge_domain::TranscriptView;
 pub use turn::{Clock, RunningWorkflow, Turns};
-pub use turn_view::{build_turns, live_state, WorkflowItem, Activity, CardFile, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolKind, ToolRow, Waiting};
+pub use turn_view::{build_turns, latest_plan, live_state, PlanItem, WorkflowItem, Activity, CardFile, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolKind, ToolRow, Waiting};
 pub use tool_summary::{elapsed_label, tool_call_status, tool_detail_text, tool_input_lines, tool_input_summary, InputLine, ToolCallStatus};
 pub use extension_rows::{mcp_rows, mcp_summary, plugin_rows, project_label, skill_rows, ExtensionRow};
 pub use usage_card::{
