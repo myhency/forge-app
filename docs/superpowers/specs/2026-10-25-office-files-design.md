@@ -62,6 +62,10 @@ The person decided: look at it in Forge first, then open it in the real program.
 - The button is not shown for programs and scripts (`app exe command sh bat cmd msi scpt jar`); the person can still open those from Finder. My call, for the strict-policy work PCs.
 - No new platform code. On a system with no program for the file, the existing open error is shown the way the file menu shows it.
 
+## Files outside the session folder (the person's decision: A)
+
+The Files panel keeps refusing paths outside the session folder (`FilesError::Outside`); no new read path is opened. A link or `결과물` row whose file is outside the folder does not try to preview: it shows a note "작업 폴더 밖의 파일입니다" with `기본 프로그램으로 열기` and `Finder에서 보기`, which open the absolute path. The `결과물` card keeps such a row (it exists on disk) and a click gives the same note. Opening goes through the existing `Workspace::open_with_app` with the absolute path; the script/program extension exclusion above applies to it too.
+
 ## Decisions I made (not the person's)
 
 - Links for every absolute-path inline code, no existence check.
