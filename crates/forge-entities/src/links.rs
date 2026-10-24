@@ -21,7 +21,8 @@ pub fn known_paths(messages: &[Message]) -> Vec<String> {
     paths
 }
 
-/// `render_markdown`, with links to files. Each inline code span that names a known file, and each
+/// `render_markdown`, with links to files. Each inline code span that names a known file or is an
+/// absolute file path, and each
 /// bare absolute path in the text (`/dir/name.ext`), is wrapped in
 /// `<span class="file-link" data-path="…" role="link" tabindex="0">`. Code in a fenced or indented
 /// block, text inside an existing link, and text outside code that is not an absolute path are left
@@ -31,11 +32,13 @@ pub fn render_markdown_linked(source: &str, known: &[String]) -> String {
     link_prose_paths(&link_known_code(&html, known))
 }
 
-// The inline code spans that name a known file become links.
+// Whether inline code text is itself an absolute path to a file (`/dir/name.ext`, `C:\dir\name.ext`).
+fn is_file_path(text: &str) -> bool {
+    is_absolute_path(text) && has_file_extension(text)
+}
+
+// The inline code spans that name a file become links: a known file, or an absolute file path.
 fn link_known_code(html: &str, known: &[String]) -> String {
-    if known.is_empty() {
-        return html.to_string();
-    }
     const OPEN: &str = "<code>";
     const CLOSE: &str = "</code>";
     const BLOCK: &str = "<pre class=\"code-block\">";
@@ -52,7 +55,7 @@ fn link_known_code(html: &str, known: &[String]) -> String {
         // `before` is already in `out`: a code span right after the block's `<pre>` is block code.
         let inside_block = out.ends_with(BLOCK);
         let text = &after_open[..end];
-        let link = if inside_block { None } else { resolve_escaped(text, known) }.filter(|path| !path.contains(['"', '<', '>', '&']));
+        let link = if inside_block { None } else { resolve_escaped(text, known).or_else(|| is_file_path(text).then_some(text)) }.filter(|path| !path.contains(['"', '<', '>', '&']));
         match link {
             Some(path) => out.push_str(&format!(
                 "<span class=\"file-link\" data-path=\"{path}\" role=\"link\" tabindex=\"0\">{OPEN}{text}{CLOSE}</span>"
@@ -250,7 +253,7 @@ mod tests {
 
     #[test]
     fn code_that_is_not_a_known_path_stays_plain() {
-        for text in ["`other.md`", "`/p/docs/missing.md`", "`guide.md.bak`", "`GUIDE.MD`"] {
+        for text in ["`other.md`", "`guide.md.bak`", "`GUIDE.MD`"] {
             assert!(!render_markdown_linked(text, &known()).contains("file-link"), "{text}");
         }
     }
@@ -301,7 +304,7 @@ mod tests {
 
     #[test]
     fn a_path_in_code_a_code_block_or_a_link_stays_plain() {
-        for text in ["`/p/a.md`", "```\n/p/a.md\n```", "[/p/a.md](https://example.com)", "[x](/p/a.md)"] {
+        for text in ["```\n/p/a.md\n```", "[/p/a.md](https://example.com)", "[x](/p/a.md)"] {
             assert!(!linked(text).contains("file-link"), "{text}");
         }
     }
@@ -328,6 +331,43 @@ mod tests {
     fn prose_paths_and_known_code_spans_link_together() {
         let html = render_markdown_linked("`guide.md` and /p/other.txt", &known());
         assert!(html.contains(r#"data-path="/p/docs/guide.md""#) && html.contains(r#"data-path="/p/other.txt""#), "{html}");
+    }
+
+    #[test]
+    fn an_absolute_path_in_inline_code_links_without_being_known() {
+        let html = linked("saved `/p/out/보고서.xlsx` ok");
+        assert!(html.contains(r#"<span class="file-link" data-path="/p/out/보고서.xlsx" role="link" tabindex="0"><code>/p/out/보고서.xlsx</code></span>"#), "{html}");
+    }
+
+    #[test]
+    fn a_relative_name_in_inline_code_stays_plain_unless_known() {
+        assert!(!linked("`report.xlsx`").contains("file-link"));
+        assert!(!linked("`out/report.xlsx`").contains("file-link"));
+        assert!(render_markdown_linked("`guide.md`", &known()).contains("file-link"));
+    }
+
+    #[test]
+    fn an_absolute_path_in_a_fenced_block_stays_plain() {
+        assert!(!linked("```\n/p/out/a.xlsx\n```").contains("file-link"));
+        assert!(!render_markdown_linked("```\n/p/out/a.xlsx\n```", &known()).contains("file-link"));
+    }
+
+    #[test]
+    fn an_inline_code_path_with_an_ampersand_is_not_linked() {
+        assert!(!linked("`/p/a&b.xlsx`").contains("file-link"));
+    }
+
+    #[test]
+    fn a_windows_path_in_inline_code_links() {
+        let html = linked("`C:\\work\\a.xlsx`");
+        assert!(html.contains("data-path=\"C:\\work\\a.xlsx\""), "{html}");
+    }
+
+    #[test]
+    fn inline_code_that_is_not_a_file_path_stays_plain() {
+        for text in ["`/usr/local/bin`", "`/p/a.xlsx --force`"] {
+            assert!(!linked(text).contains("file-link"), "{text}");
+        }
     }
 
     #[test]
