@@ -15,6 +15,7 @@ mod links;
 mod markdown;
 mod message;
 mod model_catalog;
+mod outputs;
 mod permission_view;
 mod workflow_progress;
 mod workflow_script;
@@ -46,6 +47,7 @@ pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_op
 pub use permission_view::{card_takes_focus, plan_card_takes_focus, permission_key, permission_view, plan_key, plan_reason, plan_text_of_request, workflow_permission_key, PermissionKey, PermissionView, PlanAsk, PlanChoice, PlanKey, WorkflowAsk, DEFAULT_PLAN_REFUSAL};
 pub use workflow_progress::{journal_path, parse_journal, steps, workflow_ref, dot_class, AgentState, JournalAgent, Step, WorkflowRef};
 pub use workflow_script::{workflow_meta, WorkflowMeta};
+pub use outputs::{is_program, output_paths};
 pub use preview::{file_address, has_rendered_view, icon_of, open_target, page_address, path_of_file_address, web_address, preview_kind, FileIcon, OpenTarget, PreviewKind};
 pub use question::{answer_pairs, answers_map, questions_of, AnswerPair, Picks, Question, QuestionOption, QUESTION_TOOL};
 pub use relative_time::{month_short, relative_time};

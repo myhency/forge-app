@@ -124,6 +124,12 @@ fn prose_paths(text: &str) -> Vec<(usize, usize)> {
     found
 }
 
+/// The absolute file paths written in raw message text (markdown), in order: in prose or inside
+/// an inline code span, by the same rules the chat links them with.
+pub(crate) fn absolute_paths_in(text: &str) -> Vec<String> {
+    prose_paths(text).into_iter().map(|(start, end)| text[start..end].to_string()).collect()
+}
+
 fn push_linked(out: &mut String, text: &str, link: bool) {
     if !link {
         out.push_str(text);

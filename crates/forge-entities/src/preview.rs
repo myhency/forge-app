@@ -11,6 +11,8 @@ pub enum PreviewKind {
     /// A picture drawn as it is (not svg, which has a source).
     Image,
     Markdown,
+    /// A spreadsheet (`.xlsx`), drawn as a table.
+    Sheet,
     /// Everything else: an editor.
     Text,
 }
@@ -45,6 +47,7 @@ pub fn preview_kind(path: &str) -> PreviewKind {
         Some("csv") => PreviewKind::Csv,
         Some("html" | "htm") => PreviewKind::Html,
         Some("svg") => PreviewKind::Svg,
+        Some("xlsx") => PreviewKind::Sheet,
         Some("pdf") => PreviewKind::Pdf,
         Some("md" | "markdown") => PreviewKind::Markdown,
         Some(extension) if IMAGE_EXTENSIONS.contains(&extension) => PreviewKind::Image,
@@ -60,7 +63,7 @@ pub fn has_rendered_view(path: &str) -> bool {
 /// The icon of the file's row in the tree.
 pub fn icon_of(path: &str) -> FileIcon {
     match preview_kind(path) {
-        PreviewKind::Csv => FileIcon::Table,
+        PreviewKind::Csv | PreviewKind::Sheet => FileIcon::Table,
         PreviewKind::Html => FileIcon::Globe,
         PreviewKind::Svg | PreviewKind::Image => FileIcon::Picture,
         PreviewKind::Markdown => FileIcon::Doc,
@@ -293,5 +296,18 @@ mod tests {
         ] {
             assert_eq!(open_target(path), target, "{path}");
         }
+    }
+
+    #[test]
+    fn xlsx_is_a_sheet_in_any_case() {
+        assert_eq!(preview_kind("/p/a.xlsx"), PreviewKind::Sheet);
+        assert_eq!(preview_kind("/p/A.XLSX"), PreviewKind::Sheet);
+        assert!(!has_rendered_view("/p/a.xlsx"));
+        assert_eq!(open_target("/p/a.xlsx"), OpenTarget::Files);
+    }
+
+    #[test]
+    fn a_sheet_has_the_table_icon() {
+        assert_eq!(icon_of("/p/a.xlsx"), FileIcon::Table);
     }
 }
