@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 use crate::change_rows::{ChangeView, ChangesSession};
 use crate::cards::{clamp_cards, Cards};
 use crate::customize::CustomizeTab;
-use crate::output_files::{existing_outputs, open_place, OpenPlace};
+use crate::output_files::{existing_outputs, open_place, OpenPlace, OutputsStore};
 use crate::details::{change_counts, ChangeCounts, DetailsCard, OneShot};
 use crate::closed_sessions::ClosedSessions;
 use crate::editor_tabs::EditorTabs;
@@ -189,8 +189,7 @@ pub struct Workspace {
     change_counts: Signal<HashMap<LiveSessionId, ChangeCounts>>,
     change_count_tickets: Signal<HashMap<LiveSessionId, u64>>,
     /// The Outputs card's files per session, and the ticket of its latest read.
-    outputs: Signal<HashMap<LiveSessionId, Vec<String>>>,
-    output_tickets: Signal<HashMap<LiveSessionId, u64>>,
+    outputs: Signal<OutputsStore>,
     /// The file outside the session folder that the note asks about.
     outside_file: Signal<Option<String>>,
     /// The Customize tab a details card asked for; the page takes it when it appears.
@@ -277,8 +276,7 @@ pub fn use_workspace_provider() -> Workspace {
             card_folded: Signal::new(HashMap::new()),
             change_counts: Signal::new(HashMap::new()),
             change_count_tickets: Signal::new(HashMap::new()),
-            outputs: Signal::new(HashMap::new()),
-            output_tickets: Signal::new(HashMap::new()),
+            outputs: Signal::new(OutputsStore::default()),
             outside_file: Signal::new(None),
             customize_tab_request: Signal::new(OneShot::default()),
             comment_focus: Signal::new(HashMap::new()),
@@ -1118,8 +1116,8 @@ impl Workspace {
     }
 
     /// Opens a file in the session's Files panel. The path must be absolute and inside the session
-    /// folder; anything else is kept for the note that asks what to do with it. The panel opens if it is closed and shows the file
-    /// once it is mounted. A picture opens in the lightbox instead.
+    /// folder; anything else is kept for the note that asks what to do with it. The panel opens if
+    /// it is closed and shows the file once it is mounted. A picture opens in the lightbox instead.
     pub fn open_file(&self, id: LiveSessionId, absolute_path: String) {
         let Some(view) = self.live_view(id) else { return };
         let folder = view.read().project_path.clone();
@@ -1185,7 +1183,7 @@ impl Workspace {
 
     /// The files the session wrote or named that are still on disk, newest first.
     pub fn session_outputs(&self, id: LiveSessionId) -> Vec<String> {
-        self.outputs.read().get(&id).cloned().unwrap_or_default()
+        self.outputs.read().files(id)
     }
 
     /// Reads the session's output paths again and keeps those that exist. The stat runs off the
@@ -1194,22 +1192,18 @@ impl Workspace {
     pub fn refresh_outputs(&self, id: LiveSessionId) {
         let Some(view) = self.live_view(id) else { return };
         let paths = forge_entities::output_paths(&view.peek().session.messages);
-        let mut tickets = self.output_tickets;
-        let ticket = tickets.peek().get(&id).copied().unwrap_or(0).wrapping_add(1);
-        tickets.write().insert(id, ticket);
+        let mut store = self.outputs;
+        let ticket = store.write().begin(id);
         let workspace = self.clone();
         dioxus::core::spawn_forever(async move {
             let Some(kept) = crate::run_blocking(move || existing_outputs(paths, |path| Path::new(path).is_file())).await else {
                 return;
             };
-            if workspace.output_tickets.peek().get(&id) != Some(&ticket) {
-                return;
-            }
-            let mut map = workspace.outputs;
-            if kept.is_empty() {
-                map.write().remove(&id);
-            } else {
-                map.write().insert(id, kept);
+            // Peeked first, so an unchanged list wakes nobody.
+            let mut store = workspace.outputs;
+            let changed = store.peek().would_change(id, ticket, &kept);
+            if changed {
+                store.write().finish(id, ticket, kept);
             }
         });
     }
@@ -2343,9 +2337,7 @@ impl Workspace {
         let mut counts = self.change_counts;
         counts.write().remove(&id);
         let mut outputs = self.outputs;
-        outputs.write().remove(&id);
-        let mut output_tickets = self.output_tickets;
-        output_tickets.write().remove(&id);
+        outputs.write().forget(id);
         // Dropping the ticket makes a read still running find none, so it writes nothing.
         let mut tickets = self.change_count_tickets;
         tickets.write().remove(&id);

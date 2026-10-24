@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use dioxus::prelude::*;
-use forge_entities::is_program;
+use forge_features::offers_default_program;
 use forge_features::{refocus_workspace, use_workspace};
 use forge_shared::{tr, Button, ButtonKind};
 
@@ -15,8 +15,7 @@ pub fn OutsideFileDialog() -> Element {
         return rsx! {};
     };
     let name = Path::new(&path).file_name().map_or_else(|| path.clone(), |name| name.to_string_lossy().to_string());
-    let program = is_program(&path);
-    let close = move || {
+        let close = move || {
         workspace.close_outside_file();
         refocus_workspace();
     };
@@ -29,7 +28,7 @@ pub fn OutsideFileDialog() -> Element {
                 class: "env-ask",
                 role: "alertdialog",
                 tabindex: "0",
-                "aria-label": tr!("This file is outside the working folder"),
+                "aria-label": tr!("This file is outside the session folder."),
                 onmounted: move |mounted| async move {
                     let _ = mounted.set_focus(true).await;
                 },
@@ -40,13 +39,13 @@ pub fn OutsideFileDialog() -> Element {
                         close();
                     }
                 },
-                h3 { {tr!("This file is outside the working folder")} }
+                h3 { {tr!("This file is outside the session folder.")} }
                 p { class: "outside-path", title: "{path}", "{name}" }
                 div { class: "env-buttons",
                     span { class: "spacer" }
-                    if !program {
+                    if offers_default_program(&path) {
                         Button {
-                            label: tr!("Open in default program"),
+                            label: tr!("Open in the default program"),
                             kind: ButtonKind::Primary,
                             onclick: move |_| {
                                 workspace.open_with_app(Path::new(&open_path), None);
