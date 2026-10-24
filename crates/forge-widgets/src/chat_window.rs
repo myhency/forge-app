@@ -100,6 +100,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     workflows: workflows(),
                     finished: view.session.finished_tasks.clone(),
                     on_open_tasks: move |_| workspace.change_dock(id, |dock| if !dock.is_open(Panel::Tasks) { dock.toggle(Panel::Tasks) }),
+                    on_open_plan: move |_| workspace.change_dock(id, |dock| dock.open(Panel::Plan)),
                 }
                 {
                     let lists = task_lists(&view.session.messages, &view.background_tasks, &view.session.finished_tasks);

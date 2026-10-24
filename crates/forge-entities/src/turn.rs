@@ -51,6 +51,7 @@ pub fn Turns(
     #[props(default)] workflows: Vec<RunningWorkflow>,
     #[props(default)] finished: Vec<FinishedTask>,
     #[props(default)] on_open_tasks: EventHandler<()>,
+    #[props(default)] on_open_plan: EventHandler<()>,
 ) -> Element {
     let known = known_paths(&messages);
     let items = build_turns(&messages, view, live.as_ref());
@@ -58,7 +59,7 @@ pub fn Turns(
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks }
+                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan }
             }
         }
     }
@@ -73,6 +74,7 @@ fn TurnItem(
     workflows: Vec<RunningWorkflow>,
     finished: Vec<FinishedTask>,
     on_open_tasks: EventHandler<()>,
+    on_open_plan: EventHandler<()>,
 ) -> Element {
     match item {
         Item::User(message) => {
@@ -114,8 +116,9 @@ fn TurnItem(
             let ended = finished.iter().find(|task| task.task_id == item.task_id).cloned();
             rsx! { WorkflowLine { item, running, ended, on_open_tasks } }
         }
-        // Task 6 draws the plan.
-        Item::Plan(_) => rsx! {},
+        Item::Plan(_) => rsx! {
+            button { class: "plan-row", r#type: "button", onclick: move |_| on_open_plan.call(()), {tr!("Plan proposed")} " ▸" }
+        },
     }
 }
 

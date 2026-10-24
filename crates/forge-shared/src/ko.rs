@@ -481,6 +481,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Pin", "고정"),
     ("Plan", "계획"),
     ("Plan mode", "계획"),
+    ("Plan proposed", "계획 제안됨"),
     ("Plugin", "플러그인"),
     ("Plugin {plugin}", "플러그인 {plugin}"),
     ("Plugins", "플러그인"),

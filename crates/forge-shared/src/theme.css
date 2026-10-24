@@ -867,6 +867,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .task-meta { display: flex; gap: 10px; color: var(--fg-muted); font-size: 12px; }
 .task-stop { appearance: none; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
 .workflow-done { margin: 8px 0; color: var(--fg-muted); font-size: 14px; }
+.plan-row { display: block; margin: 8px 0; padding: 0; border: 0; background: none; color: var(--fg-muted); font: inherit; font-size: 14px; cursor: pointer; }
+.plan-row:hover { color: var(--fg); }
 .workflow-chat-card { appearance: none; display: flex; align-items: center; gap: 12px; width: 100%; max-width: 360px; margin: 8px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .workflow-chat-card:hover { background: var(--bg-hover); }
 .workflow-chat-main { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
