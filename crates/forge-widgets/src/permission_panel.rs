@@ -8,7 +8,7 @@ use forge_shared::tr;
 use crate::plan_card::PlanCard;
 
 // Asks the page whether a text field holds typed text; the card takes focus only when it does not.
-const FOCUSED_TEXT_LEN: &str = "const a = document.activeElement; dioxus.send(a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') ? a.value.length : -1);";
+pub(crate) const FOCUSED_TEXT_LEN: &str = "const a = document.activeElement; dioxus.send(a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') ? a.value.length : -1);";
 
 /// Focuses a card that just appeared so its keys work at once, unless the person is typing.
 pub(crate) async fn take_focus_unless_typing(mounted: std::rc::Rc<MountedData>) {

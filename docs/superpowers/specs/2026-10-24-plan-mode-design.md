@@ -98,7 +98,7 @@ The panel's width and header look (follow the Files panel), the exact CSS, the c
 3. **Entities**: `PermissionView.plan`/`PlanAsk`, `PlanItem`, `Item::Plan` built in `build_turns` (ExitPlanMode calls leave the folded activity), `latest_plan`, `PlanKey`/`plan_key`, `PlanChoice::mode`, `plan_reason`. Files in `crates/forge-entities`.
 4. **Plan dock panel**: `Panel::Plan`, `Workspace::plan_text` (pending request first, else the latest plan in the transcript), `PlanPanel` with copy button, hint line and rendered markdown. Files: `crates/forge-features/src/dock.rs`, `crates/forge-widgets/src/plan_panel.rs`, `crates/forge-shared/src/theme.css`.
 5. **Plan card**: `PlanCard` (Choose and Revise steps): 거부, 수정…, 수락, 수락 및 자동 모드 with the `⌄` menu; keys by physical code. Accept answers allow, then sets the mode. Files: `crates/forge-widgets/src/plan_card.rs`, `ko.rs`.
-6. **Transcript row**: the grey `계획 제안됨 ▸` row opens the Plan panel. Files: `crates/forge-widgets/src/turn.rs`, `chat_window.rs`, `theme.css`.
+6. **Transcript row**: the grey `계획 제안됨 ▸` row opens the Plan panel. Files: `crates/forge-entities/src/turn.rs`, `chat_window.rs`, `theme.css`.
 7. **Window check, tests, docs**: this section; the spike script is removed.
 
 ### Spike answers (real SDK, haiku, throwaway folders)
@@ -119,6 +119,10 @@ Tests: `cargo test --workspace` hit the known flaky plugin test once (`a_process
 From the window check:
 - A long inline-code line in the plan panel can touch the right edge (cosmetic, depends on the plan text).
 - The `계획 제안됨 ▸` row appears only after the turn ends, because `Item::Plan` is built from the finished transcript; the refused plan's row showed only after the next plan was answered.
+- A `계획 제안됨 ▸` row opens the NEWEST plan, not its own (with two plans the first row shows the second); it needs a per-session shown-plan state.
+- After `뒤로`/Esc from the revise box the focus falls to the body, so the card's keys need a click.
+- The panel opens again whenever the card remounts (switching away and back while a plan is pending).
+- The lost ⌘↩ composer message belongs to NEW-03/Plan 58, not to this branch.
 - A message sent with ⌘↩ from the composer while the card is pending is queued and lost (not in the transcript after a restart). The window report does not say whether this is pre-existing; it only calls it probably out of scope for plan mode.
 
 Deferred code minors from the task reviews:

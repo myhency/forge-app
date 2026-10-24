@@ -546,6 +546,17 @@ mod tests {
         assert_eq!(latest_plan(&[]), None);
     }
 
+    #[test]
+    fn an_exit_plan_mode_call_without_a_usable_plan_stays_an_activity_row() {
+        for input in [json!({}), json!({"plan": ""}), json!({"plan": 5})] {
+            let call = tool("p", "ExitPlanMode", input, None);
+            let messages = vec![Message::user("go"), assistant(vec![call])];
+            let items = build_turns(&messages, TranscriptView::Normal, None);
+            assert!(!kinds(&items).contains(&"plan"));
+            assert!(kinds(&items).contains(&"activity"));
+        }
+    }
+
     const LAUNCHED: &str = "Workflow launched in background. Task ID: wf1\nSummary: s\nTranscript dir: /h/.claude/projects/-p/s/subagents/workflows/wf_abc\n";
 
     fn workflow(id: &str, result: Option<&str>) -> Block {

@@ -43,7 +43,7 @@ pub use highlight::{code_html, language_of};
 pub use markdown::render_markdown;
 pub use message::attachment_label;
 pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_options, model_value, ModelRow, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
-pub use permission_view::{card_takes_focus, permission_key, permission_view, plan_key, plan_reason, plan_text_of_request, workflow_permission_key, PermissionKey, PermissionView, PlanAsk, PlanChoice, PlanKey, WorkflowAsk, DEFAULT_PLAN_REFUSAL};
+pub use permission_view::{card_takes_focus, plan_card_takes_focus, permission_key, permission_view, plan_key, plan_reason, plan_text_of_request, workflow_permission_key, PermissionKey, PermissionView, PlanAsk, PlanChoice, PlanKey, WorkflowAsk, DEFAULT_PLAN_REFUSAL};
 pub use workflow_progress::{journal_path, parse_journal, steps, workflow_ref, dot_class, AgentState, JournalAgent, Step, WorkflowRef};
 pub use workflow_script::{workflow_meta, WorkflowMeta};
 pub use preview::{file_address, has_rendered_view, icon_of, open_target, page_address, path_of_file_address, web_address, preview_kind, FileIcon, OpenTarget, PreviewKind};

@@ -1,11 +1,20 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::PermissionDecision;
-use forge_entities::{plan_key, plan_reason, PlanChoice, PlanKey};
+use forge_entities::{plan_card_takes_focus, plan_key, plan_reason, PlanChoice, PlanKey, DEFAULT_PLAN_REFUSAL};
 use forge_features::{use_workspace, Panel};
 use forge_shared::tr;
 
-use crate::permission_panel::take_focus_unless_typing;
+use crate::permission_panel::FOCUSED_TEXT_LEN;
+
+/// Focuses the card only when no text field has focus, not even an empty one.
+async fn take_focus_when_no_field_has_it(mounted: std::rc::Rc<MountedData>) {
+    let mut probe = document::eval(FOCUSED_TEXT_LEN);
+    let typed_len = probe.recv::<i64>().await.unwrap_or(-1);
+    if plan_card_takes_focus(typed_len) {
+        let _ = mounted.set_focus(true).await;
+    }
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum PlanStep {
@@ -45,7 +54,7 @@ pub fn PlanCard(id: LiveSessionId, request_id: String) -> Element {
             tabindex: "0",
             onmounted: move |mounted| {
                 workspace.change_dock(id, |dock| dock.open(Panel::Plan));
-                take_focus_unless_typing(mounted.data())
+                take_focus_when_no_field_has_it(mounted.data())
             },
             onkeydown: move |event: KeyboardEvent| {
                 if step() == PlanStep::Revise {
@@ -84,7 +93,7 @@ pub fn PlanCard(id: LiveSessionId, request_id: String) -> Element {
                     button {
                         class: "perm-button",
                         r#type: "button",
-                        onclick: move |_| refuse_deny(None),
+                        onclick: move |_| refuse_deny(Some(DEFAULT_PLAN_REFUSAL.to_string())),
                         {tr!("Deny")}
                     }
                     button {

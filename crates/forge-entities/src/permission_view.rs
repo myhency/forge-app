@@ -93,6 +93,12 @@ pub fn card_takes_focus(typed_len: i64) -> bool {
     typed_len <= 0
 }
 
+/// Whether the plan card takes focus when it appears: only when no text field has focus (`-1`).
+/// An empty message box keeps focus too, so a ⌘↩ meant to send never accepts a plan.
+pub fn plan_card_takes_focus(typed_len: i64) -> bool {
+    typed_len < 0
+}
+
 /// What a key does on a permission card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionKey {
@@ -150,6 +156,9 @@ pub enum PlanKey {
 /// Esc revises, ⌘↩ accepts in auto mode, ⇧⌘↩ accepts. Esc with ⌘, ⌃ or ⌥ held does nothing.
 pub fn plan_key(code: &str, shift: bool, meta: bool, other_modifier: bool) -> Option<PlanKey> {
     if matches!(code, "Enter" | "NumpadEnter") {
+        if other_modifier {
+            return None;
+        }
         return match (meta, shift) {
             (true, true) => Some(PlanKey::Accept),
             (true, false) => Some(PlanKey::AcceptAuto),
@@ -314,6 +323,20 @@ mod tests {
         assert!(card_takes_focus(0), "an empty message box is fine to leave");
         assert!(!card_takes_focus(1));
         assert!(!card_takes_focus(120));
+    }
+
+    #[test]
+    fn the_plan_card_takes_focus_only_when_no_text_field_has_it() {
+        assert!(plan_card_takes_focus(-1));
+        assert!(!plan_card_takes_focus(0));
+        assert!(!plan_card_takes_focus(1));
+        assert!(!plan_card_takes_focus(120));
+    }
+
+    #[test]
+    fn plan_enter_with_another_modifier_is_nothing() {
+        assert_eq!(plan_key("Enter", false, true, true), None);
+        assert_eq!(plan_key("Enter", true, true, true), None);
     }
 
     #[test]
