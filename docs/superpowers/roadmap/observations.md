@@ -844,3 +844,54 @@ Desktop app 3.6556.1. Two views: the old Round 25 sessions (folder deleted, so a
 - **`MCP 도구 248` expands:** a row per tool: `<server> · <tool name>` (cut with `…`) and its tokens (`Claude Docs · Mak… 152`, `Claude Docs · Cre… 232`, …); the chevron turns down. `커스텀 에이전트 3` was not opened (it is the same kind of row).
 - **Drag handle:** an expanded card shows a grid of six dots at the right end of its header. Dragging it down moved `컨텍스트` below `커넥터`; dragging back restored it (done and undone in this round, so the user's panel order is as it was). So the cards can be reordered by hand; whether the order is kept after reopening was not checked.
 - **Numbers moved after turn 2:** `82.6k / 1M`, `Messages 25.3k 2.5%`, `MCP server instructions 3.3k 0.3%`, `Free space 884.4k 88.4%`: the card follows each turn.
+
+## Round 27 (2026-10-24): the same three tasks in the desktop app and in Forge
+
+Method: one throwaway git folder (`/private/tmp/forge-observe/task-r27`, a small Python script with two failing tests), the same Korean prompt typed into the desktop app (3.6556, Sonnet 5.5, real account) and into Forge (harness build on `plan-55`, default model, real Claude). Both start in a worktree. The desktop app's side was driven with `scripts/observe/claude_app.py`, Forge's with `scripts/harness/`. Text only.
+
+**Task 1: fix the failing tests, run the script, write a README (auto mode).** Result text was the same quality in both. Differences:
+
+- Desktop: the title is generated in a few seconds (`pytest 실패 테스트 수정`); Forge keeps the first prompt cut with `...` although the transcript holds an `ai-title` line.
+- Desktop opens the details panel by itself on the first send (환경 with a `워크트리` branch row and `Remote Control`, 컨텍스트 with `MCP tools`, `Skills`, `MCP server instructions`, `Custom agents`, 커넥터). Forge opens it only from the `≡` button and its 환경 card has no branch row; 컨텍스트 has fewer categories.
+- Desktop folds the turn into `편집함 파일 1개, 실행됨 명령 1개, 생성됨 파일 1개 +25 −2` with a row per file (`편집됨 wordstat.py +2 −2`, `생성됨 README.md +23`). Forge's fold showed `파일 1개 생성, 명령 3개 실행 +23 −0` and left the edit out because the model edited with a `python -` script (the Changes panel did show `+25 −2`).
+- Changes panel: desktop lists two files; Forge also listed two binary `__pycache__/*.pyc` entries with `표시할 텍스트 변경 사항이 없습니다`.
+- The file card at the bottom of Forge's chat (`README.md +23 −0`) is a grey bar with centred text; the desktop shows a plain row.
+
+**Task 2: plan mode, with questions** (`계획` mode; prompt: add `--top N` and stop words, plan it, ask me what I must decide).
+
+- Question card: both have it. Desktop: `4개 중 1번째` pager with `< >`, radio rows with `(Recommended)`, `기타` as a radio row, `건너뛰기`, `다음 ⌘⏎` (last one `제출`). Forge: `1/4` badge, number keys that move on at once, an inline `기타` text field, `이전`, `건너뛰기`, `다음 ⌘↵`. After submitting, both fold the card into a question/answer list.
+- Sidebar and chat while waiting: desktop shows a blue dot with `차단됨` and an orange `입력이 필요합니다` pill; Forge shows an orange `!` icon on the row.
+- **The plan step is the big gap.** Desktop writes the plan file (`생성됨 wordstat-py-top-n-hashed-walrus.md +35`), opens a `계획` panel on the right with the plan rendered (a hint: `텍스트를 선택하여 Claude에게 댓글을 남기세요`; icons: open folder, copy, expand, close) and shows `Claude가 계획을 제안했습니다 · 계획 열기` with `거부`, `수정... Esc`, `수락 ⇧⌘⏎`, `수락 및 자동 모드 ⌘⏎ ▾`. Forge shows the generic permission card `Claude가 ExitPlanMode을(를) 사용하려고 합니다` with `거부 / 항상 허용 / 한 번 허용`; the plan text is nowhere in the window, so the person cannot read the plan before accepting.
+- Forge: when the model starts a background Explore agent, the first turn ends; the UI shows a quiet composer and a `작업 1개 완료` pill, and the question card appears about 30 s later with no sign that work is going on.
+
+**Task 3: manual mode: `sleep 25`, then write CHANGELOG.md, then run pytest.**
+
+- `sleep 25` ran in the background in both and needed no permission. Desktop shows a row `Waiting 25 seconds 실시간 출력 보기 ▸` (later `Waited 25 seconds`) and keeps a todo card (checked / in progress / pending) above the composer. Forge showed `명령 2개 실행 (실패 1)` and a pill `백그라운드 작업 1개`; no todo card appeared (the model may not have used the todo tool; not compared).
+- Write permission card: desktop `Claude가 쓰기 CHANGELOG.md하도록 허용하시겠습니까?`, the path once, a diff preview, `거부` and `항상 허용 ⇧⌘⏎ ▾` whose menu holds `한 번만 허용 ⌘⏎` and `허용하고 Auto 모드로 전환` (`이 세션의 나머지 작업을 자동으로 검토합니다`). Forge: `Claude가 CHANGELOG.md을(를) 생성하려고 합니다`, the same path shown four times, a diff, `거부 1 Esc`, `항상 허용 2`, `한 번 허용 3 ⌘↵ ▾`; the card fills most of the window. (Forge's ▾ menu was not opened.)
+- Bash card: desktop `Claude가 실행 Run pytest하도록 허용하시겠습니까?` with the command; Forge `Claude가 Run pytest을(를) 실행하려고 합니다` with the command.
+- End of turn: desktop shows an end card (a short English summary, the question `Fix the two failing wordstat tests?`, buttons `Fix them ⌘⏎` / `Not now`, a close X) and a row of message actions (copy, a branch/share icon, pin, read aloud, `지금`). Forge shows the answer, one copy icon, and the suggestion as grey text in the composer (`응, wordstat.py 고쳐줘`).
+
+**Slash commands.** Typing `/` in the desktop opens a short list: `btw` (tooltip `세션에 추가하지 않고 간단한 질문하기`), `ultrareview`, `rewind`, `fork`, `subtask`, `mcp`, `plugin`, `feedback`, `model`, `effort`, `fast`, `plan`, `permissions`, and more. Forge's `/` lists everything the CLI reports, skills and plugin commands first (`/design`, `/dataviz`, `/code-review`, …), then `/mcp`, `/model`, `/compact`, `/heapdump`; it has no `/btw` or `/rewind`. Sending `/compact` in Forge: the transcript says `Compacted` (it worked), but the window showed only the `/compact` bubble and nothing after it.
+
+**Other.** The harness log has a Dioxus warning: a Copy value created at `crates/forge-features/src/workspace.rs:2847` is used at `session_notices.rs:122` after its scope is gone.
+
+**Not seen in this round:** image or file attach and `@` mentions, `⌘⏎` queueing and the stop button mid-turn, a restart with a blocked or running session, several sessions running at once, the dropdown of Forge's permission card, the desktop's behaviour when a background agent ends the turn.
+
+## Round 28 (2026-10-24): office-worker task, attachments, mentions, queue, stop
+
+Same method as round 27. Throwaway folder `/private/tmp/forge-observe/task-r28` (not a git folder): `매출.csv` (24 rows of sales), `회의록.txt` (meeting notes with owners, one task without an owner), `chart.png`. Desktop 3.6556, Sonnet 5.5; Forge harness build on `plan-55`, default model. Forge got a copy of the folder (`task-r28b`).
+
+**Prompt (non-developer):** with the chart image attached: `Using the attached chart, 매출.csv and 회의록.txt, make a one-page 3rd-quarter sales summary for the team leader as an Excel file: totals by product and by month, one chart; also a table of to-dos per person from the minutes; ask me about anything with no owner.`
+
+- **Non-git folder:** both skip the branch and worktree rows; the session starts in the folder itself. Forge's folder chip row is the same.
+- **`+` menu:** same items (`파일 또는 사진 추가 ⌘U`, `폴더 추가`, `슬래시 명령어`, `커넥터 >`, `플러그인 >`). Desktop adds `GitHub 이슈 가져오기` (greyed: no remote).
+- **Attached image:** desktop shows a large thumbnail inside the composer and above the user bubble after sending. Forge shows a small chip `chart.png ×`, and under the bubble after sending.
+- **`@` mention (gap):** desktop's list holds other sessions (title, folder, branch), files of the folder (csv and txt icons) and open windows of other apps. Forge shows nothing after `@`.
+- **Queue (gap):** desktop while a turn runs: composer hint `⏎ 키로 보내기, ⌘⏎ 키로 대기열에 추가하여 나중에 보내기`; `⌘⏎` puts the text in a card `메시지 1 개 대기 중 …` with three icons (send now, edit, remove) and sends it when the turn ends. Forge: `⌘↵` puts the text in the chat at once as a normal user bubble; there is no card, no edit, no remove, and nothing says it is waiting.
+- **Running state:** desktop `실행 중 명령어 35초 ▸`, `1번째 줄 읽는 중 대기 10초 · 79 토큰` (the model's own description of the step) and a todo card above the composer. Forge `Pause 8 seconds (line 2) 18s` (also the tool description) and a spinner; both have a stop button.
+- **Stop:** desktop folds the turn as `실행됨 명령 1개, 완료함 백그라운드 작업 1개 (중지됨 1개)`; the todo card stays with its unfinished items. Forge folds it as `명령 2개 실행, 파일 1개 읽기 (실패 1)` and shows a `작업 2개 완료` pill: a stop reads as a failure and as done.
+- **Excel result (gap):** desktop opens the `.xlsx` in the Files panel as a spreadsheet: a grid with column letters, a formula bar `fx`, sheet tabs (`요약`, `할일`, `데이터`), the folder's files at the right with a filter box. Formula cells that were never calculated show empty (the model said LibreOffice was missing). Forge: the file row has a plain document icon and the view says `이 파일은 바이너리 데이터로 보여 텍스트로 미리 볼 수 없습니다` with `Finder에서 보기` and `그래도 텍스트로 보기`. In the chat Forge prints the result path as inline code, which does nothing when clicked; the desktop's file name is a link that opens the panel.
+- **Questions to the person:** the desktop model asked its owner question as a plain end card (not a question card), `최팀장님 보고용 매출 요약 1장은 누가 담당하나요?`. Forge's model did not ask (model behaviour, not compared).
+- **Panels:** opening Preview and Files together in a 1200 pt window floats both over the chat and hides it.
+- **Not testable here:** restore after a crash. The harness reads a fixture Claude home while sessions started in Forge are written to the real one, so after a restart they are not listed. Needs a run against the real home.
+- **Still not seen:** voice input, several sessions running at once, read-aloud and pin actions, `/btw` and `/rewind` behaviour, Dispatch.
