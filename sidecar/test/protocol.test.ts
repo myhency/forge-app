@@ -40,6 +40,13 @@ describe("parseCommand", () => {
     });
   });
 
+  it("permission_response accepts an optional reason", () => {
+    const line = JSON.stringify({ type: "permission_response", id: "1", permission_request_id: "p", decision: "deny", reason: "use a smaller plan" });
+    const command = parseCommand(line);
+    expect(command).toEqual({ type: "permission_response", id: "1", permission_request_id: "p", decision: "deny", reason: "use a smaller plan" });
+    if (command.type === "permission_response") expect(command.reason).toBe("use a smaller plan");
+  });
+
   it("throws on a line missing a type field", () => {
     expect(() => parseCommand("{}")).toThrow();
   });

@@ -59,7 +59,7 @@ export type SidecarCommand =
       dynamic_workflows: boolean;
     }
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
-  | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision }
+  | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision; reason?: string }
   | { type: "answer_question"; id: string; permission_request_id: string; answers: Record<string, string> }
   | { type: "stop_task"; id: string; task_id: string }
   | { type: "interrupt"; id: string }

@@ -929,6 +929,37 @@ describe("SidecarSession", () => {
     await started;
   });
 
+  async function answerWith(extra: Record<string, unknown>, decision: "deny" | "allow_once"): Promise<any> {
+    let result: any;
+    const queryFn: QueryFn = (args) => {
+      const canUseTool = (args.options as any).canUseTool;
+      return toQueryHandle((async function* () {
+        result = await canUseTool("ExitPlanMode", { plan: "p" }, { requestId: "req-x" });
+      })());
+    };
+    const session = new SidecarSession(queryFn, () => undefined);
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await session.handle({ type: "permission_response", id: "2", permission_request_id: "req-x", decision, ...extra } as SidecarCommand);
+    await started;
+    return result;
+  }
+
+  it("deny with a reason sends the reason as the message", async () => {
+    const result = await answerWith({ reason: "  smaller plan please  " }, "deny");
+    expect(result).toEqual({ behavior: "deny", message: "smaller plan please" });
+  });
+
+  it("deny with a blank reason keeps the default message", async () => {
+    const result = await answerWith({ reason: "   " }, "deny");
+    expect(result).toEqual({ behavior: "deny", message: DENIED_MESSAGE });
+  });
+
+  it("allow ignores the reason", async () => {
+    const result = await answerWith({ reason: "ignored" }, "allow_once");
+    expect(result).toEqual({ behavior: "allow" });
+  });
+
   it("starts the SDK with the allowed tools it was given", async () => {
     let options: any;
     const queryFn: QueryFn = (args) => {

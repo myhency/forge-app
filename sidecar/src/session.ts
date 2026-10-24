@@ -138,8 +138,10 @@ export function rulesFromSuggestions(suggestions: unknown[] | undefined): string
   return rules;
 }
 
-function decisionToResult(decision: WirePermissionDecision, suggestions: unknown[] | undefined, toolName: string): PermissionResult {
+function decisionToResult(decision: WirePermissionDecision, suggestions: unknown[] | undefined, toolName: string, reason?: string): PermissionResult {
   if (decision === "deny") {
+    const typed = reason?.trim();
+    if (typed) return { behavior: "deny", message: typed };
     return { behavior: "deny", message: toolName === QUESTION_TOOL ? QUESTION_SKIPPED_MESSAGE : DENIED_MESSAGE };
   }
   if (decision === "allow_always") {
@@ -195,7 +197,7 @@ export class SidecarSession {
       case "permission_response": {
         const pending = this.pendingPermissions.get(command.permission_request_id);
         if (!pending) return;
-        pending.resolve(decisionToResult(command.decision, pending.suggestions, pending.toolName));
+        pending.resolve(decisionToResult(command.decision, pending.suggestions, pending.toolName, command.reason));
         this.pendingPermissions.delete(command.permission_request_id);
         return;
       }
