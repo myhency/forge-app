@@ -896,3 +896,16 @@ Same method as round 27. Throwaway folder `/private/tmp/forge-observe/task-r28` 
 - **Restore after a crash (checked against the real Claude home, 2026-10-24):** Forge was killed with `kill -9` while `python3 -c 'import time; time.sleep(90)'` was running in an auto-mode session; after the restart the session is in the list with a generated title (`python3 time.sleep(90) 대기`; in the live view it had shown the first prompt cut off, so the title only updates after a restart), and opens with the question and the tool row `Sleep for 90 seconds using python3 (실패 1)`. Nothing says the run was cut by a crash; the mode is back to `수동` and the model to the default (the session was on `자동`). Forge's sessions started this way are also listed by the desktop app, which shares the folder.
 - **A blocked command:** `sleep 60` alone was refused by the CLI's tool rules (it advises the Monitor tool); Forge shows the row as `Sleep for 60 seconds (실패 1)` and the model's explanation. Same text as the desktop would get (not compared).
 - **Still not seen:** voice input, several sessions running at once, read-aloud and pin actions, `/btw` and `/rewind` behaviour, Dispatch.
+
+## Round 29 (2026-10-24): the plan flow in detail (Plan 56)
+
+Desktop 3.6556, the session `wordstat.py --top N과 불용어 제외` from Round 27 (a throwaway folder).
+
+- **Plan card:** `Claude가 계획을 제안했습니다`, link `계획 열기` at the right; `거부`, `수정… [Esc]`, `수락 [⇧⌘⏎]`, dark `수락 및 자동 모드 [⌘⏎] | ⌄`. The `⌄` menu: `수락 및 편집 허용`, `수락 및 자동 모드`.
+- **`수정…`:** the buttons turn into a text area (`무엇을 변경해야 하나요? (선택사항)`), `뒤로` and a dark `수정`.
+- **Comment on the plan:** dragging over plan text in the `계획` panel selects it and shows a floating box `댓글 추가` with a send icon. After Enter the card switches to edit mode: a grey chip with the quoted text and the comment (X to remove it), the text area `더 추가할 내용이 있으신가요?` and `수정`. The quoted text gets an underline in the plan. Removing the chip returns the card to the four buttons.
+- **`수락` (plain):** the composer's mode became `수동`; the next step (`wordstat.py` write) asked for permission with the usual card. The card folded to `계획 제안됨 ▸` and the plan panel stayed open; its hint line changed to `계획 모드에서 계획에 대해 의견을 남기거나, Claude가 승인을 요청할 때 의견을 남길 수 있습니다`.
+- **Sidebar:** a session whose plan is ready shows `차단됨` and a blue dot; hovering the row shows a tooltip: the session title, `플랜 준비됨 · Ready to start?`, the first lines of the plan, `승인하려면 세션을 여세요`.
+- **Plan panel header:** title `계획`, icons: open folder, copy, expand, close. The hint line at the top: `텍스트를 선택하여 Claude에게 댓글을 남기세요`.
+- **Plan data:** the real transcript has a `Write` of `~/.claude/plans/<name>.md` and then `ExitPlanMode` with `input: { plan: "<the markdown>" }`.
+- **Not clicked:** `수락 및 편집 허용`, `수락 및 자동 모드`, and the `수정` button (what Claude receives).
