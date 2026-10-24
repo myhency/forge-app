@@ -5,6 +5,8 @@ use forge_entities::{card_takes_focus, diff_for_tool, permission_key, permission
 use forge_features::use_workspace;
 use forge_shared::tr;
 
+use crate::plan_card::PlanCard;
+
 // Asks the page whether a text field holds typed text; the card takes focus only when it does not.
 const FOCUSED_TEXT_LEN: &str = "const a = document.activeElement; dioxus.send(a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') ? a.value.length : -1);";
 
@@ -43,6 +45,10 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
             workspace.set_permission_mode(id, PermissionMode::Auto);
         }
     };
+
+    if view.plan.is_some() {
+        return rsx! { PlanCard { id, request_id: request_id.clone() } };
+    }
 
     rsx! {
         div {

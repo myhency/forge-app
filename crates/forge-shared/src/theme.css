@@ -776,6 +776,10 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .perm-menu { position: absolute; right: 0; bottom: calc(100% + 6px); min-width: 260px; padding: 6px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 5; }
 .perm-menu-item { appearance: none; display: block; width: 100%; padding: 8px 10px; border: none; border-radius: 6px; background: none; text-align: left; font: inherit; color: var(--fg); cursor: pointer; }
 .perm-menu-item:hover { background: var(--bg-hover); }
+.plan-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.plan-card-link { appearance: none; border: none; background: none; padding: 0; font: inherit; font-weight: 400; font-size: 13px; color: var(--fg-muted); text-decoration: underline; cursor: pointer; }
+.plan-card-link:hover { color: var(--fg); }
+.plan-card-text { box-sizing: border-box; width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--fg); font: inherit; outline: none; }
 .perm-menu-note { color: var(--fg-muted); font-size: 12px; }
 
 .question-panel { display: flex; flex-direction: column; gap: 10px; width: calc(100% - 56px); max-width: var(--chat-column); max-height: 60vh; box-sizing: border-box; margin: 0 auto 8px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); outline: none; }
