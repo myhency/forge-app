@@ -1393,6 +1393,74 @@ describe("SidecarSession", () => {
     expect(received).toEqual(["hi\n@/x/b.txt"]);
   });
 
+  it("gives every message it hands to the SDK a uuid and announces it", async () => {
+    const events: SidecarEvent[] = [];
+    const received: Array<{ uuid?: string }> = [];
+    const queryFn: QueryFn = (args) =>
+      toQueryHandle((async function* () {
+        for await (const msg of args.prompt as AsyncIterable<{ uuid?: string }>) {
+          received.push(msg);
+          if (received.length === 2) return;
+        }
+      })());
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    const started = session.handle(startCommand);
+    await session.handle({ type: "send_message", id: "2", text: "first" });
+    await session.handle({ type: "send_message", id: "3", text: "second" });
+    await started;
+
+    const announced = events.filter((e) => e.type === "user_message").map((e) => (e as { uuid: string }).uuid);
+    expect(announced).toHaveLength(2);
+    expect(announced[0]).not.toEqual(announced[1]);
+    expect(received.map((m) => m.uuid)).toEqual(announced);
+  });
+
+  it("turns file checkpointing on so the files can be rewound", async () => {
+    let captured: any;
+    const queryFn: QueryFn = (args) => {
+      captured = args.options;
+      return toQueryHandle((async function* () {})());
+    };
+    await new SidecarSession(queryFn, () => {}).handle(startCommand);
+    expect(captured.enableFileCheckpointing).toBe(true);
+  });
+
+  it("rewinds the files of a message, or previews it, and says why it cannot", async () => {
+    const events: SidecarEvent[] = [];
+    const calls: Array<[string, unknown]> = [];
+    let release!: () => void;
+    const queryFn: QueryFn = () =>
+      toQueryHandle(
+        (async function* () {
+          await new Promise<void>((resolve) => (release = resolve));
+        })(),
+        {
+          rewindFiles: async (id: string, options?: { dryRun?: boolean }) => {
+            calls.push([id, options?.dryRun]);
+            if (id === "bad") throw new Error("no checkpoint");
+            if (id === "none") return { canRewind: false, error: "nothing to rewind" };
+            return { canRewind: true, filesChanged: ["/a/b.txt"], insertions: 1, deletions: 2 };
+          },
+        },
+      );
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await session.handle({ type: "rewind_files", id: "1", request_id: "r1", message_uuid: "m1", dry_run: true });
+    await session.handle({ type: "rewind_files", id: "2", request_id: "r2", message_uuid: "none", dry_run: false });
+    await session.handle({ type: "rewind_files", id: "3", request_id: "r3", message_uuid: "bad", dry_run: false });
+    release();
+    await started;
+
+    expect(calls).toEqual([["m1", true], ["none", false], ["bad", false]]);
+    expect(events.filter((e) => e.type === "rewind_result")).toEqual([
+      { type: "rewind_result", request_id: "r1", can_rewind: true, files_changed: ["/a/b.txt"], insertions: 1, deletions: 2 },
+      { type: "rewind_result", request_id: "r2", can_rewind: false, error: "nothing to rewind" },
+      { type: "rewind_result", request_id: "r3", can_rewind: false, error: "no checkpoint" },
+    ]);
+  });
+
   it("passes includePartialMessages: true to the SDK options", async () => {
     let capturedOptions: any;
     const queryFn: QueryFn = (args) => {

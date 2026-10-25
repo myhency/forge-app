@@ -65,6 +65,8 @@ export type SidecarCommand =
   | { type: "interrupt"; id: string }
   // A question about the conversation that is not added to it (/btw); answered by a side_answer.
   | { type: "side_question"; id: string; request_id: string; question: string }
+  // Puts the files back as they were before the user message `message_uuid`; with dry_run only says what would change.
+  | { type: "rewind_files"; id: string; request_id: string; message_uuid: string; dry_run: boolean }
   | { type: "set_permission_mode"; id: string; mode: WirePermissionMode }
   | { type: "set_model"; id: string; model: string | null }
   | { type: "set_effort"; id: string; effort: WireEffort | null }
@@ -122,6 +124,17 @@ export type SidecarEvent =
   | { type: "compacted"; pre_tokens?: number; post_tokens?: number }
   // The answer to a side_question: the text, or why there is none.
   | { type: "side_answer"; request_id: string; answer?: string; error?: string }
+  // The id the sidecar gave the user message it just handed to the SDK (the SDK records it as the message's uuid).
+  | { type: "user_message"; uuid: string }
+  | {
+      type: "rewind_result";
+      request_id: string;
+      can_rewind: boolean;
+      error?: string;
+      files_changed?: string[];
+      insertions?: number;
+      deletions?: number;
+    }
   // The models the SDK lists for this session and the effort levels each takes; sent once after the start.
   | { type: "models_available"; models: WireAvailableModel[] }
   | { type: "setting_failed"; message: string }

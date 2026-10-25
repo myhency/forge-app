@@ -77,6 +77,19 @@ pub struct LiveSessionView {
     pub queued: Vec<QueuedMessage>,
     /// The last `/btw` question and its answer; it is not part of the session.
     pub side_question: Option<SideQuestion>,
+    /// The `/rewind` the person is looking at: a preview of what would change, then the result.
+    pub rewind: Option<RewindState>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RewindState {
+    pub request_id: String,
+    /// The user message the files go back to (they are put as they were before it).
+    pub message_uuid: String,
+    /// `true`: only asked what would change.
+    pub dry_run: bool,
+    /// `None` until the SDK has answered.
+    pub outcome: Option<forge_domain::RewindOutcome>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,6 +126,10 @@ pub enum LiveCommand {
     AskSide { question: String },
     /// Closes the `/btw` card.
     DismissSide,
+    /// Asks the SDK to put the files back as they were before the user message (`dry_run`: only
+    /// to say what would change).
+    Rewind { message_uuid: String, dry_run: bool },
+    CloseRewind,
     AddDirectories(Vec<PathBuf>),
     /// Makes the folder the session's working folder from the next start on.
     MoveTo(PathBuf),
@@ -165,6 +182,15 @@ impl LiveSessionHandle {
     /// `/btw`: a question about the conversation that is not added to it.
     pub fn ask_side(&self, question: String) {
         let _ = self.commands.send(LiveCommand::AskSide { question });
+    }
+
+    /// `/rewind`: previews (`dry_run`) or does putting the files back as they were before a message.
+    pub fn rewind_files(&self, message_uuid: String, dry_run: bool) {
+        let _ = self.commands.send(LiveCommand::Rewind { message_uuid, dry_run });
+    }
+
+    pub fn close_rewind(&self) {
+        let _ = self.commands.send(LiveCommand::CloseRewind);
     }
 
     pub fn dismiss_side(&self) {
@@ -341,6 +367,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         allowed_rules: Vec::new(),
         queued: Vec::new(),
         side_question: None,
+        rewind: None,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
     let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -1171,6 +1198,54 @@ mod tests {
         control.push(SidecarEvent::SideAnswer { request_id: id, answer: None, error: Some("boom".to_string()) });
         let failed = wait_for(&mut view, "the failure", |v| matches!(&v.side_question, Some(q) if q.answer != SideAnswer::Pending)).await;
         assert_eq!(failed.side_question.unwrap().answer, SideAnswer::Failed("boom".to_string()));
+    }
+
+    #[tokio::test]
+    async fn rewinding_previews_then_applies_and_the_answer_fills_the_state() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.rewind_files("m-1".to_string(), true);
+        let asked = wait_for(&mut view, "the preview to be asked", |v| v.rewind.is_some()).await;
+        let state = asked.rewind.unwrap();
+        assert!(state.dry_run && state.outcome.is_none());
+        assert!(control.calls().contains(&Call::Rewind(state.request_id.clone(), "m-1".to_string(), true)));
+
+        control.push(SidecarEvent::RewindResult { request_id: "stale".to_string(), can_rewind: false, error: None, files_changed: vec![], insertions: 0, deletions: 0 });
+        control.push(SidecarEvent::RewindResult {
+            request_id: state.request_id.clone(),
+            can_rewind: true,
+            error: None,
+            files_changed: vec!["/a/b.txt".to_string()],
+            insertions: 1,
+            deletions: 2,
+        });
+        let previewed = wait_for(&mut view, "the preview", |v| matches!(&v.rewind, Some(r) if r.outcome.is_some())).await;
+        let outcome = previewed.rewind.unwrap().outcome.unwrap();
+        assert!(outcome.can_rewind);
+        assert_eq!((outcome.files, outcome.insertions, outcome.deletions), (vec!["/a/b.txt".to_string()], 1, 2));
+
+        handle.rewind_files("m-1".to_string(), false);
+        let applying = wait_for(&mut view, "the real rewind to be asked", |v| matches!(&v.rewind, Some(r) if !r.dry_run)).await;
+        assert!(applying.rewind.unwrap().outcome.is_none(), "the old preview is gone");
+
+        handle.close_rewind();
+        wait_for(&mut view, "the state to go", |v| v.rewind.is_none()).await;
+    }
+
+    #[tokio::test]
+    async fn a_user_message_gets_the_id_the_sidecar_announces() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hello".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        control.push(SidecarEvent::UserMessage { uuid: "u-1".to_string() });
+        let seen = wait_for(&mut view, "the id", |v| v.session.messages.first().is_some_and(|m| m.uuid.is_some())).await;
+        assert_eq!(seen.session.messages[0].uuid.as_deref(), Some("u-1"));
     }
 
     #[tokio::test]

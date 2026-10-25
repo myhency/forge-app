@@ -6,7 +6,7 @@ use forge_ports::{SidecarEvent, SidecarFactoryPort, SidecarPort, StartSessionPar
 use tokio::sync::{mpsc, watch};
 
 use crate::event::{apply_sidecar_event, SessionUpdate};
-use crate::live_session::{LiveCommand, LiveSessionView, Phase, QueuedMessage, SideAnswer, SideQuestion};
+use crate::live_session::{LiveCommand, LiveSessionView, Phase, QueuedMessage, RewindState, SideAnswer, SideQuestion};
 use crate::use_cases::{AnswerQuestionUseCase, ApprovePermissionUseCase, StopTaskUseCase, ExtensionsUseCase, InterruptTurnUseCase, SendMessageUseCase};
 
 const CANNOT_SEND: &str = "the project folder no longer exists, so this session can only be viewed";
@@ -129,6 +129,11 @@ impl Actor {
                 }
             }
             LiveCommand::AskSide { question } => self.ask_side(question).await,
+            LiveCommand::Rewind { message_uuid, dry_run } => self.rewind(message_uuid, dry_run).await,
+            LiveCommand::CloseRewind => {
+                self.view.rewind = None;
+                self.dirty = true;
+            }
             LiveCommand::DismissSide => {
                 self.view.side_question = None;
                 self.dirty = true;
@@ -262,6 +267,28 @@ impl Actor {
             self.discard_sidecar(shutdown).await;
         } else {
             self.fail(message, shutdown).await;
+        }
+    }
+
+    // Puts the files back (or previews it). The SDK holds the checkpoints; a session with no sidecar
+    // yet gets one, which resumes the conversation, first.
+    async fn rewind(&mut self, message_uuid: String, dry_run: bool) {
+        self.side_count += 1;
+        let request_id = format!("rewind-{}", self.side_count);
+        let failed = |message: String| forge_domain::RewindOutcome { can_rewind: false, error: Some(message), ..Default::default() };
+        self.view.rewind = Some(RewindState { request_id: request_id.clone(), message_uuid: message_uuid.clone(), dry_run, outcome: None });
+        self.dirty = true;
+        if self.sidecar.is_none() {
+            self.warm_only = true;
+            if let Err(message) = self.start_sidecar().await {
+                self.warm_only = false;
+                self.view.rewind = Some(RewindState { request_id, message_uuid, dry_run, outcome: Some(failed(message)) });
+                return;
+            }
+        }
+        let Some(sidecar) = self.sidecar.clone() else { return };
+        if let Err(error) = sidecar.rewind_files(request_id.clone(), message_uuid.clone(), dry_run).await {
+            self.view.rewind = Some(RewindState { request_id, message_uuid, dry_run, outcome: Some(failed(error.to_string())) });
         }
     }
 
@@ -559,6 +586,11 @@ impl Actor {
                 // The sidecar is still alive and cleaning up, so it is asked to exit and awaited.
                 self.sidecar_gone("the session ended unexpectedly".to_string(), true).await;
             }
+            SessionUpdate::RewindResult { request_id, outcome } => {
+                if let Some(state) = self.view.rewind.as_mut().filter(|state| state.request_id == request_id) {
+                    state.outcome = Some(outcome);
+                }
+            }
             SessionUpdate::SideAnswer { request_id, result } => {
                 if let Some(side) = self.view.side_question.as_mut().filter(|side| side.id == request_id) {
                     side.answer = match result {
@@ -570,6 +602,7 @@ impl Actor {
             SessionUpdate::MessageDelta { .. }
             | SessionUpdate::ThinkingDelta { .. }
             | SessionUpdate::Compacted
+            | SessionUpdate::UserMessageId
             | SessionUpdate::ToolCallStarted { .. }
             | SessionUpdate::ToolCallCompleted { .. } => {}
         }

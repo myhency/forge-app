@@ -303,6 +303,9 @@ fn push_user_text(session: &mut Session, line: &Value, text: String) {
         }
     }
     push_user_message(session, text);
+    if let Some(message) = session.messages.last_mut() {
+        message.uuid = line.get("uuid").and_then(Value::as_str).map(str::to_string);
+    }
 }
 
 fn attach_tool_result(session: &mut Session, block: &Value) {
@@ -2311,6 +2314,26 @@ mod tests {
         let last = session.messages.last().unwrap();
         assert_eq!(last.role, MessageRole::Assistant);
         assert_eq!(last.blocks, vec![Block::Compacted { before: Some(21702), after: Some(4290) }]);
+    }
+
+    #[tokio::test]
+    async fn load_session_keeps_the_uuid_of_each_user_message() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                json!({"type": "user", "uuid": "u-1", "message": {"role": "user", "content": "first"}}),
+                assistant_block(json!({"type": "text", "text": "answer"})),
+                json!({"type": "user", "uuid": "u-2", "message": {"role": "user", "content": "second"}}),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        let uuids: Vec<_> = session.messages.iter().map(|m| m.uuid.clone()).collect();
+        assert_eq!(uuids, vec![Some("u-1".to_string()), None, Some("u-2".to_string())]);
     }
 
     const NOTE_DONE: &str = "<task-notification>\n<task-id>wm0ok3aqh</task-id>\n<status>completed</status>\n<summary>Dynamic workflow \"x\" completed</summary>\n<usage><subagent_tokens>157385</subagent_tokens><duration_ms>77189</duration_ms></usage>\n</task-notification>";

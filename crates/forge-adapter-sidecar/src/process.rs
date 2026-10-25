@@ -159,6 +159,11 @@ impl SidecarPort for SidecarProcess {
         self.send_command(SidecarCommand::Interrupt { id })
     }
 
+    async fn rewind_files(&self, request_id: String, message_uuid: String, dry_run: bool) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::RewindFiles { id, request_id, message_uuid, dry_run })
+    }
+
     async fn ask_side_question(&self, request_id: String, question: String) -> Result<(), SidecarError> {
         let id = self.next_id();
         self.send_command(SidecarCommand::SideQuestion { id, request_id, question })

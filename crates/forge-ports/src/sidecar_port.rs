@@ -138,6 +138,21 @@ pub enum SidecarEvent {
         #[serde(default)]
         error: Option<String>,
     },
+    /// The id the sidecar gave the user message it just handed to the SDK.
+    UserMessage { uuid: String },
+    /// The answer to `rewind_files`.
+    RewindResult {
+        request_id: String,
+        can_rewind: bool,
+        #[serde(default)]
+        error: Option<String>,
+        #[serde(default)]
+        files_changed: Vec<String>,
+        #[serde(default)]
+        insertions: u64,
+        #[serde(default)]
+        deletions: u64,
+    },
     /// The conversation was compacted (by `/compact` or because the context was full).
     Compacted {
         #[serde(default)]
@@ -178,6 +193,9 @@ pub trait SidecarPort: Send + Sync {
         answers: BTreeMap<String, String>,
     ) -> Result<(), SidecarError>;
     async fn interrupt(&self) -> Result<(), SidecarError>;
+    /// Puts the files back as they were before the user message `message_uuid` (`dry_run`: only says
+    /// what would change). The answer comes back as a `RewindResult` event with the same `request_id`.
+    async fn rewind_files(&self, request_id: String, message_uuid: String, dry_run: bool) -> Result<(), SidecarError>;
     /// Asks a question about the conversation without adding it to the session (`/btw`). The answer
     /// comes back as a `SideAnswer` event with the same `request_id`.
     async fn ask_side_question(&self, request_id: String, question: String) -> Result<(), SidecarError>;

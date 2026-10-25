@@ -9,6 +9,9 @@ pub enum SessionUpdate {
     /// A compaction line was added to the transcript.
     Compacted,
     SideAnswer { request_id: String, result: Result<String, String> },
+    RewindResult { request_id: String, outcome: forge_domain::RewindOutcome },
+    /// A user message got its id.
+    UserMessageId,
     ToolCallStarted { tool_call: ToolCall },
     ToolCallCompleted { tool_call_id: String },
     PermissionRequested(PermissionRequest),
@@ -68,6 +71,24 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             }
             SessionUpdate::MessageDelta { text: text.clone() }
         }
+        SidecarEvent::UserMessage { uuid } => {
+            // The messages go to the SDK in the order they were pushed: the id belongs to the oldest
+            // one that has none yet.
+            if let Some(message) = session.messages.iter_mut().find(|m| m.role == MessageRole::User && m.uuid.is_none()) {
+                message.uuid = Some(uuid.clone());
+            }
+            SessionUpdate::UserMessageId
+        }
+        SidecarEvent::RewindResult { request_id, can_rewind, error, files_changed, insertions, deletions } => SessionUpdate::RewindResult {
+            request_id: request_id.clone(),
+            outcome: forge_domain::RewindOutcome {
+                can_rewind: *can_rewind,
+                error: error.clone(),
+                files: files_changed.clone(),
+                insertions: *insertions,
+                deletions: *deletions,
+            },
+        },
         SidecarEvent::SideAnswer { request_id, answer, error } => SessionUpdate::SideAnswer {
             request_id: request_id.clone(),
             result: match answer {

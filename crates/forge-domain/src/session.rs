@@ -19,6 +19,17 @@ pub struct Session {
     pub finished_tasks: Vec<crate::FinishedTask>,
 }
 
+/// What the SDK said about putting the files back (or about what that would change).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RewindOutcome {
+    pub can_rewind: bool,
+    pub error: Option<String>,
+    /// The files that change (absolute paths).
+    pub files: Vec<String>,
+    pub insertions: u64,
+    pub deletions: u64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionSummary {
     pub id: SessionId,
@@ -60,11 +71,14 @@ pub struct Message {
     /// Set when the turn that wrote this message ended; whatever Claude says next (an answer to a
     /// background task, say) is a new message, not more of this one.
     pub turn_closed: bool,
+    /// The id the SDK keeps for a user message (what rewinding names); `None` until it is known and
+    /// for assistant messages.
+    pub uuid: Option<String>,
 }
 
 impl Message {
     pub fn new(role: MessageRole) -> Self {
-        Self { role, blocks: Vec::new(), attachments: Vec::new(), cards: Vec::new(), at: None, turn_closed: false }
+        Self { role, blocks: Vec::new(), attachments: Vec::new(), cards: Vec::new(), at: None, turn_closed: false, uuid: None }
     }
 
     pub fn user(text: impl Into<String>) -> Self {

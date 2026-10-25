@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { buildContent, type ContentBlock } from "./content.js";
 import { buildSkillsPlugin } from "./skills_plugin.js";
 import { turnUsage } from "./usage.js";
@@ -30,6 +31,10 @@ export type QueryHandle = AsyncIterable<unknown> & {
   supportedModels?: () => Promise<unknown>;
   stopTask?: (taskId: string) => Promise<void>;
   askSideQuestion?: (question: string) => Promise<{ response: string; synthetic?: boolean } | null>;
+  rewindFiles?: (
+    userMessageId: string,
+    options?: { dryRun?: boolean },
+  ) => Promise<{ canRewind: boolean; error?: string; filesChanged?: string[]; insertions?: number; deletions?: number }>;
 };
 
 export type QueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => QueryHandle;
@@ -218,6 +223,9 @@ export class SidecarSession {
         // Not awaited: the answer takes a model call and Stop must still get through meanwhile.
         void this.askSide(command.request_id, command.question);
         return;
+      case "rewind_files":
+        await this.rewind(command.request_id, command.message_uuid, command.dry_run);
+        return;
       case "set_permission_mode":
         await this.change(
           (query) => query.setPermissionMode?.(toSdkPermissionMode(command.mode)),
@@ -260,6 +268,28 @@ export class SidecarSession {
         }
         this.pendingPermissions.clear();
         return;
+    }
+  }
+
+  private async rewind(requestId: string, messageUuid: string, dryRun: boolean): Promise<void> {
+    const query = this.activeQuery;
+    if (!query?.rewindFiles) {
+      this.emit({ type: "rewind_result", request_id: requestId, can_rewind: false, error: "no session is running" });
+      return;
+    }
+    try {
+      const result = await query.rewindFiles(messageUuid, { dryRun });
+      this.emit({
+        type: "rewind_result",
+        request_id: requestId,
+        can_rewind: result.canRewind,
+        ...(result.error ? { error: result.error } : {}),
+        ...(result.filesChanged ? { files_changed: result.filesChanged } : {}),
+        ...(typeof result.insertions === "number" ? { insertions: result.insertions } : {}),
+        ...(typeof result.deletions === "number" ? { deletions: result.deletions } : {}),
+      });
+    } catch (err) {
+      this.emit({ type: "rewind_result", request_id: requestId, can_rewind: false, error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -315,7 +345,10 @@ export class SidecarSession {
   }
 
   private pushUserMessage(content: string | ContentBlock[]): void {
-    const message = { type: "user", message: { role: "user", content }, parent_tool_use_id: null };
+    // The SDK keeps this id as the message's uuid, which is what rewinding the files names.
+    const uuid = randomUUID();
+    const message = { type: "user", uuid, message: { role: "user", content }, parent_tool_use_id: null };
+    this.emit({ type: "user_message", uuid });
     const resolver = this.waitingResolvers.shift();
     if (resolver) {
       resolver(message);
@@ -397,6 +430,8 @@ export class SidecarSession {
           abortController: this.abortController,
           canUseTool,
           includePartialMessages: true,
+          // Lets /rewind put the files back as they were before a message.
+          enableFileCheckpointing: true,
           // The SDK refuses bypassPermissions later unless this is set now. It only lets the mode be
           // chosen; Forge enters it only when the person confirms, and only when Settings allows it.
           allowDangerouslySkipPermissions: command.allow_bypass,
