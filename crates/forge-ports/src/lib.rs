@@ -29,7 +29,7 @@ pub use connector_catalog_port::{ConnectorCatalogError, ConnectorCatalogPort};
 pub use mcp_log_port::McpLogPort;
 pub use mcp_manager_port::{McpManagerError, McpManagerPort};
 pub use notify_port::{ClickHandler, NotifyPort};
-pub use files_port::{ContentHit, SearchOptions, DirEntry, FileContent, FileVersion, FilesError, FilesPort, Sheet, SheetBook, SheetCell, WriteError, READ_LIMIT};
+pub use files_port::{ContentHit, DocBlock, DocumentView, SearchOptions, DirEntry, FileContent, FileVersion, FilesError, FilesPort, Sheet, SheetBook, SheetCell, Slide, SlideDeck, SlideItem, TextRun, WriteError, READ_LIMIT};
 pub use git_port::{BranchInfo, ChangeSource, ChangeStatus, ChangedFile, CommitInfo, DiffOptions, FileChange, GitError, GitPort, PatchState, TOO_LARGE_TO_SHOW};
 pub use extension_ports::{
     McpRegistryError, McpRegistryPort, PluginRepositoryError, PluginRepositoryPort,

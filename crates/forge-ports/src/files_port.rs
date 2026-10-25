@@ -34,6 +34,10 @@ pub enum FileContent {
     Pdf { bytes: Vec<u8> },
     /// An xlsx workbook, by its extension, read into text cells.
     Sheet(SheetBook),
+    /// A docx document, by its extension, read into blocks of text.
+    Document(DocumentView),
+    /// A pptx deck, by its extension, read into slides of text.
+    Slides(SlideDeck),
     /// The file has a NUL byte near its start.
     Binary,
     /// The file is over `READ_LIMIT`.
@@ -60,6 +64,55 @@ pub struct SheetCell {
     pub text: String,
     /// The formula text with a leading `=`.
     pub formula: Option<String>,
+}
+
+/// The body of a docx file as blocks, cut to a block cap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentView {
+    pub blocks: Vec<DocBlock>,
+    /// True when the block cap cut something off.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DocBlock {
+    /// `level` is 1 to 6.
+    Heading { level: u8, text: String },
+    Paragraph { runs: Vec<TextRun> },
+    /// `level` is the nesting depth from 0.
+    ListItem { level: u8, numbered: bool, runs: Vec<TextRun> },
+    /// Each cell as plain text.
+    Table { rows: Vec<Vec<String>> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextRun {
+    pub text: String,
+    pub bold: bool,
+    pub italic: bool,
+}
+
+/// The slides of a pptx file, cut to a slide cap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlideDeck {
+    pub slides: Vec<Slide>,
+    /// True when the slide cap cut something off.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Slide {
+    /// Counted from 1.
+    pub number: usize,
+    pub title: Option<String>,
+    pub items: Vec<SlideItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlideItem {
+    /// The nesting depth from 0.
+    pub level: u8,
+    pub text: String,
 }
 
 /// A line of a file that holds the searched text.

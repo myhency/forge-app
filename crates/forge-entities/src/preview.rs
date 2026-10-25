@@ -13,6 +13,10 @@ pub enum PreviewKind {
     Markdown,
     /// A spreadsheet (`.xlsx`), drawn as a table.
     Sheet,
+    /// A Word document (`.docx`), drawn as paragraphs.
+    Document,
+    /// A PowerPoint deck (`.pptx`), drawn as one card per slide.
+    Slides,
     /// Everything else: an editor.
     Text,
 }
@@ -48,6 +52,8 @@ pub fn preview_kind(path: &str) -> PreviewKind {
         Some("html" | "htm") => PreviewKind::Html,
         Some("svg") => PreviewKind::Svg,
         Some("xlsx") => PreviewKind::Sheet,
+        Some("docx") => PreviewKind::Document,
+        Some("pptx") => PreviewKind::Slides,
         Some("pdf") => PreviewKind::Pdf,
         Some("md" | "markdown") => PreviewKind::Markdown,
         Some(extension) if IMAGE_EXTENSIONS.contains(&extension) => PreviewKind::Image,
@@ -66,7 +72,7 @@ pub fn icon_of(path: &str) -> FileIcon {
         PreviewKind::Csv | PreviewKind::Sheet => FileIcon::Table,
         PreviewKind::Html => FileIcon::Globe,
         PreviewKind::Svg | PreviewKind::Image => FileIcon::Picture,
-        PreviewKind::Markdown => FileIcon::Doc,
+        PreviewKind::Markdown | PreviewKind::Document | PreviewKind::Slides => FileIcon::Doc,
         PreviewKind::Pdf => FileIcon::File,
         PreviewKind::Text => match extension_of(path) {
             Some(extension) if CODE_EXTENSIONS.contains(&extension.as_str()) => FileIcon::Code,
@@ -304,6 +310,28 @@ mod tests {
         assert_eq!(preview_kind("/p/A.XLSX"), PreviewKind::Sheet);
         assert!(!has_rendered_view("/p/a.xlsx"));
         assert_eq!(open_target("/p/a.xlsx"), OpenTarget::Files);
+    }
+
+    #[test]
+    fn docx_is_a_document_and_pptx_are_slides_in_any_case() {
+        assert_eq!(preview_kind("/p/a.docx"), PreviewKind::Document);
+        assert_eq!(preview_kind("/p/A.DOCX"), PreviewKind::Document);
+        assert_eq!(preview_kind("/p/a.pptx"), PreviewKind::Slides);
+        assert_eq!(preview_kind("/p/A.PPTX"), PreviewKind::Slides);
+        assert!(!has_rendered_view("/p/a.docx"));
+        assert!(!has_rendered_view("/p/a.pptx"));
+    }
+
+    #[test]
+    fn documents_and_slides_have_the_doc_icon() {
+        assert_eq!(icon_of("/p/a.docx"), FileIcon::Doc);
+        assert_eq!(icon_of("/p/a.pptx"), FileIcon::Doc);
+    }
+
+    #[test]
+    fn open_target_of_docx_and_pptx_is_files() {
+        assert_eq!(open_target("/p/a.docx"), OpenTarget::Files);
+        assert_eq!(open_target("/p/a.pptx"), OpenTarget::Files);
     }
 
     #[test]

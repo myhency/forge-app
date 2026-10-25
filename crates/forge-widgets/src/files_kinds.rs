@@ -52,6 +52,8 @@ pub fn kind_of(content: FileContent) -> TabKind {
         }
         FileContent::Binary => TabKind::Binary,
         FileContent::Sheet(book) => TabKind::Sheet(book),
+        // Until the document and slide views exist (Plan 57B task 4), a docx or pptx shows as a binary file.
+        FileContent::Document(_) | FileContent::Slides(_) => TabKind::Binary,
         FileContent::TooLarge => TabKind::TooLarge,
     }
 }
