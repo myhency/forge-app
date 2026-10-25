@@ -825,6 +825,15 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .side-head { display: flex; align-items: center; gap: 8px; }
 .side-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: 12px; }
 .side-note { color: var(--fg-muted); }
+.rewind-dialog { display: flex; flex-direction: column; gap: 6px; }
+.rewind-row { appearance: none; text-align: left; border: 1px solid var(--border); background: none; color: inherit; border-radius: 8px; padding: 6px 10px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; }
+.rewind-row:hover { background: var(--bg-hover); }
+.rewind-picked { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; background: var(--bg-hover); }
+.rewind-preview { padding: 4px 0; }
+.rewind-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.rewind-button { appearance: none; border: 1px solid var(--border); background: none; color: inherit; border-radius: 8px; padding: 4px 12px; cursor: pointer; font: inherit; }
+.rewind-button:hover:not(:disabled) { background: var(--bg-hover); }
+.rewind-button:disabled { opacity: 0.45; cursor: default; }
 .queue-card { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-hover); font-size: 12px; }
 .queue-title { color: var(--fg-muted, var(--fg)); }
 .queue-row { display: flex; align-items: center; gap: 4px; }

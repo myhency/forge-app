@@ -923,6 +923,26 @@ impl Workspace {
         });
     }
 
+    /// Forks a session as it was before its user message `message_uuid` and opens the copy (the
+    /// conversation half of `/rewind`). A failure shows as a notice and nothing is opened.
+    pub fn fork_session_before(&self, project: PathBuf, session: SessionId, message_uuid: String, title: String) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let mut past = self.past;
+        dioxus::core::spawn_forever(async move {
+            let new_id = match services.registry.fork_before(&project, &session, &message_uuid, &title).await {
+                Ok(id) => id,
+                Err(error) => return this.report(error.to_string()),
+            };
+            match services.sessions.list_sessions(&project).await {
+                Ok(sessions) => replace_project_sessions(&mut past.write(), &project, sessions),
+                Err(error) => return this.report(format!("{}: {error}", project.display())),
+            }
+            let summary = project_for_open(&past.peek(), &project);
+            this.open_past(summary, new_id);
+        });
+    }
+
     /// Whether a folder dialog is open; the button is disabled meanwhile so only one can be.
     pub fn picking_folder(&self) -> bool {
         *self.picking.read()

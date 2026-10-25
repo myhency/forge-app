@@ -11,6 +11,23 @@ fn is_title(value: &Value) -> bool {
     value.get("type").and_then(Value::as_str) == Some("custom-title")
 }
 
+/// The part of a transcript that comes before the line whose `uuid` is `uuid`, with that line's
+/// file snapshot left out too. `None` when no line has that uuid.
+pub(crate) fn truncated_before(source: &str, uuid: &str) -> Option<String> {
+    let lines: Vec<&str> = source.lines().collect();
+    let json = |line: &str| serde_json::from_str::<Value>(line).ok();
+    let cut = lines.iter().position(|line| json(line).is_some_and(|value| value.get("uuid").and_then(Value::as_str) == Some(uuid)))?;
+    let mut out = String::new();
+    for line in &lines[..cut] {
+        if json(line).is_some_and(|value| value.get("messageId").and_then(Value::as_str) == Some(uuid)) {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    Some(out)
+}
+
 /// The text of a fork's transcript, made from the text of the source's. This is what the SDK's
 /// `forkSession` does (seen on a probe transcript, spec 2026-10-03-fork-effort-design.md): every
 /// line with a `uuid` gets a new one and a `forkedFrom: {sessionId, messageUuid}`; `parentUuid`
@@ -97,6 +114,26 @@ mod tests {
 
     fn source(lines: &[Value]) -> String {
         lines.iter().map(|line| format!("{line}\n")).collect()
+    }
+
+    #[test]
+    fn a_transcript_is_cut_before_the_named_message_and_its_snapshot_goes_with_it() {
+        let text = source(&[
+            json!({"type": "file-history-snapshot", "messageId": "u1"}),
+            json!({"type": "user", "uuid": "u1", "parentUuid": null}),
+            json!({"type": "assistant", "uuid": "a1", "parentUuid": "u1"}),
+            json!({"type": "file-history-snapshot", "messageId": "u2"}),
+            json!({"type": "user", "uuid": "u2", "parentUuid": "a1"}),
+            json!({"type": "assistant", "uuid": "a2", "parentUuid": "u2"}),
+        ]);
+
+        let cut = truncated_before(&text, "u2").unwrap();
+        let kept: Vec<Value> = cut.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+
+        assert_eq!(kept.len(), 3);
+        assert_eq!(kept[2]["uuid"], "a1");
+        assert!(truncated_before(&text, "missing").is_none());
+        assert_eq!(truncated_before(&text, "u1").unwrap(), "", "nothing came before the first message but its own snapshot");
     }
 
     #[test]

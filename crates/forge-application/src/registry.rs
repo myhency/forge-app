@@ -224,6 +224,18 @@ impl SessionRegistry {
         Ok(self.sessions.fork_session(project_path, session_id, &fork_title(title)).await?)
     }
 
+    /// Like `fork`, but the copy ends just before the user message `message_uuid` (the conversation
+    /// as it was before that message).
+    pub async fn fork_before(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        message_uuid: &str,
+        title: &str,
+    ) -> Result<SessionId, ManageSessionError> {
+        Ok(self.sessions.fork_session_before(project_path, session_id, message_uuid, &fork_title(title)).await?)
+    }
+
     /// Moves a session's transcript to another project directory, so it lists under the new folder.
     pub async fn move_to(
         &self,
@@ -568,6 +580,10 @@ mod tests {
         }
 
         async fn fork_session(&self, _project_path: &Path, _session_id: &SessionId, _title: &str) -> Result<SessionId, SessionRepositoryError> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn fork_session_before(&self, _project_path: &Path, _session_id: &SessionId, _message_uuid: &str, _title: &str) -> Result<SessionId, SessionRepositoryError> {
             unimplemented!("not used by these tests")
         }
 

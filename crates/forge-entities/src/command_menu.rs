@@ -40,6 +40,11 @@ pub fn btw_question(input: &str) -> Option<&str> {
     (!question.is_empty()).then_some(question)
 }
 
+/// Whether the message is just `/rewind`.
+pub fn is_rewind(input: &str) -> bool {
+    input.trim() == "/rewind"
+}
+
 /// The names the desktop app lists first, in its order.
 const DESKTOP_ORDER: [&str; 13] =
     ["btw", "ultrareview", "rewind", "fork", "subtask", "mcp", "plugin", "feedback", "model", "effort", "fast", "plan", "permissions"];
@@ -126,6 +131,14 @@ mod tests {
 
     fn cmd(name: &str) -> SlashCommand {
         SlashCommand { name: name.to_string(), description: None, argument_hint: None }
+    }
+
+    #[test]
+    fn rewind_is_the_whole_message() {
+        assert!(is_rewind("/rewind"));
+        assert!(is_rewind("  /rewind \n"));
+        assert!(!is_rewind("/rewind now"));
+        assert!(!is_rewind("/rewinds"));
     }
 
     #[test]

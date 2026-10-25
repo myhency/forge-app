@@ -62,6 +62,15 @@ pub trait SessionRepositoryPort: Send + Sync {
         session_id: &SessionId,
         title: &str,
     ) -> Result<SessionId, SessionRepositoryError>;
+    /// Like `fork_session`, but the copy ends just before the user message `message_uuid`: the state
+    /// of the conversation before that message was sent. `NotFound` when the transcript has no such message.
+    async fn fork_session_before(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        message_uuid: &str,
+        title: &str,
+    ) -> Result<SessionId, SessionRepositoryError>;
     /// Moves the session's transcript (and the same-named folder beside it) from one project
     /// directory to another. Nothing is overwritten; a failure leaves everything as it was.
     async fn move_session(

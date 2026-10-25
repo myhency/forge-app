@@ -3,6 +3,7 @@ mod background;
 mod clipboard;
 mod card_view;
 mod command_menu;
+mod rewind_view;
 mod csv_table;
 mod details_view;
 mod diff;
@@ -35,7 +36,8 @@ pub use attachment_card::{card_label, AttachmentCard, SentAttachment, ThumbnailL
 pub use clipboard::copy_text;
 pub use card_view::{modal_title, CardView};
 pub use background::{background_ref, card_key, clear_key, end_label, error_text, finished_pill_label, pill_label, task_cards, task_lists, TaskEnd, TaskLists, valid_output_path, BackgroundRef, TaskCard, WorkflowCard, TASK_OUTPUT_TAIL};
-pub use command_menu::{arrange_commands, btw_question, command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};
+pub use rewind_view::{preview_text, rewind_rows, RewindRow};
+pub use command_menu::{arrange_commands, btw_question, is_rewind, command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};
 pub use csv_table::{parse_csv, CsvTable, CSV_ROW_LIMIT};
 pub use diff::{diff_for_tool, diff_for_tool_call, parse_unified_diff, DiffLine, DiffLineKind, FileDiff};
 pub use diff_view::DiffView;

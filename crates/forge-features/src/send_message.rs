@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{split_cards, SlashCommand};
-use forge_entities::{arrange_commands, btw_question};
+use forge_entities::{arrange_commands, btw_question, is_rewind};
 use forge_shared::{tr, Button, ButtonKind};
 
 use crate::cards::line_count;
@@ -11,16 +11,20 @@ use crate::suggestion::{composer_placeholder, suggestion_to_accept};
 
 use crate::command_box::CommandTextArea;
 use crate::queued_card::QueuedCard;
+use crate::rewind_dialog::RewindDialog;
 use crate::side_card::SideCard;
 use crate::workspace::use_workspace;
 
 // Commands Forge answers itself, listed with the SDK's.
 fn local_commands() -> Vec<SlashCommand> {
-    vec![SlashCommand {
-        name: "btw".to_string(),
-        description: Some(tr!("Ask a quick question without adding it to the session").to_string()),
-        argument_hint: Some(tr!("[question]").to_string()),
-    }]
+    vec![
+        SlashCommand {
+            name: "btw".to_string(),
+            description: Some(tr!("Ask a quick question without adding it to the session").to_string()),
+            argument_hint: Some(tr!("[question]").to_string()),
+        },
+        SlashCommand { name: "rewind".to_string(), description: Some(tr!("Go back to an earlier point").to_string()), argument_hint: None },
+    ]
 }
 
 /// The message box of an open session: Enter sends, Shift+Enter adds a line, and while a turn is
@@ -34,6 +38,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
     use_effect(use_reactive!(|id| composer.set_mention_session(id)));
     let mut draft = draft;
     let mut seen_failures = use_signal(|| 0u32);
+    let mut rewinding = use_signal(|| false);
     let view = workspace.live_view(id);
     let suggestion = view.and_then(|view| view.read().suggestion.clone());
     let accept = suggestion.clone();
@@ -75,6 +80,11 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
 
     let mut submit_or_queue = move |queue: bool| {
         if workspace.session_is_moving(id) {
+            return;
+        }
+        if is_rewind(&draft.read()) {
+            rewinding.set(true);
+            draft.set(String::new());
             return;
         }
         // `/btw question` is asked on the side: it is not sent as a message.
@@ -130,6 +140,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
             }
             ComposerCards { id }
             SideCard { id }
+            RewindDialog { id, open: rewinding }
             QueuedCard { id, draft }
             ComposerChips {}
             TrustCard {}
