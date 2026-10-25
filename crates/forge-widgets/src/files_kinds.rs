@@ -1,7 +1,9 @@
 use base64::Engine;
 use dioxus::prelude::*;
 use forge_entities::{parse_csv, preview_kind, render_markdown, CsvTable, PreviewKind, CSV_ROW_LIMIT};
-use forge_ports::FileContent;
+use forge_ports::{FileContent, SheetBook};
+
+use crate::files_sheet::{binary_offers_open, SheetView};
 use forge_shared::tr;
 
 /// What an open tab shows.
@@ -13,6 +15,7 @@ pub enum TabKind {
     Image { data_url: String },
     Pdf { data_url: String },
     Binary,
+    Sheet(SheetBook),
     TooLarge,
     Failed(String),
 }
@@ -47,8 +50,8 @@ pub fn kind_of(content: FileContent) -> TabKind {
         FileContent::Pdf { bytes } => {
             TabKind::Pdf { data_url: format!("data:application/pdf;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)) }
         }
-        // Until the sheet view exists an xlsx shows as a binary file.
-        FileContent::Binary | FileContent::Sheet(_) => TabKind::Binary,
+        FileContent::Binary => TabKind::Binary,
+        FileContent::Sheet(book) => TabKind::Sheet(book),
         FileContent::TooLarge => TabKind::TooLarge,
     }
 }
@@ -175,7 +178,7 @@ fn SvgView(data_url: String, path: String) -> Element {
 
 /// The body of a tab that has no editor: a picture, a binary file, a file that is too large.
 #[component]
-pub fn FileKindView(kind: TabKind, path: String, on_anyway: EventHandler<()>, on_reveal: EventHandler<()>) -> Element {
+pub fn FileKindView(kind: TabKind, path: String, on_anyway: EventHandler<()>, on_reveal: EventHandler<()>, on_open: EventHandler<()>) -> Element {
     match kind {
         TabKind::Image { data_url } => rsx! {
             div { class: "files-kind",
@@ -190,10 +193,14 @@ pub fn FileKindView(kind: TabKind, path: String, on_anyway: EventHandler<()>, on
                 p { {tr!("This file looks like binary data and cannot be previewed as text.")} }
                 div { class: "files-kind-buttons",
                     button { class: "files-kind-button", r#type: "button", onclick: move |_| on_reveal.call(()), "{forge_features::show_in_file_manager()}" }
+                    if binary_offers_open(&path) {
+                        button { class: "files-kind-button", r#type: "button", onclick: move |_| on_open.call(()), {tr!("Open in the default program")} }
+                    }
                     button { class: "files-kind-button", r#type: "button", onclick: move |_| on_anyway.call(()), {tr!("Show as text anyway")} }
                 }
             }
         },
+        TabKind::Sheet(book) => rsx! { SheetView { key: "{path}", book, path, on_open } },
         TabKind::TooLarge => rsx! {
             div { class: "files-kind",
                 p { class: "files-kind-title", {tr!("This file cannot be previewed")} }
@@ -293,6 +300,14 @@ mod tests {
     fn binary_and_too_large_map_straight_across() {
         assert_eq!(kind_of(FileContent::Binary), TabKind::Binary);
         assert_eq!(kind_of(FileContent::TooLarge), TabKind::TooLarge);
+    }
+
+    #[test]
+    fn a_sheet_keeps_its_book_and_has_no_editor() {
+        let book = SheetBook { sheets: vec![] };
+        let kind = kind_of(FileContent::Sheet(book.clone()));
+        assert_eq!(kind, TabKind::Sheet(book));
+        assert!(!kind.shows_editor());
     }
 
     #[test]

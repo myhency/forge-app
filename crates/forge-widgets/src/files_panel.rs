@@ -15,6 +15,7 @@ use crate::files_editor::{use_editor_channel, use_editor_driver, FromPage};
 use crate::files_icons::FileTypeIcon;
 use crate::files_kinds::{FileKindView, RenderedView, TabKind};
 use crate::files_menu::FilesMenu;
+use crate::files_sheet::failed_offers_open;
 use crate::files_state::FilesCtx;
 use crate::files_tabs::{FilesTabs, TabView};
 use crate::panel_frame::PanelFrame;
@@ -383,7 +384,23 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let content = match (&selected, &kind) {
         (None, _) => rsx! { div { class: "dock-note", {tr!("Pick a file")} } },
         (Some(_), None | Some(TabKind::Loading)) => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
-        (Some(_), Some(TabKind::Failed(message))) => rsx! { div { class: "dock-note error", "{message}" } },
+        (Some(path), Some(TabKind::Failed(message))) => {
+            let open_ctx = ctx.clone();
+            let open_path = path.clone();
+            rsx! {
+                div { class: "dock-note error", "{message}" }
+                if failed_offers_open(path) {
+                    div { class: "files-kind-buttons",
+                        button {
+                            class: "files-kind-button",
+                            r#type: "button",
+                            onclick: move |_| open_ctx.run_action(FileAction::OpenDefault, &open_path),
+                            {tr!("Open in the default program")}
+                        }
+                    }
+                }
+            }
+        }
         (Some(path), Some(TabKind::Text { .. })) if unavailable => match ctx.fallback.read().get(path).cloned() {
             Some((html, numbers)) => rsx! {
                 div { class: "dock-note", {tr!("The editor could not be loaded, so this file is shown read only.")} }
@@ -402,14 +419,15 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         },
         (Some(_), Some(TabKind::Text { .. })) => rsx! {},
         (Some(path), Some(other)) => {
-            let (anyway_ctx, reveal_ctx) = (ctx.clone(), ctx.clone());
-            let (anyway_path, reveal_path) = (path.clone(), path.clone());
+            let (anyway_ctx, reveal_ctx, open_ctx) = (ctx.clone(), ctx.clone(), ctx.clone());
+            let (anyway_path, reveal_path, open_path) = (path.clone(), path.clone(), path.clone());
             rsx! {
                 FileKindView {
                     kind: other.clone(),
                     path: path.clone(),
                     on_anyway: move |_| anyway_ctx.show_anyway(anyway_path.clone()),
                     on_reveal: move |_| reveal_ctx.reveal(&reveal_path),
+                    on_open: move |_| open_ctx.run_action(FileAction::OpenDefault, &open_path),
                 }
             }
         }

@@ -19,6 +19,7 @@ mod files_icons;
 mod files_kinds;
 mod files_menu;
 mod files_panel;
+mod files_sheet;
 mod files_state;
 mod files_tabs;
 mod filter_menu;

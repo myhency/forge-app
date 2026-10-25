@@ -451,6 +451,7 @@ pub static KO: &[(&str, &str)] = &[
     ("On", "켜짐"),
     ("Only a text file can be copied", "텍스트 파일만 복사할 수 있습니다"),
     ("Only the first files are listed. Use Show in folder to see all of them.", "처음 일부 파일만 표시됩니다. 모두 보려면 폴더에서 보기를 사용하세요."),
+    ("Only the first 500 rows and 50 columns are shown.", "처음 500행, 50열만 표시합니다."),
     ("Only the first {count} rows are shown. Switch to the source to see the rest.", "처음 {count}행만 표시됩니다. 나머지를 보려면 소스로 전환하세요."),
     ("Open file", "파일 열기"),
     ("Open folder", "폴더 열기"),
