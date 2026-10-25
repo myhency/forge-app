@@ -55,6 +55,37 @@ The person who gets a report or a deck from Claude wants to look at it in Forge 
 
 Port type names and fields beyond the shape above, how numbering is resolved, the CSS, where the view components live (new files next to `files_sheet.rs`), tests with fixtures built in test code (`zip` writer with hand-written minimal XML, so no new dev-dependency is needed unless it is much simpler with one).
 
+## As built
+
+Types (forge-ports `files_port.rs`): `DocumentView`, `DocBlock`, `TextRun`, `SlideDeck`, `Slide`, `SlideItem` as in the spec. Readers are `docx.rs` and `pptx.rs` in forge-adapter-files; the guards they share are in `office_zip.rs`. Views are in `files_office.rs` (forge-widgets).
+
+Guards (`office_zip.rs`, shared by both readers): at most 10,000 zip parts; each part declares at most 100 MB and is read with a bounded real read; an XML event budget of 5,000,000 per file; `presentation.xml` and its rels at most 5 MB each; 200 MB of slide XML in total across slides. Caps on content: 2,000 blocks (docx), 200 slides, 2,000 items per slide (not in the original spec), tables 100 rows x 20 columns, 10,000 characters per paragraph or item. The xlsx check (`check_xlsx`) now also refuses a zip with more than 10,000 parts.
+
+docx details beyond the spec:
+- A heading is found by style NAME in `styles.xml` (`heading 1`...), not only by id, because Korean Word uses ids such as `1` and `2`.
+- A list comes from the paragraph's style too (python-docx `List Bullet`, `List Number`), following `basedOn` up to 10 steps. `numId 0` means not a list.
+- `*PrChange` elements (tracked formatting changes) are ignored.
+- XML that is not UTF-8 fails with a text error.
+
+Views: a reading column of 720 px, real `h1`...`h6`, list markers counted per list, a table scrolls horizontally inside its own wrapper, slide cards stacked. The open button sits in a slim toolbar, top right.
+
+Strings: `Slide {number}` stays an interpolated string (`슬라이드 {number}`) instead of the spec's plain `Slide` (controller ruling).
+
+## Checked in the real window (2026-10-25)
+
+With the samples from `scripts/harness/add_office_samples.py`:
+- report.docx shows the heading, a paragraph with bold and italic, bullets and numbers (after the style-list fix found in this very check), the 2x2 table, and the 14-column table clipped at the right edge and scrollable.
+- deck.pptx shows 3 slide cards: title with subtitle; a title with a nested bullet indented; a blank slide with `텍스트가 없는 슬라이드입니다.`
+- `기본 프로그램으로 열기` sits in a slim toolbar, top right. The Korean strings are correct.
+
+Not checked: dark mode, the horizontal scrolling by actually dragging, the `일부만 표시합니다` line, a real Word or PowerPoint file (only python-docx and python-pptx samples), password-protected or corrupt files in the window, Windows, pressing the open button.
+
 ## Left (not in 57B)
 
-Images in docx, headers/footers, footnotes, comments, speaker notes, slide thumbnails, copy of a table, search inside the preview, `.doc`/`.ppt`/OpenDocument.
+- Images in docx and pptx, headers/footers, footnotes, comments, speaker notes, slide thumbnails, copy of a table, search inside the preview, `.doc`/`.ppt`/OpenDocument.
+- Heading detection by style name does not follow `basedOn`.
+- A docx style chain longer than 10 `basedOn` steps loses its list.
+- The styles and numbering parts are read with the 100 MB limit (a few MB would do).
+- Attribute parsing is quadratic on a hostile tag.
+- No tests for `EVENT_LIMIT`, a DOCTYPE entity, deep nesting, or a duplicate `sldId`.
+- The message "unpacks to too much data" is also used for the part-count refusal.
