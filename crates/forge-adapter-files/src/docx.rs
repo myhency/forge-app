@@ -12,6 +12,10 @@ const MAX_ROWS: usize = 100;
 const MAX_COLUMNS: usize = 20;
 // All the tables of a file together keep at most this many cells.
 const MAX_CELLS: usize = 50_000;
+// All the paragraphs, list items and table cells of a file together keep at most this many runs
+// (after neighbouring runs with the same format are joined), so the view has a bounded number of
+// spans to draw.
+const MAX_RUNS: usize = 100_000;
 // One paragraph, heading, list item or table cell keeps at most this many characters.
 const MAX_TEXT_CHARS: usize = 10_000;
 // The whole file (styles, numbering and body together) stops being read after this many XML
@@ -331,12 +335,23 @@ fn same_format(a: &TextRun, b: &TextRun) -> bool {
     (a.bold, a.italic, a.underline, a.strike, a.color, a.highlight) == (b.bold, b.italic, b.underline, b.strike, b.color, b.highlight)
 }
 
-// Adds `run` to `runs`, joined to the last run when they look the same.
-fn push_run(runs: &mut Vec<TextRun>, run: TextRun) {
+// Whether `run` would start a new run after `runs` instead of joining the last one.
+fn starts_a_run(runs: &[TextRun], run: &TextRun) -> bool {
+    !runs.last().is_some_and(|last| same_format(last, run))
+}
+
+// Adds `run` to `runs`, joined to the last run when they look the same. A new run takes one of
+// `runs_left`; when none is left the run is dropped and the result is false.
+fn push_run(runs: &mut Vec<TextRun>, run: TextRun, runs_left: &mut usize) -> bool {
     match runs.last_mut() {
         Some(last) if same_format(last, &run) => last.text.push_str(&run.text),
-        _ => runs.push(run),
+        _ if *runs_left == 0 => return false,
+        _ => {
+            *runs_left -= 1;
+            runs.push(run);
+        }
     }
+    true
 }
 
 #[derive(Default)]
@@ -371,6 +386,8 @@ struct Body<'a> {
     in_cell_properties: bool,
     // The cells all tables may still keep.
     cells_left: usize,
+    // The runs all blocks may still keep.
+    runs_left: usize,
     text: TextBudget,
 }
 
@@ -394,6 +411,7 @@ impl<'a> Body<'a> {
             cell: None,
             in_cell_properties: false,
             cells_left: MAX_CELLS,
+            runs_left: MAX_RUNS,
             text: TextBudget::new(office_zip::TOTAL_TEXT_BYTES),
         }
     }
@@ -418,9 +436,11 @@ impl<'a> Body<'a> {
             }
             Event::Empty(tag) => self.open(&tag, true),
             Event::End(tag) => return self.close(tag.local_name().as_ref()),
-            Event::Text(text) if self.in_text => self.add_text(&text.xml10_content()),
-            Event::CData(text) if self.in_text => self.add_text(&text.xml10_content()),
-            Event::GeneralRef(reference) if self.in_text => {
+            // Text inside run properties is not text (`in_text` is never set there, and properties
+            // opened inside a `w:t` stop its text).
+            Event::Text(text) if self.in_text && !self.in_run_properties => self.add_text(&text.xml10_content()),
+            Event::CData(text) if self.in_text && !self.in_run_properties => self.add_text(&text.xml10_content()),
+            Event::GeneralRef(reference) if self.in_text && !self.in_run_properties => {
                 let resolved = match reference.resolve_char_ref() {
                     Ok(Some(character)) => Some(character.to_string()),
                     Ok(None) => quick_xml::escape::resolve_predefined_entity(&reference).map(str::to_string),
@@ -453,15 +473,16 @@ impl<'a> Body<'a> {
                 self.in_run = true;
                 self.format = RunFormat::default();
             }
+            // Properties opened inside a `w:t` stop its text but are not the run's properties.
             "rPr" if !empty && self.in_run => self.in_run_properties = true,
-            "b" if self.in_run_properties => self.format.bold = is_on(tag),
-            "i" if self.in_run_properties => self.format.italic = is_on(tag),
-            "u" if self.in_run_properties => self.format.underline = is_underlined(tag),
-            "strike" if self.in_run_properties => self.format.strike = is_on(tag),
-            "dstrike" if self.in_run_properties => self.format.double_strike = is_on(tag),
-            "color" if self.in_run_properties => self.format.color = color_of(tag),
-            "highlight" if self.in_run_properties => self.format.highlight = highlight_of(tag),
-            "shd" if self.in_run_properties => self.format.shading = fill_of(tag),
+            "b" if self.in_run_properties && !self.in_text => self.format.bold = is_on(tag),
+            "i" if self.in_run_properties && !self.in_text => self.format.italic = is_on(tag),
+            "u" if self.in_run_properties && !self.in_text => self.format.underline = is_underlined(tag),
+            "strike" if self.in_run_properties && !self.in_text => self.format.strike = is_on(tag),
+            "dstrike" if self.in_run_properties && !self.in_text => self.format.double_strike = is_on(tag),
+            "color" if self.in_run_properties && !self.in_text => self.format.color = color_of(tag),
+            "highlight" if self.in_run_properties && !self.in_text => self.format.highlight = highlight_of(tag),
+            "shd" if self.in_run_properties && !self.in_text => self.format.shading = fill_of(tag),
             // The cell's own properties, not those of a nested table's cell.
             "tcPr" if !empty && self.table_depth == 1 && self.cell.is_some() => self.in_cell_properties = true,
             "shd" if self.in_cell_properties => {
@@ -469,7 +490,7 @@ impl<'a> Body<'a> {
                     cell.fill = fill_of(tag);
                 }
             }
-            "t" if !empty && self.in_run => self.in_text = true,
+            "t" if !empty && self.in_run && !self.in_run_properties => self.in_text = true,
             "tab" | "br" | "cr" if self.in_run && !self.in_run_properties => self.add_text(" "),
             "tbl" if !empty => {
                 self.table_depth += 1;
@@ -541,10 +562,15 @@ impl<'a> Body<'a> {
         true
     }
 
-    // Adds text to the open paragraph with the open run's format, up to the paragraph's text cap
-    // and the file's text budget.
+    // Adds text to the open paragraph with the open run's format, up to the paragraph's text cap,
+    // the file's text budget and the file's run budget.
     fn add_text(&mut self, text: &str) {
         let Some(paragraph) = self.paragraph.as_mut() else { return };
+        let run = self.format.run();
+        if self.runs_left == 0 && starts_a_run(&paragraph.runs, &run) {
+            self.truncated = true;
+            return;
+        }
         let (kept, was_cut) = cut(text, MAX_TEXT_CHARS - paragraph.chars);
         let (kept, over_budget) = self.text.take(kept);
         self.truncated |= was_cut | over_budget;
@@ -552,7 +578,7 @@ impl<'a> Body<'a> {
             return;
         }
         paragraph.chars += kept.chars().count();
-        push_run(&mut paragraph.runs, TextRun { text: kept.to_string(), ..self.format.run() });
+        push_run(&mut paragraph.runs, TextRun { text: kept.to_string(), ..run }, &mut self.runs_left);
     }
 
     // A paragraph with text becomes a block, or inside a table joins its cell's runs after a plain
@@ -561,6 +587,13 @@ impl<'a> Body<'a> {
         self.in_properties = false;
         let Some(paragraph) = self.paragraph.take() else { return true };
         let text: String = paragraph.runs.iter().map(|run| run.text.as_str()).collect();
+        let heading = paragraph.style.as_deref().and_then(|style| level_of_style(style).or_else(|| self.styles.headings.get(style).copied()));
+        // The runs of a paragraph that is not kept as runs go back to the budget: a cell takes them
+        // again as it joins them, a heading keeps only its text.
+        let kept_as_runs = !text.trim().is_empty() && self.table_depth == 0 && heading.is_none();
+        if !kept_as_runs {
+            self.runs_left += paragraph.runs.len();
+        }
         if text.trim().is_empty() {
             return true;
         }
@@ -576,8 +609,11 @@ impl<'a> Body<'a> {
                     let (kept, was_cut) = cut(&run.text, MAX_TEXT_CHARS - *chars);
                     self.truncated |= was_cut;
                     if !kept.is_empty() {
+                        if !push_run(&mut cell.runs, TextRun { text: kept.to_string(), ..run }, &mut self.runs_left) {
+                            self.truncated = true;
+                            break;
+                        }
                         *chars += kept.chars().count();
-                        push_run(&mut cell.runs, TextRun { text: kept.to_string(), ..run });
                     }
                     if was_cut {
                         break;
@@ -586,7 +622,6 @@ impl<'a> Body<'a> {
             }
             return true;
         }
-        let heading = paragraph.style.as_deref().and_then(|style| level_of_style(style).or_else(|| self.styles.headings.get(style).copied()));
         // The paragraph's own list settings win; what it leaves out comes from its style.
         let from_style = paragraph.style.as_deref().and_then(|style| self.styles.list_of(style));
         let list = match (paragraph.list, from_style) {
@@ -1114,6 +1149,73 @@ mod tests {
         assert_eq!(cells, 50_000);
         assert!(all.truncated);
         assert!(!view(docx(&full_table.repeat(25))).truncated);
+    }
+
+    // `count` one-character runs that alternate between red and plain, so no two neighbours join.
+    fn alternating_runs(count: usize) -> String {
+        (0..count).map(|index| if index % 2 == 0 { r#"<w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>a</w:t></w:r>"# } else { "<w:r><w:t>b</w:t></w:r>" }).collect()
+    }
+
+    fn run_count(view: &DocumentView) -> usize {
+        view.blocks
+            .iter()
+            .map(|block| match block {
+                DocBlock::Heading { .. } => 0,
+                DocBlock::Paragraph { runs } | DocBlock::ListItem { runs, .. } => runs.len(),
+                DocBlock::Table { rows } => rows.iter().flatten().map(|cell| cell.runs.len()).sum(),
+            })
+            .sum()
+    }
+
+    #[test]
+    fn runs_are_capped_at_100000_per_document_and_marked_truncated() {
+        // 120 paragraphs of 1,000 runs: 120,000 runs, each paragraph under its own caps.
+        let paragraph = format!("<w:p>{}</w:p>", alternating_runs(1000));
+        let over = view(docx(&paragraph.repeat(120)));
+        assert_eq!(run_count(&over), 100_000);
+        assert!(over.truncated);
+        // The text of the dropped runs is dropped too.
+        let text: usize = over.blocks.iter().map(|block| match block {
+            DocBlock::Paragraph { runs } => runs.iter().map(|run| run.text.len()).sum(),
+            _ => 0,
+        }).sum();
+        assert_eq!(text, 100_000);
+        let exact = view(docx(&paragraph.repeat(100)));
+        assert_eq!((run_count(&exact), exact.truncated), (100_000, false));
+    }
+
+    #[test]
+    fn the_run_cap_also_covers_table_cells() {
+        // 6 rows of 20 cells of 1,000 runs: 120,000 runs in 120 cells.
+        let cell = format!("<w:tc><w:p>{}</w:p></w:tc>", alternating_runs(1000));
+        let body = format!("<w:tbl>{}</w:tbl>", format!("<w:tr>{}</w:tr>", cell.repeat(20)).repeat(6));
+        let over = view(docx(&body));
+        assert_eq!(run_count(&over), 100_000);
+        assert!(over.truncated);
+        // Runs a paragraph holds for a moment before it joins its cell are not counted twice.
+        let fits = view(docx(&format!("<w:tbl>{}</w:tbl>", format!("<w:tr>{}</w:tr>", cell.repeat(20)).repeat(5))));
+        assert_eq!((run_count(&fits), fits.truncated), (100_000, false));
+    }
+
+    #[test]
+    fn text_inside_rpr_is_ignored() {
+        // A `w:t` inside the properties is not text; the properties after it still count.
+        let inside = r#"<w:p><w:r><w:rPr><w:t>hidden</w:t><w:color w:val="FF0000"/></w:rPr><w:t>shown</w:t></w:r></w:p>"#;
+        assert_eq!(runs_of(inside), vec![TextRun { color: Some(RED), ..run("shown", false, false) }]);
+        // Properties inside a `w:t` change nothing, and their own text is not text.
+        let toggles = r#"<w:p><w:r><w:t>a<w:rPr><w:color w:val="FF0000"/><w:b/>x</w:rPr>b<w:color w:val="00FF00"/>c</w:t></w:r></w:p>"#;
+        assert_eq!(runs_of(toggles), vec![run("abc", false, false)]);
+        // The probe's shape: many toggles inside one `w:t` inside `w:rPr` give no runs at all.
+        let probe = format!("<w:p><w:r><w:rPr><w:t>{}</w:t></w:rPr></w:r></w:p>{}", r#"<w:color w:val="FF0000"/>a<w:color w:val="00FF00"/>b"#.repeat(1000), p("end"));
+        let view = view(docx(&probe));
+        assert_eq!((view.blocks, view.truncated), (vec![plain("end")], false));
+    }
+
+    #[test]
+    fn an_ordinary_document_is_not_truncated_by_the_run_cap() {
+        let paragraph = format!("<w:p>{}</w:p>", alternating_runs(5));
+        let view = view(docx(&paragraph.repeat(2000)));
+        assert_eq!((view.blocks.len(), run_count(&view), view.truncated), (2000, 10_000, false));
     }
 
     fn text_bytes(view: &DocumentView) -> usize {
