@@ -28,6 +28,8 @@ mod effort;
 mod environment;
 mod composer_cards;
 mod composer_state;
+mod file_lists;
+mod mention_popup;
 mod trust;
 mod dock;
 mod file_menu;
@@ -90,11 +92,13 @@ pub use editor_tabs::{EditorTab, EditorTabs};
 pub use task_list_views::TaskListView;
 pub use details::{change_counts, ChangeCounts, DetailsCard, OneShot};
 pub use output_files::offers_default_program;
+pub use file_lists::{FileListState, FILE_LIST_LIMIT};
+pub use mention_popup::{absolute_in, attached_in, key_decision, KeyDecision, MentionOutcome, MentionPick, MentionPopup, MentionStatus};
 pub use dock::{Column, DockState, DockStates, Panel, DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH};
 pub use environment::{card_folders, folder_menu, FolderMenu, environment_menu, numbered_ids, picker_choices, start_plan, variables_error_text, EnvRow, EnvironmentDraft, EnvironmentKey, EnvironmentMenu, EnvironmentRequest, EnvironmentStart, StartError};
 pub use effort::{effort_button_label, effort_levels, slider_position, effort_help, slider_faster, slider_smarter};
 pub use composer_cards::ComposerCards;
-pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, Outgoing};
+pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, MentionView, Outgoing};
 pub use filter_menu::{
     current_index, filter_key, group_label, sort_label, status_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
     FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,

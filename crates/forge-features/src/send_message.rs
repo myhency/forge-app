@@ -18,6 +18,8 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
     let workspace = use_workspace();
     let draft = use_signal(String::new);
     let composer = use_composer_state_provider(draft);
+    // The `@` mention lists this session's folder.
+    use_effect(use_reactive!(|id| composer.set_mention_session(id)));
     let mut draft = draft;
     let mut seen_failures = use_signal(|| 0u32);
     let view = workspace.live_view(id);

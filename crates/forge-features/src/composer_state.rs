@@ -1,10 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
+use forge_application::LiveSessionId;
 use forge_domain::{with_cards, Attachment, Card};
+use forge_entities::{mention_query, MenuAction, MenuKey, MentionRange, MentionRow};
 
 use crate::attachments::{add_attachments, check_attachments, folder_label, with_folder_hints};
 use crate::blocking::run_blocking;
+use crate::mention_popup::{absolute_in, attached_in, byte_to_utf16, key_decision, mention_rows, utf16_to_byte, without_range, KeyDecision, MentionOutcome, MentionPopup, MentionStatus};
 use crate::thumbnail::ComposerAttachment;
 use crate::trust::{answer_card, apply_pick, classify_added_folder, resolved, FolderAdd, TrustChoice};
 use crate::workspace::{use_workspace, Workspace, WorkspaceServices};
@@ -27,6 +30,25 @@ pub fn plan_send(text: &str, attachments: &[Attachment], unannounced: &[PathBuf]
     Some(Outgoing { text: with_cards(cards, &with_folder_hints(text, unannounced)), attachments: attachments.to_vec() })
 }
 
+/// The `@` mention list as the composer shows it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MentionView {
+    pub range: MentionRange,
+    pub rows: Vec<MentionRow>,
+    pub highlight: usize,
+    pub status: MentionStatus,
+}
+
+// Puts the text area's cursor at `utf16` once the text area holds the text of `length` units (the
+// new text reaches the page after this call).
+fn place_cursor(length: usize, utf16: usize) {
+    document::eval(&format!(
+        "let tries = 0; const place = () => {{ const a = document.activeElement; \
+         if (a && a.tagName === 'TEXTAREA' && a.value.length === {length}) {{ a.setSelectionRange({utf16}, {utf16}); }} \
+         else if (tries++ < 10) {{ requestAnimationFrame(place); }} }}; requestAnimationFrame(place);"
+    ));
+}
+
 /// What is in the composer besides what the text area owns: chips for attached files and added
 /// folders, and the small signals the `+` menu uses. Provided by the message box and read by the
 /// menu, which lives in another crate.
@@ -41,6 +63,12 @@ pub struct ComposerState {
     picking: Signal<bool>,
     /// A folder the person picked that is not trusted yet; the card under the chips asks about it.
     pending_trust: Signal<Option<PathBuf>>,
+    /// The open session whose folder the `@` mention lists; `None` on the new-session screen.
+    mention_session: Signal<Option<LiveSessionId>>,
+    /// The text area's text and cursor (a byte offset) as last read; a cursor read for other text
+    /// than the draft's (a pick, a send, a failed send put back) opens nothing.
+    cursor: Signal<Option<(String, usize)>>,
+    mention_popup: Signal<MentionPopup>,
     services: Signal<WorkspaceServices>,
     workspace: Workspace,
 }
@@ -57,6 +85,9 @@ pub fn use_composer_state_provider(draft: Signal<String>) -> ComposerState {
         popup_token: Signal::new(0),
         picking: Signal::new(false),
         pending_trust: Signal::new(None),
+        mention_session: Signal::new(None),
+        cursor: Signal::new(None),
+        mention_popup: Signal::new(MentionPopup::default()),
         services: Signal::new(services),
         workspace,
     });
@@ -207,6 +238,101 @@ impl ComposerState {
         if pending.peek().is_some() {
             pending.set(None);
         }
+    }
+
+    /// Lets the `@` mention list the files of this session's folder.
+    pub fn set_mention_session(&self, id: LiveSessionId) {
+        let mut session = self.mention_session;
+        if *session.peek() != Some(id) {
+            session.set(Some(id));
+        }
+    }
+
+    pub fn mentions_on(&self) -> bool {
+        self.mention_session.peek().is_some()
+    }
+
+    /// The text area's text and cursor as read from the page (`utf16` is `selectionStart`). With an
+    /// `@` at the cursor the session folder is walked, when that is due.
+    /// `None` for `utf16` while text is selected: no cursor, so no list.
+    pub fn note_cursor(&self, text: String, utf16: Option<usize>) {
+        let Some(id) = *self.mention_session.peek() else { return };
+        let byte = utf16.and_then(|utf16| utf16_to_byte(&text, utf16));
+        let opens = byte.and_then(|byte| mention_query(&text, byte)).is_some();
+        let next = byte.map(|byte| (text, byte));
+        let mut cursor = self.cursor;
+        if *cursor.peek() != next {
+            cursor.set(next);
+        }
+        if opens {
+            self.workspace.refresh_session_files(id);
+        }
+    }
+
+    // The `@…` span at the cursor, read for the draft as it is now.
+    fn mention_range(&self) -> Option<MentionRange> {
+        let draft = self.draft.read();
+        let cursor = self.cursor.read();
+        let (text, byte) = cursor.as_ref().filter(|(text, _)| *text == *draft)?;
+        mention_query(text, *byte)
+    }
+
+    fn mention_folder(&self) -> Option<PathBuf> {
+        let id = (*self.mention_session.read())?;
+        let view = self.workspace.live_view(id)?;
+        let folder = view.read().project_path.clone();
+        Some(folder)
+    }
+
+    /// The open mention list, or `None` when it is closed.
+    pub fn mention(&self) -> Option<MentionView> {
+        let id = (*self.mention_session.read())?;
+        let range = self.mention_range();
+        let popup = self.mention_popup.read();
+        if !popup.is_open(range.as_ref()) {
+            return None;
+        }
+        let range = range?;
+        let folder = self.mention_folder()?;
+        let attachments = self.attachments.read();
+        let (rows, status) = mention_rows(&self.workspace.session_files(id), &range.query, &|relative| attached_in(&folder, relative, &attachments));
+        let highlight = popup.highlight(&range, rows.len());
+        Some(MentionView { range, rows, highlight, status })
+    }
+
+    /// What a key in the text area does: the open list's, a send, or the text area's own.
+    pub fn key_decision(&self, key: MenuKey, composing: bool, shift: bool) -> KeyDecision {
+        key_decision(self.mention().is_some(), key, composing, shift)
+    }
+
+    /// A key the open list took.
+    pub fn mention_act(&self, action: MenuAction) {
+        let Some(view) = self.mention() else { return };
+        let mut popup = self.mention_popup;
+        let outcome = popup.write().act(&view.range, &view.rows, action);
+        self.apply_mention(outcome);
+    }
+
+    /// A click on a row of the open list.
+    pub fn mention_pick(&self, index: usize) {
+        let Some(view) = self.mention() else { return };
+        let mut popup = self.mention_popup;
+        let outcome = popup.write().pick(&view.range, &view.rows, index);
+        self.apply_mention(outcome);
+    }
+
+    // A pick takes the `@…` text out and attaches the file, the way the `+` menu does.
+    fn apply_mention(&self, outcome: MentionOutcome) {
+        let MentionOutcome::Picked(pick) = outcome else { return };
+        let Some(folder) = self.mention_folder() else { return };
+        let mut draft = self.draft;
+        let text = without_range(&draft.peek(), &pick.range);
+        let (length, at) = (byte_to_utf16(&text, text.len()), byte_to_utf16(&text, pick.range.start));
+        draft.set(text);
+        let mut popup = self.mention_popup;
+        popup.set(MentionPopup::default());
+        self.add_paths(vec![absolute_in(&folder, &pick.path)]);
+        place_cursor(length, at);
     }
 
     /// Puts `/` in the text area (after a space when there is text) and asks it to open its

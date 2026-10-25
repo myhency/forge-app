@@ -15,6 +15,7 @@ use crate::change_rows::{ChangeView, ChangesSession};
 use crate::cards::{clamp_cards, Cards};
 use crate::customize::CustomizeTab;
 use crate::output_files::{existing_outputs, open_place, resolved_open_place, OpenPlace, OutputsStore};
+use crate::file_lists::{FileListState, FileListStore, FILE_LIST_LIMIT};
 use crate::details::{change_counts, ChangeCounts, DetailsCard, OneShot};
 use crate::closed_sessions::ClosedSessions;
 use crate::editor_tabs::EditorTabs;
@@ -190,6 +191,8 @@ pub struct Workspace {
     change_count_tickets: Signal<HashMap<LiveSessionId, u64>>,
     /// The Outputs card's files per session, and the ticket of its latest read.
     outputs: Signal<OutputsStore>,
+    /// The `@` mention's file list per session.
+    file_lists: Signal<FileListStore>,
     /// The file outside the session folder that the note asks about.
     outside_file: Signal<Option<String>>,
     /// The Customize tab a details card asked for; the page takes it when it appears.
@@ -277,6 +280,7 @@ pub fn use_workspace_provider() -> Workspace {
             change_counts: Signal::new(HashMap::new()),
             change_count_tickets: Signal::new(HashMap::new()),
             outputs: Signal::new(OutputsStore::default()),
+            file_lists: Signal::new(FileListStore::default()),
             outside_file: Signal::new(None),
             customize_tab_request: Signal::new(OneShot::default()),
             comment_focus: Signal::new(HashMap::new()),
@@ -1224,6 +1228,37 @@ impl Workspace {
             let changed = store.peek().would_change(id, ticket, &kept);
             if changed {
                 store.write().finish(id, ticket, kept);
+            }
+        });
+    }
+
+    /// The files of the session folder for the `@` mention, as far as they were walked.
+    pub fn session_files(&self, id: LiveSessionId) -> FileListState {
+        self.file_lists.read().state(id)
+    }
+
+    /// Walks the session folder again when the list is due (never walked, a turn ended since, or
+    /// older than 30 s) and no walk is in flight. The walk runs off the UI thread; the old list
+    /// stays visible meanwhile, and a walk finishing after the session closed or moved writes
+    /// nothing. A folder that cannot be walked gives an empty list.
+    pub fn refresh_session_files(&self, id: LiveSessionId) {
+        let Some(view) = self.live_view(id) else { return };
+        let (folder, turn_mark) = {
+            let view = view.peek();
+            (view.project_path.clone(), (view.phase == Phase::Idle).then_some(view.session.messages.len()))
+        };
+        let now = std::time::Instant::now();
+        let mut store = self.file_lists;
+        if !store.peek().needs_walk(id, now, turn_mark) {
+            return;
+        }
+        let Some(ticket) = store.write().begin(id, now, turn_mark) else { return };
+        let files = self.files();
+        dioxus::core::spawn_forever(async move {
+            let list = crate::run_blocking(move || files.list_files(&folder, FILE_LIST_LIMIT)).await.and_then(Result::ok).unwrap_or_default();
+            // Peeked first, so a walk the session outlived wakes nobody.
+            if store.peek().is_current(id, ticket) {
+                store.write().finish(id, ticket, list);
             }
         });
     }
@@ -2358,6 +2393,8 @@ impl Workspace {
         counts.write().remove(&id);
         let mut outputs = self.outputs;
         outputs.write().forget(id);
+        let mut file_lists = self.file_lists;
+        file_lists.write().forget(id);
         // Dropping the ticket makes a read still running find none, so it writes nothing.
         let mut tickets = self.change_count_tickets;
         tickets.write().remove(&id);
@@ -2705,6 +2742,8 @@ impl Workspace {
     fn forget_folder_state(&self, id: LiveSessionId) {
         let mut stores = self.files_stores;
         stores.write().remove(&id);
+        let mut file_lists = self.file_lists;
+        file_lists.write().forget(id);
         self.clear_queued_files(id);
         self.clear_file_request(id);
         self.clear_comment_focus(id);

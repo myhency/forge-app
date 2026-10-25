@@ -5,6 +5,7 @@ use forge_features::{use_settings, use_workspace, Panel, SendMessageBox};
 
 use crate::composer_controls::{EffortPicker, ModePicker, ModelPicker};
 use crate::dock::Dock;
+use crate::mention_list::MentionList;
 use crate::permission_panel::PermissionPanel;
 use crate::plus_menu::PlusMenu;
 use crate::question_panel::QuestionPanel;
@@ -152,6 +153,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 }
             } else if view.can_send {
                 SendMessageBox { id, running: view.phase == Phase::Running, can_send: !workspace.session_is_moving(id),
+                    MentionList {}
                     PlusMenu { project: Some(view.project_path.clone()), add_folder_enabled: true }
                     ModePicker { id }
                     ModelPicker { id }
