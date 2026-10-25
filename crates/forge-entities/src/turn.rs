@@ -8,7 +8,7 @@ use crate::card_view::CardView;
 use crate::diff::diff_for_tool_call;
 use crate::diff_view::DiffView;
 use crate::links::{known_paths, render_markdown_linked};
-use crate::attachment_card::AttachmentCard;
+use crate::attachment_card::SentAttachment;
 use crate::message::ToolDetail;
 use crate::question::AnswerPair;
 use crate::relative_time::relative_time;
@@ -85,7 +85,7 @@ fn TurnItem(
                     if !message.attachments.is_empty() {
                         div { class: "attach-row",
                             for (index, attachment) in message.attachments.iter().enumerate() {
-                                AttachmentCard { key: "{index}", attachment: attachment.clone(), on_remove: None }
+                                SentAttachment { key: "{index}{attachment.path.display()}", attachment: attachment.clone() }
                             }
                         }
                     }

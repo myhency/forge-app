@@ -2,10 +2,10 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_domain::{with_cards, Attachment, Card};
-use forge_entities::AttachmentCard;
 
 use crate::attachments::{add_attachments, check_attachments, folder_label, with_folder_hints};
 use crate::blocking::run_blocking;
+use crate::thumbnail::ComposerAttachment;
 use crate::trust::{answer_card, apply_pick, classify_added_folder, resolved, FolderAdd, TrustChoice};
 use crate::workspace::{use_workspace, Workspace, WorkspaceServices};
 use forge_shared::{tr, Button, ButtonKind};
@@ -293,10 +293,10 @@ pub fn ComposerChips() -> Element {
     rsx! {
         div { class: "chips",
             for (index, attachment) in attachments.iter().enumerate() {
-                AttachmentCard {
-                    key: "a{index}",
+                ComposerAttachment {
+                    key: "a{attachment.path.display()}",
                     attachment: attachment.clone(),
-                    on_remove: Some(EventHandler::new(move |_| composer.remove_attachment(index))),
+                    on_remove: EventHandler::new(move |_| composer.remove_attachment(index)),
                 }
             }
             for (index, folder) in folders.iter().enumerate() {

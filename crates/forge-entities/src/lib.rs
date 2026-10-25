@@ -31,7 +31,7 @@ mod turn_view;
 mod usage_card;
 mod usage_view;
 
-pub use attachment_card::{card_label, thumbnail_allowed, thumbnail_data_url, AttachmentCard, THUMBNAIL_LIMIT};
+pub use attachment_card::{card_label, AttachmentCard, SentAttachment, ThumbnailLoader};
 pub use clipboard::copy_text;
 pub use card_view::{modal_title, CardView};
 pub use background::{background_ref, card_key, clear_key, end_label, error_text, finished_pill_label, pill_label, task_cards, task_lists, TaskEnd, TaskLists, valid_output_path, BackgroundRef, TaskCard, WorkflowCard, TASK_OUTPUT_TAIL};
@@ -46,7 +46,6 @@ pub use links::{known_paths, render_markdown_linked};
 pub use highlight::{code_html, language_of};
 pub use markdown::render_markdown;
 pub use mention::{mention_query, rank_mentions, shorten_middle, type_tag, MentionRange, MentionRow};
-pub use message::attachment_label;
 pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_options, model_value, ModelRow, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
 pub use permission_view::{card_takes_focus, plan_card_takes_focus, permission_key, permission_view, plan_key, plan_reason, plan_text_of_request, workflow_permission_key, PermissionKey, PermissionView, PlanAsk, PlanChoice, PlanKey, WorkflowAsk, DEFAULT_PLAN_REFUSAL};
 pub use workflow_progress::{journal_path, parse_journal, steps, workflow_ref, dot_class, AgentState, JournalAgent, Step, WorkflowRef};

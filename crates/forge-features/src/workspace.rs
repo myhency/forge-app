@@ -292,6 +292,7 @@ pub fn use_workspace_provider() -> Workspace {
         }
     });
     use_context_provider(move || workspace);
+    crate::thumbnail::provide_thumbnail_loader();
     use_hook(move || workspace.reload_past());
     use_hook(move || workspace.reload_prefs());
     use_hook(move || workspace.start_auto_archive());

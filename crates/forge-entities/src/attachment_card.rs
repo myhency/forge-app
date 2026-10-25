@@ -1,69 +1,37 @@
 //! The card of an attached file: a thumbnail for an image, the name (up to three lines), a type tag.
-//! One card for the composer (removable) and the sent message (read only).
+//! One card for the composer (removable) and the sent message (read only). Reading the image is not
+//! done here: the card takes the `data:` address, and the feature layer provides the loader.
 
-use std::path::Path;
+use std::future::Future;
+use std::pin::Pin;
+use std::rc::Rc;
 
-use base64::Engine;
 use dioxus::prelude::*;
-use forge_domain::{Attachment, AttachmentKind};
+use forge_domain::Attachment;
 
 use crate::mention::{shorten_middle, type_tag};
 
-/// The biggest image that gets a thumbnail; a bigger one is not read at all.
-pub const THUMBNAIL_LIMIT: u64 = 1_000_000;
 /// The characters a name may have on a card: three lines of about 24.
 const NAME_CHARS: usize = 72;
 
-/// Whether a card may show a thumbnail: an image of known size within the limit.
-pub fn thumbnail_allowed(kind: AttachmentKind, size: Option<u64>) -> bool {
-    kind == AttachmentKind::Image && size.is_some_and(|size| size <= THUMBNAIL_LIMIT)
-}
+/// Gives a card its thumbnail: the `data:` address of an attached image, `None` when it has none.
+/// The feature layer provides it as a context value; the sent message looks it up.
+#[derive(Clone)]
+pub struct ThumbnailLoader(pub Rc<dyn Fn(Attachment) -> Pin<Box<dyn Future<Output = Option<String>>>>>);
 
 /// The name shown on a card and its tag.
 pub fn card_label(attachment: &Attachment) -> (String, String) {
     (shorten_middle(&attachment.file_name(), NAME_CHARS), type_tag(&attachment.path.to_string_lossy()))
 }
 
-fn image_mime(path: &Path) -> Option<&'static str> {
-    match path.extension()?.to_string_lossy().to_lowercase().as_str() {
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "gif" => Some("image/gif"),
-        "webp" => Some("image/webp"),
-        "bmp" => Some("image/bmp"),
-        _ => None,
-    }
-}
-
-/// The `data:` address of an image attachment, or `None` when it is no image, too big, or unreadable.
-/// Reads the file, so call it off the UI thread.
-pub fn thumbnail_data_url(attachment: &Attachment) -> Option<String> {
-    let size = std::fs::metadata(&attachment.path).ok().map(|meta| meta.len());
-    if !thumbnail_allowed(attachment.kind, size) {
-        return None;
-    }
-    let mime = image_mime(&attachment.path)?;
-    let bytes = std::fs::read(&attachment.path).ok()?;
-    // The file may have grown since the size was read.
-    if bytes.len() as u64 > THUMBNAIL_LIMIT {
-        return None;
-    }
-    Some(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
-}
-
 /// An attached file as a card. With `on_remove` it has a remove button (the composer); without, it
-/// only shows (the sent message). The thumbnail of an image is read in the background.
+/// only shows (the sent message).
 #[component]
-pub fn AttachmentCard(attachment: Attachment, on_remove: Option<EventHandler<()>>) -> Element {
-    let for_thumbnail = attachment.clone();
-    let thumbnail = use_resource(use_reactive!(|(for_thumbnail)| async move {
-        tokio::task::spawn_blocking(move || thumbnail_data_url(&for_thumbnail)).await.ok().flatten()
-    }));
+pub fn AttachmentCard(attachment: Attachment, thumbnail: Option<String>, on_remove: Option<EventHandler<()>>) -> Element {
     let (name, tag) = card_label(&attachment);
-    let src = thumbnail.read().clone().flatten();
     rsx! {
         div { class: "attach-card", title: "{attachment.path.display()}",
-            if let Some(src) = src {
+            if let Some(src) = thumbnail {
                 img { class: "attach-thumb", src: "{src}", alt: "" }
             }
             span { class: "attach-name", "{name}" }
@@ -75,22 +43,34 @@ pub fn AttachmentCard(attachment: Attachment, on_remove: Option<EventHandler<()>
     }
 }
 
+/// A card on a sent message: it asks the provided loader for the thumbnail, if there is one.
+#[component]
+pub fn SentAttachment(attachment: Attachment) -> Element {
+    let loader = try_use_context::<ThumbnailLoader>();
+    let for_load = attachment.clone();
+    // The answer carries its path so a card never shows the thumbnail of another file.
+    let loaded = use_resource(use_reactive!(|(for_load)| {
+        let loader = loader.clone();
+        async move {
+            let thumbnail = match loader {
+                Some(loader) => (loader.0)(for_load.clone()).await,
+                None => None,
+            };
+            (for_load.path, thumbnail)
+        }
+    }));
+    let thumbnail = loaded.read().clone().and_then(|(path, thumbnail)| if path == attachment.path { thumbnail } else { None });
+    rsx! { AttachmentCard { attachment, thumbnail, on_remove: None } }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_domain::AttachmentKind;
     use std::path::PathBuf;
 
     fn attachment(path: &str, kind: AttachmentKind) -> Attachment {
         Attachment { path: PathBuf::from(path), kind }
-    }
-
-    #[test]
-    fn a_thumbnail_needs_an_image_of_known_size_within_a_megabyte() {
-        assert!(thumbnail_allowed(AttachmentKind::Image, Some(0)));
-        assert!(thumbnail_allowed(AttachmentKind::Image, Some(THUMBNAIL_LIMIT)));
-        assert!(!thumbnail_allowed(AttachmentKind::Image, Some(THUMBNAIL_LIMIT + 1)));
-        assert!(!thumbnail_allowed(AttachmentKind::Image, None));
-        assert!(!thumbnail_allowed(AttachmentKind::File, Some(10)));
     }
 
     #[test]
@@ -102,23 +82,5 @@ mod tests {
         assert_eq!(name.chars().count(), NAME_CHARS);
         assert!(name.ends_with("종.docx") || name.ends_with("가.docx"));
         assert_eq!(tag, "DOCX");
-    }
-
-    #[test]
-    fn a_thumbnail_is_a_data_url_and_a_missing_or_big_file_has_none() {
-        let dir = std::env::temp_dir().join(format!("forge-card-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let small = dir.join("a.png");
-        std::fs::write(&small, [1u8, 2, 3]).unwrap();
-        let big = dir.join("big.png");
-        std::fs::write(&big, vec![0u8; THUMBNAIL_LIMIT as usize + 1]).unwrap();
-        let text = dir.join("t.txt");
-        std::fs::write(&text, "x").unwrap();
-        let url = thumbnail_data_url(&Attachment { path: small, kind: AttachmentKind::Image });
-        assert_eq!(url.as_deref(), Some("data:image/png;base64,AQID"));
-        assert_eq!(thumbnail_data_url(&Attachment { path: big, kind: AttachmentKind::Image }), None);
-        assert_eq!(thumbnail_data_url(&Attachment { path: text, kind: AttachmentKind::File }), None);
-        assert_eq!(thumbnail_data_url(&attachment("/nope/missing.png", AttachmentKind::Image)), None);
-        let _ = std::fs::remove_dir_all(dir);
     }
 }
