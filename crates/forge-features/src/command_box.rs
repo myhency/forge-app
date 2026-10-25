@@ -52,6 +52,8 @@ pub fn CommandTextArea(
     #[props(default)] open_token: u32,
     oninput: EventHandler<String>,
     onsubmit: EventHandler<()>,
+    /// ⌘Enter: send later. Without a handler it sends like Enter.
+    onqueue: Option<EventHandler<()>>,
 ) -> Element {
     let composer = try_use_context::<ComposerState>();
     let mut selected = use_signal(|| 0usize);
@@ -175,7 +177,10 @@ pub fn CommandTextArea(
                         // Enter that confirms an IME composition (Korean, Japanese, Chinese) must not send.
                         if key_decision(false, key, composing, shift) == KeyDecision::Send {
                             event.prevent_default();
-                            onsubmit.call(());
+                            match onqueue {
+                                Some(onqueue) if crate::command_held(event.modifiers()) => onqueue.call(()),
+                                _ => onsubmit.call(()),
+                            }
                         }
                     }
                 },

@@ -6,7 +6,7 @@ use forge_ports::{SidecarEvent, SidecarFactoryPort, SidecarPort, StartSessionPar
 use tokio::sync::{mpsc, watch};
 
 use crate::event::{apply_sidecar_event, SessionUpdate};
-use crate::live_session::{LiveCommand, LiveSessionView, Phase};
+use crate::live_session::{LiveCommand, LiveSessionView, Phase, QueuedMessage};
 use crate::use_cases::{AnswerQuestionUseCase, ApprovePermissionUseCase, StopTaskUseCase, ExtensionsUseCase, InterruptTurnUseCase, SendMessageUseCase};
 
 const CANNOT_SEND: &str = "the project folder no longer exists, so this session can only be viewed";
@@ -108,6 +108,23 @@ impl Actor {
     async fn handle_command(&mut self, command: LiveCommand) {
         match command {
             LiveCommand::Send { text, attachments } => self.send(text, attachments).await,
+            LiveCommand::Queue { text, attachments } => {
+                if self.view.phase == Phase::Running {
+                    self.view.queued.push(QueuedMessage { text, attachments });
+                    self.dirty = true;
+                } else {
+                    self.send(text, attachments).await;
+                }
+            }
+            LiveCommand::Dequeue { index, send_now } => {
+                if index < self.view.queued.len() {
+                    let message = self.view.queued.remove(index);
+                    self.dirty = true;
+                    if send_now {
+                        self.send(message.text, message.attachments).await;
+                    }
+                }
+            }
             LiveCommand::AddDirectories(directories) => self.add_directories(directories).await,
             LiveCommand::MoveTo(folder) => self.move_to(folder).await,
             LiveCommand::Suspend(answer) => {
@@ -431,6 +448,11 @@ impl Actor {
             SessionUpdate::TurnCompleted => {
                 self.view.phase = Phase::Idle;
                 self.view.turn_started = None;
+                // The next queued message starts the next turn.
+                if !self.view.queued.is_empty() {
+                    let message = self.view.queued.remove(0);
+                    self.send(message.text, message.attachments).await;
+                }
             }
             SessionUpdate::BackgroundTasks(tasks) => {
                 let now = std::time::SystemTime::now();

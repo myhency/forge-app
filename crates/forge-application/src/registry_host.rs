@@ -274,6 +274,7 @@ mod tests {
             mcp_servers: None,
             commands: Vec::new(),
             allowed_rules: Vec::new(),
+            queued: Vec::new(),
         }
     }
 

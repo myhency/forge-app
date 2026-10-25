@@ -571,6 +571,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Send", "보내기"),
     ("Send a message to see the connectors.", "메시지를 보내면 커넥터를 확인할 수 있습니다."),
     ("Send a message to see the context usage.", "컨텍스트 사용량을 확인하려면 메시지를 보내세요."),
+    ("Send now", "지금 보내기"),
     ("Sep", "9월"),
     ("Separate test, build and generated files", "테스트, 빌드, 생성된 파일 분리"),
     ("Server", "서버"),
@@ -821,6 +822,8 @@ pub static KO: &[(&str, &str)] = &[
     ("{count} background task", "백그라운드 작업 {count}개"),
     ("{count} background tasks", "백그라운드 작업 {count}개"),
     ("{count} files edited", "파일 {count}개 편집됨"),
+    ("{count} message waiting", "메시지 {count}개 대기 중"),
+    ("{count} messages waiting", "메시지 {count}개 대기 중"),
     ("{count} more lines are not shown", "{count}줄은 표시하지 않습니다"),
     ("{count} task finished", "작업 {count}개 완료"),
     ("{count} tasks finished", "작업 {count}개 완료"),
@@ -866,4 +869,5 @@ pub static KO: &[(&str, &str)] = &[
     ("← Connectors", "← 커넥터"),
     ("← Plugins", "← 플러그인"),
     ("← Skills", "← 스킬"),
+    ("⏎ to send, ⌘⏎ to queue and send later", "⏎ 키로 보내기, ⌘⏎ 키로 대기열에 추가하여 나중에 보내기"),
 ];

@@ -819,6 +819,12 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .question-footer { display: flex; align-items: center; gap: 8px; }
 .perm-button.disabled, .perm-button:disabled { opacity: 0.45; cursor: default; }
 
+.queue-card { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-hover); font-size: 12px; }
+.queue-title { color: var(--fg-muted, var(--fg)); }
+.queue-row { display: flex; align-items: center; gap: 4px; }
+.queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-action { appearance: none; border: none; background: none; color: inherit; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.queue-action:hover { background: var(--bg-hover); outline: 1px solid var(--border); }
 .stop-button { appearance: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 2px solid var(--fg); border-radius: 50%; background: none; cursor: pointer; flex: none; }
 .stop-button:hover { background: var(--bg-hover); }
 .stop-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg); }

@@ -13,7 +13,7 @@ mod test_support;
 
 pub use command_probe::CommandProbe;
 pub use event::{apply_sidecar_event, push_user_message, SessionUpdate};
-pub use live_session::{LiveCommand, LiveSessionHandle, LiveSessionId, LiveSessionView, Phase};
+pub use live_session::{LiveCommand, LiveSessionHandle, LiveSessionId, LiveSessionView, Phase, QueuedMessage};
 pub use probe_slot::ProbeSlot;
 pub use registry_host::{is_busy, is_finished, RegistryHost, WaitingRun};
 pub use routine_runner::{RoutineHost, RoutineRunner, RunRequest, StartFailure};

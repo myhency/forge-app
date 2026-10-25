@@ -72,11 +72,26 @@ pub struct LiveSessionView {
     pub commands: Vec<SlashCommand>,
     /// The rules of every request the person answered "always allow" in this session, in order.
     pub allowed_rules: Vec<String>,
+    /// Messages the person asked to send once the running turn ends, oldest first. The session
+    /// sends the front one when a turn ends.
+    pub queued: Vec<QueuedMessage>,
+}
+
+/// A message waiting for the running turn to end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueuedMessage {
+    pub text: String,
+    pub attachments: Vec<Attachment>,
 }
 
 #[derive(Debug)]
 pub enum LiveCommand {
     Send { text: String, attachments: Vec<Attachment> },
+    /// Keeps the message until the running turn ends; with no turn running it is sent at once.
+    Queue { text: String, attachments: Vec<Attachment> },
+    /// Takes the queued message at `index` out; `send_now` sends it into the running turn instead
+    /// of dropping it.
+    Dequeue { index: usize, send_now: bool },
     AddDirectories(Vec<PathBuf>),
     /// Makes the folder the session's working folder from the next start on.
     MoveTo(PathBuf),
@@ -119,6 +134,16 @@ impl LiveSessionHandle {
     /// Sends a message with files and images attached.
     pub fn send_with(&self, text: String, attachments: Vec<Attachment>) {
         let _ = self.commands.send(LiveCommand::Send { text, attachments });
+    }
+
+    /// Holds a message until the running turn ends (see `LiveCommand::Queue`).
+    pub fn queue(&self, text: String, attachments: Vec<Attachment>) {
+        let _ = self.commands.send(LiveCommand::Queue { text, attachments });
+    }
+
+    /// Removes the queued message at `index` (`send_now`: and sends it now).
+    pub fn dequeue(&self, index: usize, send_now: bool) {
+        let _ = self.commands.send(LiveCommand::Dequeue { index, send_now });
     }
 
     /// Folders the session may use besides its own. The SDK reads them at start, so a running
@@ -284,6 +309,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         mcp_servers: None,
         commands: init.commands,
         allowed_rules: Vec::new(),
+        queued: Vec::new(),
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
     let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -1052,6 +1078,64 @@ mod tests {
         control.push(turn_complete());
         let idle = wait_for(&mut view, "the turn to end", |v| v.phase == Phase::Idle).await;
         assert!(idle.turn_started.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_queued_message_is_sent_when_the_turn_ends_and_only_then() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.send("first".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        handle.queue("second".to_string(), Vec::new());
+        handle.queue("third".to_string(), Vec::new());
+        let queued = wait_for(&mut view, "two queued", |v| v.queued.len() == 2).await;
+        assert_eq!(queued.queued[0].text, "second");
+        assert!(!control.calls().contains(&Call::Send("second".to_string())), "nothing is sent while the turn runs");
+
+        control.push(turn_complete());
+        let after = wait_for(&mut view, "the front one to go out", |v| v.queued.len() == 1).await;
+        assert_eq!(after.queued[0].text, "third");
+        assert_eq!(after.phase, Phase::Running, "the sent one starts a turn of its own");
+        assert!(control.calls().contains(&Call::Send("second".to_string())));
+        assert!(!control.calls().contains(&Call::Send("third".to_string())));
+    }
+
+    #[tokio::test]
+    async fn queueing_while_idle_sends_at_once() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.queue("now".to_string(), Vec::new());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        assert!(control.calls().contains(&Call::Send("now".to_string())));
+        assert!(handle.snapshot().queued.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_queued_message_can_be_removed_or_sent_now() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("first".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+        handle.queue("a".to_string(), Vec::new());
+        handle.queue("b".to_string(), Vec::new());
+        handle.queue("c".to_string(), Vec::new());
+        wait_for(&mut view, "three queued", |v| v.queued.len() == 3).await;
+
+        handle.dequeue(0, false);
+        handle.dequeue(1, true); // "c" now, after "a" was removed
+        let after = wait_for(&mut view, "two taken out", |v| v.queued.len() == 1).await;
+        assert_eq!(after.queued[0].text, "b");
+        assert!(control.calls().contains(&Call::Send("c".to_string())));
+        assert!(!control.calls().contains(&Call::Send("a".to_string())));
+        handle.dequeue(9, false); // out of range: nothing happens
+        assert_eq!(handle.snapshot().queued.len(), 1);
     }
 
     fn task(id: &str) -> forge_domain::BackgroundTaskInfo {

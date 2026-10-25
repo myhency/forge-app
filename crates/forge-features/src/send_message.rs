@@ -9,6 +9,7 @@ use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCar
 use crate::suggestion::{composer_placeholder, suggestion_to_accept};
 
 use crate::command_box::CommandTextArea;
+use crate::queued_card::QueuedCard;
 use crate::workspace::use_workspace;
 
 /// The message box of an open session: Enter sends, Shift+Enter adds a line, and while a turn is
@@ -61,7 +62,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
         }
     });
 
-    let mut submit = move || {
+    let mut submit_or_queue = move |queue: bool| {
         if workspace.session_is_moving(id) {
             return;
         }
@@ -72,10 +73,16 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
             return;
         };
         if let Some(handle) = workspace.handle(id) {
-            handle.send_with(outgoing.text, outgoing.attachments);
+            if queue {
+                handle.queue(outgoing.text, outgoing.attachments);
+            } else {
+                handle.send_with(outgoing.text, outgoing.attachments);
+            }
             draft.set(String::new());
         }
     };
+    let mut submit = move || submit_or_queue(false);
+    let mut queue = move || submit_or_queue(true);
     let stop = move |_| {
         if let Some(handle) = workspace.handle(id) {
             handle.interrupt();
@@ -102,16 +109,18 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                 div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
             }
             ComposerCards { id }
+            QueuedCard { id, draft }
             ComposerChips {}
             TrustCard {}
             CommandTextArea {
                 value: draft(),
                 commands: view.map(|view| view.read().commands.clone()).unwrap_or_default(),
-                placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, tr!("Message Claude…")),
+                placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, if running { tr!("⏎ to send, ⌘⏎ to queue and send later") } else { tr!("Message Claude…") }),
                 disabled: !can_send,
                 open_token: composer.popup_token(),
                 oninput: move |text| draft.set(text),
                 onsubmit: move |_| submit(),
+                onqueue: move |_| queue(),
             }
             div { class: "composer-row",
                 {children}
