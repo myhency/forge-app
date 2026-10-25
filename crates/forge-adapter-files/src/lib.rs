@@ -9,6 +9,7 @@ use calamine::{Data, Reader, SheetType, Xlsx};
 use chrono::NaiveTime;
 use regex::{Regex, RegexBuilder};
 
+mod docx;
 mod office_zip;
 
 const SKIPPED: [&str; 2] = [".git", "node_modules"];
@@ -68,12 +69,8 @@ fn looks_binary(bytes: &[u8]) -> bool {
     bytes[..bytes.len().min(BINARY_SNIFF)].contains(&0)
 }
 
-fn is_pdf(path: &Path) -> bool {
-    path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
-}
-
-fn is_xlsx(path: &Path) -> bool {
-    path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("xlsx"))
+fn has_extension(path: &Path, wanted: &str) -> bool {
+    path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case(wanted))
 }
 
 const SHEET_MAX_ROWS: usize = 500;
@@ -265,11 +262,14 @@ impl FilesPort for LocalFiles {
             return Ok(FileContent::TooLarge);
         }
         let bytes = fs::read(&file).map_err(failed)?;
-        if is_pdf(&file) {
+        if has_extension(&file, "pdf") {
             return Ok(FileContent::Pdf { bytes });
         }
-        if is_xlsx(&file) {
+        if has_extension(&file, "xlsx") {
             return read_xlsx(bytes);
+        }
+        if has_extension(&file, "docx") {
+            return docx::read_docx(bytes);
         }
         if let Some(mime) = image_mime(&file) {
             return Ok(FileContent::Image { bytes, mime: mime.to_string() });
