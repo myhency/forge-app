@@ -16,6 +16,8 @@ const MAX_TEXT_CHARS: usize = 10_000;
 const EVENT_LIMIT: usize = 5_000_000;
 // Word nests a list 9 deep (`w:ilvl` 0 to 8).
 const MAX_LIST_LEVEL: u8 = 8;
+// A style's list is looked for this many `w:basedOn` steps up, so a cycle of styles ends.
+const MAX_BASED_ON_STEPS: usize = 10;
 // Elements whose text is not shown: tracked deletions and moves away, drawings (text boxes are not
 // drawn), the fallback copy of alternate content, and the old properties a tracked change keeps.
 const HIDDEN: [&str; 14] = [
@@ -48,7 +50,7 @@ pub(crate) fn read_docx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
     let document = office_zip::read_part(&mut archive, "word/document.xml", limit, too_big)?
         .ok_or_else(|| failed("This file has no word/document.xml, so it is not a Word document."))?;
     // A missing or damaged styles or numbering part only costs its lookups.
-    let styles = office_zip::read_part(&mut archive, "word/styles.xml", limit, too_big)?.map(|xml| heading_styles(&xml)).unwrap_or_default();
+    let styles = office_zip::read_part(&mut archive, "word/styles.xml", limit, too_big)?.map(|xml| Styles::of(&xml)).unwrap_or_default();
     let numbering = office_zip::read_part(&mut archive, "word/numbering.xml", limit, too_big)?.map(|xml| Numbering::of(&xml)).unwrap_or_default();
     let mut body = Body::new(&styles, &numbering);
     if walk(&document, |event| body.event(event))? {
@@ -79,25 +81,92 @@ fn level_of_style(name: &str) -> Option<u8> {
     (1..=9).contains(&level).then_some(level.min(6))
 }
 
-// The heading level of each paragraph style whose name (not id) is a heading's, since Word in
-// some languages gives the built-in heading styles other ids (Korean Word uses `1`, `2` …).
-fn heading_styles(xml: &[u8]) -> HashMap<String, u8> {
-    let mut levels = HashMap::new();
-    let mut style: Option<String> = None;
-    let _ = walk(xml, |event| {
-        match event {
-            Event::Start(tag) if tag.local_name().as_ref() == "style" => style = attribute(&tag, "styleId"),
-            Event::End(tag) if tag.local_name().as_ref() == "style" => style = None,
-            Event::Empty(tag) | Event::Start(tag) if tag.local_name().as_ref() == "name" => {
-                if let (Some(id), Some(level)) = (style.as_ref(), attribute(&tag, "val").as_deref().and_then(level_of_style)) {
-                    levels.insert(id.clone(), level);
+// A list setting (`w:numPr`) of a paragraph or a style; either part may be left out.
+#[derive(Default, Clone)]
+struct ListSetting {
+    num_id: Option<String>,
+    level: Option<u8>,
+}
+
+fn list_level(tag: &BytesStart<'_>) -> u8 {
+    attribute(tag, "val").and_then(|value| value.parse::<u8>().ok()).unwrap_or(0).min(MAX_LIST_LEVEL)
+}
+
+/// What `word/styles.xml` says about paragraph styles: the heading level of each style whose name
+/// (not id) is a heading's, since Word in some languages gives the built-in heading styles other
+/// ids (Korean Word uses `1`, `2` …), and the list each style carries (python-docx's `List Bullet`
+/// and `List Number` put the list in the style, not the paragraph).
+#[derive(Default)]
+struct Styles {
+    headings: HashMap<String, u8>,
+    lists: HashMap<String, ListSetting>,
+    based_on: HashMap<String, String>,
+}
+
+impl Styles {
+    fn of(xml: &[u8]) -> Self {
+        let mut styles = Self::default();
+        let mut style: Option<String> = None;
+        let (mut in_properties, mut hidden) = (false, 0usize);
+        let _ = walk(xml, |event| {
+            if hidden > 0 {
+                match event {
+                    Event::Start(_) => hidden += 1,
+                    Event::End(_) => hidden -= 1,
+                    _ => {}
                 }
+                return true;
             }
-            _ => {}
+            match event {
+                Event::Start(tag) if HIDDEN.contains(&tag.local_name().as_ref()) => hidden = 1,
+                Event::Start(tag) if tag.local_name().as_ref() == "style" => style = attribute(&tag, "styleId"),
+                Event::End(tag) if tag.local_name().as_ref() == "style" => (style, in_properties) = (None, false),
+                Event::Start(tag) if tag.local_name().as_ref() == "pPr" => in_properties = style.is_some(),
+                Event::End(tag) if tag.local_name().as_ref() == "pPr" => in_properties = false,
+                Event::Empty(tag) | Event::Start(tag) => {
+                    let Some(id) = style.as_ref() else { return true };
+                    match tag.local_name().as_ref() {
+                        "name" => {
+                            if let Some(level) = attribute(&tag, "val").as_deref().and_then(level_of_style) {
+                                styles.headings.insert(id.clone(), level);
+                            }
+                        }
+                        "basedOn" => {
+                            if let Some(parent) = attribute(&tag, "val") {
+                                styles.based_on.insert(id.clone(), parent);
+                            }
+                        }
+                        "numPr" if in_properties => {
+                            styles.lists.entry(id.clone()).or_default();
+                        }
+                        "numId" if in_properties => styles.lists.entry(id.clone()).or_default().num_id = attribute(&tag, "val"),
+                        "ilvl" if in_properties => styles.lists.entry(id.clone()).or_default().level = Some(list_level(&tag)),
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+            true
+        });
+        styles
+    }
+
+    // The list a style carries, its own settings first and then those of the styles it is based
+    // on, at most `MAX_BASED_ON_STEPS` up. `None` when no style in the chain has a list.
+    fn list_of(&self, style: &str) -> Option<ListSetting> {
+        let mut found: Option<ListSetting> = None;
+        let mut current = style;
+        for _ in 0..=MAX_BASED_ON_STEPS {
+            if let Some(own) = self.lists.get(current) {
+                let setting = found.get_or_insert_with(ListSetting::default);
+                setting.num_id = setting.num_id.take().or_else(|| own.num_id.clone());
+                setting.level = setting.level.or(own.level);
+            }
+            let Some(parent) = self.based_on.get(current) else { break };
+            current = parent;
         }
-        true
-    });
-    levels
+        found
+    }
 }
 
 /// The number formats of `word/numbering.xml`, to tell a numbered list from a bulleted one.
@@ -164,9 +233,8 @@ impl Numbering {
 #[derive(Default)]
 struct Paragraph {
     style: Option<String>,
-    listed: bool,
-    num_id: Option<String>,
-    level: u8,
+    // The paragraph's own `w:numPr`, which wins over the one of its style.
+    list: Option<ListSetting>,
     runs: Vec<TextRun>,
     chars: usize,
 }
@@ -174,7 +242,7 @@ struct Paragraph {
 /// The state of a walk through `word/document.xml`. Only the outermost table has rows and cells;
 /// the text of a nested table goes into the outer cell it sits in.
 struct Body<'a> {
-    styles: &'a HashMap<String, u8>,
+    styles: &'a Styles,
     numbering: &'a Numbering,
     blocks: Vec<DocBlock>,
     truncated: bool,
@@ -195,7 +263,7 @@ struct Body<'a> {
 }
 
 impl<'a> Body<'a> {
-    fn new(styles: &'a HashMap<String, u8>, numbering: &'a Numbering) -> Self {
+    fn new(styles: &'a Styles, numbering: &'a Numbering) -> Self {
         Self {
             styles,
             numbering,
@@ -262,12 +330,11 @@ impl<'a> Body<'a> {
             }
             "pPr" if !empty && self.paragraph.is_some() && !self.in_run => self.in_properties = true,
             "pStyle" if in_properties => self.with_paragraph(|paragraph| paragraph.style = attribute(tag, "val")),
-            "numPr" if in_properties => self.with_paragraph(|paragraph| paragraph.listed = true),
-            "ilvl" if in_properties => {
-                let level = attribute(tag, "val").and_then(|value| value.parse::<u8>().ok()).unwrap_or(0).min(MAX_LIST_LEVEL);
-                self.with_paragraph(|paragraph| paragraph.level = level);
-            }
-            "numId" if in_properties => self.with_paragraph(|paragraph| paragraph.num_id = attribute(tag, "val")),
+            "numPr" if in_properties => self.with_paragraph(|paragraph| {
+                paragraph.list.get_or_insert_with(ListSetting::default);
+            }),
+            "ilvl" if in_properties => self.with_paragraph(|paragraph| paragraph.list.get_or_insert_with(ListSetting::default).level = Some(list_level(tag))),
+            "numId" if in_properties => self.with_paragraph(|paragraph| paragraph.list.get_or_insert_with(ListSetting::default).num_id = attribute(tag, "val")),
             "r" if !empty => {
                 self.in_run = true;
                 (self.bold, self.italic) = (false, false);
@@ -375,12 +442,19 @@ impl<'a> Body<'a> {
             }
             return true;
         }
-        let heading = paragraph.style.as_deref().and_then(|style| level_of_style(style).or_else(|| self.styles.get(style).copied()));
+        let heading = paragraph.style.as_deref().and_then(|style| level_of_style(style).or_else(|| self.styles.headings.get(style).copied()));
+        // The paragraph's own list settings win; what it leaves out comes from its style.
+        let from_style = paragraph.style.as_deref().and_then(|style| self.styles.list_of(style));
+        let list = match (paragraph.list, from_style) {
+            (Some(own), Some(style)) => Some(ListSetting { num_id: own.num_id.or(style.num_id), level: own.level.or(style.level) }),
+            (own, style) => own.or(style),
+        };
         let block = if let Some(level) = heading {
             DocBlock::Heading { level, text }
-        } else if paragraph.listed && paragraph.num_id.as_deref() != Some("0") {
-            let numbered = paragraph.num_id.as_deref().is_some_and(|id| self.numbering.numbered(id, paragraph.level));
-            DocBlock::ListItem { level: paragraph.level, numbered, runs: paragraph.runs }
+        } else if let Some(list) = list.filter(|list| list.num_id.as_deref() != Some("0")) {
+            let level = list.level.unwrap_or(0);
+            let numbered = list.num_id.as_deref().is_some_and(|id| self.numbering.numbered(id, level));
+            DocBlock::ListItem { level, numbered, runs: paragraph.runs }
         } else {
             DocBlock::Paragraph { runs: paragraph.runs }
         };
@@ -523,6 +597,67 @@ mod tests {
         );
         // Without a numbering part every list item is a bullet.
         assert_eq!(view(docx(&listed("2", 0, "a"))).blocks, vec![item(0, false, "a")]);
+    }
+
+    // A numbering part where list 1 is bulleted and list 2 numbered, at every level used here.
+    fn two_lists() -> String {
+        format!(
+            r#"<?xml version="1.0"?><w:numbering {W}><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl><w:lvl w:ilvl="1"><w:numFmt w:val="bullet"/></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl><w:lvl w:ilvl="1"><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num></w:numbering>"#
+        )
+    }
+
+    fn styles_of(styles: &str) -> String {
+        format!(r#"<?xml version="1.0"?><w:styles {W}>{styles}</w:styles>"#)
+    }
+
+    // A paragraph style with this id, `basedOn` and paragraph properties.
+    fn style(id: &str, based_on: Option<&str>, properties: &str) -> String {
+        let based_on = based_on.map(|parent| format!(r#"<w:basedOn w:val="{parent}"/>"#)).unwrap_or_default();
+        format!(r#"<w:style w:type="paragraph" w:styleId="{id}"><w:name w:val="{id}"/>{based_on}<w:pPr>{properties}</w:pPr></w:style>"#)
+    }
+
+    fn with_styles(styles: &str, body: &str) -> Vec<DocBlock> {
+        view(docx_with(body, &[("word/styles.xml", styles_of(styles)), ("word/numbering.xml", two_lists())])).blocks
+    }
+
+    #[test]
+    fn a_paragraph_whose_style_has_numpr_is_a_list_item() {
+        // python-docx's `List Bullet` and `List Number` styles carry the list; the paragraph does not.
+        let styles = [style("ListBullet", None, r#"<w:numPr><w:numId w:val="1"/></w:numPr>"#), style("ListNumber", None, r#"<w:numPr><w:ilvl w:val="1"/><w:numId w:val="2"/></w:numPr>"#)].concat();
+        let own_level = r#"<w:p><w:pPr><w:pStyle w:val="ListNumber"/><w:numPr><w:ilvl w:val="0"/></w:numPr></w:pPr><w:r><w:t>own level</w:t></w:r></w:p>"#;
+        let own_list = r#"<w:p><w:pPr><w:pStyle w:val="ListNumber"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>own list</w:t></w:r></w:p>"#;
+        let body = [styled("ListBullet", "dot"), styled("ListNumber", "one"), own_level.to_string(), own_list.to_string()].concat();
+        assert_eq!(with_styles(&styles, &body), vec![item(0, false, "dot"), item(1, true, "one"), item(0, true, "own level"), item(0, false, "own list")]);
+    }
+
+    #[test]
+    fn a_style_based_on_a_list_style_inherits_the_list() {
+        let styles = [
+            style("ListNumber", None, r#"<w:numPr><w:numId w:val="2"/></w:numPr>"#),
+            style("Child", Some("ListNumber"), r#"<w:numPr><w:ilvl w:val="1"/></w:numPr>"#),
+            style("Grandchild", Some("Child"), ""),
+        ]
+        .concat();
+        let body = [styled("Child", "child"), styled("Grandchild", "grandchild")].concat();
+        assert_eq!(with_styles(&styles, &body), vec![item(1, true, "child"), item(1, true, "grandchild")]);
+    }
+
+    #[test]
+    fn numid_zero_turns_a_style_list_off() {
+        let styles = [style("ListBullet", None, r#"<w:numPr><w:numId w:val="1"/></w:numPr>"#), style("NotListed", Some("ListBullet"), r#"<w:numPr><w:numId w:val="0"/></w:numPr>"#)].concat();
+        let off_here = r#"<w:p><w:pPr><w:pStyle w:val="ListBullet"/><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr><w:r><w:t>off here</w:t></w:r></w:p>"#;
+        let body = [styled("NotListed", "off in style"), off_here.to_string()].concat();
+        assert_eq!(with_styles(&styles, &body), vec![plain("off in style"), plain("off here")]);
+    }
+
+    #[test]
+    fn a_basedon_cycle_terminates() {
+        let styles = [style("A", Some("B"), ""), style("B", Some("A"), ""), style("Self", Some("Self"), "")].concat();
+        let long_chain: String = (0..30).map(|index| style(&format!("S{index}"), Some(&format!("S{}", index + 1)), "")).collect();
+        let listed_end = style("S30", None, r#"<w:numPr><w:numId w:val="1"/></w:numPr>"#);
+        let body = [styled("A", "a"), styled("Self", "self"), styled("S0", "far")].concat();
+        // A chain longer than the bound stops looking, so the far list is not found.
+        assert_eq!(with_styles(&[styles, long_chain, listed_end].concat(), &body), vec![plain("a"), plain("self"), plain("far")]);
     }
 
     fn rows(cells: &[&[&str]]) -> DocBlock {
