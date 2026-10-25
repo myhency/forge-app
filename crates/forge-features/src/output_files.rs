@@ -138,6 +138,8 @@ mod tests {
     fn the_default_program_is_offered_for_a_document_not_for_a_program() {
         assert!(offers_default_program("/a/report.docx"));
         assert!(!offers_default_program("/a/tool.exe"));
+        assert!(!offers_default_program("/a/tool"));
+        assert!(!offers_default_program("C:\\a\\run.ps1"));
     }
 
     #[test]

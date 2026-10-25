@@ -207,6 +207,8 @@ mod tests {
     fn the_open_button_is_offered_for_files_that_are_not_programs() {
         assert!(binary_offers_open("a/report.docx"));
         assert!(!binary_offers_open("a/tool.exe"));
+        assert!(!binary_offers_open("a/build/mytool"), "a file with no extension may be a program");
+        assert!(!binary_offers_open("a/run.vbs"));
         assert!(failed_offers_open("a/book.xlsx"));
         assert!(!failed_offers_open("a/book.rs"));
     }

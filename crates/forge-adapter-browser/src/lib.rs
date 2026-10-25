@@ -93,7 +93,8 @@ impl BrowserPort for SystemBrowser {
             // a batch file, and refuses one it cannot quote (a `%` or `"` in the name): that is an error here.
             Some("Visual Studio Code") => (Command::new("code.cmd"), "code".to_string()),
             Some(other) => return Err(format!("Could not open the file with {other}")),
-            None if is_program_file(path) => return Err("Forge does not run programs; open its folder instead".to_string()),
+            // The list is the one the app uses to hide the button, so the button never fails here.
+            None if forge_domain::has_program_extension(&path.to_string_lossy()) => return Err("Forge does not run programs; open its folder instead".to_string()),
             None => {
                 let mut command = Command::new(&self.program);
                 command.arg("url.dll,FileProtocolHandler");
@@ -118,13 +119,6 @@ impl BrowserPort for SystemBrowser {
             })
         }
     }
-}
-
-// What the shell would run rather than show if it were handed the file.
-#[cfg(windows)]
-fn is_program_file(path: &Path) -> bool {
-    const PROGRAMS: [&str; 14] = ["exe", "com", "bat", "cmd", "lnk", "msi", "scr", "ps1", "vbs", "vbe", "js", "jse", "wsf", "hta"];
-    path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| PROGRAMS.iter().any(|program| extension.eq_ignore_ascii_case(program)))
 }
 
 fn file_manager() -> &'static str {

@@ -7,21 +7,15 @@ use crate::links::absolute_paths_in;
 
 /// The extensions of a file named in a message that count as an output.
 const OUTPUT_EXTENSIONS: [&str; 15] = ["xlsx", "xls", "csv", "docx", "doc", "pptx", "ppt", "pdf", "md", "txt", "html", "png", "jpg", "jpeg", "svg"];
-const PROGRAM_EXTENSIONS: [&str; 9] = ["app", "exe", "command", "sh", "bat", "cmd", "msi", "scpt", "jar"];
 
-// The extension in lower case, if the last part of the path has one.
-fn extension(path: &str) -> Option<String> {
-    let (stem, extension) = forge_domain::file_name(path).rsplit_once('.')?;
-    (!stem.is_empty()).then(|| extension.to_ascii_lowercase())
-}
-
-/// Whether the path is a program or script, which opens in its default program and is never an output.
+/// Whether the path is a program or script, which Forge never hands to the default program: a
+/// program extension, or no extension at all, since macOS runs such a file in Terminal.
 pub fn is_program(path: &str) -> bool {
-    extension(path).is_some_and(|extension| PROGRAM_EXTENSIONS.contains(&extension.as_str()))
+    forge_domain::extension_of(path).is_none() || forge_domain::has_program_extension(path)
 }
 
 fn is_output_extension(path: &str) -> bool {
-    extension(path).is_some_and(|extension| OUTPUT_EXTENSIONS.contains(&extension.as_str()))
+    forge_domain::extension_of(path).is_some_and(|extension| OUTPUT_EXTENSIONS.contains(&extension.as_str()))
 }
 
 // The index of each turn's last assistant message with text: the last one before the next user message.
@@ -145,10 +139,24 @@ mod tests {
 
     #[test]
     fn is_program_knows_scripts_in_any_case() {
-        for path in ["/p/run.sh", "/p/Setup.EXE", "/Applications/X.app", "C:\\a\\b.Bat", "/p/a.jar", "/p/a.scpt"] {
+        for path in ["/p/run.sh", "/p/Setup.EXE", "/Applications/X.app", "C:\\a\\b.Bat", "/p/a.jar", "/p/a.scpt", "/p/a.tool", "/p/a.Terminal", "/p/a.workflow"] {
             assert!(is_program(path), "{path}");
         }
         assert!(!is_program("/p/a.xlsx"));
-        assert!(!is_program("/p/sh"));
+        assert!(!is_program("/p/sh.txt"));
+    }
+
+    #[test]
+    fn a_file_with_no_extension_is_a_program_since_macos_runs_one_in_terminal() {
+        for path in ["/p/sh", "/p/build/tool", "C:\\a\\run", "/p/.profile"] {
+            assert!(is_program(path), "{path}");
+        }
+    }
+
+    #[test]
+    fn what_windows_would_run_is_a_program_on_every_platform() {
+        for path in ["C:\\a\\b.vbs", "/p/a.js", "/p/a.PS1", "/p/a.com", "/p/a.lnk", "/p/a.scr", "/p/a.vbe", "/p/a.jse", "/p/a.wsf", "/p/a.hta"] {
+            assert!(is_program(path), "{path}");
+        }
     }
 }

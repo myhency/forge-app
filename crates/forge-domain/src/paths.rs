@@ -22,6 +22,24 @@ pub fn file_name(path: &str) -> &str {
     path.rsplit(is_separator).next().unwrap_or(path)
 }
 
+// What macOS or Windows would run rather than show when handed the file: apps, installers,
+// shell and Windows scripts, shortcuts and Automator workflows.
+const PROGRAM_EXTENSIONS: [&str; 22] = [
+    "app", "command", "tool", "terminal", "workflow", "sh", "scpt", "jar", "exe", "com", "bat", "cmd", "lnk", "msi", "scr", "ps1", "vbs",
+    "vbe", "js", "jse", "wsf", "hta",
+];
+
+/// The extension of the last part of `path` in lower case, if it has one (`.profile` has none).
+pub fn extension_of(path: &str) -> Option<String> {
+    let (stem, extension) = file_name(path).rsplit_once('.')?;
+    (!stem.is_empty()).then(|| extension.to_ascii_lowercase())
+}
+
+/// Whether `path` ends in the extension of a program or script, in any case.
+pub fn has_program_extension(path: &str) -> bool {
+    extension_of(path).is_some_and(|extension| PROGRAM_EXTENSIONS.contains(&extension.as_str()))
+}
+
 /// The parts of `path` between separators, without the empty ones.
 pub fn path_parts(path: &str) -> impl Iterator<Item = &str> {
     path.split(is_separator).filter(|part| !part.is_empty())
@@ -35,6 +53,16 @@ pub fn has_parent_part(path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_program_extension_is_known_in_any_case_and_a_name_with_none_has_none() {
+        for path in ["/p/a.SH", "C:\\a\\b.exe", "/p/a.js", "/p/X.app"] {
+            assert!(has_program_extension(path), "{path}");
+        }
+        for path in ["/p/a.xlsx", "/p/sh", "/p/.sh", "/p/exe"] {
+            assert!(!has_program_extension(path), "{path}");
+        }
+    }
 
     #[test]
     fn a_root_makes_a_path_absolute_on_either_platform() {
