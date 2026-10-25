@@ -80,6 +80,45 @@ The Files panel keeps refusing paths outside the session folder (`FilesError::Ou
 
 Where the sheet view lives (a new widget file next to `files_kinds.rs`), how the cells are laid out (table or grid of divs), how the card gets its list (a `Workspace` method), tests, and the English/Korean string table entries.
 
+## As built
+
+Goal 1 (links). `links.rs` in forge-entities also turns inline-code absolute paths into file links. There is no existence check for them, so a made-up path is a link that opens nothing.
+
+Goal 2 (`결과물` card). `output_files.rs` (forge-features) builds the list from the session record, newest first; `OutputsStore` in forge-entities holds it. The card (`details_panel.rs`) refreshes on mount, when a tool call finishes, and at turn start and end. A row click opens the file in the Files panel.
+
+Goal 3 (xlsx grid). `forge-adapter-files` reads sheets with calamine's streaming cell reader. The caps (500 rows x 50 columns) are enforced while streaming, not after loading. Empty styled cells do not extend a sheet. `truncated` means non-empty data was cut. A date with a non-midnight time shows `YYYY-MM-DD HH:MM:SS`. The view is `files_sheet.rs`: column letters, row numbers, right-aligned numbers, sheet tabs and a formula bar. A formula that was never calculated shows an empty cell, and the formula bar shows the formula text.
+
+Goal 4 and 5 (open button). `기본 프로그램으로 열기` sits in the bottom bar beside the sheet tabs (so the formula bar has room). A binary file with no preview shows a notice with that button, `Finder에서 보기` and a third button.
+
+Files outside the session folder (decision A). `open_file` has an outside-file branch; `outside_file_dialog.rs` shows the dialog `작업 폴더 밖의 파일입니다` with `기본 프로그램으로 열기`, `Finder에서 보기` and `닫기`.
+
+Differences from the spec and lessons:
+- The ko.rs string table must stay sorted. Lookups are by binary search, so an unsorted entry silently fails. This showed up in the real window as an English label.
+- Caps and `truncated` are as above; the spec did not say where they are enforced.
+
+## Checked in the real window (2026-10-25)
+
+Via `scripts/harness` with the new `scripts/harness/add_office_samples.py` (an xlsx with two sheets, a formula never calculated, a fake docx, and an xlsx outside the folder):
+- The inline-code paths in the reply are links.
+- A click opens report.xlsx as a grid: columns A..C, row numbers, sheet tabs 요약/데이터. The formula bar shows `=SUM(B2:B3)` for the uncalculated B4 cell, which shows empty.
+- The 700-row sheet shows `처음 500행, 50열만 표시합니다.`
+- Numbers are right-aligned.
+- The 결과물 card lists three files, newest first, with the xlsx and docx icons.
+- A row outside the folder opens the dialog `작업 폴더 밖의 파일입니다` with `기본 프로그램으로 열기`, `Finder에서 보기`, `닫기`.
+- memo.docx shows the binary notice with the three buttons.
+
+Not checked: dark mode, split panes with two sheets, pressing `기본 프로그램으로 열기` (it would launch Excel), Windows.
+
+Minor cosmetics found and left: the truncation line touches the panel's left edge; the three binary-notice buttons wrap to three lines at about 460 px.
+
 ## Left (not in 57A)
 
-docx and pptx previews (57B); keyboard navigation of the grid; copy of a cell or a range; charts; the `결과물` card's hover tooltip styling if the title attribute is too plain.
+- docx and pptx previews (57B).
+- Keyboard navigation and copy of a cell or range in the grid; charts.
+- The selected-cell style rule is not scoped per view: two sheet views in split panes outline the same cell in both.
+- The selected cell is not clamped when a reloaded sheet shrinks.
+- `OutputsStore.begin()` wakes the card readers on every refresh.
+- No Workspace-level tests for the outside-file branch of `open_file` (no harness for it).
+- Paths in fenced code blocks do not count as outputs.
+- The two cosmetics above.
+- The `결과물` card's hover tooltip styling if the title attribute is too plain.

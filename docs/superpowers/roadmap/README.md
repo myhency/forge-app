@@ -90,7 +90,7 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 28 | File previews (built) | PNL-04 | Spec `2026-10-08-file-previews-design.md`: csv, html, svg and pdf in the Files panel, tree icons, absolute path links, picture lightbox; observation round 12 |
 | 56 | Plan mode (56A built, checked in the real window; 56B comments and sidebar tooltip left) | NEW-01 | Observation round 27: plan panel with the rendered plan, `수락 / 수정 / 수락 및 자동 모드` card, plan file row; today Forge shows only the generic ExitPlanMode permission card |
 | 56B | Plan mode, step 2 | NEW-01 | The desktop app's comment-on-selection in the plan panel and the sidebar `플랜 준비됨` tooltip |
-| 57 | Files for office work | NEW-02 | Round 28: xlsx viewer (grid, formula bar, sheet tabs), result paths in chat as links, `결과물` card (OTH-14) |
+| 57 | Files for office work (Plan 57A built, checked in the real window; 57B docx, pptx previews left) | NEW-02 | Round 28: xlsx viewer (grid, formula bar, sheet tabs), result paths in chat as links, `결과물` card (OTH-14) |
 | 58 | Composer | NEW-03, NEW-04 | Round 27 and 28: `@` mentions, queued-message card (send now, edit, remove), big attachment thumbnail, slash command list and `/compact` result, `/btw`, `/rewind` |
 | 59 | Status look | NEW-05, NEW-06, NEW-07 | Rounds 27 and 28: stop shown as stopped (not failed or done), generated session title, details panel opens on first send with branch row and fuller context rows, background task row, message action row, end card buttons |
 | 60 | Small fixes | NEW-08 | pycache and binary entries in Changes, repeated path in the permission card, file card look, the Dioxus Copy value warning, panels covering the chat in a narrow window |

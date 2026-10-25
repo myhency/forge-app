@@ -18,6 +18,8 @@ so the real `~/.claude` and the real Forge config are never read or written. The
 
 `FORGE_HARNESS_EXTRA=scripts/harness/add_preview_samples.py scripts/harness/launch.sh` also writes preview samples (csv, html, svg, png, pdf) into `my-app/samples/` and a reply in the session "Read the config" that names five of them by absolute path. The html sample shows "script has not run" because scripts are off in the html frame.
 
+`FORGE_HARNESS_EXTRA=scripts/harness/add_office_samples.py scripts/harness/launch.sh` writes office samples into `my-app/samples/`: an xlsx with two sheets and a formula never calculated, a 700-row sheet, a fake docx, and an xlsx outside the folder, and a reply that names them by absolute path.
+
 `click.py` takes pixels of the PNG file. An image viewer may show it scaled down (the viewer says by how
 much); multiply the coordinates you read off by that factor.
 
