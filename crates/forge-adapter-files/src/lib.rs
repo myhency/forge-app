@@ -11,6 +11,7 @@ use regex::{Regex, RegexBuilder};
 
 mod docx;
 mod office_zip;
+mod pptx;
 
 const SKIPPED: [&str; 2] = [".git", "node_modules"];
 // A NUL byte in this many first bytes makes a file binary.
@@ -270,6 +271,9 @@ impl FilesPort for LocalFiles {
         }
         if has_extension(&file, "docx") {
             return docx::read_docx(bytes);
+        }
+        if has_extension(&file, "pptx") {
+            return pptx::read_pptx(bytes);
         }
         if let Some(mime) = image_mime(&file) {
             return Ok(FileContent::Image { bytes, mime: mime.to_string() });
