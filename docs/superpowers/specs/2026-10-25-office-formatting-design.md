@@ -84,7 +84,7 @@ Differs from this spec: the refresh runs after a tool call finishes (the one cal
 
 ## Checked in the real window
 
-(to be added by the controller after the real-window check)
+With `scripts/harness/add_office_samples.py` (a real `report.docx` from python-docx), light theme: the sample shows the level-1 and level-2 headings in the style's blue, bold and italic runs, a red run (`빨간 글씨`), a yellow-highlighted run, an underlined run and a struck run in one paragraph, bullets and numbers, a 2×2 table whose header cells have a dark-blue fill with white bold text and a body cell with a light-yellow fill, and the 14-column table clipped at the right edge and scrollable. The pptx still shows text-only slide cards. NOT checked: dark mode (the `data-lum` resets and the text colour on fills), the refresh of an open Office tab after a turn (it needs a real tool call to finish), a real Word-made file with theme colours, Windows.
 
 ## Left (not in 57C)
 
