@@ -18,6 +18,7 @@ mod files_editor;
 mod files_icons;
 mod files_kinds;
 mod files_menu;
+mod files_office;
 mod files_panel;
 mod files_sheet;
 mod files_state;

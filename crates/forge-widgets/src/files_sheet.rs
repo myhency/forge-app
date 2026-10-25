@@ -48,9 +48,9 @@ pub fn binary_offers_open(path: &str) -> bool {
     offers_default_program(path)
 }
 
-/// Whether a failed read offers the default program: only for a spreadsheet, whose reader may be what failed.
+/// Whether a failed read offers the default program: only for a spreadsheet, document or slide file, whose reader may be what failed.
 pub fn failed_offers_open(path: &str) -> bool {
-    preview_kind(path) == PreviewKind::Sheet && offers_default_program(path)
+    matches!(preview_kind(path), PreviewKind::Sheet | PreviewKind::Document | PreviewKind::Slides) && offers_default_program(path)
 }
 
 /// The class of a grid cell; the selection is drawn by `selected_rule`, so a number keeps its alignment.
@@ -211,5 +211,11 @@ mod tests {
         assert!(!binary_offers_open("a/run.vbs"));
         assert!(failed_offers_open("a/book.xlsx"));
         assert!(!failed_offers_open("a/book.rs"));
+    }
+
+    #[test]
+    fn failed_read_of_docx_or_pptx_offers_the_open_button() {
+        assert!(failed_offers_open("a/report.docx"));
+        assert!(failed_offers_open("a/deck.pptx"));
     }
 }

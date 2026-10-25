@@ -1,8 +1,9 @@
 use base64::Engine;
 use dioxus::prelude::*;
 use forge_entities::{parse_csv, preview_kind, render_markdown, CsvTable, PreviewKind, CSV_ROW_LIMIT};
-use forge_ports::{FileContent, SheetBook};
+use forge_ports::{DocumentView, FileContent, SheetBook, SlideDeck};
 
+use crate::files_office::{DocumentViewer, SlideViewer};
 use crate::files_sheet::{binary_offers_open, SheetView};
 use forge_shared::tr;
 
@@ -16,6 +17,8 @@ pub enum TabKind {
     Pdf { data_url: String },
     Binary,
     Sheet(SheetBook),
+    Document(DocumentView),
+    Slides(SlideDeck),
     TooLarge,
     Failed(String),
 }
@@ -52,8 +55,8 @@ pub fn kind_of(content: FileContent) -> TabKind {
         }
         FileContent::Binary => TabKind::Binary,
         FileContent::Sheet(book) => TabKind::Sheet(book),
-        // Until the document and slide views exist (Plan 57B task 4), a docx or pptx shows as a binary file.
-        FileContent::Document(_) | FileContent::Slides(_) => TabKind::Binary,
+        FileContent::Document(doc) => TabKind::Document(doc),
+        FileContent::Slides(deck) => TabKind::Slides(deck),
         FileContent::TooLarge => TabKind::TooLarge,
     }
 }
@@ -203,6 +206,8 @@ pub fn FileKindView(kind: TabKind, path: String, on_anyway: EventHandler<()>, on
             }
         },
         TabKind::Sheet(book) => rsx! { SheetView { key: "{path}", book, path, on_open } },
+        TabKind::Document(doc) => rsx! { DocumentViewer { key: "{path}", doc, path, on_open } },
+        TabKind::Slides(deck) => rsx! { SlideViewer { key: "{path}", deck, path, on_open } },
         TabKind::TooLarge => rsx! {
             div { class: "files-kind",
                 p { class: "files-kind-title", {tr!("This file cannot be previewed")} }
@@ -222,6 +227,14 @@ mod tests {
     use forge_ports::FileVersion;
 
     use super::*;
+
+    #[test]
+    fn kind_of_gives_a_document_tab_and_a_slides_tab() {
+        let doc = DocumentView { blocks: vec![], truncated: false };
+        let deck = SlideDeck { slides: vec![], truncated: true };
+        assert_eq!(kind_of(FileContent::Document(doc.clone())), TabKind::Document(doc));
+        assert_eq!(kind_of(FileContent::Slides(deck.clone())), TabKind::Slides(deck));
+    }
 
     #[test]
     fn the_html_frame_allows_nothing() {
