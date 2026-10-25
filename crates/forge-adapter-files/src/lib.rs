@@ -77,6 +77,11 @@ fn is_xlsx(path: &Path) -> bool {
 const SHEET_MAX_ROWS: usize = 500;
 const SHEET_MAX_COLUMNS: usize = 50;
 
+// A number rounded to 15 significant digits, as Excel shows it, so `0.1 + 0.2` reads `0.3`.
+fn number_text(number: f64) -> String {
+    format!("{number:.14e}").parse::<f64>().unwrap_or(number).to_string()
+}
+
 // A cell as the sheet shows it: whole numbers without `.0`, dates as `YYYY-MM-DD`.
 fn cell_text(data: &Data) -> String {
     match data {
@@ -84,14 +89,14 @@ fn cell_text(data: &Data) -> String {
         Data::String(text) => text.clone(),
         Data::Int(number) => number.to_string(),
         Data::Float(number) if number.fract() == 0.0 && number.abs() < 1e15 => format!("{}", *number as i64),
-        Data::Float(number) => number.to_string(),
+        Data::Float(number) => number_text(*number),
         Data::Bool(true) => "TRUE".to_string(),
         Data::Bool(false) => "FALSE".to_string(),
-        Data::DateTime(date) if date.is_duration() => date.as_f64().to_string(),
+        Data::DateTime(date) if date.is_duration() => number_text(date.as_f64()),
         Data::DateTime(date) => match date.as_datetime() {
             Some(moment) if moment.time() == NaiveTime::MIN => moment.format("%Y-%m-%d").to_string(),
             Some(moment) => moment.format("%Y-%m-%d %H:%M:%S").to_string(),
-            None => date.as_f64().to_string(),
+            None => number_text(date.as_f64()),
         },
         Data::DateTimeIso(text) | Data::DurationIso(text) => text.clone(),
         Data::Error(error) => error.to_string(),
@@ -917,6 +922,19 @@ mod tests {
         sheet.write_number(0, 1, -7.0).unwrap();
         book.save(dir.path().join("n.xlsx")).unwrap();
         assert_eq!(cell_texts(&read_sheets(&dir, "n.xlsx")[0]), vec![vec!["42", "-7"]]);
+    }
+
+    #[test]
+    fn a_fraction_shows_at_most_15_significant_digits_as_excel_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        let sheet = book.add_worksheet();
+        sheet.write_number(0, 0, 0.1 + 0.2).unwrap();
+        sheet.write_number(0, 1, 1.0 / 3.0).unwrap();
+        sheet.write_number(0, 2, 2.5).unwrap();
+        sheet.write_number(0, 3, -0.25).unwrap();
+        book.save(dir.path().join("p.xlsx")).unwrap();
+        assert_eq!(cell_texts(&read_sheets(&dir, "p.xlsx")[0]), vec![vec!["0.3", "0.333333333333333", "2.5", "-0.25"]]);
     }
 
     #[test]
