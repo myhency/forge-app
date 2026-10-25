@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
@@ -97,14 +98,25 @@ fn cell_text(data: &Data) -> String {
     }
 }
 
+// A sheet stops being read after this many cells, so a sheet of millions of cells (or of one
+// cell written over and over) cannot keep the read busy for long.
+const SHEET_VISIT_LIMIT: usize = 2_000_000;
+
 // Cells are streamed and placed by their sheet position, so a sheet whose data starts at C3 keeps
 // its blank rows and columns; the caps count from A1. Nothing is sized by the sheet's declared
-// extent, so one stray cell at XFD1048576 costs nothing; it only marks the sheet cut.
-fn read_sheet(book: &mut Xlsx<Cursor<Vec<u8>>>, name: String) -> Result<Sheet, FilesError> {
+// extent, so one stray cell at XFD1048576 costs nothing; it only marks the sheet cut. Cells are
+// kept by position (a later one at the same place wins), so at most 500 x 50 are held.
+fn read_sheet(book: &mut Xlsx<Cursor<Vec<u8>>>, name: String, visit_limit: usize) -> Result<Sheet, FilesError> {
     let mut reader = book.worksheet_cells_reader(&name).map_err(failed)?;
-    let mut cells: Vec<((usize, usize), SheetCell)> = Vec::new();
+    let mut cells: BTreeMap<(usize, usize), SheetCell> = BTreeMap::new();
     let mut truncated = false;
+    let mut visited = 0;
     while let Some(cell) = reader.next_cell_with_formula().map_err(failed)? {
+        if visited == visit_limit {
+            truncated = true;
+            break;
+        }
+        visited += 1;
         let text = cell_text(&Data::from(cell.value));
         let formula = cell.formula.filter(|formula| !formula.is_empty()).map(|formula| format!("={formula}"));
         if text.is_empty() && formula.is_none() {
@@ -114,11 +126,11 @@ fn read_sheet(book: &mut Xlsx<Cursor<Vec<u8>>>, name: String) -> Result<Sheet, F
         if row >= SHEET_MAX_ROWS || column >= SHEET_MAX_COLUMNS {
             truncated = true;
         } else {
-            cells.push(((row, column), SheetCell { text, formula }));
+            cells.insert((row, column), SheetCell { text, formula });
         }
     }
-    let row_count = cells.iter().map(|((row, _), _)| row + 1).max().unwrap_or(0);
-    let column_count = cells.iter().map(|((_, column), _)| column + 1).max().unwrap_or(0);
+    let row_count = cells.keys().map(|(row, _)| row + 1).max().unwrap_or(0);
+    let column_count = cells.keys().map(|(_, column)| column + 1).max().unwrap_or(0);
     let mut rows = vec![vec![SheetCell { text: String::new(), formula: None }; column_count]; row_count];
     for ((row, column), cell) in cells {
         rows[row][column] = cell;
@@ -158,17 +170,17 @@ fn unique_count(part: impl std::io::Read) -> Option<u64> {
     }
 }
 
-// Refuses a workbook calamine would choke on: a part that unpacks to more than XLSX_PART_BYTES
+// Refuses a workbook calamine would choke on: a part that unpacks to more than `part_limit`
 // (the size the zip declares, and for the shared strings the size it really unpacks to), or a
 // shared strings table that claims more strings than its size can hold, since calamine reserves
 // room for the claimed count up front and a huge one aborts the process. A file that is not a zip
 // is left to calamine, which says what it is (a password-protected workbook, say).
-fn check_xlsx(bytes: &[u8]) -> Result<(), FilesError> {
+fn check_xlsx(bytes: &[u8], part_limit: u64) -> Result<(), FilesError> {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else { return Ok(()) };
     let too_big = || FilesError::Failed("This workbook unpacks to too much data to show.".to_string());
     for index in 0..archive.len() {
         let Ok(part) = archive.by_index_raw(index) else { continue };
-        if part.size() > XLSX_PART_BYTES {
+        if part.size() > part_limit {
             return Err(too_big());
         }
         if !part.name().is_ok_and(|name| name.to_ascii_lowercase().ends_with("sharedstrings.xml")) {
@@ -176,8 +188,8 @@ fn check_xlsx(bytes: &[u8]) -> Result<(), FilesError> {
         }
         drop(part);
         let Ok(part) = archive.by_index(index) else { continue };
-        let unpacked = std::io::copy(&mut std::io::Read::take(part, XLSX_PART_BYTES + 1), &mut std::io::sink()).unwrap_or(0);
-        if unpacked > XLSX_PART_BYTES {
+        let unpacked = std::io::copy(&mut std::io::Read::take(part, part_limit + 1), &mut std::io::sink()).unwrap_or(0);
+        if unpacked > part_limit {
             return Err(too_big());
         }
         let Ok(part) = archive.by_index(index) else { continue };
@@ -189,11 +201,11 @@ fn check_xlsx(bytes: &[u8]) -> Result<(), FilesError> {
 }
 
 fn read_xlsx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
-    check_xlsx(&bytes)?;
+    check_xlsx(&bytes, XLSX_PART_BYTES)?;
     let mut book: Xlsx<_> = Xlsx::new(Cursor::new(bytes)).map_err(failed)?;
     let mut sheets = Vec::new();
     for name in book.sheet_names() {
-        sheets.push(read_sheet(&mut book, name)?);
+        sheets.push(read_sheet(&mut book, name, SHEET_VISIT_LIMIT)?);
     }
     Ok(FileContent::Sheet(SheetBook { sheets }))
 }
@@ -1109,6 +1121,39 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("s.xlsx"), hand_made_xlsx(ONE_STRING_CELL, &shared_strings(r#"count="99999999999" uniqueCount="1""#))).unwrap();
         assert_eq!(cell_texts(&read_sheets(&dir, "s.xlsx")[0]), vec![vec!["x"]]);
+    }
+
+    #[test]
+    fn a_cell_written_many_times_at_one_place_is_kept_once_with_its_last_value() {
+        let cells: String = (0..30_000).map(|value| format!(r#"<c r="A1"><v>{value}</v></c>"#)).collect();
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("r.xlsx"), hand_made_xlsx(&format!(r#"<row r="1">{cells}</row>"#), &shared_strings(r#"uniqueCount="1""#))).unwrap();
+        let sheets = read_sheets(&dir, "r.xlsx");
+        assert_eq!(cell_texts(&sheets[0]), vec![vec!["29999"]]);
+        assert!(sheets[0].rows.iter().map(Vec::len).sum::<usize>() <= SHEET_MAX_ROWS * SHEET_MAX_COLUMNS);
+        assert!(!sheets[0].truncated);
+    }
+
+    #[test]
+    fn a_sheet_stops_being_read_after_the_cell_limit_and_is_marked_cut() {
+        let cells: String = (0..20).map(|column| format!(r#"<c r="{}1"><v>{column}</v></c>"#, char::from(b'A' + column))).collect();
+        let bytes = hand_made_xlsx(&format!(r#"<row r="1">{cells}</row>"#), &shared_strings(r#"uniqueCount="1""#));
+        let mut book: Xlsx<_> = Xlsx::new(Cursor::new(bytes)).unwrap();
+        let sheet = read_sheet(&mut book, "S".to_string(), 10).unwrap();
+        assert_eq!(sheet.rows[0].len(), 10);
+        assert_eq!(sheet.rows[0][9].text, "9");
+        assert!(sheet.truncated);
+        let sheet = read_sheet(&mut book, "S".to_string(), 20).unwrap();
+        assert_eq!((sheet.rows[0].len(), sheet.truncated), (20, false));
+    }
+
+    #[test]
+    fn a_part_that_unpacks_past_the_limit_is_refused() {
+        let bytes = hand_made_xlsx(ONE_STRING_CELL, &shared_strings(r#"uniqueCount="1""#));
+        assert!(check_xlsx(&bytes, 100_000).is_ok());
+        // The sheet part is the biggest one, at a few hundred bytes.
+        let Err(FilesError::Failed(message)) = check_xlsx(&bytes, 150) else { panic!("not refused") };
+        assert!(!message.is_empty());
     }
 }
 
