@@ -82,26 +82,28 @@ pub fn SheetView(book: SheetBook, path: String, on_open: EventHandler<()>) -> El
             div { class: "sheet-toolbar",
                 span { class: "sheet-address", "{address}" }
                 span { class: "sheet-formula", "{bar}" }
-                if binary_offers_open(&path) {
-                    button { class: "files-kind-button", r#type: "button", onclick: move |_| on_open.call(()), {tr!("Open in the default program")} }
-                }
             }
             if truncated {
                 p { class: "files-csv-note", {tr!("Only the first 500 rows and 50 columns are shown.")} }
             }
             SheetGrid { key: "{index}", book: book.clone(), index, selected }
-            div { class: "sheet-tabs",
-                for (tab, sheet) in book.sheets.iter().enumerate() {
-                    button {
-                        key: "{tab}",
-                        class: if tab == index { "sheet-tab active" } else { "sheet-tab" },
-                        r#type: "button",
-                        onclick: move |_| {
-                            active.set(tab);
-                            selected.set((0, 0));
-                        },
-                        "{sheet.name}"
+            div { class: "sheet-bottom",
+                div { class: "sheet-tabs",
+                    for (tab, sheet) in book.sheets.iter().enumerate() {
+                        button {
+                            key: "{tab}",
+                            class: if tab == index { "sheet-tab active" } else { "sheet-tab" },
+                            r#type: "button",
+                            onclick: move |_| {
+                                active.set(tab);
+                                selected.set((0, 0));
+                            },
+                            "{sheet.name}"
+                        }
                     }
+                }
+                if binary_offers_open(&path) {
+                    button { class: "files-kind-button", r#type: "button", onclick: move |_| on_open.call(()), {tr!("Open in the default program")} }
                 }
             }
         }
