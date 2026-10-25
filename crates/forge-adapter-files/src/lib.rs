@@ -9,6 +9,8 @@ use calamine::{Data, Reader, SheetType, Xlsx};
 use chrono::NaiveTime;
 use regex::{Regex, RegexBuilder};
 
+mod office_zip;
+
 const SKIPPED: [&str; 2] = [".git", "node_modules"];
 // A NUL byte in this many first bytes makes a file binary.
 const BINARY_SNIFF: usize = 8000;
@@ -143,8 +145,6 @@ fn read_sheet(book: &mut Xlsx<Cursor<Vec<u8>>>, name: String, visit_limit: usize
     Ok(Sheet { name, rows, truncated })
 }
 
-// No part of a workbook may unpack to more than this, so a small zip cannot fill the memory.
-const XLSX_PART_BYTES: u64 = 100 * 1024 * 1024;
 // The shortest shared string a writer makes (`<si><t/></si>`) is longer than this many bytes.
 const SHARED_STRING_MIN_BYTES: u64 = 7;
 
@@ -176,24 +176,25 @@ fn unique_count(part: impl std::io::Read) -> Option<u64> {
 }
 
 // Refuses a workbook calamine would choke on: a part that unpacks to more than `part_limit`
-// (the size the zip declares, and for the shared strings the size it really unpacks to), or a
+// (the size the zip declares, and for the shared strings the size it really unpacks to), a zip
+// of more parts than any real workbook, or a
 // shared strings table that claims more strings than its size can hold, since calamine reserves
 // room for the claimed count up front and a huge one aborts the process. A file that is not a zip
 // is left to calamine, which says what it is (a password-protected workbook, say).
 fn check_xlsx(bytes: &[u8], part_limit: u64) -> Result<(), FilesError> {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else { return Ok(()) };
     let too_big = || FilesError::Failed("This workbook unpacks to too much data to show.".to_string());
+    if office_zip::declares_too_much(&mut archive, part_limit) {
+        return Err(too_big());
+    }
     for index in 0..archive.len() {
         let Ok(part) = archive.by_index_raw(index) else { continue };
-        if part.size() > part_limit {
-            return Err(too_big());
-        }
         if !part.name().is_ok_and(|name| name.to_ascii_lowercase().ends_with("sharedstrings.xml")) {
             continue;
         }
         drop(part);
         let Ok(part) = archive.by_index(index) else { continue };
-        let unpacked = std::io::copy(&mut std::io::Read::take(part, part_limit + 1), &mut std::io::sink()).unwrap_or(0);
+        let unpacked = office_zip::copy_bounded(part, part_limit, &mut std::io::sink()).unwrap_or(0);
         if unpacked > part_limit {
             return Err(too_big());
         }
@@ -206,7 +207,7 @@ fn check_xlsx(bytes: &[u8], part_limit: u64) -> Result<(), FilesError> {
 }
 
 fn read_xlsx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
-    check_xlsx(&bytes, XLSX_PART_BYTES)?;
+    check_xlsx(&bytes, office_zip::PART_BYTES)?;
     let mut book: Xlsx<_> = Xlsx::new(Cursor::new(bytes)).map_err(failed)?;
     let mut sheets = Vec::new();
     // Only worksheets hold cells; a chart sheet (or a dialog or macro sheet) is left out so the
