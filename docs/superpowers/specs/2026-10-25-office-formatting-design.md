@@ -61,6 +61,39 @@ In Round 30 an office worker asked Claude to update a report and "mark the chang
 
 Field names beyond the shape above, how `Rgb` is stored, where the highlight name table lives, how the theme is read for the contrast rule, the CSS, tests (fixtures built in test code, as in 57B), and how the refresh hooks into the existing tab refresh.
 
+## As built
+
+Types (forge-ports `files_port.rs`): `Rgb(u8, u8, u8)` with `from_hex` (exactly six ASCII hex digits in any case; `auto`, `#`, other lengths are `None`) and `css()` (`#rrggbb`, lower case). `TextRun` gained `underline`, `strike`, `color: Option<Rgb>` and `highlight: Option<Rgb>` (a named highlight or the run's shading) and derives `Default`. `TableCell { runs: Vec<TextRun>, fill: Option<Rgb> }` with `text()` replaces the plain string cell, so `DocBlock::Table` holds `Vec<Vec<TableCell>>`. `DocBlock::Heading` gained `color: Option<Rgb>`.
+
+Reader (`docx.rs`), the rules:
+- In a run's `w:rPr`: `w:u` is on unless `val` is `none` or off; `w:strike` and `w:dstrike` both give `strike`; `w:color`, `w:highlight` and `w:shd` (its `fill`) are read. A `w:themeColor` is not resolved. A colour on the paragraph mark is not the text's colour.
+- Colours are validated in one place, `Rgb::from_hex`; the highlight names go through the table in `highlight_of` (the 16 Word names; `none` and unknown names give no highlight). The run's `highlight` is the named highlight, else its `w:shd` fill.
+- A cell's fill is the `w:shd` fill in its own `w:tcPr` (table depth 1 only). A cell keeps its runs; paragraphs are joined by a plain space run, text from a nested table is part of the cell. The 10,000 character cap per cell now counts across runs.
+- A heading's colour is the `w:color` in its paragraph style's own `w:rPr` (not the style's paragraph properties or a `w:tblStylePr`), followed up `basedOn` at most 10 steps. A style's `w:color auto` ends the lookup with no colour.
+- Neighbouring runs with the same format are one run (`same_format`, `push_run`).
+
+Views (`files_office.rs`):
+- `luminance` (relative luminance of linearised sRGB), `luminance_class` (`Dark` below 0.12, `Light` above 0.88, else `Mid`), `text_on` (black on a fill of luminance 0.5 or more, else white).
+- `run_style_on` / `run_style` build the inline style only from `Rgb::css` and fixed keywords: the run's colour if it differs by at least 0.35 in luminance from its backdrop (highlight, else cell fill), the readable `text_on` colour on a highlight otherwise, the theme colour on a cell fill; `background-color` for a highlight; `text-decoration` for underline and strike.
+- A colour that sits straight on the page gets `data-lum="dark|mid|light"` (`lum_attr_on`). `theme.css` has `.office-page [data-lum="dark"]` and `"light"` rules with `color: inherit !important` per theme (dark media, `data-theme="dark"`, light media, `data-theme="light"`), so a black run is not drawn black on the dark page and a white run not white on the light page. A run with a highlight or in a filled cell has no `data-lum`. The theme tests count variable blocks by `VARIABLE_BLOCK` and check that there is exactly one override block besides them.
+- Runs are rendered as keyed fragments; a VirtualDom test renders a paragraph mixing plain and styled runs twice to catch a key mismatch.
+
+Refresh: `FilesCtx` has `viewed: Signal<HashMap<String, FileVersion>>` (the version an Office tab was read at) and `reading: Signal<HashSet<String>>` (reads in flight). `read_and_apply` takes the `stat` before the `read`, so a file that changes in between is read again next time; `apply` records the version for Office tabs only. `refresh_all` has an Office branch (`refresh_office`): stat now, and read again quietly when `office_needs_reread(viewed, now, reading)`. A quiet re-read that fails keeps the old view (`keeps_view_on_failure`); an opening read that fails shows the error. Closing a tab drops its version.
+
+Differs from this spec: the refresh runs after a tool call finishes (the one caller of `refresh_all`) and NOT on window focus. The text tabs do not refresh on focus either; there is no focus caller to hook into. Everything else follows the spec.
+
+## Checked in the real window
+
+(to be added by the controller after the real-window check)
+
 ## Left (not in 57C)
 
 Fonts, sizes, alignment, borders; theme colours and table styles; pptx colours, shapes, charts and pictures; images in docx; pages and slide images (57D).
+
+Found while building:
+- Refresh on window focus for all tabs (text and Office).
+- A `stat` that fails while the `read` succeeds leaves an Office tab without a version, so it never refreshes.
+- No explicit cap on the number of runs. The event budget bounds it to about 600,000 runs (50 to 60 MB); 200,000 per document would be a sensible cap.
+- The async refresh glue (`refresh_office`) has no unit test; only `office_needs_reread` and `keeps_view_on_failure` do.
+- `highlight val=none` together with a `w:shd` fill shows the shading.
+- A style's explicit `w:color auto` stops the `basedOn` lookup instead of continuing up.

@@ -14,6 +14,10 @@ from pathlib import Path
 import docx
 import openpyxl
 import pptx
+from docx.enum.text import WD_COLOR_INDEX
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import RGBColor
 
 import build_fixture as bf
 
@@ -42,6 +46,14 @@ def make_docx(path):
     paragraph.add_run("와 ")
     paragraph.add_run("기울인 글씨").italic = True
     paragraph.add_run("가 있습니다.")
+    styled = doc.add_paragraph("서식: ")
+    styled.add_run("빨간 글씨").font.color.rgb = RGBColor(0xFF, 0, 0)
+    styled.add_run(" ")
+    styled.add_run("노란 형광펜").font.highlight_color = WD_COLOR_INDEX.YELLOW
+    styled.add_run(" ")
+    styled.add_run("밑줄").underline = True
+    styled.add_run(" ")
+    styled.add_run("취소선").font.strike = True
     doc.add_heading("할 일", level=2)
     doc.add_paragraph("첫째 항목", style="List Bullet")
     doc.add_paragraph("둘째 항목", style="List Bullet")
@@ -50,7 +62,19 @@ def make_docx(path):
     table = doc.add_table(rows=2, cols=2)
     for row, values in enumerate([["이름", "금액"], ["커피", "4500"]]):
         for column, value in enumerate(values):
-            table.cell(row, column).text = value
+            cell = table.cell(row, column)
+            cell.text = value
+            fill = "1F3864" if row == 0 else ("FFF2CC" if column == 1 else None)
+            if fill:
+                shading = OxmlElement("w:shd")
+                shading.set(qn("w:val"), "clear")
+                shading.set(qn("w:color"), "auto")
+                shading.set(qn("w:fill"), fill)
+                cell._tc.get_or_add_tcPr().append(shading)
+            if row == 0:
+                run = cell.paragraphs[0].runs[0]
+                run.bold = True
+                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
     wide = doc.add_table(rows=3, cols=14)
     for row in range(3):
         for column in range(14):
