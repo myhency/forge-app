@@ -8,7 +8,7 @@ use forge_application::LiveSessionId;
 use forge_domain::LineRange;
 use forge_entities::{code_html, has_rendered_view, language_of};
 use forge_features::{normalize_newlines, run_blocking, Banner, EditorTabs, FileAction, Restore, TabDoc, Workspace};
-use forge_ports::{FileContent, FilesError, FilesPort, WriteError};
+use forge_ports::{FileContent, FileVersion, FilesError, FilesPort, WriteError};
 
 use crate::files_editor::{editor_language, EditorHandle, FromPage};
 use crate::files_kinds::{kind_of, render_for, Rendered, TabKind};
@@ -116,6 +116,10 @@ pub struct FilesCtx {
     pub queue: Signal<Vec<String>>,
     /// Tabs with a write in flight (one write per tab at a time).
     pub writing: Signal<HashSet<String>>,
+    /// The version an Office tab (sheet, document, slides) was read at; a text tab keeps its own in `docs`.
+    pub viewed: Signal<HashMap<String, FileVersion>>,
+    /// Tabs with a read in flight (one read at a time decides a refresh).
+    pub reading: Signal<HashSet<String>>,
     /// Highlighted html and line numbers, used only when the editor bundle did not load.
     pub fallback: Signal<HashMap<String, (String, String)>>,
     pub ready: Signal<bool>,
@@ -251,17 +255,32 @@ impl FilesCtx {
     // the text when the person has no edit waiting (a refresh must never replace what was typed).
     fn read_and_apply(&self, path: String, quiet: bool) {
         let ctx = self.clone();
+        let mut reading = self.reading;
+        reading.write().insert(path.clone());
         spawn(async move {
             let (files, root, relative) = (ctx.files(), ctx.cwd.clone(), path.clone());
-            let Some(result) = run_blocking(move || files.read(&root, &relative)).await else { return };
+            // The version is taken before the read: a file that changes in between is read again next time.
+            let result = run_blocking(move || {
+                let version = files.stat(&root, &relative).ok();
+                (version, files.read(&root, &relative))
+            })
+            .await;
+            let mut reading = ctx.reading;
+            reading.write().remove(&path);
+            let Some((version, result)) = result else { return };
             if ctx.tabs.peek().contains(&path) {
-                ctx.apply(path, result, quiet);
+                ctx.apply(path, version, result, quiet);
             }
         });
     }
 
-    fn apply(&self, path: String, result: Result<FileContent, FilesError>, quiet: bool) {
-        let (mut kinds, mut docs) = (self.kinds, self.docs);
+    fn apply(&self, path: String, version: Option<FileVersion>, result: Result<FileContent, FilesError>, quiet: bool) {
+        let (mut kinds, mut docs, mut viewed) = (self.kinds, self.docs, self.viewed);
+        // A quiet re-read that failed leaves an Office tab as it was.
+        if result.is_err() && keeps_view_on_failure(quiet, kinds.peek().get(&path)) {
+            return;
+        }
+        viewed.write().remove(&path);
         match result {
             Ok(FileContent::Text { text, version, lossy }) => {
                 let kind = TabKind::Text { lossy, anyway: false };
@@ -287,7 +306,11 @@ impl FilesCtx {
             }
             Ok(other) => {
                 docs.write().remove(&path);
-                kinds.write().insert(path, kind_of(other));
+                let kind = kind_of(other);
+                if let (true, Some(version)) = (is_office(&kind), version) {
+                    viewed.write().insert(path.clone(), version);
+                }
+                kinds.write().insert(path, kind);
             }
             Err(error) => {
                 kinds.write().insert(path, TabKind::Failed(error.to_string()));
@@ -620,6 +643,8 @@ impl FilesCtx {
             (self.kinds, self.docs, self.rendered, self.source, self.pending, self.fallback);
         kinds.write().remove(path);
         docs.write().remove(path);
+        let mut viewed = self.viewed;
+        viewed.write().remove(path);
         rendered.write().remove(path);
         source.write().remove(path);
         pending.write().remove(path);
@@ -692,8 +717,23 @@ impl FilesCtx {
                 } else {
                     self.ask(&path, Pending::Refresh);
                 }
+            } else if self.kinds.peek().get(&path).is_some_and(is_office) {
+                self.refresh_office(path);
             }
         }
+    }
+
+    // An Office tab has no editor state: it is read again when the file's version is not the one it was read at.
+    fn refresh_office(&self, key: String) {
+        let ctx = self.clone();
+        spawn(async move {
+            let (files, root, relative) = (ctx.files(), ctx.cwd.clone(), key.clone());
+            let Some(Ok(now)) = run_blocking(move || files.stat(&root, &relative)).await else { return };
+            let reading = ctx.reading.peek().contains(&key);
+            if office_needs_reread(ctx.viewed.peek().get(&key).copied(), now, reading) {
+                ctx.read_and_apply(key, true);
+            }
+        });
     }
 
     // `Reload file`: a tab with no edits shows the disk text; one with edits gets the conflict banner
@@ -736,9 +776,51 @@ impl FilesCtx {
     }
 }
 
+fn is_office(kind: &TabKind) -> bool {
+    matches!(kind, TabKind::Sheet(_) | TabKind::Document(_) | TabKind::Slides(_))
+}
+
+// Whether an Office tab read at `viewed` is read again for a file now at `now`: it changed, and no read is in flight.
+fn office_needs_reread(viewed: Option<FileVersion>, now: FileVersion, reading: bool) -> bool {
+    !reading && viewed.is_some_and(|viewed| viewed != now)
+}
+
+// A quiet re-read that failed keeps the Office view the tab shows (an opening read that failed shows the error).
+fn keeps_view_on_failure(quiet: bool, shown: Option<&TabKind>) -> bool {
+    quiet && shown.is_some_and(is_office)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn version(modified_ns: u128) -> FileVersion {
+        FileVersion { modified_ns, len: 10 }
+    }
+
+    #[test]
+    fn an_office_tab_with_a_changed_version_is_refreshed() {
+        assert!(office_needs_reread(Some(version(1)), version(2), false));
+    }
+
+    #[test]
+    fn an_unchanged_office_tab_is_left_alone() {
+        assert!(!office_needs_reread(Some(version(1)), version(1), false));
+        assert!(!office_needs_reread(None, version(1), false));
+    }
+
+    #[test]
+    fn a_tab_with_a_read_in_flight_is_not_refreshed_again() {
+        assert!(!office_needs_reread(Some(version(1)), version(2), true));
+    }
+
+    #[test]
+    fn a_failed_reread_keeps_the_old_view() {
+        let book = TabKind::Sheet(forge_ports::SheetBook { sheets: vec![] });
+        assert!(keeps_view_on_failure(true, Some(&book)));
+        assert!(!keeps_view_on_failure(false, Some(&book)));
+        assert!(!keeps_view_on_failure(true, Some(&TabKind::Binary)));
+    }
 
     const ALL: [Pending; 6] = [
         Pending::Refresh,
