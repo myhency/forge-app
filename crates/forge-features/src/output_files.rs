@@ -17,6 +17,15 @@ pub fn open_place(folder: &Path, absolute_path: &str) -> OpenPlace {
     }
 }
 
+/// The same with both paths resolved first (symlinks, `/tmp` against `/private/tmp`, a drive
+/// letter's case), so a file really inside the folder is placed inside whatever spelling Claude
+/// used. It touches the disk, so it runs off the UI thread; a path that cannot be resolved (a
+/// missing file) is compared as written.
+pub fn resolved_open_place(folder: &Path, absolute_path: &str) -> OpenPlace {
+    let path = crate::trust::resolved(Path::new(absolute_path));
+    open_place(&crate::trust::resolved(folder), &path.to_string_lossy())
+}
+
 /// The paths for which `exists` holds, in their order.
 pub fn existing_outputs(paths: Vec<String>, exists: impl Fn(&str) -> bool) -> Vec<String> {
     paths.into_iter().filter(|path| exists(path)).collect()
@@ -150,6 +159,34 @@ mod tests {
     #[test]
     fn a_path_inside_the_folder_is_placed_inside_with_its_relative_path() {
         assert_eq!(open_place(Path::new("/w/p"), "/w/p/src/a.rs"), OpenPlace::Inside("src/a.rs".to_string()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_named_through_another_spelling_of_the_folder_is_placed_inside_once_resolved() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("a.xlsx"), "x").unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let named = |folder: &Path, file: &Path| (folder.to_path_buf(), file.to_string_lossy().into_owned());
+        for (folder, path) in [named(&link, &real.join("a.xlsx")), named(&real, &link.join("a.xlsx"))] {
+            assert_eq!(open_place(&folder, &path), OpenPlace::Outside, "the text alone says outside");
+            assert_eq!(resolved_open_place(&folder, &path), OpenPlace::Inside("a.xlsx".to_string()), "{path}");
+        }
+    }
+
+    #[test]
+    fn a_file_really_outside_or_missing_stays_outside_once_resolved() {
+        let folder = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        std::fs::write(other.path().join("b.xlsx"), "x").unwrap();
+        let outside = other.path().join("b.xlsx").to_string_lossy().into_owned();
+        assert_eq!(resolved_open_place(folder.path(), &outside), OpenPlace::Outside);
+        let missing = other.path().join("gone.xlsx").to_string_lossy().into_owned();
+        assert_eq!(resolved_open_place(folder.path(), &missing), OpenPlace::Outside);
+        assert_eq!(resolved_open_place(folder.path(), "/made/up/c.xlsx"), OpenPlace::Outside);
     }
 
     #[test]

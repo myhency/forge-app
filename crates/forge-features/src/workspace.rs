@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 use crate::change_rows::{ChangeView, ChangesSession};
 use crate::cards::{clamp_cards, Cards};
 use crate::customize::CustomizeTab;
-use crate::output_files::{existing_outputs, open_place, OpenPlace, OutputsStore};
+use crate::output_files::{existing_outputs, open_place, resolved_open_place, OpenPlace, OutputsStore};
 use crate::details::{change_counts, ChangeCounts, DetailsCard, OneShot};
 use crate::closed_sessions::ClosedSessions;
 use crate::editor_tabs::EditorTabs;
@@ -1118,14 +1118,33 @@ impl Workspace {
     /// Opens a file in the session's Files panel. The path must be absolute and inside the session
     /// folder; anything else is kept for the note that asks what to do with it. The panel opens if
     /// it is closed and shows the file once it is mounted. A picture opens in the lightbox instead.
+    /// A path whose text says outside is resolved off the UI thread first, so a file really inside
+    /// the folder (named through a symlink, say) still opens here.
     pub fn open_file(&self, id: LiveSessionId, absolute_path: String) {
         let Some(view) = self.live_view(id) else { return };
         let folder = view.read().project_path.clone();
-        let OpenPlace::Inside(relative) = open_place(&folder, &absolute_path) else {
-            let mut outside = self.outside_file;
-            outside.set(Some(absolute_path));
+        if let OpenPlace::Inside(relative) = open_place(&folder, &absolute_path) {
+            self.open_inside(id, folder, relative, &absolute_path);
             return;
-        };
+        }
+        let workspace = self.clone();
+        dioxus::core::spawn_forever(async move {
+            let (resolving_folder, resolving_path) = (folder.clone(), absolute_path.clone());
+            let place = crate::run_blocking(move || resolved_open_place(&resolving_folder, &resolving_path)).await.unwrap_or(OpenPlace::Outside);
+            match place {
+                // The session may have closed while the paths were resolved.
+                OpenPlace::Inside(relative) if workspace.live_view(id).is_some() => workspace.open_inside(id, folder, relative, &absolute_path),
+                OpenPlace::Inside(_) => {}
+                OpenPlace::Outside => {
+                    let mut outside = workspace.outside_file;
+                    outside.set(Some(absolute_path));
+                }
+            }
+        });
+    }
+
+    // Opens a file known to be inside the session folder, by its path relative to the folder.
+    fn open_inside(&self, id: LiveSessionId, folder: PathBuf, relative: String, absolute_path: &str) {
         match forge_entities::open_target(&relative) {
             // A picture opens in the lightbox over the window, not in the Files panel.
             forge_entities::OpenTarget::Lightbox => {
@@ -1135,7 +1154,7 @@ impl Workspace {
             }
             // A page, a pdf or an svg opens in a new tab of the Preview panel.
             forge_entities::OpenTarget::Preview => {
-                self.open_in_preview(id, &absolute_path);
+                self.open_in_preview(id, absolute_path);
                 return;
             }
             forge_entities::OpenTarget::Files => {}
