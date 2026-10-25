@@ -61,6 +61,39 @@ Office staff hand Claude files: a draft `.docx`, a sheet, a picture. In the desk
 
 CSS, the exact popup placement, how the cursor position is read from the textarea, tests (pure helpers first), Korean strings (`tr!`, `ko.rs` kept sorted: `ko.rs` must stay sorted by English key or lookups silently fall back to English).
 
-## Left (not in 58A)
+## As built
 
-Session and window mentions, folder mentions, mentioning with a range or a line, drag-and-drop of files onto the composer (check whether it exists), thumbnails for pdf/docx, queue card and the rest of Plan 58.
+Pure helpers (`forge_entities::mention`, tested): `type_tag` (upper-cased extension, `FILE` when none, at most 5 characters), `shorten_middle` (keeps the start and the extension), `mention_query(text, cursor)` (the `@` at the start or after whitespace, no whitespace in the query, returns the range to replace), `rank_mentions(files, query, attached)` (case-insensitive substring on the path, file-name matches first, then list order, at most 50 rows).
+
+Files source: `FilesPort::list_files(root, limit) -> FileList { files, cut }` (forge-ports `files_port.rs`). The adapter `walk` (forge-adapter-files) is iterative with an explicit stack. Caps: 20,000 entries visited (skipped entries and read errors count), depth 8, 5,000 files kept (newest modified first, ties by path, an unreadable time sorts last). Hidden entries (a leading `.`), `node_modules`, `target` and `__pycache__` are left out. Symlinks are neither followed nor listed. A name that is not UTF-8 is skipped. An unreadable subfolder is skipped; only the root must be readable. Hitting the visit cap with entries left sets `cut`.
+
+Cards: `AttachmentCard` (forge-entities `attachment_card.rs`) is presentational and takes `thumbnail: Option<String>`. Thumbnails load in `forge-features/src/thumbnail.rs` (`thumbnail_data_url`, images up to 1 MB, read through `run_blocking`). The composer cards use `ComposerAttachment`. The sent bubble reads a `ThumbnailLoader` context defined in entities and provided by the workspace provider (`provide_thumbnail_loader`). Cards are keyed by path. Folder chips stay chips.
+
+Mention list: `FileListStore` (`file_lists.rs`) is a ticketed per-session cache; `Workspace::refresh_session_files` begins a walk only when the store says one is needed, keeps the old list visible meanwhile, and a walk that finishes after the session closed or was superseded writes nothing. `mention_popup.rs` is a pure state machine (`MentionPopup`, `mention_rows`, `MentionStatus`) with `key_decision` (while the list is open Enter picks and does not send; composing IME keys are left alone). `absolute_in` joins the root and a relative path and is safe by construction (it refuses `..` and absolute parts); `attached_in` compares absolute paths lexically. The widget is `MentionList` (forge-widgets `mention_list.rs`). The cursor is read from the textarea through `document::eval`; `provisional_cursor` guesses the new cursor at once from the old text, old cursor and new text so the list does not flicker, and a latest-read counter drops a read that was overtaken. No read is made when the draft has no `@`. A pick adds an attachment card and removes the text from the `@` to the cursor, leaving no double space.
+
+Where it differs from the spec:
+- The refresh starts only when an `@` is typed. It is not started on composer focus, and not after a turn ends or after 30 s unless an `@` is typed (the store still decides a walk is needed by age 30 s or a new turn mark).
+- The grey row `Only some files are listed.` is hidden while a refresh runs.
+- The new-session screen has no mention list.
+- A pick removes the text from `@` to the cursor (not only the query) and leaves no double space.
+
+## Checked in the real window
+
+(to be added by the controller after the real-window check)
+
+## Left
+
+- Session and window mentions, folder mentions.
+- Drag and drop of files onto the composer.
+- Thumbnails for pdf and docx.
+- `Loading(old)` (a refresh over an old list) hides the cut row.
+- No mention list on the new-session screen.
+- No refresh on composer focus.
+- Mouse-click cursor moves are not tracked (the list follows the keyboard and typing only).
+- `provisional_cursor` is wrong on backspace inside a run of equal characters until the page read corrects it.
+- An external draft change whose text equals the stale snapshot can reopen the list.
+- IME Enter commit was not checked in a window.
+- The non-UTF-8 name skip and the None-mtime-last order are untested on macOS.
+- The unreadable-folder walk test fails when run as root.
+- `@@` and `@a@b` open the list with a query that contains `@`.
+- Plan 58B: queue card, slash list, `/compact` result, `/btw`, `/rewind`.

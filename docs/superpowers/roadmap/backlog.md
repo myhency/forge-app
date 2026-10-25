@@ -104,7 +104,7 @@ Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Mode
 | --- | --- | --- | --- | --- | --- | --- |
 | NEW-01 | Plan mode: plan file row, `계획` panel with comments, accept / edit / accept and switch to auto card | seen | partial | L | Plan 56A (built, checked in the real window); 56B left | Plan panel, plan card and the `계획 제안됨` row are built; comments on selected plan text and the sidebar `플랜 준비됨` tooltip (56B) are left. |
 | NEW-02 | xlsx viewer in the Files panel; result paths in chat as links; docx and pptx previews | seen | has | M | built (Plan 57A + 57B, checked in the real window) | The xlsx grid and result links are built. Forge says other office files are binary. Formula cells that were not calculated show empty in the desktop app. |
-| NEW-03 | `@` mention list (sessions, folder files, open windows) and queued-message card | seen | none | M | Plan 58 (planned) | Forge puts a queued message in the chat at once. |
+| NEW-03 | `@` mention list (sessions, folder files, open windows) and queued-message card | seen | partial | M | Plan 58A (built, window check pending); queue card in 58B | The `@` file half is built (folder files only; sessions and windows left). Forge puts a queued message in the chat at once. |
 | NEW-04 | Slash command list like the desktop app, `/compact` result line, `/btw`, `/rewind` | seen | partial | M | Plan 58 (planned) | In Forge `/compact` worked but nothing is shown after it. |
 | NEW-05 | A stopped turn is shown as `중지됨`, not as failed or done | seen | partial | S | Plan 59 (planned) | |
 | NEW-06 | Generated session title; details panel opens on the first send with the branch row and the fuller context rows | seen | partial | M | Plan 59 (planned) | The transcript already has an `ai-title` line. |
@@ -112,7 +112,7 @@ Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Mode
 | NEW-08 | Small fixes from round 27 and 28 | seen | partial | S | Plan 60 (planned) | See the Plan 60 row in README.md. |
 | NEW-09 | docx formatting in the preview: run colour, highlight, underline, strike, heading colours, table cell runs; the open Office tab refreshes when the file changes | seen | none | S | built (Plan 57C, window check pending) | Round 30: the changed numbers the person asked to mark in red look like normal text in Forge. |
 | NEW-10 | Office rendering like the desktop app: docx as pages, pptx as slide images with charts | seen | none | L | Plan 57D (planned, spike first) | Round 30: the desktop app draws pages (`Page 1 / 1`) and slides; Forge shows a text-only reading view. |
-| NEW-11 | Attached files as cards with a type tag (`XLSX`, `DOCX`), above the bubble after sending | seen | partial | S | Plan 58 (planned) | Forge shows a small chip. |
+| NEW-11 | Attached files as cards with a type tag (`XLSX`, `DOCX`), above the bubble after sending | seen | has | S | built (Plan 58A, window check pending) | Cards with a type tag and image thumbnails, in the composer and above the sent bubble. |
 
 ## OBS: observation tasks (do before planning the entries they unlock)
 
