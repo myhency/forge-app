@@ -130,6 +130,13 @@ pub enum SidecarEvent {
     TaskProgress { task_id: String, total_tokens: u64 },
     /// The SDK's guess at what the person will ask next.
     PromptSuggestion { text: String },
+    /// The conversation was compacted (by `/compact` or because the context was full).
+    Compacted {
+        #[serde(default)]
+        pre_tokens: Option<u64>,
+        #[serde(default)]
+        post_tokens: Option<u64>,
+    },
     Error { message: String },
     SessionEnded,
 }

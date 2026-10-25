@@ -93,6 +93,8 @@ pub enum Item {
     Workflow(WorkflowItem),
     /// The plan Claude proposed with ExitPlanMode.
     Plan(PlanItem),
+    /// The conversation was compacted here (token counts before and after, when known).
+    Compacted { before: Option<u64>, after: Option<u64> },
 }
 
 /// A plan Claude proposed, as the transcript shows it.
@@ -369,6 +371,7 @@ fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<Too
     let plain = |items: &mut Vec<Item>, block: &Block| match block {
         Block::Text(text) if !text.trim().is_empty() => items.push(Item::Text(text.clone())),
         Block::Thinking(text) if view.shows_thinking() && !text.trim().is_empty() => items.push(Item::Thinking(text.clone())),
+        Block::Compacted { before, after } => items.push(Item::Compacted { before: *before, after: *after }),
         _ => {}
     };
     if let Some(live) = live {
@@ -526,6 +529,7 @@ mod tests {
                 Item::Live(_) => "live",
                 Item::Workflow(_) => "workflow",
                 Item::Plan(_) => "plan",
+                Item::Compacted { .. } => "compacted",
             })
             .collect()
     }

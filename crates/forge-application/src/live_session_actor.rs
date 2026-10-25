@@ -526,6 +526,7 @@ impl Actor {
             }
             SessionUpdate::MessageDelta { .. }
             | SessionUpdate::ThinkingDelta { .. }
+            | SessionUpdate::Compacted
             | SessionUpdate::ToolCallStarted { .. }
             | SessionUpdate::ToolCallCompleted { .. } => {}
         }

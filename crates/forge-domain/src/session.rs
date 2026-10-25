@@ -41,6 +41,8 @@ pub enum Block {
     /// What the model thought before it answered.
     Thinking(String),
     Tool(ToolCall),
+    /// The conversation was compacted here; the token counts before and after, when known.
+    Compacted { before: Option<u64>, after: Option<u64> },
 }
 
 /// One message, its parts in the order they happened: an assistant reply can be text, a tool call,
@@ -127,6 +129,10 @@ impl Message {
             Some(Block::Thinking(existing)) => existing.push_str(text),
             _ => self.blocks.push(Block::Thinking(text.to_string())),
         }
+    }
+
+    pub fn push_compacted(&mut self, before: Option<u64>, after: Option<u64>) {
+        self.blocks.push(Block::Compacted { before, after });
     }
 
     pub fn push_text_block(&mut self, text: String) {

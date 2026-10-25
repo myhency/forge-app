@@ -116,6 +116,8 @@ export type SidecarEvent =
       duration_ms?: number;
     }
   | { type: "prompt_suggestion"; text: string }
+  // The conversation was compacted; the token counts before and after, when the SDK says.
+  | { type: "compacted"; pre_tokens?: number; post_tokens?: number }
   // The models the SDK lists for this session and the effort levels each takes; sent once after the start.
   | { type: "models_available"; models: WireAvailableModel[] }
   | { type: "setting_failed"; message: string }

@@ -6,6 +6,8 @@ pub enum SessionUpdate {
     SessionStarted { session_id: SessionId },
     MessageDelta { text: String },
     ThinkingDelta { text: String },
+    /// A compaction line was added to the transcript.
+    Compacted,
     ToolCallStarted { tool_call: ToolCall },
     ToolCallCompleted { tool_call_id: String },
     PermissionRequested(PermissionRequest),
@@ -64,6 +66,17 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
                 }
             }
             SessionUpdate::MessageDelta { text: text.clone() }
+        }
+        SidecarEvent::Compacted { pre_tokens, post_tokens } => {
+            match open_assistant_message(session) {
+                Some(message) => message.push_compacted(*pre_tokens, *post_tokens),
+                None => {
+                    let mut message = Message::new(MessageRole::Assistant);
+                    message.push_compacted(*pre_tokens, *post_tokens);
+                    session.messages.push(message);
+                }
+            }
+            SessionUpdate::Compacted
         }
         SidecarEvent::ThinkingDelta { text } => {
             match open_assistant_message(session) {
@@ -279,6 +292,17 @@ mod tests {
     }
 
     #[test]
+    fn a_compaction_adds_a_line_to_the_open_message_or_starts_one() {
+        let mut session = empty_session();
+        session.messages.push(Message::user("/compact".to_string()));
+        let update = apply_sidecar_event(&mut session, &SidecarEvent::Compacted { pre_tokens: Some(21_702), post_tokens: Some(4_290) });
+
+        assert_eq!(update, SessionUpdate::Compacted);
+        assert_eq!(session.messages.len(), 2);
+        assert_eq!(session.messages[1].blocks, vec![forge_domain::Block::Compacted { before: Some(21_702), after: Some(4_290) }]);
+    }
+
+    #[test]
     fn thinking_after_a_user_message_starts_an_assistant_message() {
         let mut session = empty_session();
         session.messages.push(Message::new(MessageRole::User));
@@ -386,6 +410,7 @@ mod tests {
                 forge_domain::Block::Text(text) => format!("text:{text}"),
                 forge_domain::Block::Thinking(_) => "thinking".to_string(),
                 forge_domain::Block::Tool(call) => format!("tool:{}", call.id),
+                forge_domain::Block::Compacted { .. } => "compacted".to_string(),
             })
             .collect();
         assert_eq!(kinds, vec!["text:one two", "tool:t-1", "text:three"]);

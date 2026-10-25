@@ -1185,6 +1185,22 @@ describe("SidecarSession", () => {
     expect(events.filter((e) => e.type === "task_progress")).toEqual([{ type: "task_progress", task_id: "w1", total_tokens: 99100 }]);
   });
 
+  it("forwards a compaction with the token counts the SDK reports", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      systemMessages(
+        { type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "manual", pre_tokens: 21702, post_tokens: 4290 } },
+        { type: "system", subtype: "compact_boundary" },
+      );
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events.filter((e) => e.type === "compacted")).toEqual([
+      { type: "compacted", pre_tokens: 21702, post_tokens: 4290 },
+      { type: "compacted" },
+    ]);
+  });
+
   it("forwards a finished task's tokens and time when the SDK reports them", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>

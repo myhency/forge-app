@@ -157,6 +157,8 @@ pub static KO: &[(&str, &str)] = &[
     ("Context", "컨텍스트"),
     ("Context window", "컨텍스트 창"),
     ("Context window not measured yet", "컨텍스트 창을 아직 측정하지 않았습니다"),
+    ("Conversation compacted", "대화를 압축했습니다"),
+    ("Conversation compacted · {before} → {after} tokens", "대화를 압축했습니다 · {before} → {after} 토큰"),
     ("Copy", "복사"),
     ("Copy file contents", "파일 내용 복사"),
     ("Copy path", "경로 복사"),

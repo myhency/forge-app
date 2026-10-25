@@ -572,6 +572,13 @@ export class SidecarSession {
               task_type: typeof task.task_type === "string" ? task.task_type : "",
             }));
           this.emit({ type: "background_tasks", tasks });
+        } else if (message.subtype === "compact_boundary") {
+          const meta = message.compact_metadata;
+          this.emit({
+            type: "compacted",
+            ...(typeof meta?.pre_tokens === "number" ? { pre_tokens: meta.pre_tokens } : {}),
+            ...(typeof meta?.post_tokens === "number" ? { post_tokens: meta.post_tokens } : {}),
+          });
         } else if (message.subtype === "task_progress") {
           const total = message.usage?.total_tokens;
           if (typeof message.task_id === "string" && message.task_id !== "" && typeof total === "number") {

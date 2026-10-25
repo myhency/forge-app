@@ -410,6 +410,15 @@ fn apply_line(session: &mut Session, line: &Value) {
     match line.get("type").and_then(Value::as_str) {
         Some("user") => apply_user_line(session, line),
         Some("assistant") => apply_assistant_line(session, line),
+        Some("system") if line.get("subtype").and_then(Value::as_str) == Some("compact_boundary") => {
+            let tokens = |key: &str| line.pointer(&format!("/compactMetadata/{key}")).and_then(Value::as_u64);
+            if !matches!(session.messages.last(), Some(m) if m.role == MessageRole::Assistant && !m.turn_closed) {
+                session.messages.push(Message::new(MessageRole::Assistant));
+            }
+            if let Some(message) = session.messages.last_mut() {
+                message.push_compacted(tokens("preTokens"), tokens("postTokens"));
+            }
+        }
         Some("permission-mode") => {
             if let Some(mode) = line.get("permissionMode").and_then(Value::as_str) {
                 session.permission_mode = parse_permission_mode(mode);
@@ -1856,6 +1865,7 @@ mod tests {
                 Block::Text(text) => format!("text:{text}"),
                 Block::Thinking(text) => format!("thinking:{text}"),
                 Block::Tool(call) => format!("tool:{}", call.id),
+                Block::Compacted { .. } => "compacted".to_string(),
             })
             .collect();
         assert_eq!(shape, vec!["text:first", "tool:t-1", "text:between", "tool:t-2", "text:last"]);
@@ -2278,6 +2288,29 @@ mod tests {
 
         let contents: Vec<String> = session.messages.iter().map(|m| m.text()).collect();
         assert_eq!(contents, vec!["real question", "second question", "real answer"]);
+    }
+
+    #[tokio::test]
+    async fn load_session_shows_a_compaction_as_a_line_with_the_token_counts() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("hello"),
+                assistant_block(json!({"type": "text", "text": "hi"})),
+                user_text("<command-name>/compact</command-name>"),
+                json!({"type": "system", "subtype": "compact_boundary", "content": "Conversation compacted", "isMeta": false,
+                    "compactMetadata": {"trigger": "manual", "preTokens": 21702, "postTokens": 4290}}),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        let last = session.messages.last().unwrap();
+        assert_eq!(last.role, MessageRole::Assistant);
+        assert_eq!(last.blocks, vec![Block::Compacted { before: Some(21702), after: Some(4290) }]);
     }
 
     const NOTE_DONE: &str = "<task-notification>\n<task-id>wm0ok3aqh</task-id>\n<status>completed</status>\n<summary>Dynamic workflow \"x\" completed</summary>\n<usage><subagent_tokens>157385</subagent_tokens><duration_ms>77189</duration_ms></usage>\n</task-notification>";

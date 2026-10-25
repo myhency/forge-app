@@ -117,9 +117,22 @@ fn TurnItem(
             let ended = finished.iter().find(|task| task.task_id == item.task_id).cloned();
             rsx! { WorkflowLine { item, running, ended, on_open_tasks } }
         }
+        Item::Compacted { before, after } => {
+            let label = compacted_label(before, after);
+            rsx! { div { class: "compacted-line", span { "{label}" } } }
+        }
         Item::Plan(_) => rsx! {
             button { class: "plan-row", r#type: "button", onclick: move |_| on_open_plan.call(()), {tr!("Plan proposed")} " ▸" }
         },
+    }
+}
+
+/// `Conversation compacted · 21.7k → 4.3k tokens`, or just the first part when the counts are unknown.
+fn compacted_label(before: Option<u64>, after: Option<u64>) -> String {
+    use crate::details_view::format_tokens_short;
+    match (before, after) {
+        (Some(before), Some(after)) => tr!("Conversation compacted · {before} → {after} tokens", before = format_tokens_short(before), after = format_tokens_short(after)),
+        _ => tr!("Conversation compacted").to_string(),
     }
 }
 
