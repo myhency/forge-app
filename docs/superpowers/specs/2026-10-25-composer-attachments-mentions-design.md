@@ -79,7 +79,7 @@ Where it differs from the spec:
 
 ## Checked in the real window
 
-(to be added by the controller after the real-window check)
+With the Forge harness (light theme), in the seeded session `Read the config` (folder `my-app`, files under `office/`): typing `@` into an empty composer opens the list above the composer with the four files newest first (`deck.pptx`, `report.docx`, `memo.docx`, `report.xlsx`), each with the Files panel's type icon, the name, and the folder `office/` in grey; the first row is highlighted. `Enter` picks the highlighted row: the `@` is removed, the composer shows a card with the name `deck.pptx`, a `PPTX` tag pill and a `×`, and nothing was sent. NOT checked: Korean IME composing (an Enter that commits a composition), typing a filter after `@`, `↑`/`↓`/`Tab`/`Esc`/click, an image thumbnail (no image in the sample folder), the cards above a sent message (needs a real turn), the popup in dark mode or a narrow window, a very large folder, Windows.
 
 ## Left
 
