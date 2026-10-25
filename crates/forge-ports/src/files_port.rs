@@ -76,20 +76,62 @@ pub struct DocumentView {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DocBlock {
-    /// `level` is 1 to 6.
-    Heading { level: u8, text: String },
+    /// `level` is 1 to 6; `color` is the one its paragraph style gives it.
+    Heading { level: u8, text: String, color: Option<Rgb> },
     Paragraph { runs: Vec<TextRun> },
     /// `level` is the nesting depth from 0.
     ListItem { level: u8, numbered: bool, runs: Vec<TextRun> },
-    /// Each cell as plain text.
-    Table { rows: Vec<Vec<String>> },
+    Table { rows: Vec<Vec<TableCell>> },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TextRun {
     pub text: String,
     pub bold: bool,
     pub italic: bool,
+    pub underline: bool,
+    pub strike: bool,
+    pub color: Option<Rgb>,
+    /// A named highlight or the run's shading.
+    pub highlight: Option<Rgb>,
+}
+
+/// A table cell's text with its formatting (a nested table's text is part of it) and its
+/// background colour.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TableCell {
+    pub runs: Vec<TextRun>,
+    pub fill: Option<Rgb>,
+}
+
+impl TableCell {
+    /// The cell's text without its formatting.
+    pub fn text(&self) -> String {
+        self.runs.iter().map(|run| run.text.as_str()).collect()
+    }
+}
+
+/// A colour read from a file. It is only ever made from six hex digits, so it cannot carry
+/// anything else into the page.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Rgb(pub u8, pub u8, pub u8);
+
+impl Rgb {
+    /// Exactly six ASCII hex digits, in any case; anything else (`auto`, a `#`, more or fewer
+    /// digits) is `None`.
+    pub fn from_hex(hex: &str) -> Option<Rgb> {
+        let digits = hex.as_bytes();
+        if digits.len() != 6 || !digits.iter().all(u8::is_ascii_hexdigit) {
+            return None;
+        }
+        let byte = |at: usize| u8::from_str_radix(&hex[at..at + 2], 16).ok();
+        Some(Rgb(byte(0)?, byte(2)?, byte(4)?))
+    }
+
+    /// `#rrggbb` in lower case.
+    pub fn css(self) -> String {
+        format!("#{:02x}{:02x}{:02x}", self.0, self.1, self.2)
+    }
 }
 
 /// The slides of a pptx file, cut to a slide cap.
@@ -187,6 +229,31 @@ mod tests {
     fn errors_read_as_messages() {
         assert_eq!(FilesError::Outside.to_string(), "That path is outside the session folder");
         assert_eq!(FilesError::Failed("denied".to_string()).to_string(), "denied");
+    }
+
+    #[test]
+    fn rgb_from_hex_takes_exactly_six_hex_digits_in_any_case() {
+        assert_eq!(Rgb::from_hex("FF0000"), Some(Rgb(0xFF, 0, 0)));
+        assert_eq!(Rgb::from_hex("1f3864"), Some(Rgb(0x1F, 0x38, 0x64)));
+        assert_eq!(Rgb::from_hex("aBcDeF"), Some(Rgb(0xAB, 0xCD, 0xEF)));
+        for bad in ["FF00", "FF00000", "GG0000", "#FF0000", "FF0000;x", "", "auto", " FF0000", "+F0000", "FF000\u{e9}"] {
+            assert_eq!(Rgb::from_hex(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn rgb_css_is_lowercase_hash_hex() {
+        assert_eq!(Rgb(0xAB, 0x0C, 0xEF).css(), "#ab0cef");
+        assert_eq!(Rgb::default().css(), "#000000");
+        assert_eq!(Rgb(255, 255, 255).css(), "#ffffff");
+    }
+
+    #[test]
+    fn a_table_cell_text_is_its_runs_joined() {
+        let run = |text: &str| TextRun { text: text.to_string(), ..TextRun::default() };
+        let cell = TableCell { runs: vec![run("a "), TextRun { color: Some(Rgb(1, 2, 3)), ..run("red") }], fill: None };
+        assert_eq!(cell.text(), "a red");
+        assert_eq!(TableCell::default().text(), "");
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use forge_ports::{DocBlock, DocumentView, FileContent, FilesError, TextRun};
+use forge_ports::{DocBlock, DocumentView, FileContent, FilesError, Rgb, TableCell, TextRun};
 use quick_xml::events::{BytesStart, Event};
 
 use crate::office_zip::{self, attribute, cut, failed, TextBudget};
@@ -19,7 +19,7 @@ const MAX_TEXT_CHARS: usize = 10_000;
 const EVENT_LIMIT: usize = 5_000_000;
 // Word nests a list 9 deep (`w:ilvl` 0 to 8).
 const MAX_LIST_LEVEL: u8 = 8;
-// A style's list is looked for this many `w:basedOn` steps up, so a cycle of styles ends.
+// A style's list or colour is looked for this many `w:basedOn` steps up, so a cycle of styles ends.
 const MAX_BASED_ON_STEPS: usize = 10;
 // Elements whose text is not shown: tracked deletions and moves away, drawings (text boxes are not
 // drawn), the fallback copy of alternate content, and the old properties a tracked change keeps.
@@ -73,6 +73,46 @@ fn is_on(tag: &BytesStart<'_>) -> bool {
     !attribute(tag, "val").is_some_and(|value| matches!(value.as_str(), "0" | "false" | "off"))
 }
 
+// A `w:u` is on unless its `w:val` is `none` or turns it off.
+fn is_underlined(tag: &BytesStart<'_>) -> bool {
+    is_on(tag) && attribute(tag, "val").as_deref() != Some("none")
+}
+
+// The `w:val` of a `w:color` (`auto` and anything but six hex digits is no colour; a `w:themeColor`
+// beside it is not resolved).
+fn color_of(tag: &BytesStart<'_>) -> Option<Rgb> {
+    attribute(tag, "val").as_deref().and_then(Rgb::from_hex)
+}
+
+// The `w:fill` of a `w:shd`, the same way.
+fn fill_of(tag: &BytesStart<'_>) -> Option<Rgb> {
+    attribute(tag, "fill").as_deref().and_then(Rgb::from_hex)
+}
+
+// The colour of a `w:highlight` name; `none` and unknown names are no highlight.
+fn highlight_of(tag: &BytesStart<'_>) -> Option<Rgb> {
+    let rgb = match attribute(tag, "val")?.as_str() {
+        "yellow" => Rgb(0xFF, 0xFF, 0x00),
+        "green" => Rgb(0x00, 0xFF, 0x00),
+        "cyan" => Rgb(0x00, 0xFF, 0xFF),
+        "magenta" => Rgb(0xFF, 0x00, 0xFF),
+        "blue" => Rgb(0x00, 0x00, 0xFF),
+        "red" => Rgb(0xFF, 0x00, 0x00),
+        "darkBlue" => Rgb(0x00, 0x00, 0x80),
+        "darkCyan" => Rgb(0x00, 0x80, 0x80),
+        "darkGreen" => Rgb(0x00, 0x80, 0x00),
+        "darkMagenta" => Rgb(0x80, 0x00, 0x80),
+        "darkRed" => Rgb(0x80, 0x00, 0x00),
+        "darkYellow" => Rgb(0x80, 0x80, 0x00),
+        "darkGray" => Rgb(0x80, 0x80, 0x80),
+        "lightGray" => Rgb(0xC0, 0xC0, 0xC0),
+        "black" => Rgb(0x00, 0x00, 0x00),
+        "white" => Rgb(0xFF, 0xFF, 0xFF),
+        _ => return None,
+    };
+    Some(rgb)
+}
+
 // The heading level of a style id or name: `Heading1`…`Heading9` or `heading 1`… (above 6 is 6),
 // and `Title` is 1.
 fn level_of_style(name: &str) -> Option<u8> {
@@ -98,11 +138,13 @@ fn list_level(tag: &BytesStart<'_>) -> u8 {
 /// What `word/styles.xml` says about paragraph styles: the heading level of each style whose name
 /// (not id) is a heading's, since Word in some languages gives the built-in heading styles other
 /// ids (Korean Word uses `1`, `2` …), and the list each style carries (python-docx's `List Bullet`
-/// and `List Number` put the list in the style, not the paragraph).
+/// and `List Number` put the list in the style, not the paragraph), and the text colour of each
+/// style that sets one in its own run properties (`None` for `auto`, which stops the lookup).
 #[derive(Default)]
 struct Styles {
     headings: HashMap<String, u8>,
     lists: HashMap<String, ListSetting>,
+    colors: HashMap<String, Option<Rgb>>,
     based_on: HashMap<String, String>,
 }
 
@@ -111,6 +153,9 @@ impl Styles {
         let mut styles = Self::default();
         let mut style: Option<String> = None;
         let (mut in_properties, mut hidden) = (false, 0usize);
+        // In the style's own `w:rPr`, not the one of its paragraph properties or of a table style's
+        // conditional part (`w:tblStylePr`).
+        let (mut in_run_properties, mut in_conditional) = (false, false);
         let _ = office_zip::walk(xml, budget, |event| {
             if hidden > 0 {
                 match event {
@@ -123,9 +168,13 @@ impl Styles {
             match event {
                 Event::Start(tag) if HIDDEN.contains(&tag.local_name().as_ref()) => hidden = 1,
                 Event::Start(tag) if tag.local_name().as_ref() == "style" => style = attribute(&tag, "styleId"),
-                Event::End(tag) if tag.local_name().as_ref() == "style" => (style, in_properties) = (None, false),
+                Event::End(tag) if tag.local_name().as_ref() == "style" => (style, in_properties, in_run_properties, in_conditional) = (None, false, false, false),
                 Event::Start(tag) if tag.local_name().as_ref() == "pPr" => in_properties = style.is_some(),
                 Event::End(tag) if tag.local_name().as_ref() == "pPr" => in_properties = false,
+                Event::Start(tag) if tag.local_name().as_ref() == "rPr" => in_run_properties = style.is_some() && !in_properties && !in_conditional,
+                Event::End(tag) if tag.local_name().as_ref() == "rPr" => in_run_properties = false,
+                Event::Start(tag) if tag.local_name().as_ref() == "tblStylePr" => in_conditional = true,
+                Event::End(tag) if tag.local_name().as_ref() == "tblStylePr" => in_conditional = false,
                 Event::Empty(tag) | Event::Start(tag) => {
                     let Some(id) = style.as_ref() else { return true };
                     match tag.local_name().as_ref() {
@@ -144,6 +193,9 @@ impl Styles {
                         }
                         "numId" if in_properties => styles.lists.entry(id.clone()).or_default().num_id = attribute(&tag, "val"),
                         "ilvl" if in_properties => styles.lists.entry(id.clone()).or_default().level = Some(list_level(&tag)),
+                        "color" if in_run_properties => {
+                            styles.colors.insert(id.clone(), color_of(&tag));
+                        }
                         _ => {}
                     }
                 }
@@ -169,6 +221,19 @@ impl Styles {
             current = parent;
         }
         found
+    }
+
+    // The text colour a style gives, its own first and then that of the styles it is based on, at
+    // most `MAX_BASED_ON_STEPS` up. A style's own `auto` ends the lookup with no colour.
+    fn color_of(&self, style: &str) -> Option<Rgb> {
+        let mut current = style;
+        for _ in 0..=MAX_BASED_ON_STEPS {
+            if let Some(own) = self.colors.get(current) {
+                return *own;
+            }
+            current = self.based_on.get(current)?;
+        }
+        None
     }
 }
 
@@ -233,6 +298,47 @@ impl Numbering {
     }
 }
 
+// The properties of the open run, as its `w:rPr` sets them.
+#[derive(Default, Clone, Copy)]
+struct RunFormat {
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    strike: bool,
+    double_strike: bool,
+    color: Option<Rgb>,
+    highlight: Option<Rgb>,
+    shading: Option<Rgb>,
+}
+
+impl RunFormat {
+    // An empty run of this format; the shading shows where there is no named highlight.
+    fn run(self) -> TextRun {
+        TextRun {
+            text: String::new(),
+            bold: self.bold,
+            italic: self.italic,
+            underline: self.underline,
+            strike: self.strike || self.double_strike,
+            color: self.color,
+            highlight: self.highlight.or(self.shading),
+        }
+    }
+}
+
+// Whether two runs look the same, so their text can be one run.
+fn same_format(a: &TextRun, b: &TextRun) -> bool {
+    (a.bold, a.italic, a.underline, a.strike, a.color, a.highlight) == (b.bold, b.italic, b.underline, b.strike, b.color, b.highlight)
+}
+
+// Adds `run` to `runs`, joined to the last run when they look the same.
+fn push_run(runs: &mut Vec<TextRun>, run: TextRun) {
+    match runs.last_mut() {
+        Some(last) if same_format(last, &run) => last.text.push_str(&run.text),
+        _ => runs.push(run),
+    }
+}
+
 #[derive(Default)]
 struct Paragraph {
     style: Option<String>,
@@ -256,13 +362,13 @@ struct Body<'a> {
     in_run: bool,
     in_run_properties: bool,
     in_text: bool,
-    bold: bool,
-    italic: bool,
+    format: RunFormat,
     table_depth: usize,
-    rows: Vec<Vec<String>>,
+    rows: Vec<Vec<TableCell>>,
     in_row: bool,
     // The open cell of the outermost table and its character count.
-    cell: Option<(String, usize)>,
+    cell: Option<(TableCell, usize)>,
+    in_cell_properties: bool,
     // The cells all tables may still keep.
     cells_left: usize,
     text: TextBudget,
@@ -281,12 +387,12 @@ impl<'a> Body<'a> {
             in_run: false,
             in_run_properties: false,
             in_text: false,
-            bold: false,
-            italic: false,
+            format: RunFormat::default(),
             table_depth: 0,
             rows: Vec::new(),
             in_row: false,
             cell: None,
+            in_cell_properties: false,
             cells_left: MAX_CELLS,
             text: TextBudget::new(office_zip::TOTAL_TEXT_BYTES),
         }
@@ -345,11 +451,24 @@ impl<'a> Body<'a> {
             "numId" if in_properties => self.with_paragraph(|paragraph| paragraph.list.get_or_insert_with(ListSetting::default).num_id = attribute(tag, "val")),
             "r" if !empty => {
                 self.in_run = true;
-                (self.bold, self.italic) = (false, false);
+                self.format = RunFormat::default();
             }
             "rPr" if !empty && self.in_run => self.in_run_properties = true,
-            "b" if self.in_run_properties => self.bold = is_on(tag),
-            "i" if self.in_run_properties => self.italic = is_on(tag),
+            "b" if self.in_run_properties => self.format.bold = is_on(tag),
+            "i" if self.in_run_properties => self.format.italic = is_on(tag),
+            "u" if self.in_run_properties => self.format.underline = is_underlined(tag),
+            "strike" if self.in_run_properties => self.format.strike = is_on(tag),
+            "dstrike" if self.in_run_properties => self.format.double_strike = is_on(tag),
+            "color" if self.in_run_properties => self.format.color = color_of(tag),
+            "highlight" if self.in_run_properties => self.format.highlight = highlight_of(tag),
+            "shd" if self.in_run_properties => self.format.shading = fill_of(tag),
+            // The cell's own properties, not those of a nested table's cell.
+            "tcPr" if !empty && self.table_depth == 1 && self.cell.is_some() => self.in_cell_properties = true,
+            "shd" if self.in_cell_properties => {
+                if let Some((cell, _)) = self.cell.as_mut() {
+                    cell.fill = fill_of(tag);
+                }
+            }
             "t" if !empty && self.in_run => self.in_text = true,
             "tab" | "br" | "cr" if self.in_run && !self.in_run_properties => self.add_text(" "),
             "tbl" if !empty => {
@@ -375,10 +494,10 @@ impl<'a> Body<'a> {
                 self.cells_left -= 1;
                 if empty {
                     if let Some(row) = self.rows.last_mut() {
-                        row.push(String::new());
+                        row.push(TableCell::default());
                     }
                 } else {
-                    self.cell = Some((String::new(), 0));
+                    self.cell = Some((TableCell::default(), 0));
                 }
             }
             _ => {}
@@ -399,9 +518,11 @@ impl<'a> Body<'a> {
             "r" => (self.in_run, self.in_run_properties) = (false, false),
             "rPr" => self.in_run_properties = false,
             "t" => self.in_text = false,
+            "tcPr" => self.in_cell_properties = false,
             "tc" if self.table_depth == 1 => {
-                if let (Some((text, _)), Some(row)) = (self.cell.take(), self.rows.last_mut()) {
-                    row.push(text);
+                self.in_cell_properties = false;
+                if let (Some((cell, _)), Some(row)) = (self.cell.take(), self.rows.last_mut()) {
+                    row.push(cell);
                 }
             }
             "tr" if self.table_depth == 1 => self.in_row = false,
@@ -420,8 +541,8 @@ impl<'a> Body<'a> {
         true
     }
 
-    // Adds text to the open paragraph with the open run's bold and italic, up to the paragraph's
-    // text cap and the file's text budget.
+    // Adds text to the open paragraph with the open run's format, up to the paragraph's text cap
+    // and the file's text budget.
     fn add_text(&mut self, text: &str) {
         let Some(paragraph) = self.paragraph.as_mut() else { return };
         let (kept, was_cut) = cut(text, MAX_TEXT_CHARS - paragraph.chars);
@@ -431,13 +552,11 @@ impl<'a> Body<'a> {
             return;
         }
         paragraph.chars += kept.chars().count();
-        match paragraph.runs.last_mut() {
-            Some(last) if (last.bold, last.italic) == (self.bold, self.italic) => last.text.push_str(kept),
-            _ => paragraph.runs.push(TextRun { text: kept.to_string(), bold: self.bold, italic: self.italic }),
-        }
+        push_run(&mut paragraph.runs, TextRun { text: kept.to_string(), ..self.format.run() });
     }
 
-    // A paragraph with text becomes a block, or inside a table joins its cell's text with a space.
+    // A paragraph with text becomes a block, or inside a table joins its cell's runs after a plain
+    // space.
     fn end_paragraph(&mut self) -> bool {
         self.in_properties = false;
         let Some(paragraph) = self.paragraph.take() else { return true };
@@ -448,15 +567,22 @@ impl<'a> Body<'a> {
         if self.table_depth > 0 {
             if let Some((cell, chars)) = self.cell.as_mut() {
                 // The text is already counted in the budget; the joining space is not.
-                if !cell.is_empty() && self.text.take(" ").1 {
+                if !cell.runs.is_empty() && self.text.take(" ").1 {
                     self.truncated = true;
                     return true;
                 }
-                let joined = if cell.is_empty() { text } else { format!(" {text}") };
-                let (kept, was_cut) = cut(&joined, MAX_TEXT_CHARS - *chars);
-                self.truncated |= was_cut;
-                *chars += kept.chars().count();
-                cell.push_str(kept);
+                let space = (!cell.runs.is_empty()).then(|| TextRun { text: " ".to_string(), ..TextRun::default() });
+                for run in space.into_iter().chain(paragraph.runs) {
+                    let (kept, was_cut) = cut(&run.text, MAX_TEXT_CHARS - *chars);
+                    self.truncated |= was_cut;
+                    if !kept.is_empty() {
+                        *chars += kept.chars().count();
+                        push_run(&mut cell.runs, TextRun { text: kept.to_string(), ..run });
+                    }
+                    if was_cut {
+                        break;
+                    }
+                }
             }
             return true;
         }
@@ -468,7 +594,8 @@ impl<'a> Body<'a> {
             (own, style) => own.or(style),
         };
         let block = if let Some(level) = heading {
-            DocBlock::Heading { level, text }
+            let color = paragraph.style.as_deref().and_then(|style| self.styles.color_of(style));
+            DocBlock::Heading { level, text, color }
         } else if let Some(list) = list.filter(|list| list.num_id.as_deref() != Some("0")) {
             let level = list.level.unwrap_or(0);
             let numbered = list.num_id.as_deref().is_some_and(|id| self.numbering.numbered(id, level));
@@ -493,7 +620,7 @@ impl<'a> Body<'a> {
 mod tests {
     use std::io::{Cursor, Write};
 
-    use forge_ports::{DocBlock, DocumentView, FilesPort, TextRun};
+    use forge_ports::{DocBlock, DocumentView, FilesPort, Rgb, TableCell, TextRun};
 
     use super::*;
     use crate::office_zip::test_support::{declaring, zip_of};
@@ -542,7 +669,7 @@ mod tests {
     }
 
     fn run(text: &str, bold: bool, italic: bool) -> TextRun {
-        TextRun { text: text.to_string(), bold, italic }
+        TextRun { text: text.to_string(), bold, italic, ..TextRun::default() }
     }
 
     fn plain(text: &str) -> DocBlock {
@@ -550,7 +677,219 @@ mod tests {
     }
 
     fn heading(level: u8, text: &str) -> DocBlock {
-        DocBlock::Heading { level, text: text.to_string() }
+        DocBlock::Heading { level, text: text.to_string(), color: None }
+    }
+
+    fn colored_heading(level: u8, text: &str, color: Rgb) -> DocBlock {
+        DocBlock::Heading { level, text: text.to_string(), color: Some(color) }
+    }
+
+    // A paragraph of one run with these run properties.
+    fn formatted(properties: &str, text: &str) -> String {
+        format!("<w:p><w:r><w:rPr>{properties}</w:rPr><w:t>{text}</w:t></w:r></w:p>")
+    }
+
+    // The runs of the only paragraph of a body.
+    fn runs_of(body: &str) -> Vec<TextRun> {
+        match &view(docx(body)).blocks[..] {
+            [DocBlock::Paragraph { runs }] => runs.clone(),
+            other => panic!("not one paragraph: {other:?}"),
+        }
+    }
+
+    const RED: Rgb = Rgb(0xFF, 0, 0);
+
+    #[test]
+    fn a_run_colour_is_kept_and_auto_is_none() {
+        let body = r#"<w:p><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>red</w:t></w:r><w:r><w:rPr><w:color w:val="auto"/></w:rPr><w:t xml:space="preserve"> auto </w:t></w:r><w:r><w:rPr><w:color w:val="00aa00" w:themeColor="accent6"/></w:rPr><w:t>green</w:t></w:r><w:r><w:rPr><w:color w:themeColor="accent1"/></w:rPr><w:t xml:space="preserve"> theme</w:t></w:r></w:p>"#;
+        assert_eq!(
+            runs_of(body),
+            vec![
+                TextRun { color: Some(RED), ..run("red", false, false) },
+                run(" auto ", false, false),
+                TextRun { color: Some(Rgb(0, 0xAA, 0)), ..run("green", false, false) },
+                run(" theme", false, false),
+            ]
+        );
+        // A colour on the paragraph mark is not the text's colour.
+        assert_eq!(view(docx(r#"<w:p><w:pPr><w:rPr><w:color w:val="FF0000"/></w:rPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>"#)).blocks, vec![plain("x")]);
+    }
+
+    #[test]
+    fn a_hostile_colour_value_is_none() {
+        for value in ["FF0000;background:url(x)", "FF00000", "FF00", "", "GG0000", "#FF0000", " FF0000", "FF0000&quot;", "\u{ff26}\u{ff26}0000"] {
+            for properties in [format!(r#"<w:color w:val="{value}"/>"#), format!(r#"<w:shd w:val="clear" w:fill="{value}"/>"#)] {
+                assert_eq!(runs_of(&formatted(&properties, "x")), vec![run("x", false, false)], "{properties}");
+            }
+            let cell = format!(r#"<w:tbl><w:tr><w:tc><w:tcPr><w:shd w:fill="{value}"/></w:tcPr>{}</w:tc></w:tr></w:tbl>"#, p("x"));
+            assert_eq!(view(docx(&cell)).blocks, vec![rows(&[&["x"]])], "{value}");
+        }
+    }
+
+    #[test]
+    fn highlight_names_map_to_colours_and_none_means_none() {
+        let names = [
+            ("yellow", Rgb(0xFF, 0xFF, 0)),
+            ("green", Rgb(0, 0xFF, 0)),
+            ("cyan", Rgb(0, 0xFF, 0xFF)),
+            ("magenta", Rgb(0xFF, 0, 0xFF)),
+            ("blue", Rgb(0, 0, 0xFF)),
+            ("red", Rgb(0xFF, 0, 0)),
+            ("darkBlue", Rgb(0, 0, 0x80)),
+            ("darkCyan", Rgb(0, 0x80, 0x80)),
+            ("darkGreen", Rgb(0, 0x80, 0)),
+            ("darkMagenta", Rgb(0x80, 0, 0x80)),
+            ("darkRed", Rgb(0x80, 0, 0)),
+            ("darkYellow", Rgb(0x80, 0x80, 0)),
+            ("darkGray", Rgb(0x80, 0x80, 0x80)),
+            ("lightGray", Rgb(0xC0, 0xC0, 0xC0)),
+            ("black", Rgb(0, 0, 0)),
+            ("white", Rgb(0xFF, 0xFF, 0xFF)),
+        ];
+        for (name, color) in names {
+            assert_eq!(runs_of(&formatted(&format!(r#"<w:highlight w:val="{name}"/>"#), "x")), vec![TextRun { highlight: Some(color), ..run("x", false, false) }], "{name}");
+        }
+        for value in ["none", "purple", "YELLOW", "FFFF00", ""] {
+            assert_eq!(runs_of(&formatted(&format!(r#"<w:highlight w:val="{value}"/>"#), "x")), vec![run("x", false, false)], "{value}");
+        }
+    }
+
+    #[test]
+    fn a_run_shading_fill_counts_as_highlight_when_there_is_no_highlight() {
+        let shaded = TextRun { highlight: Some(Rgb(0xD9, 0xD9, 0xD9)), ..run("x", false, false) };
+        assert_eq!(runs_of(&formatted(r#"<w:shd w:val="clear" w:color="auto" w:fill="D9D9D9"/>"#, "x")), vec![shaded.clone()]);
+        // A named highlight wins over the shading, in either order.
+        let yellow = TextRun { highlight: Some(Rgb(0xFF, 0xFF, 0)), ..run("x", false, false) };
+        assert_eq!(runs_of(&formatted(r#"<w:highlight w:val="yellow"/><w:shd w:fill="D9D9D9"/>"#, "x")), vec![yellow.clone()]);
+        assert_eq!(runs_of(&formatted(r#"<w:shd w:fill="D9D9D9"/><w:highlight w:val="yellow"/>"#, "x")), vec![yellow]);
+        // A highlight of `none` is no highlight, so the shading shows, as Word draws it.
+        assert_eq!(runs_of(&formatted(r#"<w:highlight w:val="none"/><w:shd w:fill="D9D9D9"/>"#, "x")), vec![shaded]);
+        assert_eq!(runs_of(&formatted(r#"<w:shd w:val="clear" w:fill="auto"/>"#, "x")), vec![run("x", false, false)]);
+    }
+
+    #[test]
+    fn underline_and_strike_are_on_unless_val_is_none_zero_or_false() {
+        let underlined = TextRun { underline: true, ..run("x", false, false) };
+        let struck = TextRun { strike: true, ..run("x", false, false) };
+        for properties in [r#"<w:u w:val="single"/>"#, r#"<w:u w:val="double"/>"#, "<w:u/>"] {
+            assert_eq!(runs_of(&formatted(properties, "x")), vec![underlined.clone()], "{properties}");
+        }
+        for properties in ["<w:strike/>", r#"<w:strike w:val="1"/>"#, r#"<w:strike w:val="true"/>"#, "<w:dstrike/>", r#"<w:strike w:val="0"/><w:dstrike/>"#] {
+            assert_eq!(runs_of(&formatted(properties, "x")), vec![struck.clone()], "{properties}");
+        }
+        for properties in [r#"<w:u w:val="none"/>"#, r#"<w:u w:val="0"/>"#, r#"<w:u w:val="false"/>"#, r#"<w:strike w:val="0"/>"#, r#"<w:strike w:val="false"/>"#, r#"<w:dstrike w:val="0"/>"#, r#"<w:dstrike w:val="false"/>"#] {
+            assert_eq!(runs_of(&formatted(properties, "x")), vec![run("x", false, false)], "{properties}");
+        }
+        // Each run starts plain again.
+        let body = r#"<w:p><w:r><w:rPr><w:u w:val="single"/><w:strike/><w:color w:val="FF0000"/><w:highlight w:val="yellow"/></w:rPr><w:t>all</w:t></w:r><w:r><w:t>none</w:t></w:r></w:p>"#;
+        assert_eq!(
+            runs_of(body),
+            vec![TextRun { underline: true, strike: true, color: Some(RED), highlight: Some(Rgb(0xFF, 0xFF, 0)), ..run("all", false, false) }, run("none", false, false)]
+        );
+    }
+
+    // A paragraph style with this id, name, `basedOn` and run properties.
+    fn run_style(id: &str, name: &str, based_on: Option<&str>, run_properties: &str) -> String {
+        let based_on = based_on.map(|parent| format!(r#"<w:basedOn w:val="{parent}"/>"#)).unwrap_or_default();
+        format!(r#"<w:style w:type="paragraph" w:styleId="{id}"><w:name w:val="{name}"/>{based_on}<w:rPr>{run_properties}</w:rPr></w:style>"#)
+    }
+
+    fn color(hex: &str) -> String {
+        format!(r#"<w:color w:val="{hex}"/>"#)
+    }
+
+    #[test]
+    fn a_heading_style_colour_is_the_headings_colour_following_basedon() {
+        let blue = Rgb(0x2F, 0x54, 0x96);
+        let styles = [
+            run_style("HeadingBase", "Heading Base", None, &color("2F5496")),
+            run_style("Heading1", "heading 1", Some("HeadingBase"), "<w:b/>"),
+            run_style("Heading2", "heading 2", Some("HeadingBase"), &color("1F3864")),
+            run_style("Heading3", "heading 3", Some("HeadingBase"), &color("auto")),
+            // Korean Word's id for `heading 1`.
+            run_style("1", "heading 1", Some("HeadingBase"), ""),
+            // A colour inside the style's paragraph properties or a table style's conditional part is not the style's.
+            r#"<w:style w:type="paragraph" w:styleId="Heading4"><w:name w:val="heading 4"/><w:pPr><w:rPr><w:color w:val="FF0000"/></w:rPr></w:pPr></w:style>"#.to_string(),
+            r#"<w:style w:type="paragraph" w:styleId="Heading5"><w:name w:val="heading 5"/><w:tblStylePr w:type="firstRow"><w:rPr><w:color w:val="FF0000"/></w:rPr></w:tblStylePr></w:style>"#.to_string(),
+        ]
+        .concat();
+        // The heading's own direct colour stays on its runs, not on the heading.
+        let direct = r#"<w:p><w:pPr><w:pStyle w:val="Heading6"/></w:pPr><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>six</w:t></w:r></w:p>"#;
+        let body = [styled("Heading1", "one"), styled("Heading2", "two"), styled("Heading3", "three"), styled("1", "korean"), styled("Heading4", "four"), styled("Heading5", "five"), direct.to_string()].concat();
+        assert_eq!(
+            view(docx_with(&body, &[("word/styles.xml", styles_of(&styles))])).blocks,
+            vec![
+                colored_heading(1, "one", blue),
+                colored_heading(2, "two", Rgb(0x1F, 0x38, 0x64)),
+                // Its own `auto` stops the colour of the style it is based on.
+                heading(3, "three"),
+                colored_heading(1, "korean", blue),
+                heading(4, "four"),
+                heading(5, "five"),
+                heading(6, "six"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_heading_style_with_themecolor_and_a_hex_val_uses_the_hex() {
+        let styles = [
+            run_style("Heading1", "heading 1", None, r#"<w:color w:val="2F5496" w:themeColor="accent1" w:themeShade="BF"/>"#),
+            run_style("Heading2", "heading 2", None, r#"<w:color w:themeColor="accent1"/>"#),
+        ]
+        .concat();
+        let body = [styled("Heading1", "one"), styled("Heading2", "two")].concat();
+        assert_eq!(view(docx_with(&body, &[("word/styles.xml", styles_of(&styles))])).blocks, vec![colored_heading(1, "one", Rgb(0x2F, 0x54, 0x96)), heading(2, "two")]);
+    }
+
+    #[test]
+    fn a_basedon_cycle_in_heading_colour_terminates() {
+        let styles = [
+            run_style("Heading1", "heading 1", Some("Heading2"), ""),
+            run_style("Heading2", "heading 2", Some("Heading1"), ""),
+            run_style("Heading3", "heading 3", Some("Heading3"), ""),
+        ]
+        .concat();
+        let long_chain: String = (0..30).map(|index| run_style(&format!("S{index}"), &format!("heading {}", if index == 0 { 1 } else { 9 }), Some(&format!("S{}", index + 1)), "")).collect();
+        let colored_end = run_style("S30", "S30", None, &color("FF0000"));
+        let near = run_style("Near", "heading 2", Some("S25"), "");
+        let body = [styled("Heading1", "one"), styled("Heading3", "three"), styled("S0", "far"), styled("Near", "near")].concat();
+        assert_eq!(
+            view(docx_with(&body, &[("word/styles.xml", styles_of(&[styles, long_chain, colored_end, near].concat()))])).blocks,
+            // A chain longer than the bound stops looking; one within it finds the colour.
+            vec![heading(1, "one"), heading(3, "three"), heading(1, "far"), colored_heading(2, "near", RED)]
+        );
+    }
+
+    #[test]
+    fn a_table_cell_keeps_its_runs_with_their_formatting_and_its_fill() {
+        let white_bold = r#"<w:p><w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr><w:t>Head</w:t></w:r></w:p>"#;
+        let red = r#"<w:p><w:pPr><w:shd w:fill="00FF00"/></w:pPr><w:r><w:rPr><w:color w:val="FF0000"/><w:u w:val="single"/></w:rPr><w:t>y</w:t></w:r></w:p>"#;
+        let inner = format!(r#"<w:tbl><w:tr><w:tc><w:tcPr><w:shd w:fill="00FF00"/></w:tcPr><w:p><w:r><w:rPr><w:strike/></w:rPr><w:t>in</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#);
+        let body = format!(r#"<w:tbl><w:tr><w:tc><w:tcPr><w:tcW w:w="100"/><w:shd w:val="clear" w:color="auto" w:fill="1F3864"/></w:tcPr>{white_bold}</w:tc><w:tc>{}{red}{inner}</w:tc></w:tr></w:tbl>"#, p("x"));
+        let plain_run = |text: &str| run(text, false, false);
+        assert_eq!(
+            view(docx(&body)).blocks,
+            vec![DocBlock::Table {
+                rows: vec![vec![
+                    TableCell { runs: vec![TextRun { color: Some(Rgb(0xFF, 0xFF, 0xFF)), ..run("Head", true, false) }], fill: Some(Rgb(0x1F, 0x38, 0x64)) },
+                    // A paragraph's or a nested cell's shading is not the cell's fill.
+                    TableCell {
+                        runs: vec![plain_run("x "), TextRun { color: Some(RED), underline: true, ..plain_run("y") }, plain_run(" "), TextRun { strike: true, ..plain_run("in") }],
+                        fill: None,
+                    },
+                ]],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_cell_fill_auto_is_none() {
+        let body = format!(r#"<w:tbl><w:tr><w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="auto"/></w:tcPr>{}</w:tc><w:tc><w:tcPr><w:shd w:fill="ffff99"/></w:tcPr>{}</w:tc></w:tr></w:tbl>"#, p("a"), p("b"));
+        assert_eq!(
+            view(docx(&body)).blocks,
+            vec![DocBlock::Table { rows: vec![vec![TableCell { runs: vec![run("a", false, false)], fill: None }, TableCell { runs: vec![run("b", false, false)], fill: Some(Rgb(0xFF, 0xFF, 0x99)) }]] }]
+        );
     }
 
     fn table(body: &[&[&str]]) -> String {
@@ -679,7 +1018,8 @@ mod tests {
     }
 
     fn rows(cells: &[&[&str]]) -> DocBlock {
-        DocBlock::Table { rows: cells.iter().map(|row| row.iter().map(|cell| cell.to_string()).collect()).collect() }
+        let cell = |text: &str| TableCell { runs: if text.is_empty() { vec![] } else { vec![run(text, false, false)] }, fill: None };
+        DocBlock::Table { rows: cells.iter().map(|row| row.iter().map(|text| cell(text)).collect()).collect() }
     }
 
     #[test]
@@ -782,7 +1122,7 @@ mod tests {
             .map(|block| match block {
                 DocBlock::Heading { text, .. } => text.len(),
                 DocBlock::Paragraph { runs } | DocBlock::ListItem { runs, .. } => runs.iter().map(|run| run.text.len()).sum(),
-                DocBlock::Table { rows } => rows.iter().flatten().map(String::len).sum(),
+                DocBlock::Table { rows } => rows.iter().flatten().flat_map(|cell| &cell.runs).map(|run| run.text.len()).sum(),
             })
             .sum()
     }

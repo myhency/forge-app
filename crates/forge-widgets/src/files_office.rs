@@ -82,7 +82,7 @@ pub fn DocumentViewer(doc: DocumentView, path: String, on_open: EventHandler<()>
                 div { class: "office-page",
                     for (index, block) in doc.blocks.iter().enumerate() {
                         match block {
-                            DocBlock::Heading { level, text } => match (*level).clamp(1, 6) {
+                            DocBlock::Heading { level, text, .. } => match (*level).clamp(1, 6) {
                                 1 => rsx! { h1 { key: "{index}", class: heading_class(1), "{text}" } },
                                 2 => rsx! { h2 { key: "{index}", class: heading_class(2), "{text}" } },
                                 3 => rsx! { h3 { key: "{index}", class: heading_class(3), "{text}" } },
@@ -106,7 +106,7 @@ pub fn DocumentViewer(doc: DocumentView, path: String, on_open: EventHandler<()>
                                             for (row_index, row) in rows.iter().enumerate() {
                                                 tr { key: "{row_index}",
                                                     for (cell_index, cell) in row.iter().enumerate() {
-                                                        td { key: "{cell_index}", "{cell}" }
+                                                        td { key: "{cell_index}", "{cell.text()}" }
                                                     }
                                                 }
                                             }
