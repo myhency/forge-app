@@ -877,9 +877,9 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .office-table { overflow-x: auto; margin: 0 0 12px; }
 .office-table table { border-collapse: collapse; }
 .office-table td { min-width: 6em; overflow-wrap: normal; padding: 4px 8px; border: 1px solid var(--border); vertical-align: top; }
-/* A run's own colour that would vanish on the page is dropped for the theme's text colour. These rules carry
-   descendant selectors, not variables, so they sit outside the variable blocks the theme tests count. */
-@media (prefers-color-scheme:dark) {
+/* A run's own colour that would vanish on the page is dropped for the theme's text colour. These rules
+   override a colour, not variables, so the theme tests do not count them as variable blocks. */
+@media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .office-page [data-lum="dark"] { color: inherit !important; }
 }
 :root[data-theme="dark"] .office-page [data-lum="dark"] { color: inherit !important; }

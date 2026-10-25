@@ -119,8 +119,8 @@ fn text_color(run: &TextRun, backdrop: Option<Rgb>) -> Option<Rgb> {
 
 /// The inline style of a run (colour, highlight, decoration), built only from `Rgb::css` and fixed
 /// keywords; `None` for a run with none of them.
-#[allow(dead_code)] // the view calls the `_on` form; this is the form for a run on the bare page
-pub fn run_style(run: &TextRun) -> Option<String> {
+#[cfg(test)]
+fn run_style(run: &TextRun) -> Option<String> {
     run_style_on(run, None)
 }
 
@@ -144,8 +144,8 @@ pub fn run_style_on(run: &TextRun, fill: Option<Rgb>) -> Option<String> {
 
 /// The `data-lum` of a run: only a colour that sits on the page (no highlight, no fill) can vanish
 /// with the theme.
-#[allow(dead_code)] // the view calls the `_on` form; this is the form for a run on the bare page
-pub fn lum_attr(run: &TextRun) -> Option<&'static str> {
+#[cfg(test)]
+fn lum_attr(run: &TextRun) -> Option<&'static str> {
     lum_attr_on(run, None)
 }
 
@@ -172,17 +172,17 @@ fn heading_lum(color: Option<Rgb>) -> Option<&'static str> {
     color.map(|color| luminance_class(color).attr())
 }
 
-/// The runs of a block as spans; a plain function so a block's runs are borrowed, not cloned per render.
+/// The runs of a block, each under a keyed fragment so the siblings are uniformly keyed; a plain function so a block's runs are borrowed, not cloned per render.
 fn runs_view(runs: &[TextRun], fill: Option<Rgb>) -> Element {
     rsx! {
         for (index, run) in runs.iter().enumerate() {
-            {run_view(index, run, fill)}
+            Fragment { key: "{index}", {run_view(run, fill)} }
         }
     }
 }
 
 /// One run: bare text when plain, else a span with its font and colour styles.
-fn run_view(index: usize, run: &TextRun, fill: Option<Rgb>) -> Element {
+fn run_view(run: &TextRun, fill: Option<Rgb>) -> Element {
     let font = match (run.bold, run.italic) {
         (true, true) => "font-weight:600;font-style:italic",
         (true, false) => "font-weight:600",
@@ -198,7 +198,7 @@ fn run_view(index: usize, run: &TextRun, fill: Option<Rgb>) -> Element {
         Some(colours) => colours,
         None => font.to_string(),
     };
-    rsx! { span { key: "{index}", style: "{style}", "data-lum": lum_attr_on(run, fill), "{run.text}" } }
+    rsx! { span { style: "{style}", "data-lum": lum_attr_on(run, fill), "{run.text}" } }
 }
 
 /// The body of a docx tab: a toolbar and a reading column of headings, paragraphs, lists and tables.
@@ -439,5 +439,18 @@ mod tests {
     fn a_heading_colour_is_a_fixed_style() {
         assert_eq!(heading_style(None), None);
         assert_eq!(heading_style(Some(Rgb(1, 2, 3))).as_deref(), Some("color:#010203"));
+    }
+
+    #[test]
+    fn a_paragraph_mixing_plain_and_styled_runs_renders_twice_without_a_key_mismatch() {
+        fn mixed() -> Element {
+            let runs = [run("a"), TextRun { bold: true, ..run("b") }, run("c"), TextRun { color: Some(Rgb(1, 2, 3)), ..run("d") }];
+            rsx! { p { {runs_view(&runs, None)} } }
+        }
+        let mut dom = VirtualDom::new(mixed);
+        dom.rebuild_in_place();
+        dom.mark_dirty(ScopeId::APP);
+        // Dioxus debug-asserts that siblings are all keyed or all unkeyed while diffing.
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
     }
 }

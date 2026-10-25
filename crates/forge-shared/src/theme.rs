@@ -5,9 +5,13 @@ pub const THEME_CSS: &str = include_str!("theme.css");
 mod tests {
     use super::*;
 
+    const VARIABLE_BLOCK: &str = "@media (prefers-color-scheme: dark) {\n  :root:not([data-theme=\"light\"]) {";
+
     #[test]
     fn every_dark_block_has_a_forced_dark_twin_and_light_stays_light_under_a_dark_system() {
-        let media = THEME_CSS.matches("@media (prefers-color-scheme: dark)").count();
+        // The variable blocks; the `.office-page [data-lum` overrides are dark media blocks of another kind.
+        let media = THEME_CSS.matches(VARIABLE_BLOCK).count();
+        assert_eq!(THEME_CSS.matches("@media (prefers-color-scheme: dark)").count(), media + 1, "one override block besides the variable blocks");
         assert!(media >= 3);
         assert_eq!(THEME_CSS.matches(":root[data-theme=\"dark\"] {").count(), media, "one forced-dark rule per media block");
         assert_eq!(THEME_CSS.matches(":root:not([data-theme=\"light\"]) {").count(), media, "the media version must not apply when the person chose light");
@@ -210,7 +214,7 @@ mod tests {
     #[test]
     fn the_code_and_diff_colors_have_a_dark_palette() {
         // The body of the last dark media block: from its opening to the closing "}\n}".
-        let start = THEME_CSS.rfind("@media (prefers-color-scheme: dark)").unwrap();
+        let start = THEME_CSS.rfind(VARIABLE_BLOCK).unwrap();
         let block = &THEME_CSS[start..];
         let dark = &block[..block.find("\n}").unwrap()];
         for definition in ["--hl-keyword:", "--hl-string:", "--diff-added-bg:", "--diff-removed-bg:", "--link:"] {
