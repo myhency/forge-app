@@ -40,6 +40,15 @@ Office staff hand Claude files: a draft `.docx`, a sheet, a picture. In the desk
 - A pure ranker `rank_mentions(files, query, attached) -> Vec<MentionRow>`: case-insensitive substring match on the path; rows whose file name (not folder) matches come first, then by the list's order; at most 50 rows.
 - The widget `MentionList` is a popup anchored above the composer (like the existing slash/`+` popups: look at how `composer_controls.rs` / the plus menu position and close themselves); keyboard handling goes through the composer's existing key handler, and while the list is open `Enter` must NOT send the message.
 
+## Answers to the builder check (my calls)
+
+- **Root**: the session's own folder (`project_path`: the scratch folder for a no-folder session, the worktree path for a worktree session). Never the home directory. A session with no usable folder, or an empty one, shows one grey row `이 폴더에 파일이 없습니다` (`tr!`).
+- **Cap vs newest-first**: the walk visits at most 20,000 entries, collects the files it meets, then keeps the 5,000 newest by modified time; past 20,000 visited entries the list is marked cut and the popup ends with a grey row `일부만 표시합니다` (reuse the existing string `Only part of the file is shown.`? no: add `Only some files are listed.`).
+- **Sent cards and reopened sessions**: a message already carries `attachments` (path and kind; the bubble draws them as chips today via `attachment_label`). Draw cards from that data; whatever the transcript loader keeps today is what a reopened session shows (do not extend the loader in this plan); a card whose file is gone or unreadable shows without a thumbnail.
+- **Already attached**: compare the absolute path (root joined with the relative path, lexical, no canonicalisation) with the attachments' paths; a file attached from outside the folder does not tick any row.
+- **When the walk runs**: the first `@` of a session starts it (no prefetch); a refresh (focus after a turn, or 30 s) keeps showing the old list until the new one arrives; a walk already in flight is not started twice (same ticket idea as the Office tab refresh).
+- A new `FilesPort` method also needs the mock/fake implementations that already implement the trait (find them with the compiler).
+
 ## Decisions I made (not the person's)
 
 - Files only, from the session folder; no sessions, no windows.
