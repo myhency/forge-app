@@ -71,6 +71,8 @@ Reader (`docx.rs`), the rules:
 - A cell's fill is the `w:shd` fill in its own `w:tcPr` (table depth 1 only). A cell keeps its runs; paragraphs are joined by a plain space run, text from a nested table is part of the cell. The 10,000 character cap per cell now counts across runs.
 - A heading's colour is the `w:color` in its paragraph style's own `w:rPr` (not the style's paragraph properties or a `w:tblStylePr`), followed up `basedOn` at most 10 steps. A style's `w:color auto` ends the lookup with no colour.
 - Neighbouring runs with the same format are one run (`same_format`, `push_run`).
+- Run budget: a document keeps at most 100,000 runs (`MAX_RUNS`) across paragraphs, list items and table cells, counted after neighbouring runs are joined. A paragraph's runs go back to the budget when a cell joins them (the cell takes them again) or when it becomes a heading (only its text is kept). When the budget runs out, further runs and their text are dropped and the document is marked cut. All 57B budgets are unchanged. Measured: a view of 100,000 alternating runs rebuilds in 0.78 s in a debug build and 0.17 s in a release build (300k edits).
+- The `w:rPr` rule: a `w:t` inside `w:rPr` is not text, and run properties opened inside a `w:t` stop its text and change no formatting. A small file can no longer turn format toggles inside one text element into millions of runs.
 
 Views (`files_office.rs`):
 - `luminance` (relative luminance of linearised sRGB), `luminance_class` (`Dark` below 0.12, `Light` above 0.88, else `Mid`), `text_on` (black on a fill of luminance 0.5 or more, else white).
@@ -93,7 +95,11 @@ Fonts, sizes, alignment, borders; theme colours and table styles; pptx colours, 
 Found while building:
 - Refresh on window focus for all tabs (text and Office).
 - A `stat` that fails while the `read` succeeds leaves an Office tab without a version, so it never refreshes.
-- No explicit cap on the number of runs. The event budget bounds it to about 600,000 runs (50 to 60 MB); 200,000 per document would be a sensible cap.
+- Before the run budget, the event budget was the only bound on runs. Format toggles inside a `w:t` inside `w:rPr` cost 2 events per run, so a 651 KB file gave about 2.5 million runs and an 8.5 s view rebuild. The 100,000-run budget and the `w:rPr` rule fix this.
+- A quiet re-read that fails keeps the old version, so every later tool call tries the read again (intended).
+- An Office tab whose opening read failed (`TabKind::Failed`) never refreshes.
+- `reading` is a set, not a count, so two overlapping reads of one path clear the flag early.
+- Every text-tab read now does one extra `stat`.
 - The async refresh glue (`refresh_office`) has no unit test; only `office_needs_reread` and `keeps_view_on_failure` do.
 - `highlight val=none` together with a `w:shd` fill shows the shading.
 - A style's explicit `w:color auto` stops the `basedOn` lookup instead of continuing up.
