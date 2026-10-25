@@ -12,6 +12,12 @@ const COMPOUND_MAGIC: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]
 
 /// No part of an Office file may unpack to more than this, so a small zip cannot fill the memory.
 pub(crate) const PART_BYTES: u64 = 100 * 1024 * 1024;
+/// A part read whole beside the main ones (the styles and numbering of a docx, the list of slides
+/// of a pptx and its relationships) is small; a real one is a few kilobytes.
+pub(crate) const SMALL_PART_BYTES: u64 = 5 * 1024 * 1024;
+/// All the text one file shows is at most this many bytes, so a small file cannot make a view of
+/// millions of lines.
+pub(crate) const TOTAL_TEXT_BYTES: usize = 8 * 1024 * 1024;
 // A real Office file has a few dozen parts; far more is a file made to keep the reader busy.
 const MAX_PARTS: usize = 10_000;
 
@@ -52,6 +58,9 @@ pub(crate) fn read_part<R: Read + Seek>(
     let Some(index) = archive.index_for_name(name).or_else(|| archive.file_names().position(|found| found.is_ok_and(|found| found.eq_ignore_ascii_case(name)))) else {
         return Ok(None);
     };
+    if archive.by_index_raw(index).is_ok_and(|part| part.size() > limit) {
+        return Err(too_big());
+    }
     let part = archive.by_index(index).map_err(|error| FilesError::Failed(error.to_string()))?;
     let mut bytes = Vec::new();
     let unpacked = copy_bounded(part, limit, &mut bytes).map_err(|error| FilesError::Failed(error.to_string()))?;
@@ -98,6 +107,33 @@ pub(crate) fn cut(text: &str, room: usize) -> (&str, bool) {
     match text.char_indices().nth(room) {
         Some((at, _)) => (&text[..at], true),
         None => (text, false),
+    }
+}
+
+/// The bytes of text a reader may still keep for the whole file.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct TextBudget {
+    left: usize,
+}
+
+impl TextBudget {
+    pub(crate) fn new(bytes: usize) -> Self {
+        Self { left: bytes }
+    }
+
+    /// `text` cut to the bytes left (at a character boundary), which it spends, and whether it was
+    /// cut.
+    pub(crate) fn take<'t>(&mut self, text: &'t str) -> (&'t str, bool) {
+        if text.len() <= self.left {
+            self.left -= text.len();
+            return (text, false);
+        }
+        let mut at = self.left;
+        while !text.is_char_boundary(at) {
+            at -= 1;
+        }
+        self.left -= at;
+        (&text[..at], true)
     }
 }
 
@@ -184,5 +220,23 @@ mod tests {
         assert_eq!(message, "locked");
         let Err(FilesError::Failed(message)) = open(b"just words", "locked") else { panic!("opened") };
         assert!(!message.is_empty() && message != "locked", "{message}");
+    }
+
+    #[test]
+    fn a_part_declaring_more_than_the_read_limit_is_refused_before_it_is_read() {
+        let too_big = || FilesError::Failed("big".to_string());
+        let bytes = test_support::declaring(test_support::zip_of(&[("a.xml", "x".to_string())]), "a.xml", 1000);
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        assert_eq!(read_part(&mut archive, "a.xml", 999, too_big), Err(too_big()));
+    }
+
+    #[test]
+    fn the_text_budget_cuts_at_a_character_boundary_and_stays_spent() {
+        let mut budget = TextBudget::new(4);
+        assert_eq!(budget.take("ab"), ("ab", false));
+        assert_eq!(budget.take("가나"), ("", true));
+        assert_eq!(budget.take("cd"), ("cd", false));
+        assert_eq!(budget.take("e"), ("", true));
+        assert_eq!(budget.take(""), ("", false));
     }
 }

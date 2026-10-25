@@ -5,14 +5,17 @@ use std::collections::HashMap;
 use forge_ports::{DocBlock, DocumentView, FileContent, FilesError, TextRun};
 use quick_xml::events::{BytesStart, Event};
 
-use crate::office_zip::{self, attribute, cut, failed};
+use crate::office_zip::{self, attribute, cut, failed, TextBudget};
 
 const MAX_BLOCKS: usize = 2_000;
 const MAX_ROWS: usize = 100;
 const MAX_COLUMNS: usize = 20;
+// All the tables of a file together keep at most this many cells.
+const MAX_CELLS: usize = 50_000;
 // One paragraph, heading, list item or table cell keeps at most this many characters.
 const MAX_TEXT_CHARS: usize = 10_000;
-// A part stops being read after this many XML events (see `office_zip::walk`).
+// The whole file (styles, numbering and body together) stops being read after this many XML
+// events (see `office_zip::walk`).
 const EVENT_LIMIT: usize = 5_000_000;
 // Word nests a list 9 deep (`w:ilvl` 0 to 8).
 const MAX_LIST_LEVEL: u8 = 8;
@@ -41,6 +44,10 @@ const HIDDEN: [&str; 14] = [
 /// guards before it is parsed; entities other than the five predefined ones and character
 /// references are not resolved, and nothing outside the file's own zip is opened.
 pub(crate) fn read_docx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
+    read_docx_with(bytes, EVENT_LIMIT)
+}
+
+fn read_docx_with(bytes: Vec<u8>, mut budget: usize) -> Result<FileContent, FilesError> {
     let limit = office_zip::PART_BYTES;
     let mut archive = office_zip::open(&bytes, "This document is password-protected, so it cannot be shown.")?;
     let too_big = || failed("This document unpacks to too much data to show.");
@@ -49,20 +56,16 @@ pub(crate) fn read_docx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
     }
     let document = office_zip::read_part(&mut archive, "word/document.xml", limit, too_big)?
         .ok_or_else(|| failed("This file has no word/document.xml, so it is not a Word document."))?;
-    // A missing or damaged styles or numbering part only costs its lookups.
-    let styles = office_zip::read_part(&mut archive, "word/styles.xml", limit, too_big)?.map(|xml| Styles::of(&xml)).unwrap_or_default();
-    let numbering = office_zip::read_part(&mut archive, "word/numbering.xml", limit, too_big)?.map(|xml| Numbering::of(&xml)).unwrap_or_default();
+    // A missing or damaged styles or numbering part only costs its lookups; one over the small
+    // part limit fails the file, like the pptx's list of slides.
+    let small = office_zip::SMALL_PART_BYTES;
+    let styles = office_zip::read_part(&mut archive, "word/styles.xml", small, too_big)?.map(|xml| Styles::of(&xml, &mut budget)).unwrap_or_default();
+    let numbering = office_zip::read_part(&mut archive, "word/numbering.xml", small, too_big)?.map(|xml| Numbering::of(&xml, &mut budget)).unwrap_or_default();
     let mut body = Body::new(&styles, &numbering);
-    if walk(&document, |event| body.event(event))? {
+    if office_zip::walk(&document, &mut budget, |event| body.event(event))? {
         body.truncated = true;
     }
     Ok(FileContent::Document(DocumentView { blocks: body.blocks, truncated: body.truncated }))
-}
-
-// Feeds the part's XML events to `on` until it returns false or the part ends. True when the
-// event limit stopped it; each part gets the whole limit.
-fn walk(xml: &[u8], on: impl FnMut(Event<'_>) -> bool) -> Result<bool, FilesError> {
-    office_zip::walk(xml, &mut EVENT_LIMIT.clone(), on)
 }
 
 // A `w:b` or `w:i` is on unless its `w:val` turns it off.
@@ -104,11 +107,11 @@ struct Styles {
 }
 
 impl Styles {
-    fn of(xml: &[u8]) -> Self {
+    fn of(xml: &[u8], budget: &mut usize) -> Self {
         let mut styles = Self::default();
         let mut style: Option<String> = None;
         let (mut in_properties, mut hidden) = (false, 0usize);
-        let _ = walk(xml, |event| {
+        let _ = office_zip::walk(xml, budget, |event| {
             if hidden > 0 {
                 match event {
                     Event::Start(_) => hidden += 1,
@@ -181,10 +184,10 @@ struct Numbering {
 }
 
 impl Numbering {
-    fn of(xml: &[u8]) -> Self {
+    fn of(xml: &[u8], budget: &mut usize) -> Self {
         let mut numbering = Self::default();
         let (mut abstract_id, mut num_id, mut level): (Option<String>, Option<String>, Option<u8>) = (None, None, None);
-        let _ = walk(xml, |event| {
+        let _ = office_zip::walk(xml, budget, |event| {
             match event {
                 Event::Start(tag) => match tag.local_name().as_ref() {
                     "abstractNum" => abstract_id = attribute(&tag, "abstractNumId"),
@@ -260,6 +263,9 @@ struct Body<'a> {
     in_row: bool,
     // The open cell of the outermost table and its character count.
     cell: Option<(String, usize)>,
+    // The cells all tables may still keep.
+    cells_left: usize,
+    text: TextBudget,
 }
 
 impl<'a> Body<'a> {
@@ -281,6 +287,8 @@ impl<'a> Body<'a> {
             rows: Vec::new(),
             in_row: false,
             cell: None,
+            cells_left: MAX_CELLS,
+            text: TextBudget::new(office_zip::TOTAL_TEXT_BYTES),
         }
     }
 
@@ -360,9 +368,12 @@ impl<'a> Body<'a> {
                 }
             }
             "tc" if self.table_depth == 1 && self.in_row => {
-                if self.rows.last().is_some_and(|row| row.len() >= MAX_COLUMNS) {
+                if self.rows.last().is_some_and(|row| row.len() >= MAX_COLUMNS) || self.cells_left == 0 {
                     self.truncated = true;
-                } else if empty {
+                    return;
+                }
+                self.cells_left -= 1;
+                if empty {
                     if let Some(row) = self.rows.last_mut() {
                         row.push(String::new());
                     }
@@ -409,11 +420,13 @@ impl<'a> Body<'a> {
         true
     }
 
-    // Adds text to the open paragraph with the open run's bold and italic, up to the text cap.
+    // Adds text to the open paragraph with the open run's bold and italic, up to the paragraph's
+    // text cap and the file's text budget.
     fn add_text(&mut self, text: &str) {
         let Some(paragraph) = self.paragraph.as_mut() else { return };
         let (kept, was_cut) = cut(text, MAX_TEXT_CHARS - paragraph.chars);
-        self.truncated |= was_cut;
+        let (kept, over_budget) = self.text.take(kept);
+        self.truncated |= was_cut | over_budget;
         if kept.is_empty() {
             return;
         }
@@ -434,6 +447,11 @@ impl<'a> Body<'a> {
         }
         if self.table_depth > 0 {
             if let Some((cell, chars)) = self.cell.as_mut() {
+                // The text is already counted in the budget; the joining space is not.
+                if !cell.is_empty() && self.text.take(" ").1 {
+                    self.truncated = true;
+                    return true;
+                }
                 let joined = if cell.is_empty() { text } else { format!(" {text}") };
                 let (kept, was_cut) = cut(&joined, MAX_TEXT_CHARS - *chars);
                 self.truncated |= was_cut;
@@ -742,6 +760,69 @@ mod tests {
         assert!(read_docx(declaring(bytes.clone(), "word/document.xml", 100 * 1024 * 1024)).is_ok());
         let message = failure(declaring(bytes, "word/document.xml", 100 * 1024 * 1024 + 1));
         assert!(message.contains("too much"), "{message}");
+    }
+
+    #[test]
+    fn all_tables_together_keep_at_most_50000_cells() {
+        // 26 full tables of 100 x 20 empty cells: no table is over its own cap.
+        let full_table = format!("<w:tbl>{}</w:tbl>", format!("<w:tr>{}</w:tr>", "<w:tc/>".repeat(20)).repeat(100));
+        let all = view(docx(&full_table.repeat(26)));
+        let cells: usize = all.blocks.iter().map(|block| match block {
+            DocBlock::Table { rows } => rows.iter().map(Vec::len).sum(),
+            _ => 0,
+        }).sum();
+        assert_eq!(cells, 50_000);
+        assert!(all.truncated);
+        assert!(!view(docx(&full_table.repeat(25))).truncated);
+    }
+
+    fn text_bytes(view: &DocumentView) -> usize {
+        view.blocks
+            .iter()
+            .map(|block| match block {
+                DocBlock::Heading { text, .. } => text.len(),
+                DocBlock::Paragraph { runs } | DocBlock::ListItem { runs, .. } => runs.iter().map(|run| run.text.len()).sum(),
+                DocBlock::Table { rows } => rows.iter().flatten().map(String::len).sum(),
+            })
+            .sum()
+    }
+
+    #[test]
+    fn all_text_together_keeps_at_most_8_mb() {
+        let paragraph = p(&"a".repeat(10_000));
+        let cell = table(&[&[&"b".repeat(10_000)]]);
+        let over = view(docx(&[paragraph.repeat(800), cell.repeat(100)].concat()));
+        assert!(text_bytes(&over) <= office_zip::TOTAL_TEXT_BYTES, "{}", text_bytes(&over));
+        assert!(text_bytes(&over) > office_zip::TOTAL_TEXT_BYTES - 10_000);
+        assert!(over.truncated);
+        let fits = view(docx(&paragraph.repeat(800)));
+        assert_eq!((text_bytes(&fits), fits.truncated), (8_000_000, false));
+    }
+
+    #[test]
+    fn a_styles_or_numbering_part_over_5_mb_fails_with_text() {
+        let filler = format!("<!--{}-->", "x".repeat(5 * 1024 * 1024));
+        for name in ["word/styles.xml", "word/numbering.xml"] {
+            let message = failure(docx_with(&p("x"), &[(name, format!("<w:styles>{filler}</w:styles>"))]));
+            assert!(message.contains("too much"), "{name}: {message}");
+        }
+    }
+
+    #[test]
+    fn the_parts_share_one_event_budget_and_running_out_marks_the_document_cut() {
+        let styles = format!("<w:styles {W}>{}</w:styles>", r#"<w:style w:styleId="s"/>"#.repeat(1000));
+        let bytes = docx_with(&p("x"), &[("word/styles.xml", styles)]);
+        let Ok(FileContent::Document(starved)) = read_docx_with(bytes.clone(), 500) else { panic!("not a document") };
+        assert_eq!((starved.blocks, starved.truncated), (vec![], true));
+        let Ok(FileContent::Document(fed)) = read_docx_with(bytes, 5000) else { panic!("not a document") };
+        assert_eq!((fed.blocks, fed.truncated), (vec![plain("x")], false));
+    }
+
+    #[test]
+    fn a_doctype_entity_is_not_expanded() {
+        let document = format!(r#"<?xml version="1.0"?><!DOCTYPE w:document [<!ENTITY e "EXPANDED"><!ENTITY big "&e;&e;&e;&e;">]><w:document {W}><w:body>{}</w:body></w:document>"#, p("a&e;&big;b"));
+        let view = view(zip_of(&[("word/document.xml", document)]));
+        assert_eq!((view.blocks, view.truncated), (vec![plain("ab")], false));
     }
 
     #[test]
