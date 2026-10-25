@@ -29,10 +29,11 @@ fn moves_cursor(key: &Key) -> bool {
 // Reads where the cursor is, for the `@` mention of the composer around this text box (the page
 // owns the cursor; Dioxus only sees the text).
 fn read_cursor(composer: Option<ComposerState>) {
-    let Some(composer) = composer.filter(ComposerState::mentions_on) else { return };
+    let Some(composer) = composer else { return };
+    let Some(read) = composer.begin_cursor_read() else { return };
     spawn(async move {
         if let Ok(Some((text, cursor))) = document::eval(READ_CURSOR).join::<Option<(String, Option<usize>)>>().await {
-            composer.note_cursor(text, cursor);
+            composer.note_cursor(read, text, cursor);
         }
     });
 }
@@ -141,6 +142,9 @@ pub fn CommandTextArea(
                     typed.set(Some(text.clone()));
                     selected.set(0);
                     dismissed.set(false);
+                    if let Some(composer) = composer {
+                        composer.note_typed(&text);
+                    }
                     oninput.call(text);
                     read_cursor(composer);
                 },

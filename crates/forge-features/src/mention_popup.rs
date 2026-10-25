@@ -9,15 +9,23 @@ use forge_entities::{menu_action, rank_mentions, MenuAction, MenuKey, MentionRan
 use crate::file_lists::FileListState;
 
 /// A file of the session folder by its `/`-separated relative path, joined part by part so the
-/// separators are the platform's.
-pub fn absolute_in(folder: &Path, relative: &str) -> PathBuf {
-    relative.split('/').filter(|part| !part.is_empty()).fold(folder.to_path_buf(), |path, part| path.join(part))
+/// separators are the platform's. `None` for a path that could leave the folder or is not plainly
+/// relative (`..`, `.`, an empty part, a backslash).
+pub fn absolute_in(folder: &Path, relative: &str) -> Option<PathBuf> {
+    let mut path = folder.to_path_buf();
+    for part in relative.split('/') {
+        if part.is_empty() || part == "." || part == ".." || part.contains('\\') {
+            return None;
+        }
+        path.push(part);
+    }
+    Some(path)
 }
 
 /// Whether the file at `relative` in `folder` is attached already. Lexical: no path is resolved,
 /// so a file attached from outside the folder never matches a row.
 pub fn attached_in(folder: &Path, relative: &str, attachments: &[Attachment]) -> bool {
-    let path = absolute_in(folder, relative);
+    let Some(path) = absolute_in(folder, relative) else { return false };
     attachments.iter().any(|attachment| attachment.path == path)
 }
 
@@ -167,9 +175,41 @@ pub fn byte_to_utf16(text: &str, byte: usize) -> usize {
     text.char_indices().take_while(|(at, _)| *at < byte).map(|(_, ch)| ch.len_utf16()).sum()
 }
 
-/// The text with the `@…` span taken out.
+/// Where the cursor stands right after the text area went from `old` (cursor at `old_cursor`, a
+/// byte offset) to `new` by one edit: at the end of what was inserted, or where text was deleted.
+/// Used until the page's own read of the cursor comes back.
+pub fn provisional_cursor(old: &str, old_cursor: usize, new: &str) -> usize {
+    if old == new {
+        return old_cursor;
+    }
+    // The common start, never past the old cursor: what was before the cursor is where the edit begins.
+    let mut prefix = 0;
+    for ((at, a), b) in old.char_indices().zip(new.chars()) {
+        if a != b || at + a.len_utf8() > old_cursor {
+            break;
+        }
+        prefix = at + a.len_utf8();
+    }
+    let room = (old.len() - prefix).min(new.len() - prefix);
+    let mut suffix = 0;
+    for (a, b) in old.chars().rev().zip(new.chars().rev()) {
+        if a != b || suffix + a.len_utf8() > room {
+            break;
+        }
+        suffix += a.len_utf8();
+    }
+    new.len() - suffix
+}
+
+/// The text with the `@…` span taken out, and one of the spaces around it when it stood alone.
 pub fn without_range(text: &str, range: &MentionRange) -> String {
-    format!("{}{}", &text[..range.start], &text[range.end..])
+    let (before, after) = (&text[..range.start], &text[range.end..]);
+    // `read @a now` becomes `read now`, not `read  now`.
+    let after = match after.chars().next() {
+        Some(next) if next.is_whitespace() && before.chars().last().is_none_or(char::is_whitespace) => &after[next.len_utf8()..],
+        _ => after,
+    };
+    format!("{before}{after}")
 }
 
 #[cfg(test)]
@@ -329,8 +369,12 @@ mod tests {
     fn a_pick_takes_the_at_span_out_of_the_text() {
         let text = "read @보고 now";
         let at = mention_query(text, "read @보고".len()).unwrap();
-        assert_eq!(without_range(text, &at), "read  now");
+        assert_eq!(without_range(text, &at), "read now", "one of the two spaces goes");
         assert_eq!(without_range("@a", &range("@a")), "");
+        assert_eq!(without_range("@a b", &mention_query("@a b", 2).unwrap()), "b");
+        assert_eq!(without_range("read @a", &range("read @a")), "read ", "the space before stays for what comes next");
+        let mid = "read @rep|ort".replace('|', "");
+        assert_eq!(without_range(&mid, &mention_query(&mid, "read @rep".len()).unwrap()), "read ort", "text after the cursor stays");
     }
 
     fn files(names: &[&str]) -> Vec<String> {
@@ -368,6 +412,43 @@ mod tests {
 
     #[test]
     fn a_file_in_a_subfolder_is_joined_part_by_part() {
-        assert_eq!(absolute_in(Path::new("/w/p"), "docs/a.txt"), Path::new("/w/p").join("docs").join("a.txt"));
+        assert_eq!(absolute_in(Path::new("/w/p"), "docs/a.txt"), Some(Path::new("/w/p").join("docs").join("a.txt")));
+    }
+
+    #[test]
+    fn a_path_that_could_leave_the_folder_gives_no_file() {
+        for bad in ["../a.txt", "docs/../../a.txt", "./a.txt", "docs//a.txt", "", "/a.txt", "docs\\..\\a.txt"] {
+            assert_eq!(absolute_in(Path::new("/w/p"), bad), None, "{bad}");
+        }
+        assert!(!attached_in(Path::new("/w/p"), "../p/a.txt", &[file("/w/p/a.txt")]));
+    }
+
+    #[test]
+    fn the_cursor_after_a_keystroke_is_where_the_edit_ended() {
+        assert_eq!(provisional_cursor("", 0, "@"), 1, "first character");
+        assert_eq!(provisional_cursor("@re", 3, "@rep"), 4, "typed at the end");
+        assert_eq!(provisional_cursor("a  b", 2, "a @ b"), 3, "typed in the middle");
+        assert_eq!(provisional_cursor("@rep", 4, "@re"), 3, "backspace");
+        assert_eq!(provisional_cursor("abc", 1, "ac"), 1, "delete forward");
+        assert_eq!(provisional_cursor("see ", 4, "see @docs/a.txt"), 15, "paste");
+        assert_eq!(provisional_cursor("@보", 4, "@보고"), 7, "Korean");
+        assert_eq!(provisional_cursor("aa", 1, "aaa"), 2, "a repeated letter is placed after the old cursor");
+        assert_eq!(provisional_cursor("x😀", 5, "x😀@"), 6, "after an emoji");
+        assert_eq!(provisional_cursor("same", 2, "same"), 2, "no change keeps the cursor");
+        let typed = provisional_cursor("가나", 6, "가나다");
+        assert!("가나다".is_char_boundary(typed) && typed == 9);
+    }
+
+    #[test]
+    fn a_keystroke_while_the_list_is_open_keeps_it_open_and_enter_picks() {
+        let popup = MentionPopup::default();
+        let before = "see @re";
+        assert!(popup.is_open(mention_query(before, before.len()).as_ref()));
+        // The keystroke's own cursor read has not come back yet: the cursor is worked out from the edit.
+        let after = "see @rep";
+        let cursor = provisional_cursor(before, before.len(), after);
+        let range = mention_query(after, cursor);
+        assert!(popup.is_open(range.as_ref()), "no gap between the keystroke and its read");
+        assert_eq!(key_decision(popup.is_open(range.as_ref()), MenuKey::Enter, false, false), KeyDecision::Mention(MenuAction::Pick));
     }
 }

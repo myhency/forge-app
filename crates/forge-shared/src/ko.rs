@@ -78,6 +78,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Arguments, e.g. -y some-mcp-server", "인수, 예: -y some-mcp-server"),
     ("Ask before edits", "수동"),
     ("Attach as context", "컨텍스트로 첨부"),
+    ("Attached", "첨부됨"),
     ("Aug", "8월"),
     ("Authenticate", "인증"),
     ("Auto", "자동"),

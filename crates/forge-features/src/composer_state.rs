@@ -7,7 +7,7 @@ use forge_entities::{mention_query, MenuAction, MenuKey, MentionRange, MentionRo
 
 use crate::attachments::{add_attachments, check_attachments, folder_label, with_folder_hints};
 use crate::blocking::run_blocking;
-use crate::mention_popup::{absolute_in, attached_in, byte_to_utf16, key_decision, mention_rows, utf16_to_byte, without_range, KeyDecision, MentionOutcome, MentionPopup, MentionStatus};
+use crate::mention_popup::{absolute_in, attached_in, byte_to_utf16, key_decision, mention_rows, provisional_cursor, utf16_to_byte, without_range, KeyDecision, MentionOutcome, MentionPopup, MentionStatus};
 use crate::thumbnail::ComposerAttachment;
 use crate::trust::{answer_card, apply_pick, classify_added_folder, resolved, FolderAdd, TrustChoice};
 use crate::workspace::{use_workspace, Workspace, WorkspaceServices};
@@ -69,6 +69,8 @@ pub struct ComposerState {
     /// than the draft's (a pick, a send, a failed send put back) opens nothing.
     cursor: Signal<Option<(String, usize)>>,
     mention_popup: Signal<MentionPopup>,
+    /// The number of the latest cursor read sent to the page.
+    cursor_reads: Signal<u64>,
     services: Signal<WorkspaceServices>,
     workspace: Workspace,
 }
@@ -88,6 +90,7 @@ pub fn use_composer_state_provider(draft: Signal<String>) -> ComposerState {
         mention_session: Signal::new(None),
         cursor: Signal::new(None),
         mention_popup: Signal::new(MentionPopup::default()),
+        cursor_reads: Signal::new(0),
         services: Signal::new(services),
         workspace,
     });
@@ -252,12 +255,46 @@ impl ComposerState {
         self.mention_session.peek().is_some()
     }
 
-    /// The text area's text and cursor as read from the page (`utf16` is `selectionStart`). With an
-    /// `@` at the cursor the session folder is walked, when that is due.
-    /// `None` for `utf16` while text is selected: no cursor, so no list.
-    pub fn note_cursor(&self, text: String, utf16: Option<usize>) {
+    /// A keystroke changed the text to `text` (called before the draft takes it). The page's read of
+    /// the cursor takes a round trip, so until it is back the cursor is worked out from the edit:
+    /// the list stays open while typing and Enter keeps picking.
+    pub fn note_typed(&self, text: &str) {
         let Some(id) = *self.mention_session.peek() else { return };
+        let old = self.draft.peek().clone();
+        let old_cursor = match &*self.cursor.peek() {
+            Some((seen, cursor)) if *seen == old => *cursor,
+            _ => old.len(),
+        };
+        let cursor = provisional_cursor(&old, old_cursor, text);
+        self.keep_cursor(id, text.to_string(), Some(cursor));
+    }
+
+    /// Starts a read of the cursor and gives its number; `None` when none is needed (no mentions
+    /// here, or no `@` in the text: a long pasted draft is not sent to the page for nothing).
+    pub fn begin_cursor_read(&self) -> Option<u64> {
+        if !self.mentions_on() || !self.draft.peek().contains('@') {
+            return None;
+        }
+        let mut reads = self.cursor_reads;
+        let next = reads.peek().wrapping_add(1);
+        reads.set(next);
+        Some(next)
+    }
+
+    /// The text area's text and cursor as read from the page (`utf16` is `selectionStart`, `None`
+    /// while text is selected: no cursor, so no list). Only the latest read counts, and only while
+    /// its text is still the draft's: an older read coming back late is ignored.
+    pub fn note_cursor(&self, read: u64, text: String, utf16: Option<usize>) {
+        let Some(id) = *self.mention_session.peek() else { return };
+        if read != *self.cursor_reads.peek() || text != *self.draft.peek() {
+            return;
+        }
         let byte = utf16.and_then(|utf16| utf16_to_byte(&text, utf16));
+        self.keep_cursor(id, text, byte);
+    }
+
+    // With an `@` at the cursor the session folder is walked, when that is due.
+    fn keep_cursor(&self, id: LiveSessionId, text: String, byte: Option<usize>) {
         let opens = byte.and_then(|byte| mention_query(&text, byte)).is_some();
         let next = byte.map(|byte| (text, byte));
         let mut cursor = self.cursor;
@@ -328,10 +365,13 @@ impl ComposerState {
         let mut draft = self.draft;
         let text = without_range(&draft.peek(), &pick.range);
         let (length, at) = (byte_to_utf16(&text, text.len()), byte_to_utf16(&text, pick.range.start));
+        let Some(path) = absolute_in(&folder, &pick.path) else { return };
+        let mut cursor = self.cursor;
+        cursor.set(Some((text.clone(), pick.range.start)));
         draft.set(text);
         let mut popup = self.mention_popup;
         popup.set(MentionPopup::default());
-        self.add_paths(vec![absolute_in(&folder, &pick.path)]);
+        self.add_paths(vec![path]);
         place_cursor(length, at);
     }
 

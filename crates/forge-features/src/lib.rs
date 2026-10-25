@@ -93,7 +93,7 @@ pub use task_list_views::TaskListView;
 pub use details::{change_counts, ChangeCounts, DetailsCard, OneShot};
 pub use output_files::offers_default_program;
 pub use file_lists::{FileListState, FILE_LIST_LIMIT};
-pub use mention_popup::{absolute_in, attached_in, key_decision, KeyDecision, MentionOutcome, MentionPick, MentionPopup, MentionStatus};
+pub use mention_popup::{absolute_in, attached_in, key_decision, provisional_cursor, KeyDecision, MentionOutcome, MentionPick, MentionPopup, MentionStatus};
 pub use dock::{Column, DockState, DockStates, Panel, DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH};
 pub use environment::{card_folders, folder_menu, FolderMenu, environment_menu, numbered_ids, picker_choices, start_plan, variables_error_text, EnvRow, EnvironmentDraft, EnvironmentKey, EnvironmentMenu, EnvironmentRequest, EnvironmentStart, StartError};
 pub use effort::{effort_button_label, effort_levels, slider_position, effort_help, slider_faster, slider_smarter};

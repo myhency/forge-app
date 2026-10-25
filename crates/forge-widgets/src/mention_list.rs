@@ -54,7 +54,7 @@ pub fn MentionList() -> Element {
                     span { class: "mention-name", "{row.name}" }
                     span { class: "mention-folder", "{row.folder}" }
                     if row.attached {
-                        span { class: "mention-tick", "aria-label": "Attached", "✓" }
+                        span { class: "mention-tick", "aria-label": tr!("Attached"), "✓" }
                     }
                 }
             }
