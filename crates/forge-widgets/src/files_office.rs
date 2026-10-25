@@ -56,8 +56,8 @@ fn indent(level: u8) -> u32 {
     u32::from(level.min(8)) * 20
 }
 
-#[component]
-fn Runs(runs: Vec<TextRun>) -> Element {
+/// The runs of a block as spans; a plain function so a block's runs are borrowed, not cloned per render.
+fn runs_view(runs: &[TextRun]) -> Element {
     rsx! {
         for (index, run) in runs.iter().enumerate() {
             span {
@@ -82,16 +82,21 @@ pub fn DocumentViewer(doc: DocumentView, path: String, on_open: EventHandler<()>
                 div { class: "office-page",
                     for (index, block) in doc.blocks.iter().enumerate() {
                         match block {
-                            DocBlock::Heading { level, text } => rsx! {
-                                div { key: "{index}", class: heading_class(*level), "{text}" }
+                            DocBlock::Heading { level, text } => match (*level).clamp(1, 6) {
+                                1 => rsx! { h1 { key: "{index}", class: heading_class(1), "{text}" } },
+                                2 => rsx! { h2 { key: "{index}", class: heading_class(2), "{text}" } },
+                                3 => rsx! { h3 { key: "{index}", class: heading_class(3), "{text}" } },
+                                4 => rsx! { h4 { key: "{index}", class: heading_class(4), "{text}" } },
+                                5 => rsx! { h5 { key: "{index}", class: heading_class(5), "{text}" } },
+                                _ => rsx! { h6 { key: "{index}", class: heading_class(6), "{text}" } },
                             },
                             DocBlock::Paragraph { runs } => rsx! {
-                                p { key: "{index}", Runs { runs: runs.clone() } }
+                                p { key: "{index}", {runs_view(runs)} }
                             },
                             DocBlock::ListItem { level, runs, .. } => rsx! {
                                 div { key: "{index}", class: "office-item", style: "margin-left: {indent(*level)}px",
                                     span { class: "office-marker", "{markers[index].clone().unwrap_or_default()}" }
-                                    span { Runs { runs: runs.clone() } }
+                                    span { {runs_view(runs)} }
                                 }
                             },
                             DocBlock::Table { rows } => rsx! {
@@ -112,7 +117,7 @@ pub fn DocumentViewer(doc: DocumentView, path: String, on_open: EventHandler<()>
                         }
                     }
                     if doc.truncated {
-                        p { class: "office-note", {tr!("Only part is shown")} }
+                        p { class: "office-note", {tr!("Only part of the file is shown.")} }
                     }
                 }
             }
@@ -141,13 +146,13 @@ pub fn SlideViewer(deck: SlideDeck, path: String, on_open: EventHandler<()>) -> 
                                     p { key: "{index}", style: "margin-left: {indent(item.level)}px", "{item.text}" }
                                 }
                                 if slide_is_empty(slide) {
-                                    p { class: "office-slide-empty", {tr!("This slide has no text")} }
+                                    p { class: "office-slide-empty", {tr!("This slide has no text.")} }
                                 }
                             }
                         }
                     }
                     if deck.truncated {
-                        p { class: "office-note", {tr!("Only part is shown")} }
+                        p { class: "office-note", {tr!("Only part of the file is shown.")} }
                     }
                 }
             }
@@ -179,25 +184,25 @@ mod tests {
         DocBlock::Paragraph { runs: vec![] }
     }
 
-    fn marks(blocks: &[DocBlock]) -> Vec<Option<&'static str>> {
-        list_markers(blocks).into_iter().map(|m| m.map(|s| Box::leak(s.into_boxed_str()) as &'static str)).collect()
+    fn marks(expected: &[Option<&str>]) -> Vec<Option<String>> {
+        expected.iter().map(|m| m.map(str::to_string)).collect()
     }
 
     #[test]
     fn bullets_get_a_dot_and_other_blocks_none() {
-        assert_eq!(marks(&[item(0, false), paragraph(), item(1, false)]), vec![Some("•"), None, Some("•")]);
+        assert_eq!(list_markers(&[item(0, false), paragraph(), item(1, false)]), marks(&[Some("•"), None, Some("•")]));
     }
 
     #[test]
     fn numbered_items_count_and_restart_after_a_paragraph() {
         let blocks = [item(0, true), item(0, true), paragraph(), item(0, true)];
-        assert_eq!(marks(&blocks), vec![Some("1."), Some("2."), None, Some("1.")]);
+        assert_eq!(list_markers(&blocks), marks(&[Some("1."), Some("2."), None, Some("1.")]));
     }
 
     #[test]
     fn nested_numbered_items_count_per_level() {
         let blocks = [item(0, true), item(1, true), item(1, true), item(0, true), item(1, true)];
-        assert_eq!(marks(&blocks), vec![Some("1."), Some("1."), Some("2."), Some("2."), Some("1.")]);
+        assert_eq!(list_markers(&blocks), marks(&[Some("1."), Some("1."), Some("2."), Some("2."), Some("1.")]));
     }
 
     #[test]
