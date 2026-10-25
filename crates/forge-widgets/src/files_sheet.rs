@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 use forge_entities::{preview_kind, PreviewKind};
 use forge_features::offers_default_program;
@@ -51,21 +53,32 @@ pub fn failed_offers_open(path: &str) -> bool {
     preview_kind(path) == PreviewKind::Sheet && offers_default_program(path)
 }
 
+/// The class of a grid cell; the selection is drawn by `selected_rule`, so a number keeps its alignment.
+pub fn cell_class(number: bool) -> &'static str {
+    if number { "sheet-cell number" } else { "sheet-cell" }
+}
+
+/// The style rule that outlines the selected cell, so a click changes this rule and not the grid.
+pub fn selected_rule(row: usize, column: usize) -> String {
+    format!("td.sheet-cell[data-r='{row}'][data-c='{column}'] {{ outline: 2px solid var(--accent); outline-offset: -2px; }}")
+}
+
 /// The body of an xlsx tab: a formula bar, the grid, and the sheet tabs.
 #[component]
 pub fn SheetView(book: SheetBook, path: String, on_open: EventHandler<()>) -> Element {
+    let book = use_memo(use_reactive!(|book| Rc::new(book)));
     let mut active = use_signal(|| 0_usize);
     let mut selected = use_signal(|| (0_usize, 0_usize));
-    let Some(sheet) = book.sheets.get(active()).or_else(|| book.sheets.first()).cloned() else {
-        return rsx! {};
-    };
     let (row, column) = selected();
+    let book = book();
+    let index = if active() < book.sheets.len() { active() } else { 0 };
     let address = cell_address(row, column);
-    let bar = formula_bar_text(&sheet, row, column);
-    let columns = column_count(&sheet);
-    let names: Vec<String> = book.sheets.iter().map(|sheet| sheet.name.clone()).collect();
+    let bar = book.sheets.get(index).map(|sheet| formula_bar_text(sheet, row, column)).unwrap_or_default();
+    let rule = selected_rule(row, column);
+    let truncated = book.sheets.get(index).is_some_and(|sheet| sheet.truncated);
     rsx! {
         div { class: "sheet-view", "aria-label": "{path}",
+            style { "{rule}" }
             div { class: "sheet-toolbar",
                 span { class: "sheet-address", "{address}" }
                 span { class: "sheet-formula", "{bar}" }
@@ -73,47 +86,60 @@ pub fn SheetView(book: SheetBook, path: String, on_open: EventHandler<()>) -> El
                     button { class: "files-kind-button", r#type: "button", onclick: move |_| on_open.call(()), {tr!("Open in the default program")} }
                 }
             }
-            if sheet.truncated {
+            if truncated {
                 p { class: "files-csv-note", {tr!("Only the first 500 rows and 50 columns are shown.")} }
             }
-            div { class: "sheet-grid",
-                table {
-                    thead {
-                        tr {
-                            th { class: "sheet-corner" }
-                            for index in 0..columns {
-                                th { key: "{index}", class: "sheet-colhead", "{column_letters(index)}" }
-                            }
-                        }
-                    }
-                    tbody {
-                        for (row_index, cells) in sheet.rows.iter().enumerate() {
-                            tr { key: "{row_index}",
-                                th { class: "sheet-rowhead", "{row_index + 1}" }
-                                for (index, cell) in cells.iter().enumerate() {
-                                    td {
-                                        key: "{index}",
-                                        class: if (row_index, index) == (row, column) { "sheet-cell selected" } else if is_number(&cell.text) { "sheet-cell number" } else { "sheet-cell" },
-                                        onclick: move |_| selected.set((row_index, index)),
-                                        "{cell.text}"
-                                    }
-                                }
-                            }
-                        }
+            SheetGrid { key: "{index}", book: book.clone(), index, selected }
+            div { class: "sheet-tabs",
+                for (tab, sheet) in book.sheets.iter().enumerate() {
+                    button {
+                        key: "{tab}",
+                        class: if tab == index { "sheet-tab active" } else { "sheet-tab" },
+                        r#type: "button",
+                        onclick: move |_| {
+                            active.set(tab);
+                            selected.set((0, 0));
+                        },
+                        "{sheet.name}"
                     }
                 }
             }
-            div { class: "sheet-tabs",
-                for (index, name) in names.into_iter().enumerate() {
-                    button {
-                        key: "{index}",
-                        class: if index == active() { "sheet-tab active" } else { "sheet-tab" },
-                        r#type: "button",
-                        onclick: move |_| {
-                            active.set(index);
-                            selected.set((0, 0));
-                        },
-                        "{name}"
+        }
+    }
+}
+
+/// The cells of one sheet. It only writes `selected`, never reads it, so a click does not rebuild the grid;
+/// the selected cell is outlined by `selected_rule`.
+#[component]
+fn SheetGrid(book: Rc<SheetBook>, index: usize, mut selected: Signal<(usize, usize)>) -> Element {
+    let Some(sheet) = book.sheets.get(index) else { return rsx! {} };
+    let columns = column_count(sheet);
+    rsx! {
+        div { class: "sheet-grid",
+            table {
+                thead {
+                    tr {
+                        th { class: "sheet-corner" }
+                        for index in 0..columns {
+                            th { key: "{index}", class: "sheet-colhead", "{column_letters(index)}" }
+                        }
+                    }
+                }
+                tbody {
+                    for (row_index, cells) in sheet.rows.iter().enumerate() {
+                        tr { key: "{row_index}",
+                            th { class: "sheet-rowhead", "{row_index + 1}" }
+                            for (index, cell) in cells.iter().enumerate() {
+                                td {
+                                    key: "{index}",
+                                    class: cell_class(is_number(&cell.text)),
+                                    "data-r": "{row_index}",
+                                    "data-c": "{index}",
+                                    onclick: move |_| selected.set((row_index, index)),
+                                    "{cell.text}"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -165,6 +191,14 @@ mod tests {
         assert_eq!(formula_bar_text(&sheet, 0, 1), "x");
         assert_eq!(formula_bar_text(&sheet, 5, 5), "");
         assert_eq!(column_count(&sheet), 2);
+    }
+
+    #[test]
+    fn a_number_keeps_its_alignment_class_and_the_selection_is_a_separate_rule() {
+        assert_eq!(cell_class(false), "sheet-cell");
+        assert_eq!(cell_class(true), "sheet-cell number");
+        let rule = selected_rule(2, 1);
+        assert!(rule.contains("[data-r='2'][data-c='1']") && rule.contains("outline"));
     }
 
     #[test]
