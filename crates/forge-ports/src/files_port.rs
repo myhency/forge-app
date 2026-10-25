@@ -177,6 +177,14 @@ pub struct SearchOptions {
     pub regex: bool,
 }
 
+/// The files under a folder, for the `@` mention: relative `/`-separated paths, newest first.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FileList {
+    pub files: Vec<String>,
+    /// True when the walk stopped at its cap of visited entries, so some files are missing.
+    pub cut: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum FilesError {
     #[error("That path is outside the session folder")]
@@ -216,6 +224,10 @@ pub trait FilesPort: Send + Sync {
     fn write(&self, root: &Path, path: &str, text: &str, expected: Option<FileVersion>) -> Result<FileVersion, WriteError>;
     /// One hit per line that holds a match of `query`, at most `limit`, in path order.
     fn search(&self, root: &Path, query: &str, options: SearchOptions, limit: usize) -> Result<Vec<ContentHit>, FilesError>;
+    /// The files (not folders) under the root, newest modified first, at most `limit`. Hidden
+    /// entries and build folders are left out, symlinks are not followed, and the walk is capped in
+    /// depth and in entries visited (`FileList::cut` says the cap was hit).
+    fn list_files(&self, root: &Path, limit: usize) -> Result<FileList, FilesError>;
     /// The last `max_bytes` of the file at an absolute `path`, as text (bytes that are not UTF-8 are
     /// replaced). Unlike `read` it is not confined to a root: the caller must have checked the path.
     fn read_tail(&self, path: &Path, max_bytes: usize) -> Result<String, FilesError>;

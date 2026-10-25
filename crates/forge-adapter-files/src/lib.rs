@@ -4,7 +4,7 @@ use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use forge_ports::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, SearchOptions, Sheet, SheetBook, SheetCell, WriteError, READ_LIMIT};
+use forge_ports::{ContentHit, DirEntry, FileContent, FileList, FileVersion, FilesError, FilesPort, SearchOptions, Sheet, SheetBook, SheetCell, WriteError, READ_LIMIT};
 use calamine::{Data, Reader, SheetType, Xlsx};
 use chrono::NaiveTime;
 use regex::{Regex, RegexBuilder};
@@ -21,6 +21,11 @@ const SEARCH_FILE_LIMIT: usize = 20_000;
 // A search reads no file larger than this, so the larger read limit does not slow it.
 const SEARCH_FILE_BYTES: u64 = 1024 * 1024;
 const HIT_TEXT_CHARS: usize = 200;
+// The `@` file list visits no more entries than this and walks no deeper than this many path parts.
+const LIST_VISIT_LIMIT: usize = 20_000;
+const LIST_DEPTH_LIMIT: usize = 8;
+// Build and dependency folders the `@` file list leaves out, besides every name starting with `.`.
+const LIST_SKIPPED: [&str; 3] = ["node_modules", "target", "__pycache__"];
 // A long line keeps this much text before the match, so the match shows in a narrow list.
 const HIT_LEAD_CHARS: usize = 24;
 const IMAGE_TYPES: [(&str, &str); 7] = [
@@ -331,6 +336,10 @@ impl FilesPort for LocalFiles {
         Ok(hits)
     }
 
+    fn list_files(&self, root: &Path, limit: usize) -> Result<FileList, FilesError> {
+        walk(root, limit, LIST_VISIT_LIMIT, LIST_DEPTH_LIMIT)
+    }
+
     fn read_tail(&self, path: &Path, max_bytes: usize) -> Result<String, FilesError> {
         use std::io::{Read, Seek, SeekFrom};
         let mut file = fs::File::open(path).map_err(failed)?;
@@ -452,6 +461,63 @@ fn search_dir(dir: &Path, prefix: &str, matcher: &Matcher, limit: usize, visited
             }
         }
     }
+}
+
+// A name the `@` file list leaves out, file or folder.
+fn is_left_out_of_list(name: &str) -> bool {
+    name.starts_with('.') || LIST_SKIPPED.contains(&name)
+}
+
+// The files under `root`, newest modified first (ties by path; a file whose time cannot be read is
+// the oldest), at most `limit`. Iterative with an explicit stack, so a deep tree cannot overflow
+// the call stack. Every entry a folder yields counts against `visit_cap` (skipped ones and read
+// errors too); hitting the cap with entries left marks the list cut. A path has at most
+// `depth_cap` parts. Symlinks (and Windows junctions) are neither followed nor listed, so a link
+// cannot lead out of the root or loop; a name that is not UTF-8 is skipped rather than shown
+// changed. An unreadable subfolder is skipped; only the root itself must be readable.
+fn walk(root: &Path, limit: usize, visit_cap: usize, depth_cap: usize) -> Result<FileList, FilesError> {
+    let root = dunce::canonicalize(root).map_err(failed)?;
+    let first = fs::read_dir(&root).map_err(failed)?;
+    let mut found: Vec<(Option<std::time::SystemTime>, String)> = Vec::new();
+    let mut visited = 0;
+    let mut cut = false;
+    // Each folder still to read, with its relative path and its number of path parts.
+    let mut stack: Vec<(PathBuf, String, usize)> = Vec::new();
+    let mut next = Some((first, String::new(), 0));
+    'folders: while let Some((read, prefix, depth)) = next.take() {
+        for entry in read {
+            if visited >= visit_cap {
+                cut = true;
+                break 'folders;
+            }
+            visited += 1;
+            let Ok(entry) = entry else { continue };
+            let Ok(name) = entry.file_name().into_string() else { continue };
+            // `file_type` does not follow a symlink.
+            let Ok(kind) = entry.file_type() else { continue };
+            if is_left_out_of_list(&name) || kind.is_symlink() {
+                continue;
+            }
+            let path = if prefix.is_empty() { name } else { format!("{prefix}/{name}") };
+            if kind.is_dir() {
+                if depth + 1 < depth_cap {
+                    stack.push((entry.path(), path, depth + 1));
+                }
+            } else if kind.is_file() {
+                found.push((entry.metadata().and_then(|meta| meta.modified()).ok(), path));
+            }
+        }
+        while let Some((dir, prefix, depth)) = stack.pop() {
+            if let Ok(read) = fs::read_dir(&dir) {
+                next = Some((read, prefix, depth));
+                break;
+            }
+        }
+    }
+    // `None` sorts below any time, so reversing the time puts it last.
+    found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    found.truncate(limit);
+    Ok(FileList { files: found.into_iter().map(|(_, path)| path).collect(), cut })
 }
 
 #[cfg(test)]
@@ -741,6 +807,179 @@ mod tests {
         assert!(all.iter().all(|hit| hit.path != "b.bin" && !hit.path.starts_with("linkdir")), "{all:?}");
     }
 
+
+    // A file at `path` under `root` (folders made as needed) last modified `modified_secs` after
+    // the epoch.
+    fn file_at(root: &Path, path: &str, modified_secs: u64) {
+        let file = root.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, path).unwrap();
+        let time = UNIX_EPOCH + std::time::Duration::from_secs(modified_secs);
+        fs::File::options().write(true).open(&file).unwrap().set_modified(time).unwrap();
+    }
+
+    fn sorted_paths(list: &FileList) -> Vec<&str> {
+        let mut paths: Vec<&str> = list.files.iter().map(String::as_str).collect();
+        paths.sort_unstable();
+        paths
+    }
+
+    #[test]
+    fn files_are_relative_with_forward_slashes() {
+        let dir = tempfile::tempdir().unwrap();
+        file_at(dir.path(), "a.txt", 100);
+        file_at(dir.path(), "src/deep/b.rs", 100);
+        fs::create_dir(dir.path().join("empty")).unwrap();
+
+        let list = LocalFiles::new().list_files(dir.path(), 5_000).unwrap();
+
+        assert_eq!(sorted_paths(&list), vec!["a.txt", "src/deep/b.rs"]);
+        assert!(!list.cut);
+    }
+
+    #[test]
+    fn hidden_entries_and_the_skipped_folders_are_left_out() {
+        let dir = tempfile::tempdir().unwrap();
+        for path in [".env", ".git/config", ".hidden/x.txt", "node_modules/p/i.js", "target/debug/o", "__pycache__/m.pyc", "src/target/x.rs", "src/.cache/y", "keep.txt", "src/ok.rs"] {
+            file_at(dir.path(), path, 100);
+        }
+
+        let list = LocalFiles::new().list_files(dir.path(), 5_000).unwrap();
+
+        assert_eq!(sorted_paths(&list), vec!["keep.txt", "src/ok.rs"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_are_not_followed_or_listed() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        file_at(outside.path(), "secret.txt", 100);
+        file_at(dir.path(), "a.txt", 100);
+        file_at(dir.path(), "sub/b.txt", 100);
+        symlink(outside.path(), dir.path().join("linkdir")).unwrap();
+        symlink(outside.path().join("secret.txt"), dir.path().join("link.txt")).unwrap();
+        symlink(dir.path(), dir.path().join("loop")).unwrap();
+        symlink(dir.path().join("sub"), dir.path().join("sub/back")).unwrap();
+
+        let list = LocalFiles::new().list_files(dir.path(), 5_000).unwrap();
+
+        assert_eq!(sorted_paths(&list), vec!["a.txt", "sub/b.txt"]);
+        assert!(!list.cut);
+    }
+
+    #[test]
+    fn depth_over_8_is_not_walked() {
+        let dir = tempfile::tempdir().unwrap();
+        file_at(dir.path(), "top.txt", 100);
+        let mut folder = String::new();
+        for level in 1..=9 {
+            folder.push_str(&format!("d{level}/"));
+            file_at(dir.path(), &format!("{folder}f.txt"), 100);
+        }
+
+        let list = LocalFiles::new().list_files(dir.path(), 5_000).unwrap();
+
+        // `d1/…/d7/f.txt` has 8 parts and is the deepest file listed.
+        assert_eq!(list.files.len(), 8, "{:?}", list.files);
+        assert!(list.files.contains(&"d1/d2/d3/d4/d5/d6/d7/f.txt".to_string()));
+        assert!(list.files.iter().all(|path| !path.contains("d8")));
+        let shallow = walk(dir.path(), 5_000, LIST_VISIT_LIMIT, 2).unwrap();
+        assert_eq!(sorted_paths(&shallow), vec!["d1/f.txt", "top.txt"]);
+    }
+
+    #[test]
+    fn the_newest_files_come_first() {
+        let dir = tempfile::tempdir().unwrap();
+        file_at(dir.path(), "a.txt", 100);
+        file_at(dir.path(), "b.txt", 300);
+        file_at(dir.path(), "d.txt", 200);
+        file_at(dir.path(), "sub/c.txt", 200);
+
+        let list = LocalFiles::new().list_files(dir.path(), 5_000).unwrap();
+
+        // `d.txt` and `sub/c.txt` tie and go by path.
+        assert_eq!(list.files, vec!["b.txt", "d.txt", "sub/c.txt", "a.txt"]);
+    }
+
+    #[test]
+    fn limit_keeps_the_newest() {
+        let dir = tempfile::tempdir().unwrap();
+        for (index, name) in ["a", "b", "c", "d", "e"].iter().enumerate() {
+            file_at(dir.path(), &format!("{name}.txt"), 100 + index as u64);
+        }
+        let files = LocalFiles::new();
+
+        assert_eq!(files.list_files(dir.path(), 2).unwrap().files, vec!["e.txt", "d.txt"]);
+        assert_eq!(files.list_files(dir.path(), 0).unwrap().files, Vec::<String>::new());
+    }
+
+    #[test]
+    fn more_than_20000_visited_entries_marks_the_list_cut() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["a", "b", "c", "d", "e"] {
+            file_at(dir.path(), &format!("{name}.txt"), 100);
+        }
+
+        let cut = walk(dir.path(), 5_000, 3, LIST_DEPTH_LIMIT).unwrap();
+        let whole = walk(dir.path(), 5_000, 5, LIST_DEPTH_LIMIT).unwrap();
+
+        assert!(cut.cut);
+        assert_eq!(cut.files.len(), 3);
+        // Exactly the cap visits everything, so nothing is missing.
+        assert!(!whole.cut);
+        assert_eq!(whole.files.len(), 5);
+        assert_eq!(LIST_VISIT_LIMIT, 20_000);
+    }
+
+    #[test]
+    fn skipped_entries_and_folders_count_as_visited() {
+        let dir = tempfile::tempdir().unwrap();
+        file_at(dir.path(), ".a/x.txt", 100);
+        file_at(dir.path(), "sub/y.txt", 100);
+
+        // `.a`, `sub` and `sub/y.txt` are three entries.
+        assert!(walk(dir.path(), 5_000, 2, LIST_DEPTH_LIMIT).unwrap().cut);
+        assert_eq!(walk(dir.path(), 5_000, 3, LIST_DEPTH_LIMIT).unwrap(), FileList { files: vec!["sub/y.txt".to_string()], cut: false });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_folder_is_skipped() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        file_at(dir.path(), "locked/secret.txt", 100);
+        file_at(dir.path(), "open/a.txt", 100);
+        fs::set_permissions(dir.path().join("locked"), fs::Permissions::from_mode(0o000)).unwrap();
+
+        let list = LocalFiles::new().list_files(dir.path(), 5_000);
+
+        fs::set_permissions(dir.path().join("locked"), fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(list.unwrap().files, vec!["open/a.txt"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_name_that_is_not_utf8_is_skipped() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().unwrap();
+        file_at(dir.path(), "a.txt", 100);
+        // Some file systems (APFS) refuse such a name; then there is nothing to check.
+        if fs::write(dir.path().join(OsStr::from_bytes(b"bad\xff.txt")), "x").is_ok() {
+            assert_eq!(LocalFiles::new().list_files(dir.path(), 5_000).unwrap().files, vec!["a.txt"]);
+        }
+    }
+
+    #[test]
+    fn a_missing_root_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        file_at(dir.path(), "a.txt", 100);
+        let files = LocalFiles::new();
+
+        assert!(matches!(files.list_files(&dir.path().join("gone"), 5_000), Err(FilesError::Failed(_))));
+        assert!(matches!(files.list_files(&dir.path().join("a.txt"), 5_000), Err(FilesError::Failed(_))));
+    }
 
     #[test]
     fn read_tail_gives_the_end_of_a_long_file() {
