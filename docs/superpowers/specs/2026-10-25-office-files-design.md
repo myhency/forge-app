@@ -82,15 +82,17 @@ Where the sheet view lives (a new widget file next to `files_kinds.rs`), how the
 
 ## As built
 
-Goal 1 (links). `links.rs` in forge-entities also turns inline-code absolute paths into file links. There is no existence check for them, so a made-up path is a link that opens nothing.
+Goal 1 (links). `links.rs` in forge-entities also turns inline-code absolute paths into file links. There is no existence check for them. A made-up absolute path outside the folder opens the outside-file dialog (not the failure note); one inside the folder opens a Files tab that says the file could not be read.
 
 Goal 2 (`결과물` card). `output_files.rs` (forge-features) builds the list from the session record, newest first; `OutputsStore` in forge-entities holds it. The card (`details_panel.rs`) refreshes on mount, when a tool call finishes, and at turn start and end. A row click opens the file in the Files panel.
 
-Goal 3 (xlsx grid). `forge-adapter-files` reads sheets with calamine's streaming cell reader. The caps (500 rows x 50 columns) are enforced while streaming, not after loading. Empty styled cells do not extend a sheet. `truncated` means non-empty data was cut. A date with a non-midnight time shows `YYYY-MM-DD HH:MM:SS`. The view is `files_sheet.rs`: column letters, row numbers, right-aligned numbers, sheet tabs and a formula bar. A formula that was never calculated shows an empty cell, and the formula bar shows the formula text.
+Goal 3 (xlsx grid). `forge-adapter-files` reads sheets with calamine's streaming cell reader. The caps (500 rows x 50 columns) are enforced while streaming, not after loading. Empty styled cells do not extend a sheet. `truncated` means non-empty data was cut. A date with a non-midnight time shows `YYYY-MM-DD HH:MM:SS`. The view is `files_sheet.rs`: column letters, row numbers, right-aligned numbers, sheet tabs and a formula bar. A formula that was never calculated shows an empty cell, and the formula bar shows the formula text. A fraction shows at most 15 significant digits, as Excel does (`0.1 + 0.2` reads `0.3`).
 
-Goal 4 and 5 (open button). `기본 프로그램으로 열기` sits in the bottom bar beside the sheet tabs (so the formula bar has room). A binary file with no preview shows a notice with that button, `Finder에서 보기` and a third button.
+Limits on a hostile workbook (final review): before calamine opens the file, every zip part must declare an unpacked size of at most 100 MB, and the shared strings part must really unpack to at most 100 MB; its `sst` `uniqueCount` may be at most that size / 7 (calamine reserves room for the claimed count up front, so a 1 KB file claiming 2^50 strings aborted the app). `count` is not checked: it counts uses, so an honest file can have a huge one. Cells are kept by position (a later cell at the same place wins), so at most 500 x 50 are held, and a sheet stops being read after 2,000,000 cells and is marked cut. Chart, dialog and macro sheets are skipped, so the other sheets of the workbook still show.
 
-Files outside the session folder (decision A). `open_file` has an outside-file branch; `outside_file_dialog.rs` shows the dialog `작업 폴더 밖의 파일입니다` with `기본 프로그램으로 열기`, `Finder에서 보기` and `닫기`.
+Goal 4 and 5 (open button). `기본 프로그램으로 열기` sits in the bottom bar beside the sheet tabs (so the formula bar has room). A binary file with no preview shows a notice with that button, `Finder에서 보기` and a third button. A program never gets the button: one list in forge-domain (`has_program_extension`: macOS apps and scripts plus everything Windows runs, such as `ps1`, `vbs`, `js`) serves both the button and the Windows adapter's refusal, and a file with no extension also counts as a program, since macOS runs such a file in Terminal.
+
+Files outside the session folder (decision A). `open_file` has an outside-file branch; `outside_file_dialog.rs` shows the dialog `작업 폴더 밖의 파일입니다` with `기본 프로그램으로 열기`, `Finder에서 보기` (`탐색기에서 보기` on Windows) and `닫기`. When the text of the path says outside, both paths are resolved off the UI thread (symlinks, `/tmp` against `/private/tmp`, a drive letter's case) and the decision is made again, so a file really inside the folder opens in the Files panel; the Files port still refuses anything outside.
 
 Differences from the spec and lessons:
 - The ko.rs string table must stay sorted. Lookups are by binary search, so an unsorted entry silently fails. This showed up in the real window as an English label.
@@ -121,4 +123,5 @@ Minor cosmetics found and left: the truncation line touches the panel's left edg
 - No Workspace-level tests for the outside-file branch of `open_file` (no harness for it).
 - Paths in fenced code blocks do not count as outputs.
 - The two cosmetics above.
+- Number formats are not applied: a percent cell shows `0.25`, not `25%`, and currency or thousands separators are not shown.
 - The `결과물` card's hover tooltip styling if the title attribute is too plain.
