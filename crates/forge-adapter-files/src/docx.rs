@@ -5,15 +5,14 @@ use std::collections::HashMap;
 use forge_ports::{DocBlock, DocumentView, FileContent, FilesError, TextRun};
 use quick_xml::events::{BytesStart, Event};
 
-use crate::office_zip;
+use crate::office_zip::{self, attribute, cut, failed};
 
 const MAX_BLOCKS: usize = 2_000;
 const MAX_ROWS: usize = 100;
 const MAX_COLUMNS: usize = 20;
 // One paragraph, heading, list item or table cell keeps at most this many characters.
 const MAX_TEXT_CHARS: usize = 10_000;
-// A part stops being read after this many XML events, so a part of millions of empty tags cannot
-// keep the read busy for long.
+// A part stops being read after this many XML events (see `office_zip::walk`).
 const EVENT_LIMIT: usize = 5_000_000;
 // Word nests a list 9 deep (`w:ilvl` 0 to 8).
 const MAX_LIST_LEVEL: u8 = 8;
@@ -35,10 +34,6 @@ const HIDDEN: [&str; 14] = [
     "tblGridChange",
     "numberingChange",
 ];
-
-fn failed(error: impl std::fmt::Display) -> FilesError {
-    FilesError::Failed(error.to_string())
-}
 
 /// The body of a docx file (`word/document.xml`) as blocks. Every part is checked against the zip
 /// guards before it is parsed; entities other than the five predefined ones and character
@@ -63,41 +58,14 @@ pub(crate) fn read_docx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
 }
 
 // Feeds the part's XML events to `on` until it returns false or the part ends. True when the
-// event limit stopped it. XML whose tags do not match or are left open fails with text.
-fn walk(xml: &[u8], mut on: impl FnMut(Event<'_>) -> bool) -> Result<bool, FilesError> {
-    let mut reader = quick_xml::Reader::from_reader(xml);
-    let mut open = 0usize;
-    for _ in 0..EVENT_LIMIT {
-        let event = reader.read_event().map_err(failed)?;
-        match &event {
-            Event::Eof if open > 0 => return Err(failed("The XML ends before all its tags are closed.")),
-            Event::Eof => return Ok(false),
-            Event::Start(_) => open += 1,
-            Event::End(_) => open = open.saturating_sub(1),
-            _ => {}
-        }
-        if !on(event) {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
-fn attribute(tag: &BytesStart<'_>, name: &str) -> Option<String> {
-    tag.attributes().flatten().find(|attribute| attribute.key.local_name().as_ref() == name).map(|attribute| attribute.value.into_owned())
+// event limit stopped it; each part gets the whole limit.
+fn walk(xml: &[u8], on: impl FnMut(Event<'_>) -> bool) -> Result<bool, FilesError> {
+    office_zip::walk(xml, &mut EVENT_LIMIT.clone(), on)
 }
 
 // A `w:b` or `w:i` is on unless its `w:val` turns it off.
 fn is_on(tag: &BytesStart<'_>) -> bool {
     !attribute(tag, "val").is_some_and(|value| matches!(value.as_str(), "0" | "false" | "off"))
-}
-
-// `text` cut to `room` characters, and whether it was cut.
-fn cut(text: &str, room: usize) -> (&str, bool) {
-    match text.char_indices().nth(room) {
-        Some((at, _)) => (&text[..at], true),
-        None => (text, false),
-    }
 }
 
 // The heading level of a style id or name: `Heading1`…`Heading9` or `heading 1`… (above 6 is 6),
@@ -436,6 +404,7 @@ mod tests {
     use forge_ports::{DocBlock, DocumentView, FilesPort, TextRun};
 
     use super::*;
+    use crate::office_zip::test_support::{declaring, zip_of};
     use crate::LocalFiles;
 
     const W: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main""#;
@@ -452,16 +421,6 @@ mod tests {
         ];
         all.extend(parts.iter().map(|(name, text)| (*name, text.clone())));
         zip_of(&all)
-    }
-
-    fn zip_of(parts: &[(&str, String)]) -> Vec<u8> {
-        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-        for (name, text) in parts {
-            zip.start_file(*name, options).unwrap();
-            zip.write_all(text.as_bytes()).unwrap();
-        }
-        zip.finish().unwrap().into_inner()
     }
 
     fn docx(body: &str) -> Vec<u8> {
@@ -640,18 +599,6 @@ mod tests {
         let cell = view(docx(&table(&[&[&"c".repeat(10_001)]])));
         assert_eq!(cell.blocks, vec![rows(&[&[&"c".repeat(10_000)]])]);
         assert!(cell.truncated);
-    }
-
-    // The zip with the unpacked size its central directory declares for `name` set to `size`.
-    fn declaring(mut bytes: Vec<u8>, name: &str, size: u32) -> Vec<u8> {
-        let at = (0..bytes.len() - 46)
-            .find(|&at| {
-                let name_len = usize::from(u16::from_le_bytes([bytes[at + 28], bytes[at + 29]]));
-                bytes[at..].starts_with(b"PK\x01\x02") && bytes[at + 46..].starts_with(name.as_bytes()) && name_len == name.len()
-            })
-            .expect("no central directory entry");
-        bytes[at + 24..at + 28].copy_from_slice(&size.to_le_bytes());
-        bytes
     }
 
     #[test]

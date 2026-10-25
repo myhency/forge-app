@@ -4,6 +4,7 @@
 use std::io::{Cursor, Read, Seek, Write};
 
 use forge_ports::FilesError;
+use quick_xml::events::{BytesStart, Event};
 
 // A compound file starts with these bytes; Office keeps an encrypted (password-protected) file in
 // one instead of a zip.
@@ -58,6 +59,73 @@ pub(crate) fn read_part<R: Read + Seek>(
         return Err(too_big());
     }
     Ok(Some(bytes))
+}
+
+pub(crate) fn failed(error: impl std::fmt::Display) -> FilesError {
+    FilesError::Failed(error.to_string())
+}
+
+/// Feeds the part's XML events to `on` until it returns false or the part ends. True when the
+/// `budget` of events ran out first; the budget is spent across calls, so a part of millions of
+/// empty tags cannot keep the read busy for long. XML whose tags do not match or are left open
+/// fails with text.
+pub(crate) fn walk(xml: &[u8], budget: &mut usize, mut on: impl FnMut(Event<'_>) -> bool) -> Result<bool, FilesError> {
+    let mut reader = quick_xml::Reader::from_reader(xml);
+    let mut open = 0usize;
+    while *budget > 0 {
+        *budget -= 1;
+        let event = reader.read_event().map_err(failed)?;
+        match &event {
+            Event::Eof if open > 0 => return Err(failed("The XML ends before all its tags are closed.")),
+            Event::Eof => return Ok(false),
+            Event::Start(_) => open += 1,
+            Event::End(_) => open = open.saturating_sub(1),
+            _ => {}
+        }
+        if !on(event) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+pub(crate) fn attribute(tag: &BytesStart<'_>, name: &str) -> Option<String> {
+    tag.attributes().flatten().find(|attribute| attribute.key.local_name().as_ref() == name).map(|attribute| attribute.value.into_owned())
+}
+
+/// `text` cut to `room` characters, and whether it was cut.
+pub(crate) fn cut(text: &str, room: usize) -> (&str, bool) {
+    match text.char_indices().nth(room) {
+        Some((at, _)) => (&text[..at], true),
+        None => (text, false),
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::io::{Cursor, Write};
+
+    pub(crate) fn zip_of(parts: &[(&str, String)]) -> Vec<u8> {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, text) in parts {
+            zip.start_file(*name, options).unwrap();
+            zip.write_all(text.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    // The zip with the unpacked size its central directory declares for `name` set to `size`.
+    pub(crate) fn declaring(mut bytes: Vec<u8>, name: &str, size: u32) -> Vec<u8> {
+        let at = (0..bytes.len() - 46)
+            .find(|&at| {
+                let name_len = usize::from(u16::from_le_bytes([bytes[at + 28], bytes[at + 29]]));
+                bytes[at..].starts_with(b"PK\x01\x02") && bytes[at + 46..].starts_with(name.as_bytes()) && name_len == name.len()
+            })
+            .expect("no central directory entry");
+        bytes[at + 24..at + 28].copy_from_slice(&size.to_le_bytes());
+        bytes
+    }
 }
 
 #[cfg(test)]
