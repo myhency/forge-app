@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use forge_ports::{ContentHit, DirEntry, FileContent, FileVersion, FilesError, FilesPort, SearchOptions, Sheet, SheetBook, SheetCell, WriteError, READ_LIMIT};
-use calamine::{Data, Reader, Xlsx};
+use calamine::{Data, Reader, SheetType, Xlsx};
 use chrono::NaiveTime;
 use regex::{Regex, RegexBuilder};
 
@@ -204,7 +204,10 @@ fn read_xlsx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
     check_xlsx(&bytes, XLSX_PART_BYTES)?;
     let mut book: Xlsx<_> = Xlsx::new(Cursor::new(bytes)).map_err(failed)?;
     let mut sheets = Vec::new();
-    for name in book.sheet_names() {
+    // Only worksheets hold cells; a chart sheet (or a dialog or macro sheet) is left out so the
+    // rest of the workbook still shows.
+    let names: Vec<String> = book.sheets_metadata().iter().filter(|sheet| sheet.typ == SheetType::WorkSheet).map(|sheet| sheet.name.clone()).collect();
+    for name in names {
         sheets.push(read_sheet(&mut book, name, SHEET_VISIT_LIMIT)?);
     }
     Ok(FileContent::Sheet(SheetBook { sheets }))
@@ -1121,6 +1124,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("s.xlsx"), hand_made_xlsx(ONE_STRING_CELL, &shared_strings(r#"count="99999999999" uniqueCount="1""#))).unwrap();
         assert_eq!(cell_texts(&read_sheets(&dir, "s.xlsx")[0]), vec![vec!["x"]]);
+    }
+
+    #[test]
+    fn a_chart_sheet_is_skipped_and_the_other_sheets_show() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = rust_xlsxwriter::Workbook::new();
+        let data = book.add_worksheet();
+        data.set_name("Data").unwrap();
+        data.write_number(0, 0, 1.0).unwrap();
+        data.write_number(1, 0, 2.0).unwrap();
+        let mut chart = rust_xlsxwriter::Chart::new(rust_xlsxwriter::ChartType::Column);
+        chart.add_series().set_values("Data!$A$1:$A$2");
+        book.add_chartsheet().insert_chart(0, 0, &chart).unwrap();
+        book.add_worksheet().set_name("After").unwrap();
+        book.save(dir.path().join("c.xlsx")).unwrap();
+        let sheets = read_sheets(&dir, "c.xlsx");
+        assert_eq!(sheets.iter().map(|sheet| sheet.name.as_str()).collect::<Vec<_>>(), vec!["Data", "After"]);
+        assert_eq!(cell_texts(&sheets[0]), vec![vec!["1"], vec!["2"]]);
     }
 
     #[test]
