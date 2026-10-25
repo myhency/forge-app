@@ -110,6 +110,9 @@ Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Mode
 | NEW-06 | Generated session title; details panel opens on the first send with the branch row and the fuller context rows | seen | partial | M | Plan 59 (planned) | The transcript already has an `ai-title` line. |
 | NEW-07 | Message action row (copy, branch, pin, read aloud, time), end card with `Fix them / Not now`, background task row with live output | seen | partial | M | Plan 59 (planned) | |
 | NEW-08 | Small fixes from round 27 and 28 | seen | partial | S | Plan 60 (planned) | See the Plan 60 row in README.md. |
+| NEW-09 | docx formatting in the preview: run colour, highlight, underline, strike, heading colours, table cell runs; the open Office tab refreshes when the file changes | seen | none | S | Plan 57C (planned) | Round 30: the changed numbers the person asked to mark in red look like normal text in Forge. |
+| NEW-10 | Office rendering like the desktop app: docx as pages, pptx as slide images with charts | seen | none | L | Plan 57D (planned, spike first) | Round 30: the desktop app draws pages (`Page 1 / 1`) and slides; Forge shows a text-only reading view. |
+| NEW-11 | Attached files as cards with a type tag (`XLSX`, `DOCX`), above the bubble after sending | seen | partial | S | Plan 58 (planned) | Forge shows a small chip. |
 
 ## OBS: observation tasks (do before planning the entries they unlock)
 
