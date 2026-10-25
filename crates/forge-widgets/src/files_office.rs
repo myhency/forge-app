@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use dioxus::prelude::*;
 use forge_features::offers_default_program;
-use forge_ports::{DocBlock, DocumentView, Slide, SlideDeck, TextRun};
+use forge_ports::{DocBlock, DocumentView, Rgb, Slide, SlideDeck, TableCell, TextRun};
 use forge_shared::tr;
 
 /// The marker of each block: `•` for a bullet item, `1.`, `2.` … for numbered items, `None` for other blocks.
@@ -56,17 +56,149 @@ fn indent(level: u8) -> u32 {
     u32::from(level.min(8)) * 20
 }
 
-/// The runs of a block as spans; a plain function so a block's runs are borrowed, not cloned per render.
-fn runs_view(runs: &[TextRun]) -> Element {
-    rsx! {
-        for (index, run) in runs.iter().enumerate() {
-            span {
-                key: "{index}",
-                style: if run.bold && run.italic { "font-weight: 600; font-style: italic" } else if run.bold { "font-weight: 600" } else if run.italic { "font-style: italic" } else { "" },
-                "{run.text}"
-            }
+/// A colour's class for the theme rules: reset when it would vanish on the page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LumClass {
+    Dark,
+    Mid,
+    Light,
+}
+
+impl LumClass {
+    /// The value of the `data-lum` attribute that `theme.css` matches.
+    fn attr(self) -> &'static str {
+        match self {
+            LumClass::Dark => "dark",
+            LumClass::Mid => "mid",
+            LumClass::Light => "light",
         }
     }
+}
+
+/// The relative luminance of a colour, 0 (black) to 1 (white), from the linearised sRGB channels.
+pub fn luminance(color: Rgb) -> f32 {
+    let linear = |channel: u8| {
+        let value = f32::from(channel) / 255.0;
+        if value <= 0.04045 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) }
+    };
+    0.2126 * linear(color.0) + 0.7152 * linear(color.1) + 0.0722 * linear(color.2)
+}
+
+/// `Dark` below 0.12, `Light` above 0.88, else `Mid`.
+pub fn luminance_class(color: Rgb) -> LumClass {
+    let lum = luminance(color);
+    if lum < 0.12 {
+        LumClass::Dark
+    } else if lum > 0.88 {
+        LumClass::Light
+    } else {
+        LumClass::Mid
+    }
+}
+
+/// Black on a light fill, white on a dark one.
+pub fn text_on(fill: Rgb) -> Rgb {
+    if luminance(fill) >= 0.5 { Rgb(0, 0, 0) } else { Rgb(255, 255, 255) }
+}
+
+/// Whether a text colour reads on a backdrop: their luminances differ by at least 0.35.
+fn reads_on(color: Rgb, backdrop: Rgb) -> bool {
+    (luminance(color) - luminance(backdrop)).abs() >= 0.35
+}
+
+/// The colour a run is drawn in on a backdrop it brings or sits on: its own if it reads there, else the
+/// readable one for a highlight, else (on a cell fill) the cell's. `None` leaves the theme's colour.
+fn text_color(run: &TextRun, backdrop: Option<Rgb>) -> Option<Rgb> {
+    match (run.color, backdrop) {
+        (Some(own), Some(back)) if reads_on(own, back) => Some(own),
+        (_, Some(back)) if run.highlight.is_some() => Some(text_on(back)),
+        (_, Some(_)) => None,
+        (own, None) => own,
+    }
+}
+
+/// The inline style of a run (colour, highlight, decoration), built only from `Rgb::css` and fixed
+/// keywords; `None` for a run with none of them.
+#[allow(dead_code)] // the view calls the `_on` form; this is the form for a run on the bare page
+pub fn run_style(run: &TextRun) -> Option<String> {
+    run_style_on(run, None)
+}
+
+/// `run_style` for a run inside a cell with this fill; a highlight is the nearer backdrop.
+pub fn run_style_on(run: &TextRun, fill: Option<Rgb>) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(color) = text_color(run, run.highlight.or(fill)) {
+        parts.push(format!("color:{}", color.css()));
+    }
+    if let Some(highlight) = run.highlight {
+        parts.push(format!("background-color:{}", highlight.css()));
+    }
+    match (run.underline, run.strike) {
+        (true, true) => parts.push("text-decoration:underline line-through".to_string()),
+        (true, false) => parts.push("text-decoration:underline".to_string()),
+        (false, true) => parts.push("text-decoration:line-through".to_string()),
+        (false, false) => {}
+    }
+    if parts.is_empty() { None } else { Some(parts.join(";")) }
+}
+
+/// The `data-lum` of a run: only a colour that sits on the page (no highlight, no fill) can vanish
+/// with the theme.
+#[allow(dead_code)] // the view calls the `_on` form; this is the form for a run on the bare page
+pub fn lum_attr(run: &TextRun) -> Option<&'static str> {
+    lum_attr_on(run, None)
+}
+
+/// `lum_attr` for a run inside a cell with this fill.
+pub fn lum_attr_on(run: &TextRun, fill: Option<Rgb>) -> Option<&'static str> {
+    if run.highlight.is_some() || fill.is_some() {
+        return None;
+    }
+    run.color.map(|color| luminance_class(color).attr())
+}
+
+/// The inline style of a cell: its fill and the readable text colour on it.
+pub fn cell_style(cell: &TableCell) -> Option<String> {
+    cell.fill.map(|fill| format!("background-color:{};color:{}", fill.css(), text_on(fill).css()))
+}
+
+/// The inline style of a coloured heading.
+pub fn heading_style(color: Option<Rgb>) -> Option<String> {
+    color.map(|color| format!("color:{}", color.css()))
+}
+
+/// The `data-lum` of a heading's colour.
+fn heading_lum(color: Option<Rgb>) -> Option<&'static str> {
+    color.map(|color| luminance_class(color).attr())
+}
+
+/// The runs of a block as spans; a plain function so a block's runs are borrowed, not cloned per render.
+fn runs_view(runs: &[TextRun], fill: Option<Rgb>) -> Element {
+    rsx! {
+        for (index, run) in runs.iter().enumerate() {
+            {run_view(index, run, fill)}
+        }
+    }
+}
+
+/// One run: bare text when plain, else a span with its font and colour styles.
+fn run_view(index: usize, run: &TextRun, fill: Option<Rgb>) -> Element {
+    let font = match (run.bold, run.italic) {
+        (true, true) => "font-weight:600;font-style:italic",
+        (true, false) => "font-weight:600",
+        (false, true) => "font-style:italic",
+        (false, false) => "",
+    };
+    let colours = run_style_on(run, fill);
+    if font.is_empty() && colours.is_none() {
+        return rsx! { "{run.text}" };
+    }
+    let style = match colours {
+        Some(colours) if !font.is_empty() => format!("{font};{colours}"),
+        Some(colours) => colours,
+        None => font.to_string(),
+    };
+    rsx! { span { key: "{index}", style: "{style}", "data-lum": lum_attr_on(run, fill), "{run.text}" } }
 }
 
 /// The body of a docx tab: a toolbar and a reading column of headings, paragraphs, lists and tables.
@@ -82,21 +214,21 @@ pub fn DocumentViewer(doc: DocumentView, path: String, on_open: EventHandler<()>
                 div { class: "office-page",
                     for (index, block) in doc.blocks.iter().enumerate() {
                         match block {
-                            DocBlock::Heading { level, text, .. } => match (*level).clamp(1, 6) {
-                                1 => rsx! { h1 { key: "{index}", class: heading_class(1), "{text}" } },
-                                2 => rsx! { h2 { key: "{index}", class: heading_class(2), "{text}" } },
-                                3 => rsx! { h3 { key: "{index}", class: heading_class(3), "{text}" } },
-                                4 => rsx! { h4 { key: "{index}", class: heading_class(4), "{text}" } },
-                                5 => rsx! { h5 { key: "{index}", class: heading_class(5), "{text}" } },
-                                _ => rsx! { h6 { key: "{index}", class: heading_class(6), "{text}" } },
+                            DocBlock::Heading { level, text, color } => match (*level).clamp(1, 6) {
+                                1 => rsx! { h1 { key: "{index}", class: heading_class(1), style: heading_style(*color), "data-lum": heading_lum(*color), "{text}" } },
+                                2 => rsx! { h2 { key: "{index}", class: heading_class(2), style: heading_style(*color), "data-lum": heading_lum(*color), "{text}" } },
+                                3 => rsx! { h3 { key: "{index}", class: heading_class(3), style: heading_style(*color), "data-lum": heading_lum(*color), "{text}" } },
+                                4 => rsx! { h4 { key: "{index}", class: heading_class(4), style: heading_style(*color), "data-lum": heading_lum(*color), "{text}" } },
+                                5 => rsx! { h5 { key: "{index}", class: heading_class(5), style: heading_style(*color), "data-lum": heading_lum(*color), "{text}" } },
+                                _ => rsx! { h6 { key: "{index}", class: heading_class(6), style: heading_style(*color), "data-lum": heading_lum(*color), "{text}" } },
                             },
                             DocBlock::Paragraph { runs } => rsx! {
-                                p { key: "{index}", {runs_view(runs)} }
+                                p { key: "{index}", {runs_view(runs, None)} }
                             },
                             DocBlock::ListItem { level, runs, .. } => rsx! {
                                 div { key: "{index}", class: "office-item", style: "margin-left: {indent(*level)}px",
                                     span { class: "office-marker", "{markers[index].clone().unwrap_or_default()}" }
-                                    span { {runs_view(runs)} }
+                                    span { {runs_view(runs, None)} }
                                 }
                             },
                             DocBlock::Table { rows } => rsx! {
@@ -106,7 +238,7 @@ pub fn DocumentViewer(doc: DocumentView, path: String, on_open: EventHandler<()>
                                             for (row_index, row) in rows.iter().enumerate() {
                                                 tr { key: "{row_index}",
                                                     for (cell_index, cell) in row.iter().enumerate() {
-                                                        td { key: "{cell_index}", "{cell.text()}" }
+                                                        td { key: "{cell_index}", style: cell_style(cell), {runs_view(&cell.runs, cell.fill)} }
                                                     }
                                                 }
                                             }
@@ -219,5 +351,93 @@ mod tests {
         assert!(slide_is_empty(&titled));
         let full = Slide { number: 2, title: None, items: vec![forge_ports::SlideItem { level: 0, text: "x".to_string() }] };
         assert!(!slide_is_empty(&full));
+    }
+
+    fn run(text: &str) -> TextRun {
+        TextRun { text: text.to_string(), ..TextRun::default() }
+    }
+
+    #[test]
+    fn luminance_of_black_white_and_red() {
+        assert!(luminance(Rgb(0, 0, 0)).abs() < 1e-6);
+        assert!((luminance(Rgb(255, 255, 255)) - 1.0).abs() < 1e-4);
+        assert!((luminance(Rgb(255, 0, 0)) - 0.2126).abs() < 1e-3);
+    }
+
+    #[test]
+    fn luminance_class_boundaries() {
+        assert_eq!(luminance_class(Rgb(0, 0, 0)), LumClass::Dark);
+        assert_eq!(luminance_class(Rgb(255, 255, 255)), LumClass::Light);
+        assert_eq!(luminance_class(Rgb(255, 0, 0)), LumClass::Mid);
+        // Just either side of 0.12: sRGB 100 is about 0.127, 90 about 0.102.
+        assert_eq!(luminance_class(Rgb(100, 100, 100)), LumClass::Mid);
+        assert_eq!(luminance_class(Rgb(90, 90, 90)), LumClass::Dark);
+        assert_eq!(luminance_class(Rgb(245, 245, 245)), LumClass::Light);
+        assert_eq!(luminance_class(Rgb(235, 235, 235)), LumClass::Mid);
+    }
+
+    #[test]
+    fn text_on_a_light_fill_is_black_and_on_a_dark_fill_is_white() {
+        assert_eq!(text_on(Rgb(255, 255, 0)), Rgb(0, 0, 0));
+        assert_eq!(text_on(Rgb(0, 0, 128)), Rgb(255, 255, 255));
+        assert_eq!(text_on(Rgb(255, 255, 255)), Rgb(0, 0, 0));
+    }
+
+    #[test]
+    fn run_style_is_none_for_a_plain_run() {
+        assert_eq!(run_style(&run("x")), None);
+        assert_eq!(run_style(&TextRun { bold: true, italic: true, ..run("x") }), None);
+        assert_eq!(lum_attr(&run("x")), None);
+    }
+
+    #[test]
+    fn run_style_builds_only_from_validated_values() {
+        let red = TextRun { color: Some(Rgb(255, 0, 0)), underline: true, strike: true, ..run("x") };
+        assert_eq!(run_style(&red).as_deref(), Some("color:#ff0000;text-decoration:underline line-through"));
+        assert_eq!(lum_attr(&red), Some("mid"));
+        let underline = TextRun { underline: true, ..run("x") };
+        assert_eq!(run_style(&underline).as_deref(), Some("text-decoration:underline"));
+        // Whatever the three bytes are, the style has no way to carry anything but the fixed shape.
+        for byte in 0..=255u8 {
+            let styled = TextRun { color: Some(Rgb(byte, 255 - byte, byte)), highlight: Some(Rgb(byte, byte, 1)), ..run("x") };
+            let style = run_style(&styled).unwrap();
+            assert!(!style.contains("url(") && !style.contains('"') && !style.contains('<') && !style.contains('\\'));
+            assert_eq!(style.matches(';').count(), 1);
+            assert!(style.split(';').all(|part| part.starts_with("color:#") || part.starts_with("background-color:#")));
+        }
+    }
+
+    #[test]
+    fn a_highlighted_run_gets_a_readable_text_colour() {
+        let yellow = Rgb(255, 255, 0);
+        let plain = TextRun { highlight: Some(yellow), ..run("x") };
+        assert_eq!(run_style(&plain).as_deref(), Some("color:#000000;background-color:#ffff00"));
+        // A white own colour on yellow has no contrast: the readable one wins.
+        let white = TextRun { color: Some(Rgb(255, 255, 255)), highlight: Some(yellow), ..run("x") };
+        assert_eq!(run_style(&white).as_deref(), Some("color:#000000;background-color:#ffff00"));
+        // A dark blue on yellow has contrast and is kept; it needs no theme reset.
+        let blue = TextRun { color: Some(Rgb(0, 0, 128)), highlight: Some(yellow), ..run("x") };
+        assert_eq!(run_style(&blue).as_deref(), Some("color:#000080;background-color:#ffff00"));
+        assert_eq!(lum_attr(&blue), None);
+    }
+
+    #[test]
+    fn a_cell_fill_style_and_its_text_colour() {
+        let none = TableCell { runs: vec![run("a")], fill: None };
+        assert_eq!(cell_style(&none), None);
+        let navy = TableCell { runs: vec![run("a")], fill: Some(Rgb(0, 0, 128)) };
+        assert_eq!(cell_style(&navy).as_deref(), Some("background-color:#000080;color:#ffffff"));
+        // A run keeps its colour only if it reads on the fill.
+        let on_navy = TextRun { color: Some(Rgb(255, 255, 0)), ..run("a") };
+        assert_eq!(run_style_on(&on_navy, navy.fill).as_deref(), Some("color:#ffff00"));
+        assert_eq!(lum_attr_on(&on_navy, navy.fill), None);
+        let black_on_navy = TextRun { color: Some(Rgb(0, 0, 0)), ..run("a") };
+        assert_eq!(run_style_on(&black_on_navy, navy.fill), None);
+    }
+
+    #[test]
+    fn a_heading_colour_is_a_fixed_style() {
+        assert_eq!(heading_style(None), None);
+        assert_eq!(heading_style(Some(Rgb(1, 2, 3))).as_deref(), Some("color:#010203"));
     }
 }
