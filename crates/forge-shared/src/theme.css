@@ -546,6 +546,13 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .picker-item .menu-key { margin-left: auto; color: var(--fg-muted); font-size: 11px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; padding: 2px 4px 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-hover); font-size: 12px; }
+.attach-row { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-bottom: 4px; }
+.attach-card { position: relative; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box; width: 110px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); font-size: 12px; text-align: left; }
+.attach-thumb { width: 100%; height: 64px; border-radius: 6px; object-fit: cover; background: var(--bg-hover); }
+.attach-name { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; line-height: 1.3; color: var(--fg); }
+.attach-tag { align-self: flex-start; padding: 0 6px; border-radius: 999px; background: var(--bg-hover); color: var(--fg-muted); font-size: 10px; font-weight: 600; line-height: 16px; }
+.attach-remove { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border: none; border-radius: 999px; background: var(--bg-card); color: var(--fg-muted); cursor: pointer; font: inherit; line-height: 1; }
+.attach-remove:hover { color: var(--fg); background: var(--bg-hover); }
 .trust-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; margin: 6px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); outline: none; }
 .trust-question { font-size: 13px; font-weight: 600; }
 .trust-path { font-size: 12px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

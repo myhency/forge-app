@@ -8,7 +8,8 @@ use crate::card_view::CardView;
 use crate::diff::diff_for_tool_call;
 use crate::diff_view::DiffView;
 use crate::links::{known_paths, render_markdown_linked};
-use crate::message::{attachment_label, ToolDetail};
+use crate::attachment_card::AttachmentCard;
+use crate::message::ToolDetail;
 use crate::question::AnswerPair;
 use crate::relative_time::relative_time;
 use crate::tool_summary::elapsed_label;
@@ -81,6 +82,13 @@ fn TurnItem(
             let text = message.text();
             rsx! {
                 div { class: "turn-user",
+                    if !message.attachments.is_empty() {
+                        div { class: "attach-row",
+                            for (index, attachment) in message.attachments.iter().enumerate() {
+                                AttachmentCard { key: "{index}", attachment: attachment.clone(), on_remove: None }
+                            }
+                        }
+                    }
                     if !message.cards.is_empty() {
                         div { class: "cards-row",
                             for (index, card) in message.cards.iter().enumerate() {
@@ -90,13 +98,6 @@ fn TurnItem(
                     }
                     if !text.is_empty() {
                         div { class: "user-bubble", "{text}" }
-                    }
-                    if !message.attachments.is_empty() {
-                        div { class: "chips",
-                            for attachment in message.attachments.iter() {
-                                span { class: "chip", title: "{attachment.path.display()}", "{attachment_label(attachment)}" }
-                            }
-                        }
                     }
                 }
             }

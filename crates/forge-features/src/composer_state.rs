@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
-use forge_domain::{with_cards, Attachment, AttachmentKind, Card};
+use forge_domain::{with_cards, Attachment, Card};
+use forge_entities::AttachmentCard;
 
 use crate::attachments::{add_attachments, check_attachments, folder_label, with_folder_hints};
 use crate::blocking::run_blocking;
@@ -292,16 +293,10 @@ pub fn ComposerChips() -> Element {
     rsx! {
         div { class: "chips",
             for (index, attachment) in attachments.iter().enumerate() {
-                span { key: "a{index}", class: "chip", title: "{attachment.path.display()}",
-                    span { class: "chip-kind", if attachment.kind == AttachmentKind::Image { "🖼" } else { "📄" } }
-                    span { class: "chip-name", "{attachment.file_name()}" }
-                    button {
-                        class: "chip-remove",
-                        r#type: "button",
-                        "aria-label": "Remove",
-                        onclick: move |_| composer.remove_attachment(index),
-                        "×"
-                    }
+                AttachmentCard {
+                    key: "a{index}",
+                    attachment: attachment.clone(),
+                    on_remove: Some(EventHandler::new(move |_| composer.remove_attachment(index))),
                 }
             }
             for (index, folder) in folders.iter().enumerate() {
@@ -361,6 +356,7 @@ pub fn TrustCard() -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_domain::AttachmentKind;
 
     fn image() -> Attachment {
         Attachment { path: "/x/a.png".into(), kind: AttachmentKind::Image }

@@ -1,3 +1,4 @@
+mod attachment_card;
 mod background;
 mod clipboard;
 mod card_view;
@@ -30,6 +31,7 @@ mod turn_view;
 mod usage_card;
 mod usage_view;
 
+pub use attachment_card::{card_label, thumbnail_allowed, thumbnail_data_url, AttachmentCard, THUMBNAIL_LIMIT};
 pub use clipboard::copy_text;
 pub use card_view::{modal_title, CardView};
 pub use background::{background_ref, card_key, clear_key, end_label, error_text, finished_pill_label, pill_label, task_cards, task_lists, TaskEnd, TaskLists, valid_output_path, BackgroundRef, TaskCard, WorkflowCard, TASK_OUTPUT_TAIL};

@@ -1779,6 +1779,7 @@ dependencies = [
 name = "forge-entities"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "dioxus",
  "forge-domain",
  "forge-shared",
