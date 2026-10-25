@@ -5,15 +5,14 @@ use std::collections::HashMap;
 use forge_ports::{FileContent, FilesError, Slide, SlideDeck, SlideItem};
 use quick_xml::events::{BytesStart, Event};
 
-use crate::office_zip::{self, attribute, cut, failed};
+use crate::office_zip::{self, attribute, cut, failed, TextBudget};
 
 const MAX_SLIDES: usize = 200;
-// One slide keeps at most this many lines.
+// One slide keeps at most this many lines, and all slides together at most `MAX_TOTAL_ITEMS`.
 const MAX_ITEMS: usize = 2_000;
+const MAX_TOTAL_ITEMS: usize = 10_000;
 // One title or line keeps at most this many characters.
 const MAX_TEXT_CHARS: usize = 10_000;
-// The list of slides and its relationships are small; a real one is a few kilobytes.
-const SMALL_PART_BYTES: u64 = 5 * 1024 * 1024;
 // All the slides together may unpack to at most this, whatever each one declares.
 const TOTAL_SLIDE_BYTES: u64 = 200 * 1024 * 1024;
 // The whole file stops being read after this many XML events, so a deck of millions of empty tags
@@ -30,19 +29,28 @@ const SLIDE_RELATIONSHIP: &str = "/slide";
 /// than the five predefined ones and character references are not resolved, and nothing outside the
 /// file's own zip is opened. Layouts, masters and speaker notes are never read.
 pub(crate) fn read_pptx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
+    read_pptx_with(bytes, EVENT_LIMIT)
+}
+
+fn read_pptx_with(bytes: Vec<u8>, mut budget: usize) -> Result<FileContent, FilesError> {
     let mut archive = office_zip::open(&bytes, "This presentation is password-protected, so it cannot be shown.")?;
     let too_big = || failed("This presentation unpacks to too much data to show.");
     if office_zip::declares_too_much(&mut archive, office_zip::PART_BYTES) {
         return Err(too_big());
     }
-    let mut budget = EVENT_LIMIT;
-    let presentation = office_zip::read_part(&mut archive, "ppt/presentation.xml", SMALL_PART_BYTES, too_big)?
+    let presentation = office_zip::read_part(&mut archive, "ppt/presentation.xml", office_zip::SMALL_PART_BYTES, too_big)?
         .ok_or_else(|| failed("This file has no ppt/presentation.xml, so it is not a PowerPoint presentation."))?;
     let (listed, mut truncated) = slide_ids(&presentation, &mut budget)?;
-    let targets = match office_zip::read_part(&mut archive, "ppt/_rels/presentation.xml.rels", SMALL_PART_BYTES, too_big)? {
-        Some(rels) => slide_targets(&rels, &mut budget)?,
+    let targets = match office_zip::read_part(&mut archive, "ppt/_rels/presentation.xml.rels", office_zip::SMALL_PART_BYTES, too_big)? {
+        Some(rels) => {
+            let (targets, ran_out) = slide_targets(&rels, &mut budget)?;
+            truncated |= ran_out;
+            targets
+        }
         None => HashMap::new(),
     };
+    let mut text = TextBudget::new(office_zip::TOTAL_TEXT_BYTES);
+    let mut items_left = MAX_TOTAL_ITEMS;
     let mut slides = Vec::new();
     let mut unpacked = 0u64;
     for (index, id) in listed.iter().enumerate() {
@@ -57,8 +65,10 @@ pub(crate) fn read_pptx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
         if unpacked > TOTAL_SLIDE_BYTES {
             return Err(too_big());
         }
-        let mut reader = SlideReader::default();
+        // Once the totals are spent a slide still shows its title, and its first line marks the cut.
+        let mut reader = SlideReader { text, items_left, ..SlideReader::default() };
         truncated |= office_zip::walk(&xml, &mut budget, |event| reader.event(event))? | reader.truncated;
+        (text, items_left) = (reader.text, reader.items_left);
         slides.push(Slide { number: index + 1, title: reader.title, items: reader.items });
     }
     Ok(FileContent::Slides(SlideDeck { slides, truncated }))
@@ -70,11 +80,12 @@ fn relationship_id(tag: &BytesStart<'_>) -> Option<String> {
     tag.attributes().flatten().find(|attribute| attribute.key.local_name().as_ref() == "id" && attribute.key.prefix().is_some()).map(|attribute| attribute.value.into_owned())
 }
 
-// The relationship ids of `p:sldIdLst` in slide order, cut to the slide cap (true when it cut).
+// The relationship ids of `p:sldIdLst` in slide order, cut to the slide cap (true when it cut or
+// the event budget ran out).
 fn slide_ids(xml: &[u8], budget: &mut usize) -> Result<(Vec<String>, bool), FilesError> {
     let mut ids = Vec::new();
     let mut cut_off = false;
-    office_zip::walk(xml, budget, |event| {
+    let ran_out = office_zip::walk(xml, budget, |event| {
         if let Event::Empty(tag) | Event::Start(tag) = event {
             if tag.local_name().as_ref() == "sldId" {
                 if ids.len() == MAX_SLIDES {
@@ -86,13 +97,13 @@ fn slide_ids(xml: &[u8], budget: &mut usize) -> Result<(Vec<String>, bool), File
         }
         true
     })?;
-    Ok((ids, cut_off))
+    Ok((ids, cut_off || ran_out))
 }
 
-// The target of each slide relationship, by relationship id.
-fn slide_targets(xml: &[u8], budget: &mut usize) -> Result<HashMap<String, String>, FilesError> {
+// The target of each slide relationship, by relationship id, and whether the event budget ran out.
+fn slide_targets(xml: &[u8], budget: &mut usize) -> Result<(HashMap<String, String>, bool), FilesError> {
     let mut targets = HashMap::new();
-    office_zip::walk(xml, budget, |event| {
+    let ran_out = office_zip::walk(xml, budget, |event| {
         if let Event::Empty(tag) | Event::Start(tag) = event {
             let is_slide = attribute(&tag, "Type").is_some_and(|kind| kind.ends_with(SLIDE_RELATIONSHIP));
             if let (true, Some(id), Some(target)) = (tag.local_name().as_ref() == "Relationship" && is_slide, attribute(&tag, "Id"), attribute(&tag, "Target")) {
@@ -101,7 +112,7 @@ fn slide_targets(xml: &[u8], budget: &mut usize) -> Result<HashMap<String, Strin
         }
         true
     })?;
-    Ok(targets)
+    Ok((targets, ran_out))
 }
 
 // The zip name of a relationship target, which is relative to `ppt/` unless it starts with a slash.
@@ -145,6 +156,9 @@ struct SlideReader {
     in_title_shape: bool,
     paragraph: Option<Paragraph>,
     in_text: bool,
+    // What the whole deck may still keep, handed from slide to slide.
+    text: TextBudget,
+    items_left: usize,
 }
 
 impl SlideReader {
@@ -224,7 +238,8 @@ impl SlideReader {
     fn add_text(&mut self, text: &str) {
         let Some(paragraph) = self.paragraph.as_mut() else { return };
         let (kept, was_cut) = cut(text, MAX_TEXT_CHARS - paragraph.chars);
-        self.truncated |= was_cut;
+        let (kept, over_budget) = self.text.take(kept);
+        self.truncated |= was_cut | over_budget;
         paragraph.chars += kept.chars().count();
         paragraph.text.push_str(kept);
     }
@@ -238,6 +253,11 @@ impl SlideReader {
             return true;
         }
         if self.in_title_shape && !self.title_taken {
+            // The text is already counted in the budget; the joining space is not.
+            if self.title.as_ref().is_some_and(|title| !title.is_empty()) && self.text.take(" ").1 {
+                self.truncated = true;
+                return true;
+            }
             let title = self.title.get_or_insert_with(String::new);
             let joined = if title.is_empty() { text.to_string() } else { format!(" {text}") };
             let room = MAX_TEXT_CHARS - title.chars().count();
@@ -246,10 +266,11 @@ impl SlideReader {
             title.push_str(kept);
             return true;
         }
-        if self.items.len() == MAX_ITEMS {
+        if self.items.len() == MAX_ITEMS || self.items_left == 0 {
             self.truncated = true;
             return false;
         }
+        self.items_left -= 1;
         self.items.push(SlideItem { level: paragraph.level, text: text.to_string() });
         true
     }
@@ -429,6 +450,48 @@ mod tests {
         let filler = format!("<!--{}-->", "x".repeat(5 * 1024 * 1024));
         let bytes = zip_of(&[("ppt/presentation.xml", format!("<p:presentation>{filler}</p:presentation>"))]);
         assert!(failure(bytes).contains("too much"));
+    }
+
+    #[test]
+    fn all_slides_together_keep_at_most_10000_items() {
+        // Six slides of 2,000 lines each: no slide is over its own cap.
+        let lines: Vec<(u8, &str)> = vec![(0, "x"); 2_000];
+        let full = deck(pptx(&vec![shape(None, &lines); 6]));
+        assert_eq!(full.slides.iter().map(|slide| slide.items.len()).sum::<usize>(), 10_000);
+        assert!(full.truncated);
+        let fits = deck(pptx(&vec![shape(None, &lines); 5]));
+        assert_eq!((fits.slides.iter().map(|slide| slide.items.len()).sum::<usize>(), fits.truncated), (10_000, false));
+    }
+
+    #[test]
+    fn all_text_together_keeps_at_most_8_mb() {
+        let long = "a".repeat(10_000);
+        let lines: Vec<(u8, &str)> = vec![(0, long.as_str()); 100];
+        let text_bytes = |deck: &SlideDeck| -> usize {
+            deck.slides.iter().map(|slide| slide.title.as_ref().map_or(0, String::len) + slide.items.iter().map(|item| item.text.len()).sum::<usize>()).sum()
+        };
+        let over = deck(pptx(&vec![[shape(Some("title"), &[(0, long.as_str())]), shape(None, &lines)].concat(); 9]));
+        assert!(text_bytes(&over) <= office_zip::TOTAL_TEXT_BYTES, "{}", text_bytes(&over));
+        assert!(text_bytes(&over) > office_zip::TOTAL_TEXT_BYTES - 10_000);
+        assert!(over.truncated);
+        let fits = deck(pptx(&vec![shape(None, &lines); 8]));
+        assert_eq!((text_bytes(&fits), fits.truncated), (8_000_000, false));
+    }
+
+    #[test]
+    fn running_out_of_events_in_the_list_of_slides_marks_the_deck_cut() {
+        let bytes = pptx(&[shape(None, &[(0, "x")])]);
+        let Ok(FileContent::Slides(starved)) = read_pptx_with(bytes.clone(), 3) else { panic!("not slides") };
+        assert!(starved.truncated);
+        let Ok(FileContent::Slides(fed)) = read_pptx_with(bytes, 5000) else { panic!("not slides") };
+        assert_eq!((fed.slides.len(), fed.truncated), (1, false));
+    }
+
+    #[test]
+    fn a_doctype_entity_is_not_expanded() {
+        let slide = format!(r#"<?xml version="1.0"?><!DOCTYPE p:sld [<!ENTITY e "EXPANDED">]><p:sld {NS}><p:cSld><p:spTree>{}</p:spTree></p:cSld></p:sld>"#, shape(None, &[(0, "a&e;b")]));
+        let deck = deck(pptx_of(&[("rId1", "slides/slide1.xml")], &[("ppt/slides/slide1.xml", slide)]));
+        assert_eq!((deck.slides, deck.truncated), (vec![self::slide(1, None, vec![item(0, "ab")])], false));
     }
 
     fn read_file(name: &str, bytes: &[u8]) -> Result<FileContent, FilesError> {
