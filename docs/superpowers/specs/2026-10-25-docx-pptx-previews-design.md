@@ -59,7 +59,16 @@ Port type names and fields beyond the shape above, how numbering is resolved, th
 
 Types (forge-ports `files_port.rs`): `DocumentView`, `DocBlock`, `TextRun`, `SlideDeck`, `Slide`, `SlideItem` as in the spec. Readers are `docx.rs` and `pptx.rs` in forge-adapter-files; the guards they share are in `office_zip.rs`. Views are in `files_office.rs` (forge-widgets).
 
-Guards (`office_zip.rs`, shared by both readers): at most 10,000 zip parts; each part declares at most 100 MB and is read with a bounded real read; an XML event budget of 5,000,000 per file; `presentation.xml` and its rels at most 5 MB each; 200 MB of slide XML in total across slides. Caps on content: 2,000 blocks (docx), 200 slides, 2,000 items per slide (not in the original spec), tables 100 rows x 20 columns, 10,000 characters per paragraph or item. The xlsx check (`check_xlsx`) now also refuses a zip with more than 10,000 parts.
+Guards (`office_zip.rs`, shared by both readers):
+- at most 10,000 zip parts;
+- each part declares at most 100 MB and is read with a bounded real read;
+- one XML event budget of 5,000,000 per file, shared by all the parts read (docx styles, numbering and body; pptx list of slides, rels and slides). Running out marks the file cut;
+- the small parts (docx `styles.xml` and `numbering.xml`, pptx `presentation.xml` and its rels) at most 5 MB each, checked against the declared size and the real read. One over this fails with the "too much data" text;
+- 200 MB of slide XML in total across slides.
+
+Caps on content:
+- per item: 2,000 blocks (docx), 200 slides, 2,000 items per slide (not in the original spec), tables of 100 rows x 20 columns, 10,000 characters per paragraph or item;
+- totals per file (added after the final review, which found that a 215 KB docx gave 4,000,000 cells): at most 50,000 table cells across all tables of a docx, 10,000 slide items across all slides of a pptx, and 8 MB of kept text in either reader (`TextBudget`). A budget that runs out stops adding and marks the file cut. The xlsx check (`check_xlsx`) now also refuses a zip with more than 10,000 parts.
 
 docx details beyond the spec:
 - A heading is found by style NAME in `styles.xml` (`heading 1`...), not only by id, because Korean Word uses ids such as `1` and `2`.
@@ -85,7 +94,5 @@ Not checked: dark mode, the horizontal scrolling by actually dragging, the `мќјл
 - Images in docx and pptx, headers/footers, footnotes, comments, speaker notes, slide thumbnails, copy of a table, search inside the preview, `.doc`/`.ppt`/OpenDocument.
 - Heading detection by style name does not follow `basedOn`.
 - A docx style chain longer than 10 `basedOn` steps loses its list.
-- The styles and numbering parts are read with the 100 MB limit (a few MB would do).
-- Attribute parsing is quadratic on a hostile tag.
-- No tests for `EVENT_LIMIT`, a DOCTYPE entity, deep nesting, or a duplicate `sldId`.
+- No tests for deep nesting or a duplicate `sldId`. The event budget and a DOCTYPE entity (not expanded) are now tested in both readers.
 - The message "unpacks to too much data" is also used for the part-count refusal.
