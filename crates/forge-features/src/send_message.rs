@@ -87,6 +87,10 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
             draft.set(String::new());
             return;
         }
+        // `/btw` with nothing after it asks nothing: it is neither sent nor cleared.
+        if forge_entities::is_bare_btw(&draft.read()) {
+            return;
+        }
         // `/btw question` is asked on the side: it is not sent as a message.
         let side = btw_question(&draft.read()).map(str::to_string);
         if let Some(question) = side {

@@ -48,6 +48,8 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
     let running = snapshot.phase == forge_application::Phase::Running;
     let rows = rewind_rows(&snapshot.session.messages);
     let state = snapshot.rewind.clone().filter(|state| Some(&state.message_uuid) == picked.read().as_ref());
+    // Before the oldest message there is no conversation to open.
+    let has_earlier = picked.read().as_ref().and_then(|uuid| rows.iter().position(|row| &row.uuid == uuid)).is_some_and(|at| at + 1 < rows.len());
     let label = picked.read().as_ref().and_then(|uuid| rows.iter().find(|row| &row.uuid == uuid)).map(|row| row.label.clone());
 
     rsx! {
@@ -68,7 +70,11 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
                         Some((false, outcome)) => rsx! { "{preview_text(outcome)}" },
                     }
                 }
-                div { class: "card-modal-note", {tr!("The conversation opens as a new session. This session stays as it is.")} }
+                if has_earlier {
+                    div { class: "card-modal-note", {tr!("The conversation opens as a new session. This session stays as it is.")} }
+                } else {
+                    div { class: "card-modal-note", {tr!("Nothing came before this message, so there is no conversation to open.")} }
+                }
                 if running {
                     div { class: "card-modal-note", {tr!("Wait for Claude to finish, or stop it first.")} }
                 }
@@ -87,7 +93,7 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
                     button {
                         class: "rewind-button",
                         r#type: "button",
-                        disabled: running || snapshot.claude_session_id.is_none(),
+                        disabled: running || !has_earlier || snapshot.claude_session_id.is_none(),
                         onclick: {
                             let (project, session, title) = (snapshot.project_path.clone(), snapshot.claude_session_id.clone(), snapshot.session.title.clone());
                             move |_| {
@@ -102,7 +108,7 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
                     button {
                         class: "rewind-button",
                         r#type: "button",
-                        disabled: running || snapshot.claude_session_id.is_none() || !state.as_ref().is_some_and(|s| s.dry_run && s.outcome.as_ref().is_some_and(|o| o.can_rewind && !o.files.is_empty())),
+                        disabled: running || !has_earlier || snapshot.claude_session_id.is_none() || !state.as_ref().is_some_and(|s| s.dry_run && s.outcome.as_ref().is_some_and(|o| o.can_rewind && !o.files.is_empty())),
                         onclick: move |_| {
                             if let (Some(handle), Some(uuid)) = (workspace.handle(id), picked.peek().clone()) {
                                 then_fork.set(true);

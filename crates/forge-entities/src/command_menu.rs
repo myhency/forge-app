@@ -40,6 +40,11 @@ pub fn btw_question(input: &str) -> Option<&str> {
     (!question.is_empty()).then_some(question)
 }
 
+/// Whether the message is `/btw` with no question.
+pub fn is_bare_btw(input: &str) -> bool {
+    input.trim() == "/btw"
+}
+
 /// Whether the message is just `/rewind`.
 pub fn is_rewind(input: &str) -> bool {
     input.trim() == "/rewind"
@@ -131,6 +136,12 @@ mod tests {
 
     fn cmd(name: &str) -> SlashCommand {
         SlashCommand { name: name.to_string(), description: None, argument_hint: None }
+    }
+
+    #[test]
+    fn a_btw_without_a_question_is_bare() {
+        assert!(is_bare_btw("/btw") && is_bare_btw(" /btw \n"));
+        assert!(!is_bare_btw("/btw hi") && !is_bare_btw("/btwx"));
     }
 
     #[test]

@@ -448,6 +448,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Not a Git repository", "Git 저장소가 아님"),
     ("Not a git repository", "Git 저장소가 아닙니다"),
     ("Not measured yet — it appears after the first reply.", "아직 측정되지 않았습니다. 첫 응답 후에 표시됩니다."),
+    ("Nothing came before this message, so there is no conversation to open.", "이 메시지 앞에는 아무것도 없어서 열 대화가 없습니다."),
     ("Nothing found.", "찾은 항목이 없습니다."),
     ("Nothing has run yet.", "아직 실행된 적이 없습니다."),
     ("Nothing matches.", "일치하는 항목이 없습니다."),

@@ -93,7 +93,7 @@ The user may reorder. Sized as the smallest useful slice of each area.
 | 57 | Files for office work (Plan 57A and 57B built, checked in the real window) | NEW-02 | Round 28: xlsx viewer (grid, formula bar, sheet tabs), result paths in chat as links, `결과물` card (OTH-14) |
 | 57C | Office formatting (built, window check pending) | NEW-09 | Round 30: docx runs keep colour, highlight, underline, strike (the red changed numbers), heading colours, table cell formatting; refresh an open Office tab when the file changes |
 | 57D | Office rendering | NEW-10 | Round 30: pages and slide images like the desktop app (a bundled renderer; spike first: docx-preview style HTML for docx, a pptx renderer with charts) |
-| 58 | Composer | NEW-03, NEW-04, NEW-11 | 58A built (cards and the `@` file mention), window check pending; 58B left (queue card, slash list, `/compact` result, `/btw`, `/rewind`) |
+| 58 | Composer | NEW-03, NEW-04, NEW-11 | 58A built (cards and the `@` file mention), window check pending; 58B built 2026-10-26 (queue card, slash list, `/compact` line, `/btw`, `/rewind`; spec `2026-10-26-queue-slash-compact-btw-rewind-design.md`) |
 | 59 | Status look | NEW-05, NEW-06, NEW-07 | Rounds 27 and 28: stop shown as stopped (not failed or done), generated session title, details panel opens on first send with branch row and fuller context rows, background task row, message action row, end card buttons |
 | 60 | Small fixes | NEW-08 | pycache and binary entries in Changes, repeated path in the permission card, file card look, the Dioxus Copy value warning, panels covering the chat in a narrow window |
 
