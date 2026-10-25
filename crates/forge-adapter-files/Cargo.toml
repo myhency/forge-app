@@ -9,7 +9,10 @@ calamine = { version = "0.37.0", default-features = false, features = ["chrono"]
 chrono = { version = "=0.4.45", default-features = false, features = ["std"] }
 dunce = "1"
 forge-ports = { path = "../forge-ports" }
+quick-xml = "0.42"
 regex = "1"
+# The version calamine uses, so the workbook can be checked before calamine opens it.
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 cfb = "0.15.0"

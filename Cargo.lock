@@ -1659,10 +1659,12 @@ dependencies = [
  "chrono",
  "dunce",
  "forge-ports",
+ "quick-xml 0.42.0",
  "regex",
  "rust_xlsxwriter",
  "tempfile",
  "tokio",
+ "zip 9.1.0",
 ]
 
 [[package]]

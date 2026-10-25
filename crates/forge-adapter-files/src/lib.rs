@@ -126,7 +126,70 @@ fn read_sheet(book: &mut Xlsx<Cursor<Vec<u8>>>, name: String) -> Result<Sheet, F
     Ok(Sheet { name, rows, truncated })
 }
 
+// No part of a workbook may unpack to more than this, so a small zip cannot fill the memory.
+const XLSX_PART_BYTES: u64 = 100 * 1024 * 1024;
+// The shortest shared string a writer makes (`<si><t/></si>`) is longer than this many bytes.
+const SHARED_STRING_MIN_BYTES: u64 = 7;
+
+// A whole number written as digits (an optional `+` and leading zeros allowed), saturating, so
+// it reads every form calamine reads.
+fn declared_count(value: &[u8]) -> Option<u64> {
+    let digits = value.trim_ascii();
+    let digits = digits.strip_prefix(b"+").unwrap_or(digits);
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    Some(digits.iter().fold(0u64, |total, digit| total.saturating_mul(10).saturating_add(u64::from(digit - b'0'))))
+}
+
+// The `uniqueCount` on the shared strings table's `sst` tag, if it has one.
+fn unique_count(part: impl std::io::Read) -> Option<u64> {
+    let mut xml = quick_xml::Reader::from_reader(std::io::BufReader::new(part));
+    let mut buffer = Vec::new();
+    loop {
+        match xml.read_event_into(&mut buffer).ok()? {
+            quick_xml::events::Event::Start(tag) | quick_xml::events::Event::Empty(tag) if tag.local_name().as_ref() == "sst" => {
+                let attribute = tag.attributes().flatten().find(|attribute| attribute.key.as_ref() == "uniqueCount")?;
+                return declared_count(attribute.value.as_bytes());
+            }
+            quick_xml::events::Event::Eof => return None,
+            _ => buffer.clear(),
+        }
+    }
+}
+
+// Refuses a workbook calamine would choke on: a part that unpacks to more than XLSX_PART_BYTES
+// (the size the zip declares, and for the shared strings the size it really unpacks to), or a
+// shared strings table that claims more strings than its size can hold, since calamine reserves
+// room for the claimed count up front and a huge one aborts the process. A file that is not a zip
+// is left to calamine, which says what it is (a password-protected workbook, say).
+fn check_xlsx(bytes: &[u8]) -> Result<(), FilesError> {
+    let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else { return Ok(()) };
+    let too_big = || FilesError::Failed("This workbook unpacks to too much data to show.".to_string());
+    for index in 0..archive.len() {
+        let Ok(part) = archive.by_index_raw(index) else { continue };
+        if part.size() > XLSX_PART_BYTES {
+            return Err(too_big());
+        }
+        if !part.name().is_ok_and(|name| name.to_ascii_lowercase().ends_with("sharedstrings.xml")) {
+            continue;
+        }
+        drop(part);
+        let Ok(part) = archive.by_index(index) else { continue };
+        let unpacked = std::io::copy(&mut std::io::Read::take(part, XLSX_PART_BYTES + 1), &mut std::io::sink()).unwrap_or(0);
+        if unpacked > XLSX_PART_BYTES {
+            return Err(too_big());
+        }
+        let Ok(part) = archive.by_index(index) else { continue };
+        if unique_count(part).is_some_and(|claimed| claimed > unpacked / SHARED_STRING_MIN_BYTES) {
+            return Err(FilesError::Failed("This workbook's list of strings is damaged.".to_string()));
+        }
+    }
+    Ok(())
+}
+
 fn read_xlsx(bytes: Vec<u8>) -> Result<FileContent, FilesError> {
+    check_xlsx(&bytes)?;
     let mut book: Xlsx<_> = Xlsx::new(Cursor::new(bytes)).map_err(failed)?;
     let mut sheets = Vec::new();
     for name in book.sheet_names() {
@@ -985,6 +1048,67 @@ mod tests {
         book.add_worksheet().write_string(0, 0, "x").unwrap();
         book.save(dir.path().join("UP.XLSX")).unwrap();
         assert_eq!(cell_texts(&read_sheets(&dir, "UP.XLSX")[0]), vec![vec!["x"]]);
+    }
+
+    // A hand-made workbook of one sheet `S` with this sheet XML body and shared strings table.
+    fn hand_made_xlsx(sheet_data: &str, shared_strings: &str) -> Vec<u8> {
+        use std::io::Write;
+        let parts = [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>"#.to_string(),
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#.to_string(),
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#.to_string(),
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>"#.to_string(),
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                format!(r#"<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{sheet_data}</sheetData></worksheet>"#),
+            ),
+            ("xl/sharedStrings.xml", shared_strings.to_string()),
+        ];
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, text) in parts {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(text.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    fn shared_strings(attributes: &str) -> String {
+        format!(r#"<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" {attributes}><si><t>x</t></si></sst>"#)
+    }
+
+    const ONE_STRING_CELL: &str = r#"<row r="1"><c r="A1" t="s"><v>0</v></c></row>"#;
+
+    #[test]
+    fn a_shared_strings_table_that_claims_far_more_strings_than_it_holds_is_refused() {
+        // calamine reserves room for the claimed count up front: 2^50 aborts the process and
+        // u64::MAX panics, so the file must be refused before calamine sees it.
+        for claimed in ["1125899906842624", "18446744073709551615", "+99999999999", "000000000000000000000000099999999999"] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join("s.xlsx"), hand_made_xlsx(ONE_STRING_CELL, &shared_strings(&format!(r#"count="1" uniqueCount="{claimed}""#)))).unwrap();
+            let Err(FilesError::Failed(message)) = LocalFiles::new().read(dir.path(), "s.xlsx") else { panic!("{claimed} was not refused") };
+            assert!(!message.is_empty());
+        }
+    }
+
+    #[test]
+    fn an_honest_shared_strings_table_is_read_even_when_its_strings_are_used_many_times() {
+        // `count` counts uses, not strings, so a big `count` is not a reason to refuse.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("s.xlsx"), hand_made_xlsx(ONE_STRING_CELL, &shared_strings(r#"count="99999999999" uniqueCount="1""#))).unwrap();
+        assert_eq!(cell_texts(&read_sheets(&dir, "s.xlsx")[0]), vec![vec!["x"]]);
     }
 }
 
