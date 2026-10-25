@@ -15,7 +15,7 @@ pub fn OutsideFileDialog() -> Element {
         return rsx! {};
     };
     let name = Path::new(&path).file_name().map_or_else(|| path.clone(), |name| name.to_string_lossy().to_string());
-        let close = move || {
+    let close = move || {
         workspace.close_outside_file();
         refocus_workspace();
     };
@@ -54,7 +54,7 @@ pub fn OutsideFileDialog() -> Element {
                         }
                     }
                     Button {
-                        label: tr!("Show in Finder"),
+                        label: forge_features::show_in_file_manager(),
                         onclick: move |_| {
                             workspace.reveal(Path::new(&reveal_path));
                             close();
