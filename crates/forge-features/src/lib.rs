@@ -50,6 +50,7 @@ mod routines;
 mod routines_state;
 mod search;
 mod queued_card;
+mod side_card;
 mod send_message;
 mod section_status;
 mod settings;

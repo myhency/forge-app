@@ -29,6 +29,7 @@ pub(crate) enum Call {
     Permission(String, PermissionDecision, Option<String>),
     Answer(String, std::collections::BTreeMap<String, String>),
     Interrupt,
+    SideQuestion(String, String),
     StopTask(String),
     SetMode(PermissionMode),
     SetModel(Option<String>),
@@ -155,6 +156,11 @@ impl SidecarPort for FakeSidecar {
 
     async fn interrupt(&self) -> Result<(), SidecarError> {
         self.control.record(Call::Interrupt);
+        Ok(())
+    }
+
+    async fn ask_side_question(&self, request_id: String, question: String) -> Result<(), SidecarError> {
+        self.control.record(Call::SideQuestion(request_id, question));
         Ok(())
     }
 

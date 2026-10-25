@@ -130,6 +130,14 @@ pub enum SidecarEvent {
     TaskProgress { task_id: String, total_tokens: u64 },
     /// The SDK's guess at what the person will ask next.
     PromptSuggestion { text: String },
+    /// The answer to `ask_side_question`: the text, or why there is none.
+    SideAnswer {
+        request_id: String,
+        #[serde(default)]
+        answer: Option<String>,
+        #[serde(default)]
+        error: Option<String>,
+    },
     /// The conversation was compacted (by `/compact` or because the context was full).
     Compacted {
         #[serde(default)]
@@ -170,6 +178,9 @@ pub trait SidecarPort: Send + Sync {
         answers: BTreeMap<String, String>,
     ) -> Result<(), SidecarError>;
     async fn interrupt(&self) -> Result<(), SidecarError>;
+    /// Asks a question about the conversation without adding it to the session (`/btw`). The answer
+    /// comes back as a `SideAnswer` event with the same `request_id`.
+    async fn ask_side_question(&self, request_id: String, question: String) -> Result<(), SidecarError>;
     /// Stops one background task. A refusal comes back as a `SettingFailed` event.
     async fn stop_task(&self, task_id: String) -> Result<(), SidecarError>;
     /// Asks for a mode change in the running session. The answer comes back as an event.

@@ -821,6 +821,10 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .question-footer { display: flex; align-items: center; gap: 8px; }
 .perm-button.disabled, .perm-button:disabled { opacity: 0.45; cursor: default; }
 
+.side-card { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-hover); font-size: 13px; max-height: 40vh; overflow-y: auto; }
+.side-head { display: flex; align-items: center; gap: 8px; }
+.side-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); font-size: 12px; }
+.side-note { color: var(--fg-muted); }
 .queue-card { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-hover); font-size: 12px; }
 .queue-title { color: var(--fg-muted, var(--fg)); }
 .queue-row { display: flex; align-items: center; gap: 4px; }

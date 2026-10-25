@@ -43,6 +43,7 @@ pub enum SidecarCommand {
     },
     AnswerQuestion { id: String, permission_request_id: String, answers: BTreeMap<String, String> },
     Interrupt { id: String },
+    SideQuestion { id: String, request_id: String, question: String },
     StopTask { id: String, task_id: String },
     SetPermissionMode { id: String, mode: WireMode },
     /// `None` is the SDK's default model.

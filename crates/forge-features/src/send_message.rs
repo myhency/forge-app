@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_domain::split_cards;
+use forge_domain::{split_cards, SlashCommand};
+use forge_entities::{arrange_commands, btw_question};
 use forge_shared::{tr, Button, ButtonKind};
 
 use crate::cards::line_count;
@@ -10,7 +11,17 @@ use crate::suggestion::{composer_placeholder, suggestion_to_accept};
 
 use crate::command_box::CommandTextArea;
 use crate::queued_card::QueuedCard;
+use crate::side_card::SideCard;
 use crate::workspace::use_workspace;
+
+// Commands Forge answers itself, listed with the SDK's.
+fn local_commands() -> Vec<SlashCommand> {
+    vec![SlashCommand {
+        name: "btw".to_string(),
+        description: Some(tr!("Ask a quick question without adding it to the session").to_string()),
+        argument_hint: Some(tr!("[question]").to_string()),
+    }]
+}
 
 /// The message box of an open session: Enter sends, Shift+Enter adds a line, and while a turn is
 /// running a Stop button interrupts it.
@@ -66,6 +77,15 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
         if workspace.session_is_moving(id) {
             return;
         }
+        // `/btw question` is asked on the side: it is not sent as a message.
+        let side = btw_question(&draft.read()).map(str::to_string);
+        if let Some(question) = side {
+            if let Some(handle) = workspace.handle(id) {
+                handle.ask_side(question);
+                draft.set(String::new());
+            }
+            return;
+        }
         let cards = workspace.take_cards(id, line_count);
         let Some(outgoing) = composer.take_for_send(&draft.read(), &cards) else {
             // Refused (a chip could not be read): the cards stay where they were.
@@ -109,12 +129,13 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                 div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
             }
             ComposerCards { id }
+            SideCard { id }
             QueuedCard { id, draft }
             ComposerChips {}
             TrustCard {}
             CommandTextArea {
                 value: draft(),
-                commands: view.map(|view| view.read().commands.clone()).unwrap_or_default(),
+                commands: arrange_commands(&view.map(|view| view.read().commands.clone()).unwrap_or_default(), local_commands()),
                 placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, if running { tr!("⏎ to send, ⌘⏎ to queue and send later") } else { tr!("Message Claude…") }),
                 disabled: !can_send,
                 open_token: composer.popup_token(),

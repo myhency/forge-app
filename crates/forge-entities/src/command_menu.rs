@@ -29,6 +29,35 @@ pub fn filter_commands<'a>(commands: &'a [SlashCommand], query: &str) -> Vec<&'a
     prefix
 }
 
+/// The question of a `/btw` message: the text after `/btw `, trimmed. `None` for any other text and
+/// for `/btw` with nothing after it.
+pub fn btw_question(input: &str) -> Option<&str> {
+    let rest = input.trim_start().strip_prefix("/btw")?;
+    if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let question = rest.trim();
+    (!question.is_empty()).then_some(question)
+}
+
+/// The names the desktop app lists first, in its order.
+const DESKTOP_ORDER: [&str; 13] =
+    ["btw", "ultrareview", "rewind", "fork", "subtask", "mcp", "plugin", "feedback", "model", "effort", "fast", "plan", "permissions"];
+
+/// The list the menu shows: Forge's own commands (`local`, which win over a same-named one from the
+/// SDK), then the desktop app's usual ones in its order, then everything else as the SDK gave it.
+pub fn arrange_commands(sdk: &[SlashCommand], local: Vec<SlashCommand>) -> Vec<SlashCommand> {
+    let mut all = local;
+    for command in sdk {
+        if !all.iter().any(|known| known.name == command.name) {
+            all.push(command.clone());
+        }
+    }
+    // A stable sort: the names the desktop knows go first, the rest keep their place.
+    all.sort_by_key(|command| DESKTOP_ORDER.iter().position(|name| *name == command.name).unwrap_or(DESKTOP_ORDER.len()));
+    all
+}
+
 /// The selected row after moving `delta` rows, wrapping around; always inside `0..len` (0 for no rows).
 pub fn move_selection(current: usize, len: usize, delta: isize) -> usize {
     if len == 0 {
@@ -97,6 +126,27 @@ mod tests {
 
     fn cmd(name: &str) -> SlashCommand {
         SlashCommand { name: name.to_string(), description: None, argument_hint: None }
+    }
+
+    #[test]
+    fn btw_takes_the_text_after_it_as_the_question() {
+        assert_eq!(btw_question("/btw what is 2+2?"), Some("what is 2+2?"));
+        assert_eq!(btw_question("  /btw   spaced  "), Some("spaced"));
+        assert_eq!(btw_question("/btw"), None, "nothing to ask");
+        assert_eq!(btw_question("/btw "), None);
+        assert_eq!(btw_question("/btwx hi"), None, "another command");
+        assert_eq!(btw_question("tell me /btw"), None);
+        assert_eq!(btw_question("/btw\nline two"), Some("line two"));
+    }
+
+    #[test]
+    fn arranged_commands_put_forges_own_first_then_the_desktops_usual_ones_then_the_rest() {
+        let sdk = vec![cmd("design"), cmd("model"), cmd("compact"), cmd("btw"), cmd("mcp"), cmd("code-review")];
+        let local = vec![SlashCommand { name: "btw".to_string(), description: Some("side".to_string()), argument_hint: None }, cmd("rewind")];
+        let names: Vec<_> = arrange_commands(&sdk, local).into_iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["btw", "rewind", "mcp", "model", "design", "compact", "code-review"]);
+        let kept = arrange_commands(&sdk, vec![SlashCommand { name: "btw".to_string(), description: Some("side".to_string()), argument_hint: None }]);
+        assert_eq!(kept[0].description.as_deref(), Some("side"), "Forge's own entry replaces the SDK's");
     }
 
     #[test]

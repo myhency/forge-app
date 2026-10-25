@@ -1275,6 +1275,50 @@ describe("SidecarSession", () => {
     expect(events.some((e) => e.type === "error")).toBe(false);
   });
 
+  it("answers a side question without waiting for it, and says why when it cannot", async () => {
+    const events: SidecarEvent[] = [];
+    let release!: () => void;
+    const asked: string[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle(
+        (async function* () {
+          await new Promise<void>((resolve) => (release = resolve));
+        })(),
+        {
+          askSideQuestion: async (question: string) => {
+            asked.push(question);
+            if (question === "boom") throw new Error("model said no");
+            if (question === "empty") return null;
+            return { response: "41" };
+          },
+        },
+      );
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    const started = session.handle(startCommand);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await session.handle({ type: "side_question", id: "1", request_id: "s1", question: "number?" });
+    await session.handle({ type: "side_question", id: "2", request_id: "s2", question: "boom" });
+    await session.handle({ type: "side_question", id: "3", request_id: "s3", question: "empty" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release();
+    await started;
+
+    expect(asked).toEqual(["number?", "boom", "empty"]);
+    expect(events.filter((e) => e.type === "side_answer")).toEqual([
+      { type: "side_answer", request_id: "s1", answer: "41" },
+      { type: "side_answer", request_id: "s2", error: "model said no" },
+      { type: "side_answer", request_id: "s3" },
+    ]);
+  });
+
+  it("reports a side question as failed when the SDK has no such call", async () => {
+    const events: SidecarEvent[] = [];
+    const session = new SidecarSession(() => toQueryHandle((async function* () {})()), (e) => events.push(e));
+    await session.handle({ type: "side_question", id: "1", request_id: "s1", question: "q" });
+    expect(events).toContainEqual({ type: "side_answer", request_id: "s1", error: "this version of the SDK cannot answer side questions" });
+  });
+
   it("answers stop_task with setting_failed when no session is running", async () => {
     const events: SidecarEvent[] = [];
     const session = new SidecarSession(() => toQueryHandle((async function* () {})()), (e) => events.push(e));

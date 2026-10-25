@@ -159,6 +159,11 @@ impl SidecarPort for SidecarProcess {
         self.send_command(SidecarCommand::Interrupt { id })
     }
 
+    async fn ask_side_question(&self, request_id: String, question: String) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::SideQuestion { id, request_id, question })
+    }
+
     async fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), SidecarError> {
         let id = self.next_id();
         self.send_command(SidecarCommand::SetPermissionMode { id, mode: mode.into() })

@@ -75,6 +75,23 @@ pub struct LiveSessionView {
     /// Messages the person asked to send once the running turn ends, oldest first. The session
     /// sends the front one when a turn ends.
     pub queued: Vec<QueuedMessage>,
+    /// The last `/btw` question and its answer; it is not part of the session.
+    pub side_question: Option<SideQuestion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SideQuestion {
+    pub id: String,
+    pub question: String,
+    pub answer: SideAnswer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SideAnswer {
+    Pending,
+    Done(String),
+    /// Why there is no answer (empty when the SDK gave none).
+    Failed(String),
 }
 
 /// A message waiting for the running turn to end.
@@ -92,6 +109,10 @@ pub enum LiveCommand {
     /// Takes the queued message at `index` out; `send_now` sends it into the running turn instead
     /// of dropping it.
     Dequeue { index: usize, send_now: bool },
+    /// Asks about the conversation without adding the question to it (`/btw`).
+    AskSide { question: String },
+    /// Closes the `/btw` card.
+    DismissSide,
     AddDirectories(Vec<PathBuf>),
     /// Makes the folder the session's working folder from the next start on.
     MoveTo(PathBuf),
@@ -139,6 +160,15 @@ impl LiveSessionHandle {
     /// Holds a message until the running turn ends (see `LiveCommand::Queue`).
     pub fn queue(&self, text: String, attachments: Vec<Attachment>) {
         let _ = self.commands.send(LiveCommand::Queue { text, attachments });
+    }
+
+    /// `/btw`: a question about the conversation that is not added to it.
+    pub fn ask_side(&self, question: String) {
+        let _ = self.commands.send(LiveCommand::AskSide { question });
+    }
+
+    pub fn dismiss_side(&self) {
+        let _ = self.commands.send(LiveCommand::DismissSide);
     }
 
     /// Removes the queued message at `index` (`send_now`: and sends it now).
@@ -310,6 +340,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         commands: init.commands,
         allowed_rules: Vec::new(),
         queued: Vec::new(),
+        side_question: None,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
     let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -1101,6 +1132,45 @@ mod tests {
         assert_eq!(after.phase, Phase::Running, "the sent one starts a turn of its own");
         assert!(control.calls().contains(&Call::Send("second".to_string())));
         assert!(!control.calls().contains(&Call::Send("third".to_string())));
+    }
+
+    #[tokio::test]
+    async fn a_side_question_is_asked_without_a_turn_and_its_answer_fills_the_card() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.ask_side("what was the number?".to_string());
+        let asked = wait_for(&mut view, "the question to show", |v| v.side_question.is_some()).await;
+        let side = asked.side_question.unwrap();
+        assert_eq!(side.question, "what was the number?");
+        assert_eq!(side.answer, SideAnswer::Pending);
+        assert_eq!(asked.phase, Phase::Idle, "a side question starts no turn");
+        assert!(asked.session.messages.is_empty(), "and adds nothing to the session");
+        assert!(control.calls().contains(&Call::SideQuestion(side.id.clone(), "what was the number?".to_string())));
+
+        control.push(SidecarEvent::SideAnswer { request_id: "stale".to_string(), answer: Some("no".to_string()), error: None });
+        control.push(SidecarEvent::SideAnswer { request_id: side.id.clone(), answer: Some("41".to_string()), error: None });
+        let answered = wait_for(&mut view, "the answer", |v| matches!(&v.side_question, Some(q) if q.answer != SideAnswer::Pending)).await;
+        assert_eq!(answered.side_question.unwrap().answer, SideAnswer::Done("41".to_string()));
+
+        handle.dismiss_side();
+        wait_for(&mut view, "the card to go", |v| v.side_question.is_none()).await;
+    }
+
+    #[tokio::test]
+    async fn a_side_question_that_fails_says_why() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.ask_side("q".to_string());
+        let asked = wait_for(&mut view, "the question to show", |v| v.side_question.is_some()).await;
+        let id = asked.side_question.unwrap().id;
+        control.push(SidecarEvent::SideAnswer { request_id: id, answer: None, error: Some("boom".to_string()) });
+        let failed = wait_for(&mut view, "the failure", |v| matches!(&v.side_question, Some(q) if q.answer != SideAnswer::Pending)).await;
+        assert_eq!(failed.side_question.unwrap().answer, SideAnswer::Failed("boom".to_string()));
     }
 
     #[tokio::test]

@@ -29,6 +29,7 @@ export type QueryHandle = AsyncIterable<unknown> & {
   applyFlagSettings?: (settings: Record<string, unknown>) => Promise<unknown>;
   supportedModels?: () => Promise<unknown>;
   stopTask?: (taskId: string) => Promise<void>;
+  askSideQuestion?: (question: string) => Promise<{ response: string; synthetic?: boolean } | null>;
 };
 
 export type QueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => QueryHandle;
@@ -213,6 +214,10 @@ export class SidecarSession {
           await this.activeQuery.interrupt();
         }
         return;
+      case "side_question":
+        // Not awaited: the answer takes a model call and Stop must still get through meanwhile.
+        void this.askSide(command.request_id, command.question);
+        return;
       case "set_permission_mode":
         await this.change(
           (query) => query.setPermissionMode?.(toSdkPermissionMode(command.mode)),
@@ -255,6 +260,24 @@ export class SidecarSession {
         }
         this.pendingPermissions.clear();
         return;
+    }
+  }
+
+  private async askSide(requestId: string, question: string): Promise<void> {
+    const query = this.activeQuery;
+    if (!query?.askSideQuestion) {
+      this.emit({ type: "side_answer", request_id: requestId, error: "this version of the SDK cannot answer side questions" });
+      return;
+    }
+    try {
+      const result = await query.askSideQuestion(question);
+      this.emit(
+        result && result.response !== ""
+          ? { type: "side_answer", request_id: requestId, answer: result.response }
+          : { type: "side_answer", request_id: requestId },
+      );
+    } catch (err) {
+      this.emit({ type: "side_answer", request_id: requestId, error: err instanceof Error ? err.message : String(err) });
     }
   }
 

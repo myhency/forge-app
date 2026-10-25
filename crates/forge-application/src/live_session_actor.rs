@@ -6,7 +6,7 @@ use forge_ports::{SidecarEvent, SidecarFactoryPort, SidecarPort, StartSessionPar
 use tokio::sync::{mpsc, watch};
 
 use crate::event::{apply_sidecar_event, SessionUpdate};
-use crate::live_session::{LiveCommand, LiveSessionView, Phase, QueuedMessage};
+use crate::live_session::{LiveCommand, LiveSessionView, Phase, QueuedMessage, SideAnswer, SideQuestion};
 use crate::use_cases::{AnswerQuestionUseCase, ApprovePermissionUseCase, StopTaskUseCase, ExtensionsUseCase, InterruptTurnUseCase, SendMessageUseCase};
 
 const CANNOT_SEND: &str = "the project folder no longer exists, so this session can only be viewed";
@@ -39,6 +39,8 @@ pub(crate) struct Actor {
     /// `last_error` holds the SDK's refusal of a mode, model or effort change. A later change that the SDK
     /// accepts clears it; any other message stays.
     refusal_shown: bool,
+    /// How many side questions were asked; names the next one.
+    side_count: u32,
     /// Tasks the task set dropped before their finish notification arrived; the notification takes
     /// their tokens and time from here.
     vanished: std::collections::HashMap<String, forge_domain::RunningTask>,
@@ -72,6 +74,7 @@ impl Actor {
             env: forge_domain::EnvVars::default(),
             warm_only: false,
             refusal_shown: false,
+            side_count: 0,
             vanished: Default::default(),
             dirty: false,
         }
@@ -124,6 +127,11 @@ impl Actor {
                         self.send(message.text, message.attachments).await;
                     }
                 }
+            }
+            LiveCommand::AskSide { question } => self.ask_side(question).await,
+            LiveCommand::DismissSide => {
+                self.view.side_question = None;
+                self.dirty = true;
             }
             LiveCommand::AddDirectories(directories) => self.add_directories(directories).await,
             LiveCommand::MoveTo(folder) => self.move_to(folder).await,
@@ -254,6 +262,33 @@ impl Actor {
             self.discard_sidecar(shutdown).await;
         } else {
             self.fail(message, shutdown).await;
+        }
+    }
+
+    // `/btw`: the SDK answers from the conversation so far and keeps the question out of it. A
+    // session with no sidecar yet gets one (it resumes the conversation) first.
+    async fn ask_side(&mut self, question: String) {
+        if !self.view.can_send {
+            self.view.last_error = Some(CANNOT_SEND.to_string());
+            self.refusal_shown = false;
+            self.dirty = true;
+            return;
+        }
+        self.side_count += 1;
+        let id = format!("side-{}", self.side_count);
+        self.view.side_question = Some(SideQuestion { id: id.clone(), question: question.clone(), answer: SideAnswer::Pending });
+        self.dirty = true;
+        if self.sidecar.is_none() {
+            self.warm_only = true;
+            if let Err(message) = self.start_sidecar().await {
+                self.warm_only = false;
+                self.view.side_question = Some(SideQuestion { id, question, answer: SideAnswer::Failed(message) });
+                return;
+            }
+        }
+        let Some(sidecar) = self.sidecar.clone() else { return };
+        if let Err(error) = sidecar.ask_side_question(id.clone(), question.clone()).await {
+            self.view.side_question = Some(SideQuestion { id, question, answer: SideAnswer::Failed(error.to_string()) });
         }
     }
 
@@ -524,6 +559,14 @@ impl Actor {
                 // The sidecar is still alive and cleaning up, so it is asked to exit and awaited.
                 self.sidecar_gone("the session ended unexpectedly".to_string(), true).await;
             }
+            SessionUpdate::SideAnswer { request_id, result } => {
+                if let Some(side) = self.view.side_question.as_mut().filter(|side| side.id == request_id) {
+                    side.answer = match result {
+                        Ok(text) => SideAnswer::Done(text),
+                        Err(reason) => SideAnswer::Failed(reason),
+                    };
+                }
+            }
             SessionUpdate::MessageDelta { .. }
             | SessionUpdate::ThinkingDelta { .. }
             | SessionUpdate::Compacted
@@ -567,6 +610,10 @@ impl Actor {
     }
 
     async fn discard_sidecar(&mut self, shutdown: bool) {
+        // Its answer will not come.
+        if let Some(side) = self.view.side_question.as_mut().filter(|side| side.answer == SideAnswer::Pending) {
+            side.answer = SideAnswer::Failed(String::new());
+        }
         self.view.background_tasks.clear();
         self.vanished.clear();
         if let Some(sidecar) = self.sidecar.take() {

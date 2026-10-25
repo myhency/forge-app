@@ -63,6 +63,8 @@ export type SidecarCommand =
   | { type: "answer_question"; id: string; permission_request_id: string; answers: Record<string, string> }
   | { type: "stop_task"; id: string; task_id: string }
   | { type: "interrupt"; id: string }
+  // A question about the conversation that is not added to it (/btw); answered by a side_answer.
+  | { type: "side_question"; id: string; request_id: string; question: string }
   | { type: "set_permission_mode"; id: string; mode: WirePermissionMode }
   | { type: "set_model"; id: string; model: string | null }
   | { type: "set_effort"; id: string; effort: WireEffort | null }
@@ -118,6 +120,8 @@ export type SidecarEvent =
   | { type: "prompt_suggestion"; text: string }
   // The conversation was compacted; the token counts before and after, when the SDK says.
   | { type: "compacted"; pre_tokens?: number; post_tokens?: number }
+  // The answer to a side_question: the text, or why there is none.
+  | { type: "side_answer"; request_id: string; answer?: string; error?: string }
   // The models the SDK lists for this session and the effort levels each takes; sent once after the start.
   | { type: "models_available"; models: WireAvailableModel[] }
   | { type: "setting_failed"; message: string }

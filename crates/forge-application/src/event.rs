@@ -8,6 +8,7 @@ pub enum SessionUpdate {
     ThinkingDelta { text: String },
     /// A compaction line was added to the transcript.
     Compacted,
+    SideAnswer { request_id: String, result: Result<String, String> },
     ToolCallStarted { tool_call: ToolCall },
     ToolCallCompleted { tool_call_id: String },
     PermissionRequested(PermissionRequest),
@@ -67,6 +68,13 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             }
             SessionUpdate::MessageDelta { text: text.clone() }
         }
+        SidecarEvent::SideAnswer { request_id, answer, error } => SessionUpdate::SideAnswer {
+            request_id: request_id.clone(),
+            result: match answer {
+                Some(text) => Ok(text.clone()),
+                None => Err(error.clone().unwrap_or_default()),
+            },
+        },
         SidecarEvent::Compacted { pre_tokens, post_tokens } => {
             match open_assistant_message(session) {
                 Some(message) => message.push_compacted(*pre_tokens, *post_tokens),

@@ -275,6 +275,7 @@ mod tests {
             commands: Vec::new(),
             allowed_rules: Vec::new(),
             queued: Vec::new(),
+            side_question: None,
         }
     }
 
