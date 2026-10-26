@@ -15,6 +15,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
     let changes_open = workspace.dock(id).is_open(Panel::Changes);
     let details_open = workspace.dock(id).is_open(Panel::Details);
     let files_open = workspace.dock(id).is_open(Panel::Files);
+    let tasks_open = workspace.dock(id).is_open(Panel::Tasks);
     let preview_open = workspace.dock(id).is_open(Panel::Preview);
     rsx! {
         div { class: "pane-tools",
@@ -145,6 +146,17 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                     open.set(false);
                                 },
                                 span { {tr!("Files")} }
+                            }
+                            button {
+                                class: "picker-item",
+                                r#type: "button",
+                                role: "menuitemcheckbox",
+                                "aria-checked": "{tasks_open}",
+                                onclick: move |_| {
+                                    workspace.change_dock(id, |dock| dock.toggle(Panel::Tasks));
+                                    open.set(false);
+                                },
+                                span { {tr!("Background tasks")} }
                             }
                         }
                         if split {
