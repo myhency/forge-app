@@ -700,6 +700,8 @@ export class SidecarSession {
               output: extractTextContent(block.content),
               is_error: Boolean(block.is_error),
             });
+          } else if (block?.type === "text" && typeof block.text === "string" && block.text.startsWith("[Request interrupted by user")) {
+            this.emit({ type: "interrupted" });
           }
         }
         return;

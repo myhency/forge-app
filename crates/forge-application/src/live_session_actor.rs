@@ -603,6 +603,7 @@ impl Actor {
             | SessionUpdate::ThinkingDelta { .. }
             | SessionUpdate::Compacted
             | SessionUpdate::UserMessageId
+            | SessionUpdate::Stopped
             | SessionUpdate::ToolCallStarted { .. }
             | SessionUpdate::ToolCallCompleted { .. } => {}
         }

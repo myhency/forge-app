@@ -193,6 +193,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .turn-footer { display: flex; align-items: center; gap: 6px; color: var(--fg-muted); font-size: 12px; margin-top: -6px; }
+.stopped-line { margin: 4px 0 8px; color: var(--fg-muted); font-size: 12px; }
+.row-stopped { color: var(--fg-muted); font-size: 12px; }
 .compacted-line { display: flex; align-items: center; gap: 10px; margin: 8px 0; color: var(--fg-muted); font-size: 12px; }
 .compacted-line::before, .compacted-line::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
 .thinking { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-muted); font-size: 13px; font-style: italic; margin: 0 0 8px; padding-left: 10px; border-left: 2px solid var(--border); }

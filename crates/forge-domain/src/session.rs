@@ -19,6 +19,16 @@ pub struct Session {
     pub finished_tasks: Vec<crate::FinishedTask>,
 }
 
+/// The text the SDK writes as a user line when the person stops a turn.
+pub fn is_interrupt_text(text: &str) -> bool {
+    text.trim_start().starts_with("[Request interrupted by user")
+}
+
+/// What a refused or stopped tool call says in its result.
+pub fn is_denial_text(text: &str) -> bool {
+    text.trim_start().starts_with("The user doesn't want to proceed with this tool use")
+}
+
 /// What the SDK said about putting the files back (or about what that would change).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RewindOutcome {
@@ -54,6 +64,8 @@ pub enum Block {
     Tool(ToolCall),
     /// The conversation was compacted here; the token counts before and after, when known.
     Compacted { before: Option<u64>, after: Option<u64> },
+    /// The person stopped the turn here.
+    Stopped,
 }
 
 /// One message, its parts in the order they happened: an assistant reply can be text, a tool call,
@@ -142,6 +154,12 @@ impl Message {
         match self.blocks.last_mut() {
             Some(Block::Thinking(existing)) => existing.push_str(text),
             _ => self.blocks.push(Block::Thinking(text.to_string())),
+        }
+    }
+
+    pub fn push_stopped(&mut self) {
+        if !matches!(self.blocks.last(), Some(Block::Stopped)) {
+            self.blocks.push(Block::Stopped);
         }
     }
 

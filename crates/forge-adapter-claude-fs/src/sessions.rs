@@ -295,6 +295,16 @@ fn push_user_message(session: &mut Session, text: String) {
 // A user line the SDK wrote for a task that ended is not something the person said: it goes into
 // the finished list. A line that says another origin (a person typed the block) stays a message.
 fn push_user_text(session: &mut Session, line: &Value, text: String) {
+    // The line the SDK writes when the person stops a turn is not something they said.
+    if forge_domain::is_interrupt_text(&text) {
+        if !matches!(session.messages.last(), Some(m) if m.role == MessageRole::Assistant) {
+            session.messages.push(Message::new(MessageRole::Assistant));
+        }
+        if let Some(message) = session.messages.last_mut() {
+            message.push_stopped();
+        }
+        return;
+    }
     let origin = line.pointer("/origin/kind").and_then(Value::as_str);
     if origin.is_none() || origin == Some("task-notification") {
         if let Some(task) = forge_domain::parse_task_notification(&text) {
@@ -1935,6 +1945,7 @@ mod tests {
                 Block::Thinking(text) => format!("thinking:{text}"),
                 Block::Tool(call) => format!("tool:{}", call.id),
                 Block::Compacted { .. } => "compacted".to_string(),
+                Block::Stopped => "stopped".to_string(),
             })
             .collect();
         assert_eq!(shape, vec!["text:first", "tool:t-1", "text:between", "tool:t-2", "text:last"]);
@@ -2380,6 +2391,26 @@ mod tests {
         let last = session.messages.last().unwrap();
         assert_eq!(last.role, MessageRole::Assistant);
         assert_eq!(last.blocks, vec![Block::Compacted { before: Some(21702), after: Some(4290) }]);
+    }
+
+    #[tokio::test]
+    async fn load_session_shows_a_stop_line_not_a_message_for_the_interrupt_text() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("run it"),
+                assistant_block(json!({"type": "text", "text": "starting"})),
+                json!({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user for tool use]"}]}}),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        assert_eq!(session.messages.len(), 2, "the interrupt text is not a user message");
+        assert_eq!(session.messages[1].blocks, vec![Block::Text("starting".to_string()), Block::Stopped]);
     }
 
     #[tokio::test]

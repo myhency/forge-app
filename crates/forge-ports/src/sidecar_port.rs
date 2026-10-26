@@ -138,6 +138,8 @@ pub enum SidecarEvent {
         #[serde(default)]
         error: Option<String>,
     },
+    /// The person stopped the turn (the SDK wrote its interrupt line).
+    Interrupted,
     /// The id the sidecar gave the user message it just handed to the SDK.
     UserMessage { uuid: String },
     /// The answer to `rewind_files`.

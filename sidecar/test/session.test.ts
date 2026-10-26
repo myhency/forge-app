@@ -1185,6 +1185,18 @@ describe("SidecarSession", () => {
     expect(events.filter((e) => e.type === "task_progress")).toEqual([{ type: "task_progress", task_id: "w1", total_tokens: 99100 }]);
   });
 
+  it("tells the parent when the SDK writes its interrupt line", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "user", message: { role: "user", content: [{ type: "text", text: "[Request interrupted by user for tool use]" }] } };
+        yield { type: "user", message: { role: "user", content: [{ type: "text", text: "an ordinary echo" }] } };
+      })());
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+    expect(events.filter((e) => e.type === "interrupted")).toEqual([{ type: "interrupted" }]);
+  });
+
   it("forwards a compaction with the token counts the SDK reports", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>

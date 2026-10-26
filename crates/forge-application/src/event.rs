@@ -12,6 +12,8 @@ pub enum SessionUpdate {
     RewindResult { request_id: String, outcome: forge_domain::RewindOutcome },
     /// A user message got its id.
     UserMessageId,
+    /// A stop line was added to the transcript.
+    Stopped,
     ToolCallStarted { tool_call: ToolCall },
     ToolCallCompleted { tool_call_id: String },
     PermissionRequested(PermissionRequest),
@@ -70,6 +72,17 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
                 }
             }
             SessionUpdate::MessageDelta { text: text.clone() }
+        }
+        SidecarEvent::Interrupted => {
+            match open_assistant_message(session) {
+                Some(message) => message.push_stopped(),
+                None => {
+                    let mut message = Message::new(MessageRole::Assistant);
+                    message.push_stopped();
+                    session.messages.push(message);
+                }
+            }
+            SessionUpdate::Stopped
         }
         SidecarEvent::UserMessage { uuid } => {
             // The messages go to the SDK in the order they were pushed: the id belongs to the oldest
@@ -332,6 +345,15 @@ mod tests {
     }
 
     #[test]
+    fn an_interrupt_adds_one_stop_block_to_the_open_message() {
+        let mut session = empty_session();
+        apply_sidecar_event(&mut session, &SidecarEvent::AssistantDelta { text: "working".to_string() });
+        assert_eq!(apply_sidecar_event(&mut session, &SidecarEvent::Interrupted), SessionUpdate::Stopped);
+        apply_sidecar_event(&mut session, &SidecarEvent::Interrupted);
+        assert_eq!(session.messages[0].blocks, vec![forge_domain::Block::Text("working".to_string()), forge_domain::Block::Stopped]);
+    }
+
+    #[test]
     fn thinking_after_a_user_message_starts_an_assistant_message() {
         let mut session = empty_session();
         session.messages.push(Message::new(MessageRole::User));
@@ -440,6 +462,7 @@ mod tests {
                 forge_domain::Block::Thinking(_) => "thinking".to_string(),
                 forge_domain::Block::Tool(call) => format!("tool:{}", call.id),
                 forge_domain::Block::Compacted { .. } => "compacted".to_string(),
+                forge_domain::Block::Stopped => "stopped".to_string(),
             })
             .collect();
         assert_eq!(kinds, vec!["text:one two", "tool:t-1", "text:three"]);

@@ -35,6 +35,8 @@ pub struct ToolRow {
     /// Whether the call has a diff to show (a Write or Edit with a path and content).
     pub has_diff: bool,
     pub failed: bool,
+    /// The call was refused or the turn was stopped while it ran (shown as stopped, not failed).
+    pub stopped: bool,
     /// What a failed call said (a denial tells what was rejected); shown in red above the opened row.
     pub error: Option<String>,
 }
@@ -95,6 +97,8 @@ pub enum Item {
     Plan(PlanItem),
     /// The conversation was compacted here (token counts before and after, when known).
     Compacted { before: Option<u64>, after: Option<u64> },
+    /// The person stopped the turn here.
+    Stopped,
 }
 
 /// A plan Claude proposed, as the transcript shows it.
@@ -229,7 +233,9 @@ fn tool_row(call: &ToolCall) -> ToolRow {
         }
         ToolKind::Other => (call.name.clone(), summary.clone(), String::new()),
     };
-    ToolRow { call: call.clone(), kind, verb, subject, path, added, removed, has_diff, failed: tool_call_status(call) == ToolCallStatus::Failed, error: call.result.as_ref().filter(|result| result.is_error).map(|result| result.output.clone()) }
+    let error = call.result.as_ref().filter(|result| result.is_error).map(|result| result.output.clone());
+    let stopped = error.as_deref().is_some_and(forge_domain::is_denial_text);
+    ToolRow { call: call.clone(), kind, verb, subject, path, added, removed, has_diff, failed: tool_call_status(call) == ToolCallStatus::Failed && !stopped, stopped, error }
 }
 
 fn summarize(tools: &[&ToolRow], failed: usize) -> String {
@@ -372,6 +378,7 @@ fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<Too
         Block::Text(text) if !text.trim().is_empty() => items.push(Item::Text(text.clone())),
         Block::Thinking(text) if view.shows_thinking() && !text.trim().is_empty() => items.push(Item::Thinking(text.clone())),
         Block::Compacted { before, after } => items.push(Item::Compacted { before: *before, after: *after }),
+        Block::Stopped => items.push(Item::Stopped),
         _ => {}
     };
     if let Some(live) = live {
@@ -441,7 +448,9 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
         segment_start = index + 1;
     }
     push_segment(items, &blocks[segment_start..], &tool_rows[segment_start..], view, live);
-    if live.is_none() && items.len() > start {
+    // A turn that is only a compaction or a stop has nothing to copy.
+    let has_content = blocks.iter().any(|block| matches!(block, Block::Text(_) | Block::Tool(_) | Block::Thinking(_)));
+    if live.is_none() && items.len() > start && has_content {
         if let Some(card) = build_card(&tool_rows) {
             items.push(Item::FileCard(card));
         }
@@ -530,6 +539,7 @@ mod tests {
                 Item::Workflow(_) => "workflow",
                 Item::Plan(_) => "plan",
                 Item::Compacted { .. } => "compacted",
+                Item::Stopped => "stopped",
             })
             .collect()
     }
@@ -833,6 +843,30 @@ mod tests {
         let items = build_turns(&[Message::user("go"), assistant(vec![denied])], TranscriptView::Normal, None);
         let Row::Tool(row) = &activity(&items).rows[0] else { panic!() };
         assert_eq!(row.error.as_deref(), Some("The user doesn't want to proceed."));
+    }
+
+    #[test]
+    fn a_refused_call_is_stopped_not_failed_and_a_stop_line_has_no_footer() {
+        let refused = Block::Tool(ToolCall {
+            id: "t-1".to_string(),
+            name: "Bash".to_string(),
+            input: json!({"command": "sleep 40"}),
+            result: Some(ToolResult { output: "The user doesn't want to proceed with this tool use. The tool use was rejected".to_string(), is_error: true }),
+        });
+        let broke = Block::Tool(ToolCall {
+            id: "t-2".to_string(),
+            name: "Bash".to_string(),
+            input: json!({"command": "false"}),
+            result: Some(ToolResult { output: "exit 1".to_string(), is_error: true }),
+        });
+        let items = build_turns(&[Message::user("go"), assistant(vec![refused, broke, Block::Stopped])], TranscriptView::Normal, None);
+        let rows: Vec<_> = activity(&items).rows.iter().filter_map(|row| if let Row::Tool(tool) = row { Some((tool.stopped, tool.failed)) } else { None }).collect();
+        assert_eq!(rows, vec![(true, false), (false, true)]);
+        assert_eq!(activity(&items).failed, 1, "only the real failure counts");
+        assert!(items.iter().any(|item| matches!(item, Item::Stopped)));
+
+        let only_stop = build_turns(&[Message::user("go"), assistant(vec![Block::Stopped])], TranscriptView::Normal, None);
+        assert!(!only_stop.iter().any(|item| matches!(item, Item::Footer(_))), "nothing to copy");
     }
 
     #[test]

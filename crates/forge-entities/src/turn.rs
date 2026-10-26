@@ -117,6 +117,7 @@ fn TurnItem(
             let ended = finished.iter().find(|task| task.task_id == item.task_id).cloned();
             rsx! { WorkflowLine { item, running, ended, on_open_tasks } }
         }
+        Item::Stopped => rsx! { div { class: "stopped-line", {tr!("Stopped")} } },
         Item::Compacted { before, after } => {
             let label = compacted_label(before, after);
             rsx! { div { class: "compacted-line", span { "{label}" } } }
@@ -250,6 +251,9 @@ fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>
                 }
                 if tool.failed {
                     span { class: "row-failed", "failed" }
+                }
+                if tool.stopped {
+                    span { class: "row-stopped", {tr!("Stopped")} }
                 }
                 CountChips { added: tool.added, removed: tool.removed }
                 span { class: "chevron", "{chevron}" }
