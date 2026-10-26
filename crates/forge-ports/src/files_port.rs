@@ -72,6 +72,8 @@ pub struct DocumentView {
     pub blocks: Vec<DocBlock>,
     /// True when the block cap cut something off.
     pub truncated: bool,
+    /// The file itself, for the page view (`None` when it was not kept).
+    pub source: Option<std::sync::Arc<[u8]>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,6 +142,8 @@ pub struct SlideDeck {
     pub slides: Vec<Slide>,
     /// True when the slide cap cut something off.
     pub truncated: bool,
+    /// The file itself, for the slide pictures (`None` when it was not kept).
+    pub source: Option<std::sync::Arc<[u8]>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

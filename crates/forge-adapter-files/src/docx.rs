@@ -69,7 +69,7 @@ fn read_docx_with(bytes: Vec<u8>, mut budget: usize) -> Result<FileContent, File
     if office_zip::walk(&document, &mut budget, |event| body.event(event))? {
         body.truncated = true;
     }
-    Ok(FileContent::Document(DocumentView { blocks: body.blocks, truncated: body.truncated }))
+    Ok(FileContent::Document(DocumentView { blocks: body.blocks, truncated: body.truncated, source: None }))
 }
 
 // A `w:b` or `w:i` is on unless its `w:val` turns it off.

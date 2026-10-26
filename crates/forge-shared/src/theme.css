@@ -909,6 +909,13 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .sheet-tab.active { border-color: var(--border); background: var(--bg-card); color: var(--fg); }
 .office-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .office-toolbar { display: flex; justify-content: flex-end; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.office-pages { flex: 1; min-height: 0; overflow: auto; background: var(--bg-hover); }
+.office-pages .docx-wrapper { background: transparent !important; padding: 12px !important; }
+.office-pages .docx-wrapper > section.docx { margin-bottom: 12px !important; box-shadow: 0 1px 4px rgba(0,0,0,0.25) !important; }
+.office-pptx { padding: 12px; box-sizing: border-box; }
+.office-pptx .pptx-preview-wrapper { background: transparent !important; }
+.office-pptx .pptx-preview-wrapper > div { margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.25); }
+.office-toolbar .view-switch { margin-right: auto; }
 .office-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
 .office-page { max-width: 720px; margin: 0 auto; font-size: 13px; line-height: 1.6; color: var(--fg); overflow-wrap: anywhere; }
 .office-page p { margin: 0 0 8px; }

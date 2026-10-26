@@ -71,7 +71,7 @@ fn read_pptx_with(bytes: Vec<u8>, mut budget: usize) -> Result<FileContent, File
         (text, items_left) = (reader.text, reader.items_left);
         slides.push(Slide { number: index + 1, title: reader.title, items: reader.items });
     }
-    Ok(FileContent::Slides(SlideDeck { slides, truncated }))
+    Ok(FileContent::Slides(SlideDeck { slides, truncated, source: None }))
 }
 
 // The relationship id of a `sldId`: the attribute `r:id` (its prefix can be spelled otherwise), not

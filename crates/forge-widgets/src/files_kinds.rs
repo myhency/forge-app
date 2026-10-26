@@ -230,8 +230,8 @@ mod tests {
 
     #[test]
     fn kind_of_gives_a_document_tab_and_a_slides_tab() {
-        let doc = DocumentView { blocks: vec![], truncated: false };
-        let deck = SlideDeck { slides: vec![], truncated: true };
+        let doc = DocumentView { blocks: vec![], truncated: false, source: None };
+        let deck = SlideDeck { slides: vec![], truncated: true, source: None };
         assert_eq!(kind_of(FileContent::Document(doc.clone())), TabKind::Document(doc));
         assert_eq!(kind_of(FileContent::Slides(deck.clone())), TabKind::Slides(deck));
     }

@@ -112,7 +112,7 @@ fn window_config() -> Config {
                 .with_min_inner_size(LogicalSize::new(600.0, 400.0)),
         )
         .with_menu(app_menu())
-        .with_custom_head(format!("{}{}{}", forge_shared::ime_guard_head(), forge_shared::xterm_head(), forge_shared::editor_head()))
+        .with_custom_head(format!("{}{}{}{}", forge_shared::ime_guard_head(), forge_shared::xterm_head(), forge_shared::editor_head(), forge_shared::office_head()))
 }
 
 // Where Forge reads Claude's files. `FORGE_CLAUDE_HOME` points it at another Claude home (a test

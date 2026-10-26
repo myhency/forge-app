@@ -1,9 +1,12 @@
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use base64::Engine;
 
 use dioxus::prelude::*;
 use forge_features::offers_default_program;
 use forge_ports::{DocBlock, DocumentView, Rgb, Slide, SlideDeck, TableCell, TextRun};
-use forge_shared::tr;
+use forge_shared::{tr, Segmented};
 
 /// The marker of each block: `•` for a bullet item, `1.`, `2.` … for numbered items, `None` for other blocks.
 /// A numbered count runs on through deeper items and restarts after a block that is not a list item or after a shallower item.
@@ -207,10 +210,27 @@ pub fn DocumentViewer(doc: DocumentView, path: String, on_open: EventHandler<()>
     let doc = use_memo(use_reactive!(|doc| Rc::new(doc)));
     let doc = doc();
     let markers = list_markers(&doc.blocks);
+    // Pages first when the file was kept; the reading view when drawing the pages failed.
+    let mut mode = use_signal(|| if doc.source.is_some() { OfficeMode::Pages } else { OfficeMode::Reading });
+    let mut failure = use_signal(|| None::<String>);
     rsx! {
         div { class: "office-view", "aria-label": "{path}",
-            OfficeToolbar { path: path.clone(), on_open }
+            OfficeToolbar { path: path.clone(), on_open, modes: doc.source.is_some().then(|| (OfficeMode::Pages, tr!("Pages"))), mode: mode(), on_mode: move |next| mode.set(next) }
+            if let (OfficeMode::Pages, Some(source)) = (mode(), doc.source.clone()) {
+                OfficePages {
+                    key: "{path}",
+                    docx: true,
+                    source,
+                    on_failed: move |why: String| {
+                        failure.set(Some(why));
+                        mode.set(OfficeMode::Reading);
+                    },
+                }
+            } else {
             div { class: "office-scroll",
+                if let Some(why) = failure() {
+                    p { class: "office-note", {tr!("The page view could not be drawn ({why}). This is the reading view.", why = why)} }
+                }
                 div { class: "office-page",
                     for (index, block) in doc.blocks.iter().enumerate() {
                         match block {
@@ -253,6 +273,7 @@ pub fn DocumentViewer(doc: DocumentView, path: String, on_open: EventHandler<()>
                     }
                 }
             }
+            }
         }
     }
 }
@@ -262,10 +283,26 @@ pub fn DocumentViewer(doc: DocumentView, path: String, on_open: EventHandler<()>
 pub fn SlideViewer(deck: SlideDeck, path: String, on_open: EventHandler<()>) -> Element {
     let deck = use_memo(use_reactive!(|deck| Rc::new(deck)));
     let deck = deck();
+    let mut mode = use_signal(|| if deck.source.is_some() { OfficeMode::Pages } else { OfficeMode::Reading });
+    let mut failure = use_signal(|| None::<String>);
     rsx! {
         div { class: "office-view", "aria-label": "{path}",
-            OfficeToolbar { path: path.clone(), on_open }
+            OfficeToolbar { path: path.clone(), on_open, modes: deck.source.is_some().then(|| (OfficeMode::Pages, tr!("Slides"))), mode: mode(), on_mode: move |next| mode.set(next) }
+            if let (OfficeMode::Pages, Some(source)) = (mode(), deck.source.clone()) {
+                OfficePages {
+                    key: "{path}",
+                    docx: false,
+                    source,
+                    on_failed: move |why: String| {
+                        failure.set(Some(why));
+                        mode.set(OfficeMode::Reading);
+                    },
+                }
+            } else {
             div { class: "office-scroll",
+                if let Some(why) = failure() {
+                    p { class: "office-note", {tr!("The slide view could not be drawn ({why}). This is the reading view.", why = why)} }
+                }
                 div { class: "office-page",
                     for slide in deck.slides.iter() {
                         div { key: "{slide.number}", class: "office-slide",
@@ -288,15 +325,32 @@ pub fn SlideViewer(deck: SlideDeck, path: String, on_open: EventHandler<()>) -> 
                     }
                 }
             }
+            }
         }
     }
 }
 
 /// The slim bar above a document or a deck, with the default program's button on the right.
 #[component]
-fn OfficeToolbar(path: String, on_open: EventHandler<()>) -> Element {
+fn OfficeToolbar(
+    path: String,
+    on_open: EventHandler<()>,
+    /// The drawn view's value and label; `None` when there is no drawn view (a toolbar of one button).
+    modes: Option<(OfficeMode, &'static str)>,
+    mode: OfficeMode,
+    on_mode: EventHandler<OfficeMode>,
+) -> Element {
     rsx! {
         div { class: "office-toolbar",
+            if let Some((drawn, label)) = modes {
+                Segmented {
+                    label: tr!("View"),
+                    value: mode.value().to_string(),
+                    options: vec![(drawn.value().to_string(), label.to_string()), (OfficeMode::Reading.value().to_string(), tr!("Reading|view").to_string())],
+                    onchange: move |value: String| on_mode.call(OfficeMode::from_value(&value)),
+                }
+                span { class: "spacer" }
+            }
             if offers_default_program(&path) {
                 button { class: "files-kind-button", r#type: "button", onclick: move |_| on_open.call(()), {tr!("Open in the default program")} }
             }
@@ -304,9 +358,75 @@ fn OfficeToolbar(path: String, on_open: EventHandler<()>) -> Element {
     }
 }
 
+/// How a docx or pptx is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OfficeMode {
+    /// Pages or slides drawn like the program draws them.
+    Pages,
+    /// The text, in a reading column.
+    Reading,
+}
+
+impl OfficeMode {
+    fn value(self) -> &'static str {
+        match self {
+            OfficeMode::Pages => "pages",
+            OfficeMode::Reading => "reading",
+        }
+    }
+
+    fn from_value(value: &str) -> Self {
+        if value == "reading" { OfficeMode::Reading } else { OfficeMode::Pages }
+    }
+}
+
+static NEXT_HOST: AtomicU32 = AtomicU32::new(1);
+
+/// The drawn view of a docx (`docx`) or a pptx: the file goes to the page's own drawing code, which
+/// answers `ok` or why it could not.
+#[component]
+fn OfficePages(docx: bool, source: std::sync::Arc<[u8]>, on_failed: EventHandler<String>) -> Element {
+    let id = use_hook(|| format!("office-pages-{}", NEXT_HOST.fetch_add(1, Ordering::Relaxed)));
+    let host = id.clone();
+    rsx! {
+        div {
+            id: "{id}",
+            class: if docx { "office-pages office-docx" } else { "office-pages office-pptx" },
+            onmounted: move |_| {
+                let host = host.clone();
+                let source = source.clone();
+                spawn(async move {
+                    let encoded = base64::engine::general_purpose::STANDARD.encode(&*source);
+                    if !docx {
+                        // The slide library is big: it is loaded the first time a deck is drawn.
+                        if let Err(error) = document::eval(&format!("{} return 'ok';", forge_shared::pptx_library())).join::<String>().await {
+                            on_failed.call(error.to_string());
+                            return;
+                        }
+                    }
+                    let call = if docx { "forgeOffice.docx" } else { "forgeOffice.pptx" };
+                    let script = format!("return await {call}('{host}', '{encoded}');");
+                    match document::eval(&script).join::<String>().await {
+                        Ok(answer) if answer == "ok" => {}
+                        Ok(answer) => on_failed.call(answer.trim_start_matches("error: ").to_string()),
+                        Err(error) => on_failed.call(error.to_string()),
+                    }
+                });
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_mode_round_trips_through_its_value() {
+        assert_eq!(OfficeMode::from_value(OfficeMode::Pages.value()), OfficeMode::Pages);
+        assert_eq!(OfficeMode::from_value(OfficeMode::Reading.value()), OfficeMode::Reading);
+        assert_eq!(OfficeMode::from_value("anything else"), OfficeMode::Pages);
+    }
 
     fn item(level: u8, numbered: bool) -> DocBlock {
         DocBlock::ListItem { level, numbered, runs: vec![] }

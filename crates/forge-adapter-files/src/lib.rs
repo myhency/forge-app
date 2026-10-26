@@ -274,11 +274,20 @@ impl FilesPort for LocalFiles {
         if has_extension(&file, "xlsx") {
             return read_xlsx(bytes);
         }
+        // The page and slide views draw from the file itself: the reader's result keeps a copy.
         if has_extension(&file, "docx") {
-            return docx::read_docx(bytes);
+            let source: std::sync::Arc<[u8]> = std::sync::Arc::from(&bytes[..]);
+            return docx::read_docx(bytes).map(|content| match content {
+                FileContent::Document(doc) => FileContent::Document(forge_ports::DocumentView { source: Some(source), ..doc }),
+                other => other,
+            });
         }
         if has_extension(&file, "pptx") {
-            return pptx::read_pptx(bytes);
+            let source: std::sync::Arc<[u8]> = std::sync::Arc::from(&bytes[..]);
+            return pptx::read_pptx(bytes).map(|content| match content {
+                FileContent::Slides(deck) => FileContent::Slides(forge_ports::SlideDeck { source: Some(source), ..deck }),
+                other => other,
+            });
         }
         if let Some(mime) = image_mime(&file) {
             return Ok(FileContent::Image { bytes, mime: mime.to_string() });

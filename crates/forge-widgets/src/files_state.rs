@@ -937,7 +937,7 @@ mod tests {
         assert!(contents_to_copy(&FileContent::Image { bytes: vec![1], mime: "image/png".into() }).is_err());
         assert!(contents_to_copy(&FileContent::Pdf { bytes: vec![1] }).is_err());
         assert!(contents_to_copy(&FileContent::Sheet(forge_ports::SheetBook { sheets: vec![] })).is_err());
-        assert!(contents_to_copy(&FileContent::Document(forge_ports::DocumentView { blocks: vec![], truncated: false })).is_err());
-        assert!(contents_to_copy(&FileContent::Slides(forge_ports::SlideDeck { slides: vec![], truncated: false })).is_err());
+        assert!(contents_to_copy(&FileContent::Document(forge_ports::DocumentView { blocks: vec![], truncated: false, source: None })).is_err());
+        assert!(contents_to_copy(&FileContent::Slides(forge_ports::SlideDeck { slides: vec![], truncated: false, source: None })).is_err());
     }
 }
