@@ -2170,6 +2170,59 @@ impl Workspace {
         Some(format!("{}\n{}\n{}", tr!("Plan ready · Ready to start?"), lines.join("\n"), tr!("Open the session to approve it")))
     }
 
+    /// `/rewind` with `대화`: cuts the session back to just before its user message `message_uuid`, in
+    /// place. The sidecar is stopped first (it must not write to the transcript), the transcript is
+    /// cut on disk (the original is kept beside it), the session is read again and the message goes
+    /// back to the message box. `done` is told whether it worked.
+    pub fn rewind_conversation(&self, id: LiveSessionId, message_uuid: String, done: impl FnOnce(bool) + 'static) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        dioxus::core::spawn_forever(async move {
+            let (Some(view), Some(handle)) = (this.live_view(id), this.handle(id)) else {
+                done(false);
+                return;
+            };
+            let (project, session_id, message) = {
+                let view = view.peek();
+                (view.project_path.clone(), view.claude_session_id.clone(), view.session.messages.iter().find(|m| m.uuid.as_deref() == Some(message_uuid.as_str())).cloned())
+            };
+            let (Some(session_id), Some(message)) = (session_id, message) else {
+                this.report(tr!("This message cannot be rewound yet.").to_string());
+                done(false);
+                return;
+            };
+            if this.session_is_busy(id) {
+                this.report_info(tr!("Wait for the turn to finish, then rewind again").to_string());
+                done(false);
+                return;
+            }
+            // The composer holds sends while the transcript changes.
+            let mut moving = this.moving;
+            moving.write().insert(id);
+            let outcome = async {
+                if !handle.suspend().await {
+                    return Err(tr!("Wait for the turn to finish, then rewind again").to_string());
+                }
+                services.registry.cut_back(&project, &session_id, &message_uuid).await.map_err(|error| error.to_string())?;
+                services.sessions.load_session(&project, &session_id).await.map_err(|error| error.to_string())
+            }
+            .await;
+            moving.write().remove(&id);
+            match outcome {
+                Ok(session) => {
+                    let text = forge_domain::with_cards(&message.cards, &message.text());
+                    handle.replace_session(session, Some((text, message.attachments.clone())));
+                    this.reload_project(project);
+                    done(true);
+                }
+                Err(error) => {
+                    this.report(error);
+                    done(false);
+                }
+            }
+        });
+    }
+
     /// Opens a panel that came up by itself (a plan arrived, a side question was asked). A details
     /// panel that opened by itself gives way to it, so two panels do not cover the chat.
     pub fn open_panel_over_auto_details(&self, id: LiveSessionId, panel: Panel) {

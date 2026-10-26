@@ -178,6 +178,7 @@ export class SidecarSession {
   private readonly contextUsageTimeoutMs: number;
   private readonly commandsTimeoutMs: number;
   private readonly detailTimeoutMs: number;
+  private readonly queryWaitMs: number;
   private readonly log: (line: string) => void;
 
   constructor(
@@ -187,12 +188,14 @@ export class SidecarSession {
       contextUsageTimeoutMs?: number;
       commandsTimeoutMs?: number;
       detailTimeoutMs?: number;
+      queryWaitMs?: number;
       log?: (line: string) => void;
     } = {},
   ) {
     this.contextUsageTimeoutMs = options.contextUsageTimeoutMs ?? CONTEXT_USAGE_TIMEOUT_MS;
     this.commandsTimeoutMs = options.commandsTimeoutMs ?? COMMANDS_TIMEOUT_MS;
     this.detailTimeoutMs = options.detailTimeoutMs ?? DETAIL_TIMEOUT_MS;
+    this.queryWaitMs = options.queryWaitMs ?? 10000;
     this.log = options.log ?? ((line) => process.stderr.write(`${line}\n`));
   }
 
@@ -234,7 +237,8 @@ export class SidecarSession {
         void this.askSide(command.request_id, command.question);
         return;
       case "rewind_files":
-        await this.rewind(command.request_id, command.message_uuid, command.dry_run);
+        // Not awaited: it may wait for the SDK to start, and Stop must still get through.
+        void this.rewind(command.request_id, command.message_uuid, command.dry_run);
         return;
       case "set_permission_mode":
         await this.change(
@@ -295,8 +299,17 @@ export class SidecarSession {
     }
   }
 
+  // A command can arrive while the SDK is still starting: wait for the query a moment.
+  private async queryReady(timeoutMs = this.queryWaitMs): Promise<QueryHandle | null> {
+    const until = Date.now() + timeoutMs;
+    while (!this.activeQuery && !this.shuttingDown && Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return this.activeQuery;
+  }
+
   private async rewind(requestId: string, messageUuid: string, dryRun: boolean): Promise<void> {
-    const query = this.activeQuery;
+    const query = await this.queryReady();
     if (!query?.rewindFiles) {
       this.emit({ type: "rewind_result", request_id: requestId, can_rewind: false, error: "no session is running" });
       return;
@@ -318,7 +331,7 @@ export class SidecarSession {
   }
 
   private async askSide(requestId: string, question: string): Promise<void> {
-    const query = this.activeQuery;
+    const query = await this.queryReady();
     if (!query?.askSideQuestion) {
       this.emit({ type: "side_answer", request_id: requestId, error: "this version of the SDK cannot answer side questions" });
       return;

@@ -25,6 +25,14 @@ pub(crate) fn truncated_before(source: &str, uuid: &str) -> Option<String> {
         out.push_str(line);
         out.push('\n');
     }
+    // The session's name is not part of the conversation: its last title lines (written near the end
+    // of the file) stay, so the cut session keeps its name.
+    for kind in ["custom-title", "ai-title"] {
+        if let Some(line) = lines[cut..].iter().rev().find(|line| json(line).is_some_and(|value| value.get("type").and_then(Value::as_str) == Some(kind))) {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
     Some(out)
 }
 
@@ -133,6 +141,17 @@ mod tests {
         assert_eq!(kept.len(), 3);
         assert_eq!(kept[2]["uuid"], "a1");
         assert!(truncated_before(&text, "missing").is_none());
+
+        let titled = source(&[
+            json!({"type": "user", "uuid": "u1"}),
+            json!({"type": "ai-title", "aiTitle": "old guess"}),
+            json!({"type": "assistant", "uuid": "a1"}),
+            json!({"type": "ai-title", "aiTitle": "newer guess"}),
+            json!({"type": "custom-title", "customTitle": "Mine"}),
+        ]);
+        let kept: Vec<Value> = truncated_before(&titled, "u1").unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        let titles: Vec<String> = kept.iter().filter_map(|v| v.get("customTitle").or(v.get("aiTitle")).and_then(Value::as_str).map(str::to_string)).collect();
+        assert_eq!(titles, vec!["Mine", "newer guess"], "the last title lines survive a cut that removes everything else");
         assert_eq!(truncated_before(&text, "u1").unwrap(), "", "nothing came before the first message but its own snapshot");
     }
 

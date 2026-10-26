@@ -1,32 +1,64 @@
 use dioxus::prelude::*;
-use forge_application::LiveSessionId;
+use forge_application::{LiveSessionId, Phase};
 use forge_entities::{preview_text, rewind_rows};
-use forge_shared::tr;
+use forge_shared::{tr, Select};
 
 use crate::workspace::use_workspace;
 
-// What the copy is called before " (fork)": the session's title, else its first message.
-fn fork_name(session: &forge_domain::Session) -> String {
-    session.title.clone().filter(|title| !title.trim().is_empty()).or_else(|| rewind_rows(&session.messages).pop().map(|row| row.label)).unwrap_or_default()
+/// What `되감기` puts back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Restore {
+    CodeAndConversation,
+    ConversationOnly,
+    CodeOnly,
 }
 
-/// `/rewind`: pick an earlier message, see what putting the files back would change, then put the
-/// files back, open the conversation as it was before it (a new session; this one stays), or both.
+impl Restore {
+    fn value(self) -> &'static str {
+        match self {
+            Restore::CodeAndConversation => "both",
+            Restore::ConversationOnly => "conversation",
+            Restore::CodeOnly => "code",
+        }
+    }
+
+    fn from_value(value: &str) -> Self {
+        match value {
+            "conversation" => Restore::ConversationOnly,
+            "code" => Restore::CodeOnly,
+            _ => Restore::CodeAndConversation,
+        }
+    }
+
+    fn files(self) -> bool {
+        self != Restore::ConversationOnly
+    }
+
+    fn conversation(self) -> bool {
+        self != Restore::CodeOnly
+    }
+}
+
+/// `/rewind`: pick an earlier message, then put back its files, the conversation before it, or both.
+/// The conversation goes back in the same session (its transcript is cut; the original is kept
+/// beside it) and the message returns to the message box.
 #[component]
 pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
     let workspace = use_workspace();
     let mut open = open;
     let mut picked = use_signal(|| None::<String>);
-    // "Both" asked: the conversation opens once the files are back.
-    let mut then_fork = use_signal(|| false);
+    let mut restore = use_signal(|| Restore::CodeAndConversation);
+    // What was asked, while its files are being put back: the conversation follows.
+    let mut working = use_signal(|| None::<Restore>);
     let Some(view) = workspace.live_view(id) else { return rsx! {} };
 
-    let close = move |_| {
+    let mut close = move || {
         if let Some(handle) = workspace.handle(id) {
             handle.close_rewind();
         }
         picked.set(None);
-        then_fork.set(false);
+        working.set(None);
+        restore.set(Restore::CodeAndConversation);
         open.set(false);
     };
 
@@ -34,7 +66,6 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
     use_effect(move || {
         if let Some(uuid) = workspace.take_rewind_request(id) {
             picked.set(Some(uuid.clone()));
-            then_fork.set(false);
             open.set(true);
             if let Some(handle) = workspace.handle(id) {
                 handle.rewind_files(uuid, true);
@@ -42,19 +73,29 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
         }
     });
 
-    // The files are back and "both" was asked: now the conversation.
+    // The files are back: now the conversation, if it was asked for. A refusal stays on screen.
     use_effect(move || {
         let snapshot = view.read();
-        let done = snapshot.rewind.as_ref().is_some_and(|state| !state.dry_run && state.outcome.as_ref().is_some_and(|o| o.can_rewind));
-        if *then_fork.peek() && done {
-            let (project, session, title) = (snapshot.project_path.clone(), snapshot.claude_session_id.clone(), fork_name(&snapshot.session));
-            let uuid = snapshot.rewind.as_ref().map(|state| state.message_uuid.clone());
-            drop(snapshot);
-            then_fork.set(false);
-            if let (Some(session), Some(uuid)) = (session, uuid) {
-                workspace.fork_session_before(project, session, uuid, title);
+        let answer = snapshot.rewind.as_ref().filter(|state| !state.dry_run).and_then(|state| state.outcome.clone());
+        drop(snapshot);
+        let Some(outcome) = answer else { return };
+        let asked = *working.peek();
+        let Some(asked) = asked else { return };
+        if !outcome.can_rewind {
+            working.set(None);
+            return;
+        }
+        if asked.conversation() {
+            if let Some(uuid) = picked.peek().clone() {
+                working.set(None);
+                workspace.rewind_conversation(id, uuid, move |ok| {
+                    if ok {
+                        close();
+                    }
+                });
             }
-            open.set(false);
+        } else {
+            close();
         }
     });
 
@@ -62,86 +103,92 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
         return rsx! {};
     }
     let snapshot = view.read().clone();
-    let running = snapshot.phase == forge_application::Phase::Running;
+    let running = snapshot.phase == Phase::Running;
     let rows = rewind_rows(&snapshot.session.messages);
     let state = snapshot.rewind.clone().filter(|state| Some(&state.message_uuid) == picked.read().as_ref());
-    // Before the oldest message there is no conversation to open.
-    let has_earlier = picked.read().as_ref().and_then(|uuid| rows.iter().position(|row| &row.uuid == uuid)).is_some_and(|at| at + 1 < rows.len());
     let label = picked.read().as_ref().and_then(|uuid| rows.iter().find(|row| &row.uuid == uuid)).map(|row| row.label.clone());
+    let preview = state.as_ref().filter(|s| s.dry_run).and_then(|s| s.outcome.clone());
+    let files_to_restore = preview.as_ref().is_some_and(|outcome| outcome.can_rewind && !outcome.files.is_empty());
+    let chosen = restore();
+    // Code alone needs files to put back; the conversation can go back whatever the files say.
+    let can_apply = !running && working().is_none() && snapshot.claude_session_id.is_some() && (chosen != Restore::CodeOnly || files_to_restore);
+    let failed_apply = state.as_ref().filter(|s| !s.dry_run).and_then(|s| s.outcome.clone()).filter(|o| !o.can_rewind);
 
     rsx! {
-        div { class: "picker-backdrop", onclick: close }
+        div { class: "picker-backdrop", onclick: move |_| close() }
         div { class: "card-modal rewind-dialog", role: "dialog",
-            div { class: "card-modal-head",
-                span { class: "card-modal-title", {tr!("Go back to an earlier point")} }
-                button { class: "card-remove always", r#type: "button", "aria-label": tr!("Close"), onclick: close, "×" }
-            }
             if let Some(label) = label {
-                div { class: "card-modal-note", {tr!("Before this message:")} }
-                div { class: "rewind-picked", "{label}" }
-                div { class: "rewind-preview",
-                    match state.as_ref().and_then(|state| state.outcome.as_ref().map(|outcome| (state.dry_run, outcome))) {
-                        None => rsx! { {tr!("Checking the files…")} },
-                        Some((true, outcome)) => rsx! { "{preview_text(outcome)}" },
-                        Some((false, outcome)) if outcome.can_rewind => rsx! { {tr!("The files are back as they were.")} },
-                        Some((false, outcome)) => rsx! { "{preview_text(outcome)}" },
-                    }
+                div { class: "card-modal-head",
+                    span { class: "card-modal-title", {tr!("Go back to this message?")} }
+                    button { class: "card-remove always", r#type: "button", "aria-label": tr!("Close"), onclick: move |_| close(), "×" }
                 }
-                if has_earlier {
-                    div { class: "card-modal-note", {tr!("The conversation opens as a new session. This session stays as it is.")} }
-                } else {
-                    div { class: "card-modal-note", {tr!("Nothing came before this message, so there is no conversation to open.")} }
+                div { class: "rewind-picked", "{label}" }
+                div { class: "card-modal-note", {tr!("Restore")} }
+                Select {
+                    value: chosen.value().to_string(),
+                    options: vec![
+                        (Restore::CodeAndConversation.value().to_string(), tr!("Files and conversation").to_string()),
+                        (Restore::ConversationOnly.value().to_string(), tr!("Conversation only").to_string()),
+                        (Restore::CodeOnly.value().to_string(), tr!("Files only").to_string()),
+                    ],
+                    disabled: working().is_some(),
+                    onchange: move |value: String| restore.set(Restore::from_value(&value)),
+                }
+                if chosen.files() {
+                    div { class: "rewind-preview",
+                        match preview.as_ref() {
+                            None => rsx! { {tr!("Checking the files…")} },
+                            Some(outcome) => rsx! { "{preview_text(outcome)}" },
+                        }
+                    }
+                    div { class: "card-modal-note", {tr!("Changes made by shell commands are not undone. Commits stay as they are.")} }
+                }
+                if chosen.conversation() {
+                    div { class: "card-modal-note", {tr!("The conversation goes back to before this message, in this session. The message returns to the message box. The earlier transcript is kept beside it as a backup.")} }
                 }
                 if running {
                     div { class: "card-modal-note", {tr!("Wait for Claude to finish, or stop it first.")} }
                 }
+                if let Some(outcome) = failed_apply.as_ref() {
+                    div { class: "rewind-preview", "{preview_text(outcome)}" }
+                }
                 div { class: "rewind-actions",
-                    button {
-                        class: "rewind-button",
-                        r#type: "button",
-                        disabled: running || !state.as_ref().is_some_and(|s| s.dry_run && s.outcome.as_ref().is_some_and(|o| o.can_rewind && !o.files.is_empty())),
-                        onclick: move |_| {
-                            if let (Some(handle), Some(uuid)) = (workspace.handle(id), picked.peek().clone()) {
-                                handle.rewind_files(uuid, false);
-                            }
-                        },
-                        {tr!("Restore files")}
-                    }
-                    button {
-                        class: "rewind-button",
-                        r#type: "button",
-                        disabled: running || !has_earlier || snapshot.claude_session_id.is_none(),
-                        onclick: {
-                            let (project, session, title) = (snapshot.project_path.clone(), snapshot.claude_session_id.clone(), fork_name(&snapshot.session));
-                            move |_| {
-                                if let (Some(session), Some(uuid)) = (session.clone(), picked.peek().clone()) {
-                                    workspace.fork_session_before(project.clone(), session, uuid, title.clone());
-                                    open.set(false);
-                                }
-                            }
-                        },
-                        {tr!("Open the conversation")}
-                    }
-                    button {
-                        class: "rewind-button",
-                        r#type: "button",
-                        disabled: running || !has_earlier || snapshot.claude_session_id.is_none() || !state.as_ref().is_some_and(|s| s.dry_run && s.outcome.as_ref().is_some_and(|o| o.can_rewind && !o.files.is_empty())),
-                        onclick: move |_| {
-                            if let (Some(handle), Some(uuid)) = (workspace.handle(id), picked.peek().clone()) {
-                                then_fork.set(true);
-                                handle.rewind_files(uuid, false);
-                            }
-                        },
-                        {tr!("Both")}
-                    }
                     button { class: "rewind-button", r#type: "button", onclick: move |_| picked.set(None), {tr!("Back")} }
+                    span { class: "spacer" }
+                    button { class: "rewind-button", r#type: "button", onclick: move |_| close(), {tr!("Cancel")} }
+                    button {
+                        class: "rewind-button primary",
+                        r#type: "button",
+                        disabled: !can_apply,
+                        onclick: move |_| {
+                            let Some(uuid) = picked.peek().clone() else { return };
+                            let chosen = restore();
+                            if chosen.files() && files_to_restore {
+                                working.set(Some(chosen));
+                                if let Some(handle) = workspace.handle(id) {
+                                    handle.rewind_files(uuid, false);
+                                }
+                            } else if chosen.conversation() {
+                                workspace.rewind_conversation(id, uuid, move |ok| {
+                                    if ok {
+                                        close();
+                                    }
+                                });
+                            }
+                        },
+                        {tr!("Rewind")}
+                    }
                 }
             } else {
+                div { class: "card-modal-head",
+                    span { class: "card-modal-title", {tr!("Go back to an earlier point")} }
+                    button { class: "card-remove always", r#type: "button", "aria-label": tr!("Close"), onclick: move |_| close(), "×" }
+                }
                 div { class: "card-modal-note", {tr!("Pick the message to go back to.")} }
                 if rows.is_empty() {
                     div { class: "card-modal-note", {tr!("There is no earlier message yet.")} }
                 }
-                for row in rows {
+                for row in rows.iter().rev() {
                     button {
                         key: "{row.uuid}",
                         class: "rewind-row",

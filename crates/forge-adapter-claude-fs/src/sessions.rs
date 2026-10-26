@@ -863,6 +863,45 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         Ok(SessionId(new))
     }
 
+    async fn truncate_session_before(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        message_uuid: &str,
+    ) -> Result<(), SessionRepositoryError> {
+        let old = &session_id.0;
+        if !valid_session_id(old) {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+        let dir = self.project_dir(project_path).await;
+        let path = dir.join(format!("{old}.jsonl"));
+        let bytes = match tokio::fs::read(&path).await {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(SessionRepositoryError::NotFound(session_id.clone())),
+            Err(e) => return Err(fork_error(&path, e)),
+        };
+        let Some(cut) = crate::fork::truncated_before(&String::from_utf8_lossy(&bytes), message_uuid) else {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        };
+        // The original goes beside it first; only then is the transcript replaced (a temporary file and a rename).
+        let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
+        let backup = dir.join(format!("{old}.jsonl.before-rewind-{stamp}.bak"));
+        if let Err(e) = tokio::fs::write(&backup, &bytes).await {
+            let _ = tokio::fs::remove_file(&backup).await;
+            return Err(fork_error(&backup, e));
+        }
+        let temp = dir.join(format!(".{old}.jsonl.rewind.tmp"));
+        if let Err(e) = tokio::fs::write(&temp, cut).await {
+            let _ = tokio::fs::remove_file(&temp).await;
+            return Err(fork_error(&path, e));
+        }
+        if let Err(e) = tokio::fs::rename(&temp, &path).await {
+            let _ = tokio::fs::remove_file(&temp).await;
+            return Err(fork_error(&path, e));
+        }
+        Ok(())
+    }
+
     async fn move_session(
         &self,
         from_project: &Path,
@@ -1023,6 +1062,43 @@ mod tests {
         assert_eq!(source.messages.len(), 3, "the source is untouched");
         let missing = adapter.fork_session_before(&project(), &SessionId("s1".to_string()), "nope", "T").await;
         assert!(matches!(missing, Err(SessionRepositoryError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn truncating_cuts_the_transcript_back_and_keeps_the_original_beside_it() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[message("u1", None, "hello"), message("u2", Some("u1"), "again"), message("u3", Some("u2"), "third")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        let sid = SessionId("s1".to_string());
+
+        adapter.truncate_session_before(&project(), &sid, "u2").await.unwrap();
+
+        let loaded = adapter.load_session(&project(), &sid).await.unwrap();
+        let texts: Vec<String> = loaded.messages.iter().map(|m| m.text()).collect();
+        assert_eq!(texts, vec!["hello"], "the same session, cut back");
+        let dir = adapter.project_dir(&project()).await;
+        let names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        let backup = names.iter().find(|n| n.starts_with("s1.jsonl.before-rewind-") && n.ends_with(".bak")).expect("a backup");
+        let original = std::fs::read_to_string(dir.join(backup)).unwrap();
+        assert_eq!(original.lines().count(), 3, "the backup is the whole original");
+        assert!(!names.iter().any(|n| n.ends_with(".tmp")), "no temporary file is left");
+        let listed = adapter.list_sessions(&project()).await.unwrap();
+        assert_eq!(listed.len(), 1, "the backup is not listed as a session");
+    }
+
+    #[tokio::test]
+    async fn truncating_to_a_message_that_is_not_there_changes_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[message("u1", None, "hello")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        let sid = SessionId("s1".to_string());
+
+        let result = adapter.truncate_session_before(&project(), &sid, "nope").await;
+
+        assert!(matches!(result, Err(SessionRepositoryError::NotFound(_))));
+        assert_eq!(adapter.load_session(&project(), &sid).await.unwrap().messages.len(), 1);
+        let dir = adapter.project_dir(&project()).await;
+        assert_eq!(std::fs::read_dir(dir).unwrap().count(), 1, "no backup for a cut that did not happen");
     }
 
     #[tokio::test]

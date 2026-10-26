@@ -236,6 +236,12 @@ impl SessionRegistry {
         Ok(self.sessions.fork_session_before(project_path, session_id, message_uuid, &fork_title(title)).await?)
     }
 
+    /// Cuts a session's transcript back to just before its user message `message_uuid` (the original
+    /// is kept beside it). The session must not be running.
+    pub async fn cut_back(&self, project_path: &Path, session_id: &SessionId, message_uuid: &str) -> Result<(), ManageSessionError> {
+        Ok(self.sessions.truncate_session_before(project_path, session_id, message_uuid).await?)
+    }
+
     /// Moves a session's transcript to another project directory, so it lists under the new folder.
     pub async fn move_to(
         &self,
@@ -584,6 +590,10 @@ mod tests {
         }
 
         async fn fork_session_before(&self, _project_path: &Path, _session_id: &SessionId, _message_uuid: &str, _title: &str) -> Result<SessionId, SessionRepositoryError> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn truncate_session_before(&self, _project_path: &Path, _session_id: &SessionId, _message_uuid: &str) -> Result<(), SessionRepositoryError> {
             unimplemented!("not used by these tests")
         }
 

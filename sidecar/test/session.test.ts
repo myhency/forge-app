@@ -1375,8 +1375,9 @@ describe("SidecarSession", () => {
 
   it("reports a side question as failed when the SDK has no such call", async () => {
     const events: SidecarEvent[] = [];
-    const session = new SidecarSession(() => toQueryHandle((async function* () {})()), (e) => events.push(e));
+    const session = new SidecarSession(() => toQueryHandle((async function* () {})()), (e) => events.push(e), { queryWaitMs: 20 });
     await session.handle({ type: "side_question", id: "1", request_id: "s1", question: "q" });
+    await new Promise((resolve) => setTimeout(resolve, 60));
     expect(events).toContainEqual({ type: "side_answer", request_id: "s1", error: "this version of the SDK cannot answer side questions" });
   });
 
@@ -1511,6 +1512,7 @@ describe("SidecarSession", () => {
     await session.handle({ type: "rewind_files", id: "1", request_id: "r1", message_uuid: "m1", dry_run: true });
     await session.handle({ type: "rewind_files", id: "2", request_id: "r2", message_uuid: "none", dry_run: false });
     await session.handle({ type: "rewind_files", id: "3", request_id: "r3", message_uuid: "bad", dry_run: false });
+    await new Promise((resolve) => setTimeout(resolve, 20));
     release();
     await started;
 

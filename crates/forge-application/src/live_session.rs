@@ -128,6 +128,10 @@ pub enum LiveCommand {
     AskSide { question: String },
     /// Forgets the `/btw` thread.
     DismissSide,
+    /// The transcript was cut back on disk (`/rewind`): the session is the one read from it, and
+    /// `unsent` (the text and files of the message that was rewound) goes back to the message box.
+    /// Only for a session with no sidecar (after `suspend`).
+    ReplaceSession { session: Session, unsent: Option<(String, Vec<Attachment>)> },
     /// Asks the SDK to put the files back as they were before the user message (`dry_run`: only
     /// to say what would change).
     Rewind { message_uuid: String, dry_run: bool },
@@ -193,6 +197,11 @@ impl LiveSessionHandle {
 
     pub fn close_rewind(&self) {
         let _ = self.commands.send(LiveCommand::CloseRewind);
+    }
+
+    /// After `suspend` and a cut of the transcript: shows the cut-back session and hands the rewound message back to the box.
+    pub fn replace_session(&self, session: Session, unsent: Option<(String, Vec<Attachment>)>) {
+        let _ = self.commands.send(LiveCommand::ReplaceSession { session, unsent });
     }
 
     pub fn dismiss_side(&self) {
@@ -1162,6 +1171,28 @@ mod tests {
         assert_eq!(after.phase, Phase::Running, "the sent one starts a turn of its own");
         assert!(control.calls().contains(&Call::Send("second".to_string())));
         assert!(!control.calls().contains(&Call::Send("third".to_string())));
+    }
+
+    #[tokio::test]
+    async fn a_replaced_session_shows_the_cut_back_conversation_and_hands_the_message_back() {
+        let (sidecar, _control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.queue("later".to_string(), Vec::new());
+        handle.ask_side("q".to_string());
+        wait_for(&mut view, "the side question", |v| !v.side_thread.is_empty()).await;
+
+        let mut earlier = empty_session();
+        earlier.messages.push(forge_domain::Message::user("kept"));
+        handle.replace_session(earlier, Some(("rewound text".to_string(), Vec::new())));
+
+        let after = wait_for(&mut view, "the replaced session", |v| v.unsent.is_some()).await;
+        assert_eq!(after.session.messages.len(), 1);
+        assert_eq!(after.session.messages[0].text(), "kept");
+        assert_eq!(after.unsent.as_deref(), Some("rewound text"));
+        assert_eq!(after.failed_sends, 1, "the box takes the text back as it does for a send that failed");
+        assert!(after.side_thread.is_empty() && after.queued.is_empty() && after.rewind.is_none());
     }
 
     #[tokio::test]

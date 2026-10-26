@@ -134,6 +134,18 @@ impl Actor {
                 self.view.rewind = None;
                 self.dirty = true;
             }
+            LiveCommand::ReplaceSession { session, unsent } => {
+                self.view.session = session;
+                self.view.queued.clear();
+                self.view.side_thread.clear();
+                self.view.rewind = None;
+                self.view.suggestion = None;
+                self.view.last_error = None;
+                if let Some((text, attachments)) = unsent {
+                    self.keep_unsent(text, attachments);
+                }
+                self.dirty = true;
+            }
             LiveCommand::DismissSide => {
                 self.view.side_thread.clear();
                 self.dirty = true;

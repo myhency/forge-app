@@ -71,6 +71,15 @@ pub trait SessionRepositoryPort: Send + Sync {
         message_uuid: &str,
         title: &str,
     ) -> Result<SessionId, SessionRepositoryError>;
+    /// Cuts the session's own transcript back to just before the user message `message_uuid`. The
+    /// original is first copied beside it (`<id>.jsonl.before-rewind-<time>.bak`), so nothing is lost.
+    /// `NotFound` when the transcript has no such message; a failure leaves the transcript as it was.
+    async fn truncate_session_before(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        message_uuid: &str,
+    ) -> Result<(), SessionRepositoryError>;
     /// Moves the session's transcript (and the same-named folder beside it) from one project
     /// directory to another. Nothing is overwritten; a failure leaves everything as it was.
     async fn move_session(
