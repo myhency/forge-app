@@ -149,3 +149,9 @@ Seen in observation round 15 (2026-10-09). Forge's Settings has Connection, Mode
 | OTH-16 | Sign in or reconnect a connector from its row in the connectors card (the row shows `인증` / `다시 연결` but a click only opens the table) | Plan 55 spec | not built; Plan 30D has the sign-in dialog to reuse |
 | OTH-17 | Reorder the cards of the details panel by hand | Round 26 | not built |
 | OTH-18 | A link from the `Custom agents` row of the context card (to the Customize page) | Plan 55 spec | not built |
+| NEW-12 | `/btw` opens a side chat in a right-hand panel (question, answer, and its own `이 세션에서 답장하기…` box) and leaves the main chat alone | seen (round 31) | partial | M | Plan 61 | Forge answers in a card above the composer. |
+| NEW-13 | `/rewind` flow like the desktop: oldest first list, a step with `복원` (`코드와 대화` / `대화만` / `코드만`), file count with +/−, the shell caveat, `취소` / `되감기`; restores the same session | seen (round 31) | partial | M | Plan 61 | Forge opens the earlier conversation as a new session and lists newest first. What the desktop does after `되감기` was not seen. |
+| NEW-14 | `/compact` shows `세션 압축 중 4초` while it runs and `압축된 세션 · 63.6k개 토큰 절약` after | seen (round 31) | partial | S | Plan 61 | Forge shows a divider with before and after counts, and no running status. |
+| NEW-15 | User message row: `✓✓`, relative time, copy, ↺, fork | seen (round 31) | partial | S | Plan 61 | Forge has copy and ↺. |
+| NEW-16 | A usage warning bar above the composer (`주간 사용량 한도 초과 임박 · … 초기화`, `사용량 추가 구매`, close) | seen (round 31) | none | M | Plan 61 | Needs the rate limit the SDK reports (`rate_limit_event`: status, utilization, resetsAt). |
+| NEW-17 | Stopping shows in the fold line as `(중지됨 N개)` rather than a separate line | seen (round 31) | partial | S | Plan 61 | Forge's own `중지됨` line is kept; only the fold summary wording differs. |
