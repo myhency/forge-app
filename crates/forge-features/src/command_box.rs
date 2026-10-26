@@ -10,6 +10,9 @@ use crate::mention_popup::{key_decision, KeyDecision};
 const READ_CURSOR: &str = "const a = document.activeElement; \
     return (a && a.tagName === 'TEXTAREA') ? [a.value, a.selectionStart === a.selectionEnd ? a.selectionStart : null] : null;";
 
+// Scrolls the highlighted command into view.
+const SCROLL_SELECTED: &str = "const row = document.querySelector('.command-item.selected'); if (row) row.scrollIntoView({ block: 'nearest' });";
+
 fn menu_key(key: &Key) -> MenuKey {
     match key {
         Key::ArrowUp => MenuKey::Up,
@@ -90,6 +93,16 @@ pub fn CommandTextArea(
     // The stored selection can be out of range after the list shrinks; the row shown and the row
     // picked are always this one.
     let current = move_selection(selected(), count, 0);
+
+    // Keeps the selected row in view when the list scrolls.
+    use_effect(use_reactive!(|current, count| {
+        if count > 0 {
+            let _ = current;
+            spawn(async move {
+                let _ = document::eval(SCROLL_SELECTED).await;
+            });
+        }
+    }));
 
     let pick = {
         let matches = matches.clone();
@@ -197,6 +210,11 @@ mod tests {
     fn the_cursor_read_gives_no_cursor_while_text_is_selected() {
         assert!(READ_CURSOR.contains("a.selectionStart === a.selectionEnd ? a.selectionStart : null"), "{READ_CURSOR}");
         assert!(READ_CURSOR.contains("a.tagName === 'TEXTAREA'"));
+    }
+
+    #[test]
+    fn the_selected_row_is_scrolled_into_view() {
+        assert!(SCROLL_SELECTED.contains(".command-item.selected") && SCROLL_SELECTED.contains("scrollIntoView"));
     }
 
     #[test]

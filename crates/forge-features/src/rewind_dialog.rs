@@ -5,6 +5,11 @@ use forge_shared::tr;
 
 use crate::workspace::use_workspace;
 
+// What the copy is called before " (fork)": the session's title, else its first message.
+fn fork_name(session: &forge_domain::Session) -> String {
+    session.title.clone().filter(|title| !title.trim().is_empty()).or_else(|| rewind_rows(&session.messages).pop().map(|row| row.label)).unwrap_or_default()
+}
+
 /// `/rewind`: pick an earlier message, see what putting the files back would change, then put the
 /// files back, open the conversation as it was before it (a new session; this one stays), or both.
 #[component]
@@ -30,12 +35,12 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
         let snapshot = view.read();
         let done = snapshot.rewind.as_ref().is_some_and(|state| !state.dry_run && state.outcome.as_ref().is_some_and(|o| o.can_rewind));
         if *then_fork.peek() && done {
-            let (project, session, title) = (snapshot.project_path.clone(), snapshot.claude_session_id.clone(), snapshot.session.title.clone());
+            let (project, session, title) = (snapshot.project_path.clone(), snapshot.claude_session_id.clone(), fork_name(&snapshot.session));
             let uuid = snapshot.rewind.as_ref().map(|state| state.message_uuid.clone());
             drop(snapshot);
             then_fork.set(false);
             if let (Some(session), Some(uuid)) = (session, uuid) {
-                workspace.fork_session_before(project, session, uuid, title.unwrap_or_default());
+                workspace.fork_session_before(project, session, uuid, title);
             }
             open.set(false);
         }
@@ -95,10 +100,10 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
                         r#type: "button",
                         disabled: running || !has_earlier || snapshot.claude_session_id.is_none(),
                         onclick: {
-                            let (project, session, title) = (snapshot.project_path.clone(), snapshot.claude_session_id.clone(), snapshot.session.title.clone());
+                            let (project, session, title) = (snapshot.project_path.clone(), snapshot.claude_session_id.clone(), fork_name(&snapshot.session));
                             move |_| {
                                 if let (Some(session), Some(uuid)) = (session.clone(), picked.peek().clone()) {
-                                    workspace.fork_session_before(project.clone(), session, uuid, title.clone().unwrap_or_default());
+                                    workspace.fork_session_before(project.clone(), session, uuid, title.clone());
                                     open.set(false);
                                 }
                             }

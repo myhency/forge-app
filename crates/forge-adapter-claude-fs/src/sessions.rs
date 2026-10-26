@@ -407,7 +407,8 @@ fn apply_assistant_line(session: &mut Session, line: &Value) {
 
 fn apply_line(session: &mut Session, line: &Value) {
     let flagged = |key: &str| line.get(key).and_then(Value::as_bool) == Some(true);
-    if flagged("isSidechain") || flagged("isMeta") {
+    // The summary a compaction leaves as a user line is for the model, not something the person said.
+    if flagged("isSidechain") || flagged("isMeta") || flagged("isCompactSummary") {
         return;
     }
     match line.get("type").and_then(Value::as_str) {
@@ -2379,6 +2380,28 @@ mod tests {
         let last = session.messages.last().unwrap();
         assert_eq!(last.role, MessageRole::Assistant);
         assert_eq!(last.blocks, vec![Block::Compacted { before: Some(21702), after: Some(4290) }]);
+    }
+
+    #[tokio::test]
+    async fn load_session_leaves_out_the_summary_a_compaction_writes() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(
+            home.path(),
+            &project(),
+            "s1",
+            &[
+                user_text("before"),
+                json!({"type": "system", "subtype": "compact_boundary", "compactMetadata": {"preTokens": 9, "postTokens": 3}}),
+                json!({"type": "user", "isCompactSummary": true, "isVisibleInTranscriptOnly": true,
+                       "message": {"role": "user", "content": "This session is being continued from a previous conversation"}}),
+                user_text("after"),
+            ],
+        );
+
+        let session = load(home.path(), "s1").await.unwrap();
+
+        let texts: Vec<String> = session.messages.iter().map(|m| m.text()).collect();
+        assert_eq!(texts, vec!["before", "", "after"], "the compaction line has no text; the summary is not a message");
     }
 
     #[tokio::test]
