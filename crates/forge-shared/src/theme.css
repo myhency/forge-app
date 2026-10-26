@@ -162,6 +162,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .turns { font-size: var(--chat-size); max-width: var(--chat-column); margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 
 .turn-user { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin-top: 18px; }
+.usage-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 16px 6px; padding: 6px 12px; border-radius: 10px; background: var(--bg-hover); color: var(--fg-muted); font-size: 12px; }
 .message-actions .footer-time { color: var(--fg-muted); font-size: 12px; margin-right: 4px; align-self: center; }
 .message-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; margin-top: -2px; }
 .turn-user:hover .message-actions, .message-actions:focus-within { opacity: 1; }

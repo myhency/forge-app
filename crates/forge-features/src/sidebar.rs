@@ -638,6 +638,7 @@ mod tests {
             commands: Vec::new(),
             allowed_rules: Vec::new(),
             queued: Vec::new(),
+            rate_limit: None,
             side_question: None,
             rewind: None,
         }

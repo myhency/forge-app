@@ -128,6 +128,19 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
             if let Some(error) = view.last_error.as_ref() {
                 div { class: "banner error", "{error}" }
             }
+            if let Some(text) = workspace.rate_limit_bar(id) {
+                div { class: "usage-bar",
+                    span { "{text}" }
+                    button {
+                        class: "icon-button",
+                        r#type: "button",
+                        title: tr!("Close"),
+                        "aria-label": tr!("Close"),
+                        onclick: move |_| workspace.dismiss_rate_limit_bar(id),
+                        "×"
+                    }
+                }
+            }
             if let Some(request) = view.pending_permissions.front() {
                 if request.tool_name == forge_entities::QUESTION_TOOL {
                     QuestionPanel { key: "{request.id}", id, request: request.clone() }

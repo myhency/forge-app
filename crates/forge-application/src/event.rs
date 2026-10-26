@@ -16,6 +16,7 @@ pub enum SessionUpdate {
     Stopped,
     /// A generated name for a new session.
     TitleSuggested(String),
+    RateLimit(forge_domain::RateLimit),
     ToolCallStarted { tool_call: ToolCall },
     ToolCallCompleted { tool_call_id: String },
     PermissionRequested(PermissionRequest),
@@ -76,6 +77,10 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             }
             SessionUpdate::MessageDelta { text: text.clone() }
         }
+        SidecarEvent::RateLimit { status, kind, percent, resets_at } => match forge_domain::RateLimit::from_report(status, kind.as_deref(), *percent, *resets_at) {
+            Some(limit) => SessionUpdate::RateLimit(limit),
+            None => SessionUpdate::UserMessageId,
+        },
         SidecarEvent::SessionTitle { title } => SessionUpdate::TitleSuggested(title.clone()),
         SidecarEvent::Interrupted => {
             match open_assistant_message(session) {

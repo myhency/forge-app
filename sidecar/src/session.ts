@@ -683,6 +683,19 @@ export class SidecarSession {
           }
         }
         return;
+      case "rate_limit_event": {
+        const info = message.rate_limit_info;
+        if (info && typeof info.status === "string") {
+          this.emit({
+            type: "rate_limit",
+            status: info.status,
+            ...(typeof info.rateLimitType === "string" ? { kind: info.rateLimitType } : {}),
+            ...(typeof info.utilization === "number" ? { percent: Math.round(info.utilization * 100) } : {}),
+            ...(typeof info.resetsAt === "number" ? { resets_at: info.resetsAt } : {}),
+          });
+        }
+        return;
+      }
       case "prompt_suggestion":
         if (typeof message.suggestion === "string" && message.suggestion !== "") {
           this.emit({ type: "prompt_suggestion", text: message.suggestion });

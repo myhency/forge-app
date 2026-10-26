@@ -1218,6 +1218,22 @@ describe("SidecarSession", () => {
     expect(asked).toEqual([]);
   });
 
+  it("forwards the usage limit state the SDK reports", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "rate_limit_event", rate_limit_info: { status: "allowed_warning", rateLimitType: "seven_day", utilization: 0.754, resetsAt: 1793178000 } };
+        yield { type: "rate_limit_event", rate_limit_info: { status: "allowed" } };
+        yield { type: "rate_limit_event" };
+      })());
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+    expect(events.filter((e) => e.type === "rate_limit")).toEqual([
+      { type: "rate_limit", status: "allowed_warning", kind: "seven_day", percent: 75, resets_at: 1793178000 },
+      { type: "rate_limit", status: "allowed" },
+    ]);
+  });
+
   it("tells the parent when the SDK writes its interrupt line", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>

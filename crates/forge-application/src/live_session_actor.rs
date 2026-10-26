@@ -592,6 +592,7 @@ impl Actor {
                     self.view.session.title = Some(title);
                 }
             }
+            SessionUpdate::RateLimit(limit) => self.view.rate_limit = Some(limit),
             SessionUpdate::RewindResult { request_id, outcome } => {
                 if let Some(state) = self.view.rewind.as_mut().filter(|state| state.request_id == request_id) {
                     state.outcome = Some(outcome);

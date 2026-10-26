@@ -75,6 +75,8 @@ pub struct LiveSessionView {
     /// Messages the person asked to send once the running turn ends, oldest first. The session
     /// sends the front one when a turn ends.
     pub queued: Vec<QueuedMessage>,
+    /// The account's usage limit state as the SDK last reported it.
+    pub rate_limit: Option<forge_domain::RateLimit>,
     /// The last `/btw` question and its answer; it is not part of the session.
     pub side_question: Option<SideQuestion>,
     /// The `/rewind` the person is looking at: a preview of what would change, then the result.
@@ -366,6 +368,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         commands: init.commands,
         allowed_rules: Vec::new(),
         queued: Vec::new(),
+        rate_limit: None,
         side_question: None,
         rewind: None,
     };

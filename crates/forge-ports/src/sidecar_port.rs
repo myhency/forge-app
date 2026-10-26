@@ -140,6 +140,16 @@ pub enum SidecarEvent {
     },
     /// The person stopped the turn (the SDK wrote its interrupt line).
     Interrupted,
+    /// Where the account stands against a usage limit (`allowed`, `allowed_warning`, `rejected`).
+    RateLimit {
+        status: String,
+        #[serde(default)]
+        kind: Option<String>,
+        #[serde(default)]
+        percent: Option<u32>,
+        #[serde(default)]
+        resets_at: Option<i64>,
+    },
     /// A short name for a new session, made from its first message.
     SessionTitle { title: String },
     /// The id the sidecar gave the user message it just handed to the SDK.

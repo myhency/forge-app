@@ -189,6 +189,8 @@ pub struct Workspace {
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
     /// The person's comments on the plan of each session, sent along with a request for changes.
     plan_comments: Signal<HashMap<LiveSessionId, Vec<forge_entities::PlanComment>>>,
+    /// The usage limit bar the person closed: it stays closed until the limit's level, window or reset time changes.
+    rate_dismissed: Signal<Option<(forge_domain::RateLevel, forge_domain::RateWindow, Option<i64>)>>,
     /// Sessions whose details panel opened by itself (not by the person): the plan panel, which opens by itself too, takes its place.
     auto_details: Signal<std::collections::HashSet<LiveSessionId>>,
     added_folders: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
@@ -285,6 +287,7 @@ pub fn use_workspace_provider() -> Workspace {
             rewind_requests: root_signal(HashMap::new()),
             plan_comments: root_signal(HashMap::new()),
             auto_details: root_signal(std::collections::HashSet::new()),
+            rate_dismissed: root_signal(None),
             added_folders: root_signal(HashMap::new()),
             card_folded: root_signal(HashMap::new()),
             change_counts: root_signal(HashMap::new()),
@@ -2180,6 +2183,23 @@ impl Workspace {
         });
     }
 
+    /// The words of the usage limit bar for this session, unless it is fine or the person closed it.
+    pub fn rate_limit_bar(&self, id: LiveSessionId) -> Option<String> {
+        let view = self.live_view(id)?;
+        let limit = view.read().rate_limit.clone().filter(forge_domain::RateLimit::needs_a_bar)?;
+        if *self.rate_dismissed.read() == Some((limit.level, limit.window, limit.resets_at)) {
+            return None;
+        }
+        Some(forge_entities::rate_limit_text(&limit))
+    }
+
+    pub fn dismiss_rate_limit_bar(&self, id: LiveSessionId) {
+        let Some(view) = self.live_view(id) else { return };
+        let Some(limit) = view.read().rate_limit.clone() else { return };
+        let mut dismissed = self.rate_dismissed;
+        dismissed.set(Some((limit.level, limit.window, limit.resets_at)));
+    }
+
     pub fn plan_comments(&self, id: LiveSessionId) -> Vec<forge_entities::PlanComment> {
         self.plan_comments.read().get(&id).cloned().unwrap_or_default()
     }
@@ -3310,6 +3330,7 @@ mod plan_text_tests {
             commands: Vec::new(),
             allowed_rules: Vec::new(),
             queued: Vec::new(),
+            rate_limit: None,
             side_question: None,
             rewind: None,
         }

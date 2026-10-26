@@ -124,6 +124,8 @@ export type SidecarEvent =
   | { type: "compacted"; pre_tokens?: number; post_tokens?: number }
   // The SDK wrote its "[Request interrupted by user…]" line: the person stopped the turn.
   | { type: "interrupted" }
+  // The account's usage limit state the SDK reports: allowed, allowed_warning or rejected.
+  | { type: "rate_limit"; status: string; kind?: string; percent?: number; resets_at?: number }
   // A short name for a new session, made from its first message.
   | { type: "session_title"; title: string }
   // The answer to a side_question: the text, or why there is none.
