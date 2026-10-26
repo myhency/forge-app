@@ -75,7 +75,7 @@ impl DockState {
         self.columns.iter().any(|column| column.panels.contains(&panel))
     }
 
-    /// Opens a closed panel in a new column at the far right, or in its partner's column when the
+    /// Opens a closed panel in a new column at the far right (the session rail: at the far left), or in its partner's column when the
     /// partner is open (Changes and Preview), or closes an open one. Opening a panel never closes
     /// another.
     pub fn toggle(&mut self, panel: Panel) {
@@ -89,7 +89,13 @@ impl DockState {
                 return;
             }
         }
-        self.columns.push(Column { panels: vec![panel], width: panel.default_width() });
+        let column = Column { panels: vec![panel], width: panel.default_width() };
+        // The session rail always stands leftmost, next to the chat; every other panel opens at the far right.
+        if panel == Panel::Details {
+            self.columns.insert(0, column);
+        } else {
+            self.columns.push(column);
+        }
     }
 
     /// Opens a closed panel as `toggle` does; an open one stays open.
@@ -211,6 +217,21 @@ mod tests {
         assert_eq!(dock.file_list_panel(), Some(Panel::Changes));
         dock.toggle(Panel::Files);
         assert_eq!(dock.file_list_panel(), Some(Panel::Files));
+    }
+
+    #[test]
+    fn the_session_rail_always_opens_left_of_the_other_panels() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Files);
+        dock.toggle(Panel::Terminal);
+        dock.toggle(Panel::Details);
+        let order: Vec<Panel> = dock.columns.iter().map(|column| column.panels[0]).collect();
+        assert_eq!(order, vec![Panel::Details, Panel::Files, Panel::Terminal]);
+        // Closed and opened again after another panel: still leftmost.
+        dock.toggle(Panel::Details);
+        dock.toggle(Panel::Changes);
+        dock.toggle(Panel::Details);
+        assert_eq!(dock.columns[0].panels, vec![Panel::Details]);
     }
 
     #[test]
