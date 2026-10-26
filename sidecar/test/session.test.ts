@@ -1185,6 +1185,39 @@ describe("SidecarSession", () => {
     expect(events.filter((e) => e.type === "task_progress")).toEqual([{ type: "task_progress", task_id: "w1", total_tokens: 99100 }]);
   });
 
+  it("asks for a title from the first message of a new session only, and passes it on", async () => {
+    const events: SidecarEvent[] = [];
+    const asked: string[] = [];
+    let release!: () => void;
+    const queryFn: QueryFn = () =>
+      toQueryHandle(
+        (async function* () {
+          await new Promise<void>((resolve) => (release = resolve));
+        })(),
+        { generateSessionTitle: async (text: string) => { asked.push(text); return "  짧은 제목 "; } },
+      );
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    const started = session.handle(startCommand);
+    await session.handle({ type: "send_message", id: "2", text: "first message" });
+    await session.handle({ type: "send_message", id: "3", text: "second message" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release();
+    await started;
+
+    expect(asked).toEqual(["first message"]);
+    expect(events.filter((e) => e.type === "session_title")).toEqual([{ type: "session_title", title: "짧은 제목" }]);
+  });
+
+  it("does not ask for a title when it resumes a session", async () => {
+    const asked: string[] = [];
+    const queryFn: QueryFn = () => toQueryHandle((async function* () {})(), { generateSessionTitle: async (text: string) => { asked.push(text); return "x"; } });
+    const session = new SidecarSession(queryFn, () => {});
+    const started = session.handle({ ...startCommand, resume_session_id: "abc" });
+    await session.handle({ type: "send_message", id: "2", text: "hello" });
+    await started;
+    expect(asked).toEqual([]);
+  });
+
   it("tells the parent when the SDK writes its interrupt line", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>

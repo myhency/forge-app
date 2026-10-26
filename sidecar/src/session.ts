@@ -31,6 +31,7 @@ export type QueryHandle = AsyncIterable<unknown> & {
   supportedModels?: () => Promise<unknown>;
   stopTask?: (taskId: string) => Promise<void>;
   askSideQuestion?: (question: string) => Promise<{ response: string; synthetic?: boolean } | null>;
+  generateSessionTitle?: (description: string, options?: { persist?: boolean }) => Promise<string | null>;
   rewindFiles?: (
     userMessageId: string,
     options?: { dryRun?: boolean },
@@ -164,6 +165,9 @@ export class SidecarSession {
   private started = false;
   private shuttingDown = false;
   private activeQuery: QueryHandle | null = null;
+  private titleAsked = false;
+  private titleText: string | null = null;
+  private resumed = false;
   private sessionEndedPromise: Promise<void> = Promise.resolve();
   // The model of the current turn's main-loop assistant messages: `result.usage` is that model's.
   private mainModel: string | null = null;
@@ -198,6 +202,12 @@ export class SidecarSession {
         await this.start(command);
         return;
       case "send_message":
+        // A new session gets a generated title from its first message (a resumed one has its own).
+        if (!this.titleAsked && !this.resumed && command.text.trim() !== "") {
+          this.titleAsked = true;
+          this.titleText = command.text;
+          if (this.activeQuery) void this.askTitle();
+        }
         this.pushUserMessage(buildContent(command.text, command.attachments ?? []));
         return;
       case "permission_response": {
@@ -268,6 +278,20 @@ export class SidecarSession {
         }
         this.pendingPermissions.clear();
         return;
+    }
+  }
+
+  private async askTitle(): Promise<void> {
+    const text = this.titleText;
+    this.titleText = null;
+    const query = this.activeQuery;
+    if (text === null || !query?.generateSessionTitle) return;
+    try {
+      const title = await query.generateSessionTitle(text, { persist: false });
+      if (typeof title === "string" && title.trim() !== "") this.emit({ type: "session_title", title: title.trim() });
+    } catch (err) {
+      // A title is a nicety: the first message stays as the name.
+      this.log(`forge-sidecar: generateSessionTitle failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -360,6 +384,7 @@ export class SidecarSession {
   private async start(command: Extract<SidecarCommand, { type: "start_session" }>): Promise<void> {
     if (this.started) return;
     this.started = true;
+    this.resumed = command.resume_session_id != null;
 
     // Covers the whole start (building the skills plugin included), so a shutdown that arrives
     // early still waits for the cleanup before the process exits.
@@ -467,6 +492,7 @@ export class SidecarSession {
       throw err;
     }
     this.activeQuery = query;
+    if (this.titleText !== null) void this.askTitle();
     void this.emitSupportedCommands();
     void this.emitSupportedModels();
 

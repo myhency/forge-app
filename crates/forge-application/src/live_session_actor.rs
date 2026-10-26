@@ -586,6 +586,12 @@ impl Actor {
                 // The sidecar is still alive and cleaning up, so it is asked to exit and awaited.
                 self.sidecar_gone("the session ended unexpectedly".to_string(), true).await;
             }
+            // A name the person gave (or one already known) is not replaced by a generated one.
+            SessionUpdate::TitleSuggested(title) => {
+                if self.view.session.title.as_deref().is_none_or(|current| current.trim().is_empty()) {
+                    self.view.session.title = Some(title);
+                }
+            }
             SessionUpdate::RewindResult { request_id, outcome } => {
                 if let Some(state) = self.view.rewind.as_mut().filter(|state| state.request_id == request_id) {
                     state.outcome = Some(outcome);

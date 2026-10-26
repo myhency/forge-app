@@ -1201,6 +1201,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_generated_title_names_an_untitled_session_and_never_replaces_a_title() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hello".to_string());
+        wait_for(&mut view, "the turn to start", |v| v.phase == Phase::Running).await;
+
+        control.push(SidecarEvent::SessionTitle { title: "A short name".to_string() });
+        let named = wait_for(&mut view, "the title", |v| v.session.title.is_some()).await;
+        assert_eq!(named.session.title.as_deref(), Some("A short name"));
+
+        control.push(SidecarEvent::SessionTitle { title: "Another".to_string() });
+        control.push(SidecarEvent::UserMessage { uuid: "u".to_string() });
+        wait_for(&mut view, "a later event", |v| v.session.messages.first().is_some_and(|m| m.uuid.is_some())).await;
+        assert_eq!(handle.snapshot().session.title.as_deref(), Some("A short name"));
+    }
+
+    #[tokio::test]
     async fn rewinding_previews_then_applies_and_the_answer_fills_the_state() {
         let (sidecar, control) = fake_sidecar();
         let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);

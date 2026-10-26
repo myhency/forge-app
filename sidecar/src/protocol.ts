@@ -124,6 +124,8 @@ export type SidecarEvent =
   | { type: "compacted"; pre_tokens?: number; post_tokens?: number }
   // The SDK wrote its "[Request interrupted by user…]" line: the person stopped the turn.
   | { type: "interrupted" }
+  // A short name for a new session, made from its first message.
+  | { type: "session_title"; title: string }
   // The answer to a side_question: the text, or why there is none.
   | { type: "side_answer"; request_id: string; answer?: string; error?: string }
   // The id the sidecar gave the user message it just handed to the SDK (the SDK records it as the message's uuid).

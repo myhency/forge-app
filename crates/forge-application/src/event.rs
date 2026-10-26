@@ -14,6 +14,8 @@ pub enum SessionUpdate {
     UserMessageId,
     /// A stop line was added to the transcript.
     Stopped,
+    /// A generated name for a new session.
+    TitleSuggested(String),
     ToolCallStarted { tool_call: ToolCall },
     ToolCallCompleted { tool_call_id: String },
     PermissionRequested(PermissionRequest),
@@ -73,6 +75,7 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             }
             SessionUpdate::MessageDelta { text: text.clone() }
         }
+        SidecarEvent::SessionTitle { title } => SessionUpdate::TitleSuggested(title.clone()),
         SidecarEvent::Interrupted => {
             match open_assistant_message(session) {
                 Some(message) => message.push_stopped(),

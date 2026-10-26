@@ -140,6 +140,8 @@ pub enum SidecarEvent {
     },
     /// The person stopped the turn (the SDK wrote its interrupt line).
     Interrupted,
+    /// A short name for a new session, made from its first message.
+    SessionTitle { title: String },
     /// The id the sidecar gave the user message it just handed to the SDK.
     UserMessage { uuid: String },
     /// The answer to `rewind_files`.
