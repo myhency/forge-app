@@ -53,7 +53,7 @@ pub fn PlanCard(id: LiveSessionId, request_id: String) -> Element {
             class: "permission-panel plan-card",
             tabindex: "0",
             onmounted: move |mounted| {
-                workspace.change_dock(id, |dock| dock.open(Panel::Plan));
+                workspace.open_plan_panel(id);
                 take_focus_when_no_field_has_it(mounted.data())
             },
             onkeydown: move |event: KeyboardEvent| {

@@ -189,6 +189,8 @@ pub struct Workspace {
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
     /// The person's comments on the plan of each session, sent along with a request for changes.
     plan_comments: Signal<HashMap<LiveSessionId, Vec<forge_entities::PlanComment>>>,
+    /// Sessions whose details panel opened by itself (not by the person): the plan panel, which opens by itself too, takes its place.
+    auto_details: Signal<std::collections::HashSet<LiveSessionId>>,
     added_folders: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
     card_folded: Signal<HashMap<(LiveSessionId, DetailsCard), bool>>,
     /// The Changes card's count per session, and the ticket of its latest read.
@@ -282,6 +284,7 @@ pub fn use_workspace_provider() -> Workspace {
             queued_files: root_signal(HashMap::new()),
             rewind_requests: root_signal(HashMap::new()),
             plan_comments: root_signal(HashMap::new()),
+            auto_details: root_signal(std::collections::HashSet::new()),
             added_folders: root_signal(HashMap::new()),
             card_folded: root_signal(HashMap::new()),
             change_counts: root_signal(HashMap::new()),
@@ -2164,6 +2167,19 @@ impl Workspace {
         Some(format!("{}\n{}\n{}", tr!("Plan ready · Ready to start?"), lines.join("\n"), tr!("Open the session to approve it")))
     }
 
+    /// Opens the plan panel by itself (a plan arrived). A details panel that opened by itself gives
+    /// way to it, so two panels do not cover the chat with the card waiting in it.
+    pub fn open_plan_panel(&self, id: LiveSessionId) {
+        let mut auto = self.auto_details;
+        let was_auto = auto.write().remove(&id);
+        self.change_dock(id, |dock| {
+            if was_auto {
+                dock.close(Panel::Details);
+            }
+            dock.open(Panel::Plan);
+        });
+    }
+
     pub fn plan_comments(&self, id: LiveSessionId) -> Vec<forge_entities::PlanComment> {
         self.plan_comments.read().get(&id).cloned().unwrap_or_default()
     }
@@ -2397,7 +2413,8 @@ impl Workspace {
                     }
                     handle.send_with(text, attachments);
                     // The desktop app opens the details panel by itself on a new session's first send.
-                    this.change_dock(id, |dock| if !dock.is_open(Panel::Details) { dock.open(Panel::Details) });
+                    let mut auto = this.auto_details;
+                    this.change_dock(id, |dock| if !dock.is_open(Panel::Details) { dock.open(Panel::Details); auto.write().insert(id); });
                     this.show_started(id);
                 }
                 Err(error) => {

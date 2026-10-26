@@ -6,7 +6,8 @@ use forge_shared::tr;
 
 use crate::panel_frame::PanelFrame;
 
-// The text selected in the rendered plan and where it ends (window coordinates), or nothing.
+// The text selected in the rendered plan and where it ends (window coordinates, kept inside the
+// window for a box 280 wide and about 190 tall), or nothing. No JS comments in here: the lines are joined.
 const READ_SELECTION: &str = "const sel = window.getSelection(); \
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null; \
     const body = document.querySelector('.plan-body .markdown'); \
@@ -15,7 +16,7 @@ const READ_SELECTION: &str = "const sel = window.getSelection(); \
     const text = sel.toString().trim(); \
     if (!text) return null; \
     const rect = range.getBoundingClientRect(); \
-    return [text, rect.left, rect.bottom];";
+    return [text, Math.max(8, Math.min(rect.left, window.innerWidth - 300)), Math.max(8, Math.min(rect.bottom, window.innerHeight - 200))];";
 
 /// The plan Claude proposed, rendered as markdown. Selecting text offers a comment on it; the
 /// comments go with a request for changes. The answer itself is given in the card.
