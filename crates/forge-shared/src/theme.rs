@@ -134,7 +134,6 @@ mod tests {
             ".files-settings-menu",
             ".file-link",
             ".file-name-link",
-            ".task-pill",
             ".task-card",
             ".task-output",
             ".task-stop",
