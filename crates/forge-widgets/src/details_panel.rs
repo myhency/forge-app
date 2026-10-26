@@ -8,18 +8,20 @@ use forge_shared::tr;
 
 use crate::mcp_servers_dialog::{connector_state_text, McpServersDialog};
 use crate::files_icons::FileTypeIcon;
-use crate::panel_frame::PanelFrame;
 
+/// The session rail: the cards of the session one under another, each its own box with a gap
+/// between them, and no frame or title around them (the desktop app's rail). The header's button
+/// shows and hides it.
 #[component]
 pub fn DetailsPanel(id: LiveSessionId) -> Element {
     rsx! {
-        PanelFrame { id, panel: Panel::Details, tools: rsx! {}, div { class: "details-body",
+        section { class: "session-rail", "aria-label": Panel::Details.title(),
             EnvironmentCard { id }
             ContextCard { id }
             ConnectorsCard { id }
             OutputsCard { id }
             ChangesCard { id }
-        } }
+        }
     }
 }
 
