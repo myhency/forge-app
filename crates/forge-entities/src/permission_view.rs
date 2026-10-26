@@ -194,6 +194,37 @@ impl PlanChoice {
 pub const DEFAULT_PLAN_REFUSAL: &str =
     "The user declined this plan or wants changes to it. Stay in plan mode and ask the user what they would like to change.";
 
+/// A comment on a stretch of the plan's text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanComment {
+    /// What was selected in the plan.
+    pub quote: String,
+    pub text: String,
+}
+
+const QUOTE_CHARS: usize = 200;
+
+/// The reason sent when the person asks for changes: their own words (or a default sentence when
+/// they wrote none and there are comments), then each comment with the text it is about.
+pub fn plan_revision_reason(text: &str, comments: &[PlanComment]) -> String {
+    let text = text.trim();
+    if comments.is_empty() {
+        return plan_reason(text);
+    }
+    let mut reason = if text.is_empty() {
+        "The user wants changes to this plan; their comments on it follow. Stay in plan mode and revise the plan.".to_string()
+    } else {
+        text.to_string()
+    };
+    reason.push_str("\n\nComments on the plan:");
+    for comment in comments {
+        let quote: String = comment.quote.split_whitespace().collect::<Vec<_>>().join(" ");
+        let quote = if quote.chars().count() > QUOTE_CHARS { format!("{}…", quote.chars().take(QUOTE_CHARS).collect::<String>()) } else { quote };
+        reason.push_str(&format!("\n- On \"{quote}\": {}", comment.text.trim()));
+    }
+    reason
+}
+
 /// The reason sent with a refusal: the person's own words, else the default.
 pub fn plan_reason(text: &str) -> String {
     let text = text.trim();
@@ -205,6 +236,21 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn comments_follow_the_persons_words_or_a_default_sentence() {
+        let comments = vec![
+            PlanComment { quote: "Step  two\nof the plan".to_string(), text: " skip this ".to_string() },
+            PlanComment { quote: "x".repeat(300), text: "too long".to_string() },
+        ];
+        let with_text = plan_revision_reason("Make it shorter", &comments);
+        assert!(with_text.starts_with("Make it shorter\n\nComments on the plan:\n- On \"Step two of the plan\": skip this\n- On \""));
+        assert!(with_text.contains(&format!("{}…\": too long", "x".repeat(200))));
+        let without = plan_revision_reason("  ", &comments);
+        assert!(without.starts_with("The user wants changes to this plan; their comments on it follow."));
+        assert_eq!(plan_revision_reason("", &[]), DEFAULT_PLAN_REFUSAL);
+        assert_eq!(plan_revision_reason(" hi ", &[]), "hi");
+    }
 
     #[test]
     fn a_plan_request_gives_its_plan_text_and_other_requests_none() {

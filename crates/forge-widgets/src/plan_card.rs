@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::PermissionDecision;
-use forge_entities::{plan_card_takes_focus, plan_key, plan_reason, PlanChoice, PlanKey, DEFAULT_PLAN_REFUSAL};
+use forge_entities::{plan_card_takes_focus, plan_key, plan_revision_reason, PlanChoice, PlanKey, DEFAULT_PLAN_REFUSAL};
 use forge_features::{use_workspace, Panel};
 use forge_shared::tr;
 
@@ -156,6 +156,9 @@ pub fn PlanCard(id: LiveSessionId, request_id: String) -> Element {
                         let _ = mounted.data().set_focus(true).await;
                     },
                 }
+                if !workspace.plan_comments(id).is_empty() {
+                    div { class: "dock-note", {tr!("{count} comments on the plan are sent too", count = workspace.plan_comments(id).len())} }
+                }
                 div { class: "perm-buttons",
                     button {
                         class: "perm-button",
@@ -167,7 +170,7 @@ pub fn PlanCard(id: LiveSessionId, request_id: String) -> Element {
                     button {
                         class: "perm-button primary",
                         r#type: "button",
-                        onclick: move |_| refuse_revise(Some(plan_reason(&text()))),
+                        onclick: move |_| refuse_revise(Some(plan_revision_reason(&text(), &workspace.plan_comments(id)))),
                         {tr!("Revise")}
                     }
                 }

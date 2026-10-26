@@ -49,7 +49,7 @@ pub use highlight::{code_html, language_of};
 pub use markdown::render_markdown;
 pub use mention::{mention_query, rank_mentions, shorten_middle, type_tag, MentionRange, MentionRow};
 pub use model_catalog::{model_from_value, model_label, model_menu_rows, model_options, model_value, ModelRow, DEFAULT_MODEL_VALUE, KNOWN_MODELS};
-pub use permission_view::{card_takes_focus, plan_card_takes_focus, permission_key, permission_view, plan_key, plan_reason, plan_text_of_request, workflow_permission_key, PermissionKey, PermissionView, PlanAsk, PlanChoice, PlanKey, WorkflowAsk, DEFAULT_PLAN_REFUSAL};
+pub use permission_view::{card_takes_focus, plan_card_takes_focus, permission_key, permission_view, plan_key, plan_reason, plan_revision_reason, plan_text_of_request, workflow_permission_key, PermissionKey, PermissionView, PlanAsk, PlanChoice, PlanComment, PlanKey, WorkflowAsk, DEFAULT_PLAN_REFUSAL};
 pub use workflow_progress::{journal_path, parse_journal, steps, workflow_ref, dot_class, AgentState, JournalAgent, Step, WorkflowRef};
 pub use workflow_script::{workflow_meta, WorkflowMeta};
 pub use outputs::{is_program, output_paths};

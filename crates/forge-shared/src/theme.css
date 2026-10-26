@@ -797,6 +797,13 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .perm-menu { position: absolute; right: 0; bottom: calc(100% + 6px); min-width: 260px; padding: 6px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 5; }
 .perm-menu-item { appearance: none; display: block; width: 100%; padding: 8px 10px; border: none; border-radius: 6px; background: none; text-align: left; font: inherit; color: var(--fg); cursor: pointer; }
 .perm-menu-item:hover { background: var(--bg-hover); }
+.plan-comments { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.plan-comment { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; background: var(--bg-hover); font-size: 13px; }
+.plan-comment-quote { color: var(--fg-muted); font-size: 12px; border-left: 2px solid var(--border); padding-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-comment-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.plan-comment-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.plan-comment-add { position: fixed; z-index: 70; transform: translateY(6px); border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--fg); padding: 4px 10px; font: inherit; font-size: 12px; box-shadow: var(--shadow); cursor: pointer; }
+.plan-comment-box { position: fixed; z-index: 70; transform: translateY(6px); width: 280px; display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); box-shadow: var(--shadow); }
 .plan-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .plan-card-link { appearance: none; border: none; background: none; padding: 0; font: inherit; font-weight: 400; font-size: 13px; color: var(--fg-muted); text-decoration: underline; cursor: pointer; }
 .plan-card-link:hover { color: var(--fg); }

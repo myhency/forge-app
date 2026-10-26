@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_entities::{relative_time, SidebarItem};
-use forge_features::{menu_key_action, refocus_workspace, use_workspace, ArchiveAction, DeleteAction, MenuKeyAction, SidebarEntry};
+use forge_features::{menu_key_action, refocus_workspace, use_workspace, ArchiveAction, DeleteAction, EntryKey, MenuKeyAction, SidebarEntry};
 use forge_shared::{tr, Button, ButtonKind};
 use time::OffsetDateTime;
 
@@ -146,8 +146,12 @@ pub fn SessionRow(
                 || actions.can_fork
                 || actions.archive != ArchiveAction::Unavailable
                 || actions.delete != DeleteAction::Unavailable;
+            let plan_hint = match entry.key {
+                EntryKey::Live(id) => workspace.plan_ready_hint(id).unwrap_or_default(),
+                _ => String::new(),
+            };
             rsx! {
-                div { class: "sidebar-row",
+                div { class: "sidebar-row", title: "{plan_hint}",
                     SidebarItem {
                         title: if entry.archived { format!("🗄 {}", entry.title) } else { entry.title.clone() },
                         subtitle: row_subtitle(

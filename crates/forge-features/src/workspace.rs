@@ -187,6 +187,8 @@ pub struct Workspace {
     queued_files: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
     /// A message the person asked to go back to from its row; the session's rewind dialog takes it.
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
+    /// The person's comments on the plan of each session, sent along with a request for changes.
+    plan_comments: Signal<HashMap<LiveSessionId, Vec<forge_entities::PlanComment>>>,
     added_folders: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
     card_folded: Signal<HashMap<(LiveSessionId, DetailsCard), bool>>,
     /// The Changes card's count per session, and the ticket of its latest read.
@@ -279,6 +281,7 @@ pub fn use_workspace_provider() -> Workspace {
             files_stores: root_signal(HashMap::new()),
             queued_files: root_signal(HashMap::new()),
             rewind_requests: root_signal(HashMap::new()),
+            plan_comments: root_signal(HashMap::new()),
             added_folders: root_signal(HashMap::new()),
             card_folded: root_signal(HashMap::new()),
             change_counts: root_signal(HashMap::new()),
@@ -2151,10 +2154,45 @@ impl Workspace {
     }
 
     /// Refuses a pending plan (or any request) and sends the person's note as the reason.
+    /// The tooltip of a session row while a plan waits for an answer: what it is, the plan's first
+    /// lines and where to answer. `None` for any other session.
+    pub fn plan_ready_hint(&self, id: LiveSessionId) -> Option<String> {
+        let view = self.live_view(id)?;
+        let view = view.read();
+        let plan = plan_text_of_request(view.pending_permissions.front()?)?;
+        let lines: Vec<&str> = plan.lines().map(str::trim).filter(|line| !line.is_empty()).take(3).collect();
+        Some(format!("{}\n{}\n{}", tr!("Plan ready · Ready to start?"), lines.join("\n"), tr!("Open the session to approve it")))
+    }
+
+    pub fn plan_comments(&self, id: LiveSessionId) -> Vec<forge_entities::PlanComment> {
+        self.plan_comments.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    pub fn add_plan_comment(&self, id: LiveSessionId, quote: String, text: String) {
+        if text.trim().is_empty() {
+            return;
+        }
+        let mut comments = self.plan_comments;
+        comments.write().entry(id).or_default().push(forge_entities::PlanComment { quote, text });
+    }
+
+    pub fn remove_plan_comment(&self, id: LiveSessionId, index: usize) {
+        let mut comments = self.plan_comments;
+        let mut all = comments.write();
+        if let Some(list) = all.get_mut(&id) {
+            if index < list.len() {
+                list.remove(index);
+            }
+        }
+    }
+
     pub fn refuse_plan(&self, id: LiveSessionId, request_id: String, reason: Option<String>) {
         if let Some(handle) = self.handle(id) {
             handle.refuse_with_reason(request_id, reason);
         }
+        // The comments were about this plan: they go with the answer, whichever it is.
+        let mut comments = self.plan_comments;
+        comments.write().remove(&id);
     }
 
     pub fn stop_task(&self, id: LiveSessionId, task_id: String) {
