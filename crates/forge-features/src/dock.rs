@@ -5,6 +5,8 @@ use forge_shared::tr;
 
 pub const DEFAULT_COLUMN_WIDTH: f32 = 480.0;
 pub const MIN_COLUMN_WIDTH: f32 = 280.0;
+/// The session rail is a narrow strip of cards (the desktop app's is about 310 pt wide).
+pub const RAIL_COLUMN_WIDTH: f32 = 320.0;
 pub const MAX_COLUMN_WIDTH: f32 = 900.0;
 
 /// A panel that can sit in the dock.
@@ -32,6 +34,14 @@ impl Panel {
             Panel::Details => tr!("Environment"),
             Panel::Plan => tr!("Plan"),
             Panel::Side => tr!("Side question"),
+        }
+    }
+
+    /// The width a column opens at when this panel is the one that opens it.
+    pub fn default_width(self) -> f32 {
+        match self {
+            Panel::Details => RAIL_COLUMN_WIDTH,
+            _ => DEFAULT_COLUMN_WIDTH,
         }
     }
 
@@ -79,7 +89,7 @@ impl DockState {
                 return;
             }
         }
-        self.columns.push(Column { panels: vec![panel], width: DEFAULT_COLUMN_WIDTH });
+        self.columns.push(Column { panels: vec![panel], width: panel.default_width() });
     }
 
     /// Opens a closed panel as `toggle` does; an open one stays open.
@@ -201,6 +211,16 @@ mod tests {
         assert_eq!(dock.file_list_panel(), Some(Panel::Changes));
         dock.toggle(Panel::Files);
         assert_eq!(dock.file_list_panel(), Some(Panel::Files));
+    }
+
+    #[test]
+    fn the_session_rail_opens_narrow_and_the_other_panels_at_the_default_width() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Details);
+        dock.toggle(Panel::Files);
+        assert_eq!(dock.columns[0].width, RAIL_COLUMN_WIDTH);
+        assert_eq!(dock.columns[1].width, DEFAULT_COLUMN_WIDTH);
+        assert!(RAIL_COLUMN_WIDTH >= MIN_COLUMN_WIDTH && RAIL_COLUMN_WIDTH < DEFAULT_COLUMN_WIDTH);
     }
 
     #[test]
