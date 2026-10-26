@@ -142,3 +142,10 @@ pub use window_width::use_window_width;
 
 pub use change_comments::{absolute_path, comment_key, comment_line, comment_text, commentable, line_number, comments_of, comments_on, CommentKey};
 pub use change_rows::{branch_label, header_counts, BranchLabel, fallback_source, filter_commits, filter_files, fold_all, forget_changes_session, forget_mode, is_folded, mode_of, ready_to_load, upsert_mode, show_uncommitted, should_restore, dirty_from_changes, dirty_known_from_list, source_for, split_folder, stack_order, toggle_fold, toggle_section, tree_rows, unfold_all, vanished_commit, ChangeView, ChangesSession, TreeRow as ChangeTreeRow, OPEN_SECTIONS, ROW_LIMIT};
+
+/// A signal that lives as long as the window. The tasks that keep the shared state up to date run in
+/// the root scope (`spawn_forever`), so a signal owned by a smaller scope would be read after its
+/// owner was dropped.
+pub(crate) fn root_signal<T: 'static>(value: T) -> dioxus::prelude::Signal<T> {
+    dioxus::prelude::Signal::new_in_scope(value, dioxus::prelude::ScopeId::ROOT)
+}

@@ -1,3 +1,4 @@
+use crate::root_signal;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -159,23 +160,23 @@ pub struct Settings {
 pub fn use_settings_provider() -> Settings {
     let services = use_context::<WorkspaceServices>();
     let settings = use_hook(move || Settings {
-        usecase: Signal::new(services.settings.clone()),
-        open: Signal::new(false),
-        section: Signal::new(SettingsSection::General),
-        search: Signal::new(String::new()),
-        saved: Signal::new(AppConfig::default()),
-        base_url: Signal::new(String::new()),
-        api_key: Signal::new(String::new()),
-        key_visible: Signal::new(false),
-        status: Signal::new(None),
-        extensions: Signal::new(services.extensions.clone()),
-        project: Signal::new(None),
-        catalog: Signal::new(Catalog::default()),
-        server: Signal::new(None),
-        folder_picker: Signal::new(services.folder_picker.clone()),
-        trusted_dialog: Signal::new(false),
-        trusted_picking: Signal::new(false),
-        location_nonce: Signal::new(0),
+        usecase: root_signal(services.settings.clone()),
+        open: root_signal(false),
+        section: root_signal(SettingsSection::General),
+        search: root_signal(String::new()),
+        saved: root_signal(AppConfig::default()),
+        base_url: root_signal(String::new()),
+        api_key: root_signal(String::new()),
+        key_visible: root_signal(false),
+        status: root_signal(None),
+        extensions: root_signal(services.extensions.clone()),
+        project: root_signal(None),
+        catalog: root_signal(Catalog::default()),
+        server: root_signal(None),
+        folder_picker: root_signal(services.folder_picker.clone()),
+        trusted_dialog: root_signal(false),
+        trusted_picking: root_signal(false),
+        location_nonce: root_signal(0),
     });
     use_context_provider(move || settings);
     use_hook(move || settings.reload());
