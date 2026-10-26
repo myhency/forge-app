@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
-use forge_entities::{connector_rows, context_card, icon_of, row_link, ContextItemView, ContextRowView, RowLink};
+use forge_entities::{clear_key, task_lists, Clock, connector_rows, context_card, icon_of, row_link, ContextItemView, ContextRowView, RowLink};
 use forge_features::{card_folders, use_workspace, DetailsCard, EnvironmentRequest, Panel};
 use forge_shared::tr;
 
@@ -31,6 +31,7 @@ pub fn DetailsPanel(id: LiveSessionId) -> Element {
             ConnectorsCard { id }
             OutputsCard { id }
             ChangesCard { id }
+            TasksCard { id }
         }
     }
 }
@@ -57,6 +58,13 @@ fn CardIcon(kind: &'static str) -> Element {
                 "folder" => rsx! { path { d: "M2 4.5A1 1 0 0 1 3 3.5h3l1.5 1.5H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" } },
                 "diff" => rsx! {
                     path { d: "M8 2.5v6M5 5.5h6M5 12.5h6" }
+                },
+                "terminal" => rsx! {
+                    rect { x: "1.5", y: "2.5", width: "13", height: "11", rx: "2" }
+                    path { d: "M4.5 6l2.5 2-2.5 2M8.5 10.5h3" }
+                },
+                "done" => rsx! {
+                    path { d: "M3 8l3.5-4.5L10 8l-3.5 4.5zM8 8l3-3.8L14 8l-3 3.8" }
                 },
                 "branch" => rsx! {
                     circle { cx: "4.5", cy: "3.5", r: "1.5" }
@@ -521,6 +529,60 @@ fn ChangesCard(id: LiveSessionId) -> Element {
                     CardIcon { kind: "diff" }
                     span { class: "cd-add", "+{counts.added}" }
                     span { class: "cd-del", "\u{2212}{counts.removed}" }
+                }
+            }
+        }
+    }
+}
+
+/// The background tasks that are running now, with the time each has run and a stop button; a row
+/// says how many have ended. A click opens the Background tasks panel. It is there only while a
+/// task runs: when the last one ends the card goes.
+#[component]
+fn TasksCard(id: LiveSessionId) -> Element {
+    let workspace = use_workspace();
+    let Some(view) = workspace.live_view(id) else { return rsx! {} };
+    let (running, finished_count) = {
+        let view = view.read();
+        let lists = task_lists(&view.session.messages, &view.background_tasks, &view.session.finished_tasks);
+        let cleared = workspace.task_list_view(id).cleared;
+        let finished = lists.finished.iter().filter(|card| !cleared.contains(&clear_key(card))).count();
+        (lists.running, finished)
+    };
+    if running.is_empty() {
+        return rsx! {};
+    }
+    let folded = workspace.details_card_folded(id, DetailsCard::Tasks);
+    let open_panel = move |_| workspace.change_dock(id, |dock| dock.open(Panel::Tasks));
+    rsx! {
+        div { class: "env-card",
+            CardHead { id, card: DetailsCard::Tasks, title: tr!("Background tasks"), folded, trailing: rsx! {} }
+            if !folded {
+                for card in running.iter() {
+                    div { key: "{card.id}", class: "env-card-row task-row", role: "button", tabindex: "0", onclick: open_panel,
+                        CardIcon { kind: "terminal" }
+                        span { class: "task-row-name", title: "{card.description}", "{card.description}" }
+                        span { class: "task-row-time", Clock { started: Some(card.seen_at) } }
+                        button {
+                            class: "task-stop",
+                            r#type: "button",
+                            title: tr!("Stop"),
+                            "aria-label": tr!("Stop"),
+                            onclick: {
+                                let task_id = card.id.clone();
+                                move |event: MouseEvent| {
+                                    event.stop_propagation();
+                                    workspace.stop_task(id, task_id.clone());
+                                }
+                            },
+                        }
+                    }
+                }
+                if finished_count > 0 {
+                    button { class: "env-card-row", r#type: "button", onclick: open_panel,
+                        CardIcon { kind: "done" }
+                        span { {tr!("{count} done", count = finished_count)} }
+                    }
                 }
             }
         }

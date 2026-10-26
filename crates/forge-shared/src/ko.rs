@@ -877,6 +877,7 @@ pub static KO: &[(&str, &str)] = &[
     ("{count} background task", "백그라운드 작업 {count}개"),
     ("{count} background tasks", "백그라운드 작업 {count}개"),
     ("{count} comments on the plan are sent too", "계획에 단 댓글 {count}개를 함께 보냅니다"),
+    ("{count} done", "{count}개 완료됨"),
     ("{count} files change (+{added} −{removed})", "파일 {count}개가 바뀝니다 (+{added} −{removed})"),
     ("{count} files edited", "파일 {count}개 편집됨"),
     ("{count} message waiting", "메시지 {count}개 대기 중"),

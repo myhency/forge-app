@@ -11,6 +11,7 @@ pub enum DetailsCard {
     Connectors,
     Outputs,
     Changes,
+    Tasks,
 }
 
 /// What the Changes card shows: the files with uncommitted changes and the lines they add and remove.
