@@ -315,6 +315,7 @@ fn push_user_text(session: &mut Session, line: &Value, text: String) {
     push_user_message(session, text);
     if let Some(message) = session.messages.last_mut() {
         message.uuid = line.get("uuid").and_then(Value::as_str).map(str::to_string);
+        message.at = line.get("timestamp").and_then(Value::as_str).map(str::to_string);
     }
 }
 
@@ -2451,6 +2452,7 @@ mod tests {
 
         let session = load(home.path(), "s1").await.unwrap();
 
+        assert_eq!(session.messages[0].at, None, "no timestamp on the line, none on the message");
         let uuids: Vec<_> = session.messages.iter().map(|m| m.uuid.clone()).collect();
         assert_eq!(uuids, vec![Some("u-1".to_string()), None, Some("u-2".to_string())]);
     }

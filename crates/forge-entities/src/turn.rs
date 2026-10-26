@@ -102,6 +102,12 @@ fn TurnItem(
                     if !text.is_empty() {
                         div { class: "user-bubble", "{text}" }
                         div { class: "message-actions",
+                            if let Some(at) = message.at.as_deref() {
+                                {
+                                    let time = relative_time(at, OffsetDateTime::now_utc());
+                                    rsx! { if !time.is_empty() { span { class: "footer-time", "{time}" } } }
+                                }
+                            }
                             button {
                                 class: "icon-button",
                                 r#type: "button",
@@ -154,12 +160,12 @@ fn TurnItem(
     }
 }
 
-/// `Conversation compacted · 21.7k → 4.3k tokens`, or just the first part when the counts are unknown.
+/// `Session compacted · saved 63.6k tokens`, or just the first part when the counts are unknown.
 fn compacted_label(before: Option<u64>, after: Option<u64>) -> String {
     use crate::details_view::format_tokens_short;
     match (before, after) {
-        (Some(before), Some(after)) => tr!("Conversation compacted · {before} → {after} tokens", before = format_tokens_short(before), after = format_tokens_short(after)),
-        _ => tr!("Conversation compacted").to_string(),
+        (Some(before), Some(after)) if before > after => tr!("Session compacted · saved {saved} tokens", saved = format_tokens_short(before - after)),
+        _ => tr!("Session compacted").to_string(),
     }
 }
 
@@ -382,6 +388,9 @@ fn RunningLine(line: LiveLine) -> Element {
         LiveKind::Thinking => rsx! {
             div { class: "live-line",
                 span { class: "live-dots", "···" }
+                if !line.label.is_empty() {
+                    span { class: "live-label", "{line.label}" }
+                }
                 Clock { started: line.started }
             }
         },
@@ -407,5 +416,18 @@ fn AnswerCard(pairs: Vec<AnswerPair>) -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod compacted_tests {
+    use super::compacted_label;
+
+    #[test]
+    fn the_line_names_the_tokens_saved_when_both_counts_are_known() {
+        assert_eq!(compacted_label(Some(21_702), Some(4_290)), "Session compacted · saved 17.4k tokens");
+        assert_eq!(compacted_label(Some(5), None), "Session compacted");
+        assert_eq!(compacted_label(None, Some(5)), "Session compacted");
+        assert_eq!(compacted_label(Some(10), Some(20)), "Session compacted", "nothing saved is not claimed");
     }
 }

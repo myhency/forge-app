@@ -481,7 +481,21 @@ pub fn build_turns(messages: &[Message], view: TranscriptView, live: Option<&Liv
         }
     }
     finish_turn(&mut items, blocks, at, view, live);
+    // A running `/compact` has no tool call to name: the line says what it is doing.
+    let compacting = messages.iter().rev().find(|message| message.role == MessageRole::User).is_some_and(|message| is_compact_command(&message.text()));
+    if live.is_some() && compacting {
+        if let Some(Item::Live(line)) = items.last_mut() {
+            if line.kind == LiveKind::Thinking && line.label.is_empty() {
+                line.label = tr!("Compacting the session").to_string();
+            }
+        }
+    }
     items
+}
+
+fn is_compact_command(text: &str) -> bool {
+    let text = text.trim();
+    text == "/compact" || text.starts_with("/compact ")
 }
 
 #[cfg(test)]
@@ -921,6 +935,17 @@ mod tests {
     }
     fn unfinished(name: &str, input: serde_json::Value) -> Block {
         tool("t-x", name, input, None)
+    }
+
+    #[test]
+    fn a_running_compact_says_it_is_compacting() {
+        let running = LiveState::default();
+        let items = build_turns(&[Message::user("/compact")], TranscriptView::Normal, Some(&running));
+        assert_eq!(live_line(&items).label, "Compacting the session");
+        let other = build_turns(&[Message::user("hello")], TranscriptView::Normal, Some(&running));
+        assert_eq!(live_line(&other).label, "");
+        let finished = build_turns(&[Message::user("/compact")], TranscriptView::Normal, None);
+        assert!(!finished.iter().any(|item| matches!(item, Item::Live(_))));
     }
 
     #[test]

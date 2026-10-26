@@ -51,6 +51,7 @@ pub fn push_user_message(session: &mut Session, text: String, attachments: Vec<A
     let mut message = Message::user(rest);
     message.attachments = attachments;
     message.cards = cards;
+    message.at = Some(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
     session.messages.push(message);
 }
 
