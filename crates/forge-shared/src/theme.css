@@ -773,7 +773,6 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .perm-description { color: var(--fg); }
 .perm-note { padding: 10px 12px; background: var(--code-bg); border-radius: 8px; color: var(--fg-muted); font-size: 13px; }
 .perm-box { padding: 10px 12px; background: var(--code-bg); border-radius: 8px; font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; white-space: pre-wrap; }
-.perm-path { color: var(--fg-muted); font-size: 13px; overflow-wrap: anywhere; }
 .permission-panel > * { flex: none; }
 /* Only the diff or the command scrolls; the title and the buttons stay in view (Claude caps the card at 60% of the window). */
 .permission-panel .diff, .permission-panel .perm-command { flex: 0 1 auto; min-height: 5em; overflow-y: auto; }
@@ -781,7 +780,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .permission-panel .diff-header { flex-wrap: wrap; }
 /* A short window: the file name and the path text repeat the path box, so they go; the buttons must stay inside the card. */
 @media (max-height: 520px) {
-  .permission-panel .perm-subject, .permission-panel .perm-path { display: none; }
+  .permission-panel .perm-subject { display: none; }
   .permission-panel .diff, .permission-panel .perm-command { min-height: 3em; }
 }
 .diff-note, .diff-counts { white-space: nowrap; }

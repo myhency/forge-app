@@ -78,12 +78,12 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                 }
             },
             div { class: "perm-title", "{view.title}" }
-            if view.path.is_some() || view.command.is_some() {
+            // A diff names its file in its own header: the path is not shown again above it.
+            if (view.path.is_some() || view.command.is_some()) && diff.is_none() {
                 div { class: "perm-subject", "{view.subject}" }
             }
-            if let Some(path) = view.path.clone() {
+            if let (Some(path), None) = (view.path.clone(), diff.as_ref()) {
                 div { class: "perm-box", "{path}" }
-                div { class: "perm-path", "{path}" }
             }
             if let Some(command) = view.command.clone() {
                 div { class: "perm-box perm-command", "{command}" }

@@ -335,7 +335,10 @@ impl GitPort for GitCli {
     }
 
     fn changes(&self, cwd: &Path, source: &ChangeSource, options: &DiffOptions) -> Result<Vec<FileChange>, GitError> {
-        self.collect(cwd, source, options, None, PATCH_BUDGET)
+        let mut changes = self.collect(cwd, source, options, None, PATCH_BUDGET)?;
+        // What a program leaves behind while it runs is not something the person changed.
+        changes.retain(|change| !is_generated(&change.file.path));
+        Ok(changes)
     }
 
     fn file_lines(&self, cwd: &Path, source: &ChangeSource, path: &str) -> Result<Vec<String>, GitError> {
@@ -379,6 +382,11 @@ impl GitPort for GitCli {
         let root = self.root(cwd)?;
         Ok(self.has_commit(&root, sha))
     }
+}
+
+/// Compiled Python files and their folder: build output a run leaves in the working tree.
+fn is_generated(path: &str) -> bool {
+    path.split('/').any(|part| part == "__pycache__") || path.ends_with(".pyc")
 }
 
 impl WorktreePort for GitCli {
@@ -1095,5 +1103,19 @@ mod tests {
     fn is_dirty_reports_a_missing_repository_as_an_error() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(GitCli::new().is_dirty(dir.path()), Err(GitError::NotARepository));
+    }
+}
+
+#[cfg(test)]
+mod generated_tests {
+    use super::is_generated;
+
+    #[test]
+    fn compiled_python_files_are_generated_and_sources_are_not() {
+        assert!(is_generated("__pycache__/wordstat.cpython-312.pyc"));
+        assert!(is_generated("src/pkg/__pycache__/a.pyc"));
+        assert!(is_generated("tools/old.pyc"));
+        assert!(!is_generated("src/cache.py"));
+        assert!(!is_generated("pycache_notes.md"));
     }
 }

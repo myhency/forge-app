@@ -1,18 +1,26 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, pane_class, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
-use forge_features::{drag_ratio, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
+use forge_features::{drag_ratio, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
 use forge_widgets::{ChatWindow, OutsideFileDialog, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
 use forge_shared::tr;
 
-/// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
-/// the active session. The root also catches the session shortcuts.
-#[component]
-pub fn WorkspacePage() -> Element {
+/// Makes the state the whole window shares (settings, customize, the workspace, routines, notices).
+/// Call it once, in the root component: the tasks these start run in the root scope, and a signal
+/// made in a child scope would be dropped with that child.
+pub fn use_workspace_providers() {
     let settings = use_settings_provider();
     use_customize_provider();
     let workspace = use_workspace_provider();
     use_routines_provider(workspace, settings);
     use_session_notices(workspace, settings);
+}
+
+/// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
+/// the active session. The root also catches the session shortcuts.
+#[component]
+pub fn WorkspacePage() -> Element {
+    let settings = use_settings();
+    let workspace = use_workspace();
     let mut dragging = use_signal(|| false);
     let mut pane_dragging = use_signal(|| None::<PaneDrag>);
     // Key events only reach the root while something inside it has focus. Whenever the overlay

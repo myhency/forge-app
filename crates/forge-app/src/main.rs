@@ -24,7 +24,7 @@ use forge_adapter_terminal::PtyTerminal;
 use forge_adapter_webview::WryWebViews;
 use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, RegistryHost, RoutineRunner, RoutinesUseCase, SessionRegistry, ScratchUseCase, SettingsUseCase, SkillCatalogUseCase, WorktreesUseCase};
 use forge_features::{RoutineServices, WorkspaceServices};
-use forge_pages::WorkspacePage;
+use forge_pages::{use_workspace_providers, WorkspacePage};
 use forge_shared::THEME_CSS;
 
 // The one web view host: the services hold it as a port, `App` attaches the window to it.
@@ -283,6 +283,7 @@ fn App() -> Element {
             }
         });
     }
+    use_workspace_providers();
     rsx! {
         style { "{THEME_CSS}" }
         WorkspacePage {}
