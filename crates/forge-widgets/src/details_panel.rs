@@ -14,8 +14,18 @@ use crate::files_icons::FileTypeIcon;
 /// shows and hides it.
 #[component]
 pub fn DetailsPanel(id: LiveSessionId) -> Element {
+    let workspace = use_workspace();
     rsx! {
         section { class: "session-rail", "aria-label": Panel::Details.title(),
+            // Only in a narrow window, where the dock covers the header's button for the rail.
+            button {
+                class: "icon-button rail-close",
+                r#type: "button",
+                title: tr!("Close"),
+                "aria-label": tr!("Close"),
+                onclick: move |_| workspace.change_dock(id, |dock| dock.close(Panel::Details)),
+                "✕"
+            }
             EnvironmentCard { id }
             ContextCard { id }
             ConnectorsCard { id }

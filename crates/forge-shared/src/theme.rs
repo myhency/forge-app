@@ -58,8 +58,11 @@ mod tests {
     }
 
     #[test]
-    fn the_floating_dock_starts_below_the_chat_header_so_its_tools_stay_reachable() {
-        assert!(rule(".dock-float .dock").contains("top: 64px"));
+    fn the_floating_dock_fills_the_pane_to_its_top_and_the_rail_has_its_own_close_button() {
+        // The chat header's tool buttons sit under it: every panel closes itself, the rail through `.rail-close`.
+        assert!(rule(".dock-float .dock").contains("top: 8px"));
+        assert!(THEME_CSS.contains(".dock-float .rail-close { display: inline-flex; }"));
+        assert!(rule(".rail-close").contains("display: none"));
     }
 
     #[test]

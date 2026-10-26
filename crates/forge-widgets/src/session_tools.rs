@@ -93,6 +93,17 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                 class: "picker-item menu-narrow",
                                 r#type: "button",
                                 role: "menuitemcheckbox",
+                                "aria-checked": "{details_open}",
+                                onclick: move |_| {
+                                    workspace.change_dock(id, |dock| dock.toggle(Panel::Details));
+                                    open.set(false);
+                                },
+                                span { {tr!("Environment")} }
+                            }
+                            button {
+                                class: "picker-item menu-narrow",
+                                r#type: "button",
+                                role: "menuitemcheckbox",
                                 "aria-checked": "{terminal_open}",
                                 onclick: move |_| {
                                     workspace.change_dock(id, |dock| dock.toggle(Panel::Terminal));
