@@ -30,6 +30,18 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
         open.set(false);
     };
 
+    // A message row's ↺ opens the dialog on that message.
+    use_effect(move || {
+        if let Some(uuid) = workspace.take_rewind_request(id) {
+            picked.set(Some(uuid.clone()));
+            then_fork.set(false);
+            open.set(true);
+            if let Some(handle) = workspace.handle(id) {
+                handle.rewind_files(uuid, true);
+            }
+        }
+    });
+
     // The files are back and "both" was asked: now the conversation.
     use_effect(move || {
         let snapshot = view.read();

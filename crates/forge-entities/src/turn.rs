@@ -53,6 +53,8 @@ pub fn Turns(
     #[props(default)] finished: Vec<FinishedTask>,
     #[props(default)] on_open_tasks: EventHandler<()>,
     #[props(default)] on_open_plan: EventHandler<()>,
+    /// Asked to go back to the user message with this id (its action row's ↺); no ↺ without it.
+    #[props(default)] on_rewind: Option<EventHandler<String>>,
 ) -> Element {
     let known = known_paths(&messages);
     let items = build_turns(&messages, view, live.as_ref());
@@ -60,7 +62,7 @@ pub fn Turns(
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan }
+                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind }
             }
         }
     }
@@ -76,6 +78,7 @@ fn TurnItem(
     finished: Vec<FinishedTask>,
     on_open_tasks: EventHandler<()>,
     on_open_plan: EventHandler<()>,
+    on_rewind: Option<EventHandler<String>>,
 ) -> Element {
     match item {
         Item::User(message) => {
@@ -98,6 +101,29 @@ fn TurnItem(
                     }
                     if !text.is_empty() {
                         div { class: "user-bubble", "{text}" }
+                        div { class: "message-actions",
+                            button {
+                                class: "icon-button",
+                                r#type: "button",
+                                title: tr!("Copy"),
+                                "aria-label": tr!("Copy"),
+                                onclick: {
+                                    let text = text.clone();
+                                    move |_| crate::clipboard::copy_text(&text)
+                                },
+                                "⧉"
+                            }
+                            if let (Some(on_rewind), Some(uuid)) = (on_rewind, message.uuid.clone()) {
+                                button {
+                                    class: "icon-button",
+                                    r#type: "button",
+                                    title: tr!("Go back to an earlier point"),
+                                    "aria-label": tr!("Go back to an earlier point"),
+                                    onclick: move |_| on_rewind.call(uuid.clone()),
+                                    "↺"
+                                }
+                            }
+                        }
                     }
                 }
             }

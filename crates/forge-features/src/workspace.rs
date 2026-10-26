@@ -184,6 +184,8 @@ pub struct Workspace {
     cards: Signal<Cards>,
     files_stores: Signal<HashMap<LiveSessionId, FilesStore>>,
     queued_files: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
+    /// A message the person asked to go back to from its row; the session's rewind dialog takes it.
+    rewind_requests: Signal<HashMap<LiveSessionId, String>>,
     added_folders: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
     card_folded: Signal<HashMap<(LiveSessionId, DetailsCard), bool>>,
     /// The Changes card's count per session, and the ticket of its latest read.
@@ -275,6 +277,7 @@ pub fn use_workspace_provider() -> Workspace {
             cards: Signal::new(Cards::default()),
             files_stores: Signal::new(HashMap::new()),
             queued_files: Signal::new(HashMap::new()),
+            rewind_requests: Signal::new(HashMap::new()),
             added_folders: Signal::new(HashMap::new()),
             card_folded: Signal::new(HashMap::new()),
             change_counts: Signal::new(HashMap::new()),
@@ -1398,6 +1401,22 @@ impl Workspace {
         queued.write().entry(id).or_default().push(path);
     }
 
+    /// Asks the session's `/rewind` dialog to open on the user message with this id.
+    pub fn request_rewind(&self, id: LiveSessionId, message_uuid: String) {
+        let mut requests = self.rewind_requests;
+        requests.write().insert(id, message_uuid);
+    }
+
+    /// The message a row asked to go back to, once; reading it clears it.
+    pub fn take_rewind_request(&self, id: LiveSessionId) -> Option<String> {
+        let mut requests = self.rewind_requests;
+        let asked = self.rewind_requests.read().get(&id).cloned();
+        if asked.is_some() {
+            requests.write().remove(&id);
+        }
+        asked
+    }
+
     pub fn queued_files(&self, id: LiveSessionId) -> Vec<PathBuf> {
         self.queued_files.read().get(&id).cloned().unwrap_or_default()
     }
@@ -2338,6 +2357,8 @@ impl Workspace {
                         handle.add_directories(folders);
                     }
                     handle.send_with(text, attachments);
+                    // The desktop app opens the details panel by itself on a new session's first send.
+                    this.change_dock(id, |dock| if !dock.is_open(Panel::Details) { dock.open(Panel::Details) });
                     this.show_started(id);
                 }
                 Err(error) => {

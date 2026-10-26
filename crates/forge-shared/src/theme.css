@@ -162,6 +162,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .turns { font-size: var(--chat-size); max-width: var(--chat-column); margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 
 .turn-user { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin-top: 18px; }
+.message-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; margin-top: -2px; }
+.turn-user:hover .message-actions, .message-actions:focus-within { opacity: 1; }
 .user-bubble { max-width: 100%; box-sizing: border-box; padding: 9px 14px; background: var(--bg-hover); border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn-text { overflow-wrap: anywhere; }
 .turn-text.markdown { white-space: normal; }
@@ -1267,6 +1269,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .env-card-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 6px 8px; border: none; background: transparent; color: var(--fg); font: inherit; font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; }
 .env-card-chevron { display: inline-flex; color: var(--fg-muted); }
 .env-card-chevron.folded { transform: rotate(-90deg); }
+.env-card-tag { margin-left: auto; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; color: var(--fg-muted); font-size: 11px; }
 .env-card-row { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 4px 8px; border: none; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; font-size: 13px; text-align: left; }
 .env-card-folder { position: relative; }
 .env-card-folder-button { cursor: pointer; }

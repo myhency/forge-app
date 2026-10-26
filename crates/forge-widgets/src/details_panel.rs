@@ -46,6 +46,12 @@ fn CardIcon(kind: &'static str) -> Element {
                 "diff" => rsx! {
                     path { d: "M8 2.5v6M5 5.5h6M5 12.5h6" }
                 },
+                "branch" => rsx! {
+                    circle { cx: "4.5", cy: "3.5", r: "1.5" }
+                    circle { cx: "4.5", cy: "12.5", r: "1.5" }
+                    circle { cx: "11.5", cy: "6", r: "1.5" }
+                    path { d: "M4.5 5v6M11.5 7.5c0 2-2 2.5-7 3.5" }
+                },
                 "gear" => rsx! {
                     circle { cx: "8", cy: "8", r: "2" }
                     path { d: "M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" }
@@ -75,6 +81,16 @@ fn EnvironmentCard(id: LiveSessionId) -> Element {
     let folders = if scratch { Vec::new() } else { card_folders(&origin, &workspace.session_added_folders(id)) };
     let busy = workspace.session_is_busy(id);
     let worktree_session = workspace.worktree_tag(&view.project_path).is_some();
+    // The branch the session's folder is on; read again when a turn starts or ends (it may switch).
+    let branch = {
+        let project = view.project_path.clone();
+        let running = view.phase == Phase::Running;
+        use_resource(use_reactive!(|project, running| async move {
+            let _ = running;
+            workspace.folder_branches(project).await.and_then(|branches| branches.current)
+        }))
+    };
+    let branch_name = branch.read().clone().flatten();
 
     rsx! {
         div { class: "env-card",
@@ -118,6 +134,15 @@ fn EnvironmentCard(id: LiveSessionId) -> Element {
                                 },
                                 {tr!("Save")}
                             }
+                        }
+                    }
+                }
+                if let Some(branch_name) = branch_name {
+                    div { class: "env-card-row",
+                        CardIcon { kind: "branch" }
+                        span { class: "env-card-name", "{branch_name}" }
+                        if worktree_session {
+                            span { class: "env-card-tag", {tr!("Worktree")} }
                         }
                     }
                 }
