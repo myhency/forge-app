@@ -135,7 +135,7 @@ impl Actor {
                 self.dirty = true;
             }
             LiveCommand::DismissSide => {
-                self.view.side_question = None;
+                self.view.side_thread.clear();
                 self.dirty = true;
             }
             LiveCommand::AddDirectories(directories) => self.add_directories(directories).await,
@@ -303,19 +303,27 @@ impl Actor {
         }
         self.side_count += 1;
         let id = format!("side-{}", self.side_count);
-        self.view.side_question = Some(SideQuestion { id: id.clone(), question: question.clone(), answer: SideAnswer::Pending });
+        // The SDK answers one question at a time from the conversation: a follow-up carries the
+        // earlier questions and answers of the thread in its text.
+        let asked = side_prompt(&self.view.side_thread, &question);
+        self.view.side_thread.push(SideQuestion { id: id.clone(), question, answer: SideAnswer::Pending });
         self.dirty = true;
+        let fail = |view: &mut LiveSessionView, id: &str, message: String| {
+            if let Some(side) = view.side_thread.iter_mut().find(|side| side.id == id) {
+                side.answer = SideAnswer::Failed(message);
+            }
+        };
         if self.sidecar.is_none() {
             self.warm_only = true;
             if let Err(message) = self.start_sidecar().await {
                 self.warm_only = false;
-                self.view.side_question = Some(SideQuestion { id, question, answer: SideAnswer::Failed(message) });
+                fail(&mut self.view, &id, message);
                 return;
             }
         }
         let Some(sidecar) = self.sidecar.clone() else { return };
-        if let Err(error) = sidecar.ask_side_question(id.clone(), question.clone()).await {
-            self.view.side_question = Some(SideQuestion { id, question, answer: SideAnswer::Failed(error.to_string()) });
+        if let Err(error) = sidecar.ask_side_question(id.clone(), asked).await {
+            fail(&mut self.view, &id, error.to_string());
         }
     }
 
@@ -599,7 +607,7 @@ impl Actor {
                 }
             }
             SessionUpdate::SideAnswer { request_id, result } => {
-                if let Some(side) = self.view.side_question.as_mut().filter(|side| side.id == request_id) {
+                if let Some(side) = self.view.side_thread.iter_mut().find(|side| side.id == request_id) {
                     side.answer = match result {
                         Ok(text) => SideAnswer::Done(text),
                         Err(reason) => SideAnswer::Failed(reason),
@@ -652,7 +660,7 @@ impl Actor {
 
     async fn discard_sidecar(&mut self, shutdown: bool) {
         // Its answer will not come.
-        if let Some(side) = self.view.side_question.as_mut().filter(|side| side.answer == SideAnswer::Pending) {
+        for side in self.view.side_thread.iter_mut().filter(|side| side.answer == SideAnswer::Pending) {
             side.answer = SideAnswer::Failed(String::new());
         }
         self.view.background_tasks.clear();
@@ -663,6 +671,21 @@ impl Actor {
             }
         }
     }
+}
+
+/// What the SDK is asked for a side question: the finished questions and answers of the thread, then the new question.
+fn side_prompt(thread: &[SideQuestion], question: &str) -> String {
+    let earlier: Vec<String> = thread
+        .iter()
+        .filter_map(|side| match &side.answer {
+            SideAnswer::Done(answer) => Some(format!("Q: {}\nA: {answer}", side.question)),
+            _ => None,
+        })
+        .collect();
+    if earlier.is_empty() {
+        return question.to_string();
+    }
+    format!("Earlier side questions and answers:\n{}\n\nNew side question: {question}", earlier.join("\n"))
 }
 
 // Waits for the next sidecar event; with no sidecar it never resolves, so `select!` ignores it.

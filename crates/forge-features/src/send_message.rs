@@ -12,7 +12,6 @@ use crate::suggestion::{composer_placeholder, suggestion_to_accept};
 use crate::command_box::CommandTextArea;
 use crate::queued_card::QueuedCard;
 use crate::rewind_dialog::RewindDialog;
-use crate::side_card::SideCard;
 use crate::workspace::use_workspace;
 
 // Commands Forge answers itself, listed with the SDK's.
@@ -94,10 +93,8 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
         // `/btw question` is asked on the side: it is not sent as a message.
         let side = btw_question(&draft.read()).map(str::to_string);
         if let Some(question) = side {
-            if let Some(handle) = workspace.handle(id) {
-                handle.ask_side(question);
-                draft.set(String::new());
-            }
+            workspace.ask_side(id, question);
+            draft.set(String::new());
             return;
         }
         let cards = workspace.take_cards(id, line_count);
@@ -143,7 +140,6 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                 div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
             }
             ComposerCards { id }
-            SideCard { id }
             RewindDialog { id, open: rewinding }
             QueuedCard { id, draft }
             ComposerChips {}

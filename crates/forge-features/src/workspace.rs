@@ -2170,16 +2170,16 @@ impl Workspace {
         Some(format!("{}\n{}\n{}", tr!("Plan ready · Ready to start?"), lines.join("\n"), tr!("Open the session to approve it")))
     }
 
-    /// Opens the plan panel by itself (a plan arrived). A details panel that opened by itself gives
-    /// way to it, so two panels do not cover the chat with the card waiting in it.
-    pub fn open_plan_panel(&self, id: LiveSessionId) {
+    /// Opens a panel that came up by itself (a plan arrived, a side question was asked). A details
+    /// panel that opened by itself gives way to it, so two panels do not cover the chat.
+    pub fn open_panel_over_auto_details(&self, id: LiveSessionId, panel: Panel) {
         let mut auto = self.auto_details;
         let was_auto = auto.write().remove(&id);
         self.change_dock(id, |dock| {
             if was_auto {
                 dock.close(Panel::Details);
             }
-            dock.open(Panel::Plan);
+            dock.open(panel);
         });
     }
 
@@ -2198,6 +2198,14 @@ impl Workspace {
         let Some(limit) = view.read().rate_limit.clone() else { return };
         let mut dismissed = self.rate_dismissed;
         dismissed.set(Some((limit.level, limit.window, limit.resets_at)));
+    }
+
+    /// `/btw`: asks the SDK on the side and opens the side chat panel to show the answer.
+    pub fn ask_side(&self, id: LiveSessionId, question: String) {
+        if let Some(handle) = self.handle(id) {
+            handle.ask_side(question);
+            self.open_panel_over_auto_details(id, Panel::Side);
+        }
     }
 
     pub fn plan_comments(&self, id: LiveSessionId) -> Vec<forge_entities::PlanComment> {
@@ -3331,7 +3339,7 @@ mod plan_text_tests {
             allowed_rules: Vec::new(),
             queued: Vec::new(),
             rate_limit: None,
-            side_question: None,
+            side_thread: Vec::new(),
             rewind: None,
         }
     }

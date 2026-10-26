@@ -53,6 +53,7 @@ mod outside_file_dialog;
 mod sidebar;
 mod details_panel;
 mod plan_panel;
+mod side_panel;
 mod tasks_panel;
 mod terminal_panel;
 mod usage_card;

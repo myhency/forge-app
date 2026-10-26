@@ -17,6 +17,8 @@ pub enum Panel {
     Tasks,
     Details,
     Plan,
+    /// The `/btw` side chat.
+    Side,
 }
 
 impl Panel {
@@ -29,6 +31,7 @@ impl Panel {
             Panel::Tasks => tr!("Background tasks"),
             Panel::Details => tr!("Environment"),
             Panel::Plan => tr!("Plan"),
+            Panel::Side => tr!("Side question"),
         }
     }
 
@@ -37,7 +40,7 @@ impl Panel {
         match self {
             Panel::Changes => Some(Panel::Preview),
             Panel::Preview => Some(Panel::Changes),
-            Panel::Terminal | Panel::Files | Panel::Tasks | Panel::Details | Panel::Plan => None,
+            Panel::Terminal | Panel::Files | Panel::Tasks | Panel::Details | Panel::Plan | Panel::Side => None,
         }
     }
 }

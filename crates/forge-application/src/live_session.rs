@@ -77,8 +77,8 @@ pub struct LiveSessionView {
     pub queued: Vec<QueuedMessage>,
     /// The account's usage limit state as the SDK last reported it.
     pub rate_limit: Option<forge_domain::RateLimit>,
-    /// The last `/btw` question and its answer; it is not part of the session.
-    pub side_question: Option<SideQuestion>,
+    /// The `/btw` questions and answers, oldest first; they are not part of the session.
+    pub side_thread: Vec<SideQuestion>,
     /// The `/rewind` the person is looking at: a preview of what would change, then the result.
     pub rewind: Option<RewindState>,
 }
@@ -126,7 +126,7 @@ pub enum LiveCommand {
     Dequeue { index: usize, send_now: bool },
     /// Asks about the conversation without adding the question to it (`/btw`).
     AskSide { question: String },
-    /// Closes the `/btw` card.
+    /// Forgets the `/btw` thread.
     DismissSide,
     /// Asks the SDK to put the files back as they were before the user message (`dry_run`: only
     /// to say what would change).
@@ -369,7 +369,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         allowed_rules: Vec::new(),
         queued: Vec::new(),
         rate_limit: None,
-        side_question: None,
+        side_thread: Vec::new(),
         rewind: None,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
@@ -1172,8 +1172,8 @@ mod tests {
         let mut view = handle.subscribe();
 
         handle.ask_side("what was the number?".to_string());
-        let asked = wait_for(&mut view, "the question to show", |v| v.side_question.is_some()).await;
-        let side = asked.side_question.unwrap();
+        let asked = wait_for(&mut view, "the question to show", |v| !v.side_thread.is_empty()).await;
+        let side = asked.side_thread[0].clone();
         assert_eq!(side.question, "what was the number?");
         assert_eq!(side.answer, SideAnswer::Pending);
         assert_eq!(asked.phase, Phase::Idle, "a side question starts no turn");
@@ -1182,11 +1182,31 @@ mod tests {
 
         control.push(SidecarEvent::SideAnswer { request_id: "stale".to_string(), answer: Some("no".to_string()), error: None });
         control.push(SidecarEvent::SideAnswer { request_id: side.id.clone(), answer: Some("41".to_string()), error: None });
-        let answered = wait_for(&mut view, "the answer", |v| matches!(&v.side_question, Some(q) if q.answer != SideAnswer::Pending)).await;
-        assert_eq!(answered.side_question.unwrap().answer, SideAnswer::Done("41".to_string()));
+        let answered = wait_for(&mut view, "the answer", |v| v.side_thread.first().is_some_and(|q| q.answer != SideAnswer::Pending)).await;
+        assert_eq!(answered.side_thread[0].answer, SideAnswer::Done("41".to_string()));
 
         handle.dismiss_side();
-        wait_for(&mut view, "the card to go", |v| v.side_question.is_none()).await;
+        wait_for(&mut view, "the thread to go", |v| v.side_thread.is_empty()).await;
+    }
+
+    #[tokio::test]
+    async fn a_follow_up_carries_the_earlier_questions_and_answers_to_the_sdk() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+
+        handle.ask_side("first?".to_string());
+        let asked = wait_for(&mut view, "the first question", |v| !v.side_thread.is_empty()).await;
+        control.push(SidecarEvent::SideAnswer { request_id: asked.side_thread[0].id.clone(), answer: Some("one".to_string()), error: None });
+        wait_for(&mut view, "the first answer", |v| v.side_thread[0].answer == SideAnswer::Done("one".to_string())).await;
+
+        handle.ask_side("and then?".to_string());
+        let two = wait_for(&mut view, "the second question", |v| v.side_thread.len() == 2).await;
+        assert_eq!(two.side_thread[1].question, "and then?", "the thread shows what the person typed");
+        let sent = control.calls().into_iter().filter_map(|call| if let Call::SideQuestion(_, text) = call { Some(text) } else { None }).collect::<Vec<_>>();
+        assert_eq!(sent[0], "first?");
+        assert!(sent[1].contains("first?") && sent[1].contains("one") && sent[1].ends_with("and then?"), "{}", sent[1]);
     }
 
     #[tokio::test]
@@ -1196,11 +1216,11 @@ mod tests {
         let handle = spawn_live_session(new_init(factory));
         let mut view = handle.subscribe();
         handle.ask_side("q".to_string());
-        let asked = wait_for(&mut view, "the question to show", |v| v.side_question.is_some()).await;
-        let id = asked.side_question.unwrap().id;
+        let asked = wait_for(&mut view, "the question to show", |v| !v.side_thread.is_empty()).await;
+        let id = asked.side_thread[0].id.clone();
         control.push(SidecarEvent::SideAnswer { request_id: id, answer: None, error: Some("boom".to_string()) });
-        let failed = wait_for(&mut view, "the failure", |v| matches!(&v.side_question, Some(q) if q.answer != SideAnswer::Pending)).await;
-        assert_eq!(failed.side_question.unwrap().answer, SideAnswer::Failed("boom".to_string()));
+        let failed = wait_for(&mut view, "the failure", |v| v.side_thread.first().is_some_and(|q| q.answer != SideAnswer::Pending)).await;
+        assert_eq!(failed.side_thread[0].answer, SideAnswer::Failed("boom".to_string()));
     }
 
     #[tokio::test]
