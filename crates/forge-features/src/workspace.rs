@@ -34,7 +34,7 @@ use crate::task_list_views::{TaskListView, TaskListViews};
 use crate::transcript_views::TranscriptViews;
 use crate::arrange::{arrange_with_origins, open_session_order_with_origins, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
-use crate::sidebar::{archive_key_plan, cycle_target, ArchiveKey, SidebarEntry, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, LiveSummary, SidebarGroup};
+use crate::sidebar::{archive_key_plan, cycle_target, ArchiveKey, SidebarEntry, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, ForkOrigin, LiveSummary, SidebarGroup};
 use crate::worktree_view::{folder_choices, NewWorktree, RepoInfo, WorktreeTag};
 use forge_shared::tr;
 
@@ -936,14 +936,30 @@ impl Workspace {
         });
     }
 
-    /// Forks a session as it was before its user message `message_uuid` and opens the copy (the
-    /// conversation half of `/rewind`). A failure shows as a notice and nothing is opened.
-    pub fn fork_session_before(&self, project: PathBuf, session: SessionId, message_uuid: String, title: String) {
+    /// The fork icon of a user message: copies the open session as it was before that message,
+    /// opens the copy and puts the message back in its box. The original is left as it is. A failure
+    /// shows as a notice and nothing is opened.
+    pub fn fork_from_message(&self, id: LiveSessionId, message_uuid: String) {
         let this = *self;
         let services = (*self.services.peek()).clone();
         let mut past = self.past;
+        let Some(view) = self.live_view(id) else { return };
+        let (project, session_id, title, message) = {
+            let view = view.peek();
+            (
+                view.project_path.clone(),
+                view.claude_session_id.clone(),
+                view.session.title.clone().unwrap_or_default(),
+                view.session.messages.iter().find(|m| m.uuid.as_deref() == Some(message_uuid.as_str())).cloned(),
+            )
+        };
+        let (Some(session_id), Some(message)) = (session_id, message) else {
+            return self.report(tr!("This message cannot be forked yet.").to_string());
+        };
+        let unsent = (forge_domain::with_cards(&message.cards, &message.text()), message.attachments.clone());
+        // Root scope: the copy is made on disk and must be opened even if this chat re-renders meanwhile.
         dioxus::core::spawn_forever(async move {
-            let new_id = match services.registry.fork_before(&project, &session, &message_uuid, &title).await {
+            let new_id = match services.registry.fork_before(&project, &session_id, &message_uuid, &title).await {
                 Ok(id) => id,
                 Err(error) => return this.report(error.to_string()),
             };
@@ -952,8 +968,16 @@ impl Workspace {
                 Err(error) => return this.report(format!("{}: {error}", project.display())),
             }
             let summary = project_for_open(&past.peek(), &project);
-            this.open_past(summary, new_id);
+            this.open_past_with(summary, new_id, PastOpen::Replace, Some(unsent));
         });
+    }
+
+    /// The origin of the open session when it is a fork and the origin is listed (the `포크 원본` line).
+    pub fn fork_origin(&self, id: LiveSessionId) -> Option<ForkOrigin> {
+        let view = self.live_view(id)?;
+        let view = view.read();
+        let origin = view.session.forked_from.as_ref()?;
+        crate::sidebar::fork_origin(&self.past.read(), &view.project_path, origin, view.claude_session_id.as_ref())
     }
 
     /// Whether a folder dialog is open; the button is disabled meanwhile so only one can be.
@@ -2334,6 +2358,11 @@ impl Workspace {
     }
 
     fn open_past_in(&self, project: ProjectSummary, session_id: SessionId, how: PastOpen) {
+        self.open_past_with(project, session_id, how, None);
+    }
+
+    /// Opens a past session; `unsent` is a message to put in its box once it is open (a fork from a message).
+    fn open_past_with(&self, project: ProjectSummary, session_id: SessionId, how: PastOpen, unsent: Option<(String, Vec<Attachment>)>) {
         let this = *self;
         let services = (*self.services.peek()).clone();
         // Root scope: the search palette closes the moment it opens a session, and a task of the
@@ -2362,6 +2391,12 @@ impl Workspace {
                         PastOpen::Replace => this.select(id),
                         PastOpen::Click => this.open_session(id),
                         PastOpen::Beside => this.add_session(id),
+                    }
+                    if let Some(unsent) = unsent {
+                        match services.sessions.load_session(&project.path, &session_id).await {
+                            Ok(session) => handle.replace_session(session, Some(unsent)),
+                            Err(error) => this.report(error.to_string()),
+                        }
                     }
                 }
                 Err(error) => this.report(error.to_string()),

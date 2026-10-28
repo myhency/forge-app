@@ -119,8 +119,8 @@ pub use settings::{auto_archive_text, auto_archive_value, use_settings, use_sett
 pub use settings_draft::ConnectionDraft;
 pub use shortcut::{forwarded_shortcut, command_held, match_code, swallowed_behind_overlay, types_text, command_pressed, shortcut_allowed, shortcut_for, preview_shortcut, shortcut_sections, PickerKind, PreviewKey, KeyPress, Shortcut, ShortcutSection};
 pub use sidebar::{
-    cycle_target, mark_archived, marker_for, menu_key_action, merge_sidebar, open_order, replace_project_sessions, ArchiveAction, DeleteAction, EntryKey,
-    LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,
+    cycle_target, fork_origin, mark_archived, marker_for, menu_key_action, merge_sidebar, open_order, replace_project_sessions, ArchiveAction, DeleteAction, EntryKey,
+    ForkOrigin, LiveSummary, MenuKeyAction, RowActions, SidebarEntry, SidebarGroup,
 };
 pub use terminal_tabs::{TabId, TerminalTabs};
 pub use routines::{cards, history_rows, run_state_text, local_when_label, notices, offset_at, skip_text, start_failed_notice, waiting_notice, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};

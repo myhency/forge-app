@@ -173,6 +173,34 @@ pub fn project_for_open(past: &[(ProjectSummary, Vec<SessionSummary>)], project_
         })
 }
 
+/// Where a fork came from, as the `포크 원본` line at the top of its chat shows it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForkOrigin {
+    pub project: ProjectSummary,
+    pub session_id: SessionId,
+    pub title: String,
+    /// When the fork began (RFC 3339); empty while the fork is not in the listing yet.
+    pub forked_at: String,
+}
+
+/// The origin of the fork `own`, looked up in the listing of `project_path`. `None` (the line is
+/// hidden) when the origin is not listed there or has no title.
+pub fn fork_origin(
+    past: &[(ProjectSummary, Vec<SessionSummary>)],
+    project_path: &std::path::Path,
+    origin: &SessionId,
+    own: Option<&SessionId>,
+) -> Option<ForkOrigin> {
+    let (project, sessions) = past.iter().find(|(project, _)| project.path == project_path)?;
+    let found = sessions.iter().find(|session| &session.id == origin)?;
+    let title = found.title.clone().filter(|title| !title.trim().is_empty())?;
+    let forked_at = own
+        .and_then(|own| sessions.iter().find(|session| &session.id == own))
+        .map(|session| session.created_at.clone())
+        .unwrap_or_default();
+    Some(ForkOrigin { project: project.clone(), session_id: found.id.clone(), title, forked_at })
+}
+
 /// Puts `sessions` in place of one project's listing and refreshes its count; other projects and
 /// unknown paths are left alone.
 pub fn replace_project_sessions(
@@ -464,6 +492,43 @@ mod tests {
         let all = actions(true, DeleteAction::Allowed);
         assert_eq!(menu_key_action("KeyR", false, all), Some(MenuKeyAction::Rename));
         assert_eq!(menu_key_action("KeyD", false, all), Some(MenuKeyAction::Delete));
+    }
+
+    fn past_with(path: &str, sessions: Vec<SessionSummary>) -> Vec<(ProjectSummary, Vec<SessionSummary>)> {
+        let (project, _) = listed(path);
+        vec![(project, sessions)]
+    }
+
+    #[test]
+    fn the_origin_of_a_fork_is_found_in_its_own_project_with_the_forks_start_time() {
+        let past = past_with("/work/a", vec![summary("origin", Some("Fix login")), summary("fork", Some("Fix login (fork)"))]);
+
+        let found = fork_origin(&past, std::path::Path::new("/work/a"), &SessionId("origin".to_string()), Some(&SessionId("fork".to_string()))).unwrap();
+
+        assert_eq!(found.title, "Fix login");
+        assert_eq!(found.session_id, SessionId("origin".to_string()));
+        assert_eq!(found.project.path, PathBuf::from("/work/a"));
+        assert_eq!(found.forked_at, "2026-09-28T00:00:04Z", "the fork's created_at");
+    }
+
+    #[test]
+    fn a_missing_untitled_or_other_project_origin_hides_the_line() {
+        let past = past_with("/work/a", vec![summary("origin", None), summary("fork", Some("F"))]);
+        let fork = SessionId("fork".to_string());
+        let path = std::path::Path::new("/work/a");
+
+        assert_eq!(fork_origin(&past, path, &SessionId("origin".to_string()), Some(&fork)), None, "no title");
+        assert_eq!(fork_origin(&past, path, &SessionId("gone".to_string()), Some(&fork)), None, "not listed");
+        assert_eq!(fork_origin(&past, std::path::Path::new("/work/b"), &SessionId("origin".to_string()), Some(&fork)), None, "another folder");
+    }
+
+    #[test]
+    fn a_fork_that_is_not_listed_yet_has_no_time_but_still_shows_its_origin() {
+        let past = past_with("/work/a", vec![summary("origin", Some("Mine"))]);
+
+        let found = fork_origin(&past, std::path::Path::new("/work/a"), &SessionId("origin".to_string()), None).unwrap();
+
+        assert_eq!(found.forked_at, "");
     }
 
     fn listed(path: &str) -> (ProjectSummary, Vec<SessionSummary>) {
