@@ -70,7 +70,7 @@ pub use usage_card::{
     axis_ticks, chart_layout, dashboard_model_label, day_label, heat_level, hour_label, legend_rows, overview_tiles, with_commas, ChartBar,
     ChartLayout, LegendRow, Tile,
 };
-pub use turn_cards::{apply, chosen_action, end_card_of, plan_of, turn_tool, CardAction, EndCard, Step as PlanStep, StepState, TurnTool};
+pub use turn_cards::{apply, chosen_action, end_card_of, offered, CardMark, plan_of, turn_tool, CardAction, EndCard, Step as PlanStep, StepState, TurnTool};
 pub use usage_view::{format_cost, format_tokens, ring_dash, ring_level, ContextView, ModelLine, RingLevel, UsageView};
 
 pub use details_view::{

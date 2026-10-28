@@ -40,7 +40,9 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
     let mut rewinding = use_signal(|| false);
     let view = workspace.live_view(id);
     // A live next-step card is the suggestion: the grey text gives way to it.
-    let end_card = view.and_then(|view| forge_entities::live_end_card(&view.read().session.messages)).filter(|_| !running);
+    let end_card = view
+        .and_then(|view| forge_entities::offered(forge_entities::live_end_card(&view.read().session.messages), &workspace.end_card_marks(id)))
+        .filter(|_| !running);
     let suggestion = if end_card.is_some() { None } else { view.and_then(|view| view.read().suggestion.clone()) };
     let accept = suggestion.clone();
 
@@ -161,6 +163,9 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                         if let Some(message) = end_card_reply(end_card.as_ref(), draft.peek().is_empty(), running) {
                             if !workspace.session_is_moving(id) {
                                 if let Some(handle) = workspace.handle(id) {
+                                    if let Some(card) = end_card.as_ref() {
+                                        workspace.mark_end_card(id, card.id.clone(), forge_entities::CardMark::Sent);
+                                    }
                                     handle.send_with(message, Vec::new());
                                 }
                             }

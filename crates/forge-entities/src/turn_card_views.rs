@@ -3,7 +3,9 @@
 use dioxus::prelude::*;
 use forge_shared::tr;
 
-use crate::turn_cards::{Step, StepState};
+use std::collections::HashMap;
+
+use crate::turn_cards::{CardMark, Step, StepState};
 use crate::turn_view::{EndCardItem, EndCardState};
 
 fn step_class(state: StepState) -> &'static str {
@@ -31,14 +33,22 @@ pub fn PlanListView(steps: Vec<Step>) -> Element {
 
 /// The next-step card. Live: a close button, the recap, the question and the buttons (the first is
 /// the primary one and carries `⌘⏎`). Spent: narrower and grey, the chosen button's label under the
-/// question, nothing to press.
+/// question, nothing to press. `marks` holds what became of the session's cards (by the `wrap_up` call's
+/// id): a closed card is not drawn, a card that already sent has its buttons disabled. Without `on_send`
+/// (an archived or view-only session) the live card has no buttons.
 #[component]
-pub fn EndCardView(item: EndCardItem, on_send: Option<EventHandler<String>>) -> Element {
-    let mut hidden = use_signal(|| false);
-    if hidden() {
+pub fn EndCardView(
+    item: EndCardItem,
+    on_send: Option<EventHandler<String>>,
+    #[props(default)] marks: HashMap<String, CardMark>,
+    #[props(default)] on_mark: Option<EventHandler<(String, CardMark)>>,
+) -> Element {
+    let EndCardItem { card, state } = item;
+    let mark = marks.get(&card.id).copied();
+    if mark == Some(CardMark::Dismissed) {
         return rsx! {};
     }
-    let EndCardItem { card, state } = item;
+    let sent = mark == Some(CardMark::Sent);
     match state {
         EndCardState::Spent { chosen } => rsx! {
             div { class: "end-card spent",
@@ -54,21 +64,38 @@ pub fn EndCardView(item: EndCardItem, on_send: Option<EventHandler<String>>) -> 
                     r#type: "button",
                     title: tr!("Close"),
                     "aria-label": tr!("Close"),
-                    onclick: move |_| hidden.set(true),
+                    onclick: {
+                        let id = card.id.clone();
+                        move |_| {
+                            if let Some(mark) = on_mark {
+                                mark.call((id.clone(), CardMark::Dismissed));
+                            }
+                        }
+                    },
                     "×"
                 }
                 div { class: "end-card-recap", "{card.recap}" }
                 div { class: "end-card-ask", "{card.ask}" }
-                if !card.actions.is_empty() {
+                if on_send.is_some() && !card.actions.is_empty() {
                     div { class: "end-card-actions",
                         for (index, action) in card.actions.iter().enumerate() {
                             button {
                                 key: "{index}",
                                 class: if index == 0 { "end-card-button primary" } else { "end-card-button" },
                                 r#type: "button",
+                                title: "{action.message}",
+                                disabled: sent,
                                 onclick: {
                                     let message = action.message.clone();
+                                    let id = card.id.clone();
                                     move |_| {
+                                        if sent {
+                                            return;
+                                        }
+                                        // Marked first: the card turns Spent only once the message is in the transcript.
+                                        if let Some(mark) = on_mark {
+                                            mark.call((id.clone(), CardMark::Sent));
+                                        }
                                         if let Some(send) = on_send {
                                             send.call(message.clone());
                                         }

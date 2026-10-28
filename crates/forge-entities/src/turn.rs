@@ -60,6 +60,10 @@ pub fn Turns(
     #[props(default)] on_fork: Option<EventHandler<String>>,
     /// Asked to send this text as the next message (an end card's button); its buttons do nothing without it.
     #[props(default)] on_send: Option<EventHandler<String>>,
+    /// What became of each end card of the session, by the `wrap_up` call's id.
+    #[props(default)] card_marks: std::collections::HashMap<String, crate::turn_cards::CardMark>,
+    /// Asked to record a mark (closed, or sent) for the end card with this id.
+    #[props(default)] on_card_mark: Option<EventHandler<(String, crate::turn_cards::CardMark)>>,
 ) -> Element {
     let known = known_paths(&messages);
     let forkable: Vec<String> = messages.iter().filter_map(|message| message.uuid.clone()).filter(|uuid| forge_domain::can_fork_before(&messages, uuid)).collect();
@@ -68,7 +72,7 @@ pub fn Turns(
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, forkable: forkable.clone() }
+                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone() }
             }
         }
     }
@@ -87,6 +91,8 @@ fn TurnItem(
     on_rewind: Option<EventHandler<String>>,
     on_fork: Option<EventHandler<String>>,
     on_send: Option<EventHandler<String>>,
+    card_marks: std::collections::HashMap<String, crate::turn_cards::CardMark>,
+    on_card_mark: Option<EventHandler<(String, crate::turn_cards::CardMark)>>,
     forkable: Vec<String>,
 ) -> Element {
     match item {
@@ -170,7 +176,7 @@ fn TurnItem(
         }
         // Task 6 draws these two.
         Item::PlanList(steps) => rsx! { PlanListView { steps } },
-        Item::EndCard(item) => rsx! { EndCardView { item, on_send } },
+        Item::EndCard(item) => rsx! { EndCardView { item, on_send, marks: card_marks, on_mark: on_card_mark } },
         Item::Stopped => rsx! { div { class: "stopped-line", {tr!("Stopped")} } },
         Item::Compacted { before, after } => {
             let label = compacted_label(before, after);

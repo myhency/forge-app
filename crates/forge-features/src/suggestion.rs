@@ -37,6 +37,7 @@ mod tests {
 
     fn card(actions: &[(&str, &str)]) -> forge_entities::EndCard {
         forge_entities::EndCard {
+            id: "w".to_string(),
             recap: "r".to_string(),
             ask: "q".to_string(),
             actions: actions.iter().map(|(label, message)| forge_entities::CardAction { label: label.to_string(), message: message.to_string() }).collect(),

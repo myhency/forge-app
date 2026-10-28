@@ -9,6 +9,8 @@ pub const MAX_STEPS: usize = 12;
 pub const MAX_ACTIONS: usize = 2;
 pub const MAX_LABEL_CHARS: usize = 24;
 pub const MAX_MESSAGE_CHARS: usize = 300;
+pub const MAX_RECAP_CHARS: usize = 600;
+pub const MAX_ASK_CHARS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnTool {
@@ -111,13 +113,28 @@ pub struct CardAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndCard {
+    /// The id of the `wrap_up` call: what the per-session handled marks are keyed by.
+    pub id: String,
     pub recap: String,
     pub ask: String,
     pub actions: Vec<CardAction>,
 }
 
+/// The first `max` characters, then trimmed (so a cut that ends in a space still matches its trimmed reply).
 fn clip(text: &str, max: usize) -> String {
-    text.trim().chars().take(max).collect()
+    text.chars().take(max).collect::<String>().trim().to_string()
+}
+
+/// What became of a card that is not answered yet: the person closed it, or a button (or `⌘⏎`) already sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CardMark {
+    Dismissed,
+    Sent,
+}
+
+/// The card, unless it was handled (closed or already sent) according to the session's marks.
+pub fn offered(card: Option<EndCard>, marks: &std::collections::HashMap<String, CardMark>) -> Option<EndCard> {
+    card.filter(|card| !marks.contains_key(&card.id))
 }
 
 fn text_of<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
@@ -130,7 +147,12 @@ fn action_of(item: &Value) -> Option<CardAction> {
         (Some(only), None) | (None, Some(only)) => (only, only),
         (Some(label), Some(message)) => (label, message),
     };
-    Some(CardAction { label: clip(label, MAX_LABEL_CHARS), message: clip(message, MAX_MESSAGE_CHARS) })
+    let message = clip(message, MAX_MESSAGE_CHARS);
+    // A reply that starts with `/` or `!` would run a command, not talk: the model's text is never trusted with that.
+    if message.starts_with('/') || message.starts_with('!') {
+        return None;
+    }
+    Some(CardAction { label: clip(label, MAX_LABEL_CHARS), message })
 }
 
 /// The card a `wrap_up` call asks for. No card without a recap or without a question (the model's own
@@ -139,15 +161,15 @@ pub fn end_card_of(call: &ToolCall) -> Option<EndCard> {
     if turn_tool(&call.name) != Some(TurnTool::WrapUp) || refused(call) {
         return None;
     }
-    let recap = text_of(&call.input, "recap")?.to_string();
-    let ask = text_of(&call.input, "ask")?.to_string();
+    let recap = clip(text_of(&call.input, "recap")?, MAX_RECAP_CHARS);
+    let ask = clip(text_of(&call.input, "ask")?, MAX_ASK_CHARS);
     let actions = call
         .input
         .get("actions")
         .and_then(Value::as_array)
         .map(|list| list.iter().filter_map(action_of).take(MAX_ACTIONS).collect())
         .unwrap_or_default();
-    Some(EndCard { recap, ask, actions })
+    Some(EndCard { id: call.id.clone(), recap, ask, actions })
 }
 
 /// The button a user message answers: its message equals the text (spaces around it ignored, case not).
@@ -302,5 +324,56 @@ mod tests {
         assert_eq!(chosen_action(&card, "  Yes, fix 1\n").map(|a| a.label.as_str()), Some("Yes"));
         assert_eq!(chosen_action(&card, "yes, fix 1"), None);
         assert_eq!(chosen_action(&card, "something else"), None);
+    }
+
+    #[test]
+    fn the_card_carries_the_wrap_up_call_id() {
+        let mut call = wrap(json!({"recap": "r", "ask": "q"}));
+        call.id = "toolu_9".to_string();
+        assert_eq!(end_card_of(&call).unwrap().id, "toolu_9");
+    }
+
+    #[test]
+    fn a_handled_card_is_not_offered_again() {
+        let mut call = wrap(json!({"recap": "r", "ask": "q"}));
+        call.id = "w1".to_string();
+        let card = end_card_of(&call);
+        let mut marks = std::collections::HashMap::new();
+        assert!(offered(card.clone(), &marks).is_some());
+        marks.insert("other".to_string(), CardMark::Dismissed);
+        assert!(offered(card.clone(), &marks).is_some(), "another call's mark does not count");
+        marks.insert("w1".to_string(), CardMark::Dismissed);
+        assert_eq!(offered(card.clone(), &marks), None);
+        marks.insert("w1".to_string(), CardMark::Sent);
+        assert_eq!(offered(card, &marks), None);
+        assert_eq!(offered(None, &marks), None);
+    }
+
+    #[test]
+    fn a_cut_message_is_trimmed_after_the_cut() {
+        let message = format!("{} tail", "a".repeat(299));
+        let card = end_card_of(&wrap(json!({"recap": "r", "ask": "q", "actions": [{"label": "Go", "message": message}]}))).unwrap();
+        assert_eq!(card.actions[0].message, "a".repeat(299), "no space left at the end");
+        assert_eq!(chosen_action(&card, &card.actions[0].message.clone()).map(|a| a.label.as_str()), Some("Go"));
+    }
+
+    #[test]
+    fn the_recap_and_the_question_are_clipped() {
+        let card = end_card_of(&wrap(json!({"recap": "R".repeat(700), "ask": "Q".repeat(150)}))).unwrap();
+        assert_eq!(card.recap.chars().count(), 600);
+        assert_eq!(card.ask.chars().count(), 100);
+    }
+
+    #[test]
+    fn a_button_that_would_send_a_command_is_dropped() {
+        let card = end_card_of(&wrap(json!({"recap": "r", "ask": "q", "actions": [
+            {"label": "Rewind", "message": "/rewind"},
+            {"label": "Run", "message": "  !rm -rf x"},
+            {"label": "Yes", "message": "Yes"},
+        ]})))
+        .unwrap();
+        assert_eq!(card.actions, vec![CardAction { label: "Yes".to_string(), message: "Yes".to_string() }]);
+        let only_label = end_card_of(&wrap(json!({"recap": "r", "ask": "q", "actions": [{"label": "/compact"}]}))).unwrap();
+        assert!(only_label.actions.is_empty(), "a label sent as the message counts too");
     }
 }

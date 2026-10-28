@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
-use forge_entities::{live_state, TranscriptView, Turns};
+use forge_entities::{live_state, CardMark, TranscriptView, Turns};
 use forge_features::{use_settings, use_workspace, Panel, SendMessageBox};
 
 use crate::composer_controls::{EffortPicker, ModePicker, ModelPicker};
@@ -106,13 +106,24 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     on_open_plan: move |_| workspace.change_dock(id, |dock| dock.open(Panel::Plan)),
                     on_rewind: move |uuid: String| workspace.request_rewind(id, uuid),
                     on_fork: move |uuid: String| workspace.fork_from_message(id, uuid),
-                    on_send: move |text: String| {
-                        if workspace.session_is_moving(id) {
+                    // No buttons on an archived or view-only session: it cannot send.
+                    on_send: (!archived && view.can_send).then(|| {
+                        EventHandler::new(move |text: String| {
+                            if workspace.session_is_moving(id) {
+                                return;
+                            }
+                            if let Some(handle) = workspace.handle(id) {
+                                handle.send_with(text, Vec::new());
+                            }
+                        })
+                    }),
+                    card_marks: workspace.end_card_marks(id),
+                    on_card_mark: move |(call_id, mark): (String, CardMark)| {
+                        // A send the session refuses while it moves marks nothing.
+                        if mark == CardMark::Sent && workspace.session_is_moving(id) {
                             return;
                         }
-                        if let Some(handle) = workspace.handle(id) {
-                            handle.send_with(text, Vec::new());
-                        }
+                        workspace.mark_end_card(id, call_id, mark);
                     },
                 }
             }

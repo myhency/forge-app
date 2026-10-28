@@ -187,6 +187,8 @@ pub struct Workspace {
     queued_files: Signal<HashMap<LiveSessionId, Vec<PathBuf>>>,
     /// A message the person asked to go back to from its row; the session's rewind dialog takes it.
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
+    /// What became of each session's end cards (by the `wrap_up` call's id): closed, or already sent.
+    end_card_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::CardMark>>>,
     /// The person's comments on the plan of each session, sent along with a request for changes.
     plan_comments: Signal<HashMap<LiveSessionId, Vec<forge_entities::PlanComment>>>,
     /// The usage limit bar the person closed: it stays closed until the limit's level, window or reset time changes.
@@ -285,6 +287,7 @@ pub fn use_workspace_provider() -> Workspace {
             files_stores: root_signal(HashMap::new()),
             queued_files: root_signal(HashMap::new()),
             rewind_requests: root_signal(HashMap::new()),
+            end_card_marks: root_signal(HashMap::new()),
             plan_comments: root_signal(HashMap::new()),
             auto_details: root_signal(std::collections::HashSet::new()),
             rate_dismissed: root_signal(None),
@@ -1443,6 +1446,17 @@ impl Workspace {
     pub fn request_rewind(&self, id: LiveSessionId, message_uuid: String) {
         let mut requests = self.rewind_requests;
         requests.write().insert(id, message_uuid);
+    }
+
+    /// Records that the end card of this `wrap_up` call was closed or already sent.
+    pub fn mark_end_card(&self, id: LiveSessionId, call_id: String, mark: forge_entities::CardMark) {
+        let mut marks = self.end_card_marks;
+        marks.write().entry(id).or_default().insert(call_id, mark);
+    }
+
+    /// The end cards of a session that were closed or already sent.
+    pub fn end_card_marks(&self, id: LiveSessionId) -> HashMap<String, forge_entities::CardMark> {
+        self.end_card_marks.read().get(&id).cloned().unwrap_or_default()
     }
 
     /// The message a row asked to go back to, once; reading it clears it.

@@ -151,11 +151,13 @@ enum Next<'a> {
     Message(&'a str),
 }
 
+/// The turn's last `wrap_up` call, unless the person stopped the turn after it.
 fn last_wrap_up(blocks: &[Block]) -> Option<&ToolCall> {
-    blocks.iter().rev().find_map(|block| match block {
-        Block::Tool(call) if turn_tool(&call.name) == Some(TurnTool::WrapUp) => Some(call),
+    let (index, call) = blocks.iter().enumerate().rev().find_map(|(index, block)| match block {
+        Block::Tool(call) if turn_tool(&call.name) == Some(TurnTool::WrapUp) => Some((index, call)),
         _ => None,
-    })
+    })?;
+    (!blocks[index..].iter().any(|block| matches!(block, Block::Stopped))).then_some(call)
 }
 
 fn end_card_item(blocks: &[Block], next: Next<'_>) -> Option<Item> {
@@ -458,8 +460,10 @@ fn live_line(blocks: &[Block], tool_rows: &[Option<ToolRow>], live: &LiveState) 
         };
         return LiveLine { kind: LiveKind::NeedsInput, label: tr!("Input needed").to_string(), subject: String::new(), added, removed, started };
     }
-    if let (Some(Block::Tool(call)), Some(Some(row))) = (blocks.last(), tool_rows.last()) {
-        if call.result.is_none() && !is_turn_tool(call) {
+    // The turn's own tools (task list, next-step card) never name what is running.
+    let last = blocks.iter().rposition(|block| !matches!(block, Block::Tool(call) if is_turn_tool(call)));
+    if let (Some(Block::Tool(call)), Some(Some(row))) = (last.map(|index| &blocks[index]), last.and_then(|index| tool_rows.get(index))) {
+        if call.result.is_none() {
             let (label, subject) = live_label(row);
             return LiveLine { kind: LiveKind::Tool, label, subject, added: 0, removed: 0, started };
         }
@@ -495,7 +499,7 @@ fn closing_text(blocks: &[Block]) -> String {
 
 // One stretch of a turn without a question in it. A finished stretch folds its tool calls into one
 // activity; the running one shows its text before the first tool call and one live line.
-fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<ToolRow>], view: TranscriptView, live: Option<&LiveState>) {
+fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<ToolRow>], view: TranscriptView, live: Option<&LiveState>, steps: Option<Vec<Step>>) {
     let first = blocks.iter().position(|block| matches!(block, Block::Tool(_)));
     let last = blocks.iter().rposition(|block| matches!(block, Block::Tool(_)));
     let plain = |items: &mut Vec<Item>, block: &Block| match block {
@@ -509,7 +513,7 @@ fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<Too
         for block in &blocks[..first.unwrap_or(blocks.len())] {
             plain(items, block);
         }
-        if let Some(steps) = plan_of(blocks.iter().filter_map(|block| if let Block::Tool(call) = block { Some(call) } else { None })) {
+        if let Some(steps) = steps {
             items.push(Item::PlanList(steps));
         }
         items.push(Item::Live(live_line(blocks, tool_rows, live)));
@@ -563,7 +567,7 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
         if !is_question(block) {
             continue;
         }
-        push_segment(items, &blocks[segment_start..index], &tool_rows[segment_start..index], view, None);
+        push_segment(items, &blocks[segment_start..index], &tool_rows[segment_start..index], view, None, None);
         if let Block::Tool(call) = block {
             if let Some(result) = &call.result {
                 let pairs = answer_pairs(&call.input, &result.output);
@@ -574,7 +578,9 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
         }
         segment_start = index + 1;
     }
-    push_segment(items, &blocks[segment_start..], &tool_rows[segment_start..], view, live);
+    // The task list is the whole turn's, even when a question split it into segments.
+    let steps = live.and_then(|_| plan_of(blocks.iter().filter_map(|block| if let Block::Tool(call) = block { Some(call) } else { None })));
+    push_segment(items, &blocks[segment_start..], &tool_rows[segment_start..], view, live, steps);
     // A turn that is only a compaction or a stop has nothing to copy.
     let has_content = blocks.iter().any(|block| matches!(block, Block::Text(_) | Block::Tool(_) | Block::Thinking(_)));
     if live.is_none() && items.len() > start && has_content {
@@ -634,6 +640,7 @@ mod tests {
 
     use super::*;
     use crate::diff::diff_for_tool;
+    use crate::turn_cards::StepState;
 
     fn tool(id: &str, name: &str, input: serde_json::Value, failed: Option<bool>) -> Block {
         Block::Tool(ToolCall {
@@ -1374,5 +1381,64 @@ mod tests {
         let items = build_turns(&[Message::user("go"), assistant(vec![text("before"), ask("q-1", Some(ANSWERED)), text("after")])], TranscriptView::Normal, None);
         let Item::Footer(footer) = items.last().unwrap() else { panic!() };
         assert_eq!(footer.text, "after");
+    }
+
+    #[test]
+    fn the_task_list_survives_a_question_in_the_same_turn() {
+        let advance = update_plan("p2", json!({"advance": true}), true);
+        let messages = vec![Message::user("go"), assistant(vec![update_plan("p1", two_steps(), true), ask("q-1", Some(ANSWERED)), advance])];
+        let items = build_turns(&messages, TranscriptView::Normal, Some(&running()));
+        let steps = items.iter().find_map(|item| if let Item::PlanList(steps) = item { Some(steps.clone()) } else { None }).expect("a task list");
+        assert_eq!(steps.iter().map(|s| s.state).collect::<Vec<_>>(), vec![StepState::Done, StepState::InProgress]);
+    }
+
+    #[test]
+    fn a_question_and_a_wrap_up_in_one_finished_turn_draw_the_card_once_after_the_last_segment() {
+        let blocks = vec![bash("b", None), ask("q-1", Some(ANSWERED)), text("Nice."), wrap_up("w", Some("Commit?"), json!([{"label": "Commit"}])), text("Done.")];
+        let items = build_turns(&[Message::user("go"), assistant(blocks)], TranscriptView::Normal, None);
+        assert_eq!(items.iter().filter(|i| matches!(i, Item::EndCard(_))).count(), 1);
+        let kinds = kinds(&items);
+        assert_eq!(&kinds[kinds.len() - 2..], ["endcard", "footer"]);
+    }
+
+    #[test]
+    fn a_turn_tool_after_a_running_tool_leaves_the_tool_as_the_live_label() {
+        let running_bash = tool("b", "Bash", json!({"command": "ls", "description": "List files"}), None);
+        let items = live_items(vec![running_bash, update_plan("p", two_steps(), false)], running());
+        let line = live_line(&items);
+        assert_eq!(line.kind, LiveKind::Tool);
+        assert_eq!(line.label, "List files");
+    }
+
+    #[test]
+    fn no_end_card_when_the_turn_was_stopped_after_the_wrap_up() {
+        let blocks = vec![wrap_up("w", Some("Commit?"), json!([{"label": "Commit"}])), Block::Stopped];
+        let messages = vec![Message::user("go"), assistant(blocks)];
+        assert!(!kinds(&build_turns(&messages, TranscriptView::Normal, None)).contains(&"endcard"));
+        assert_eq!(live_end_card(&messages), None);
+        let before = vec![Message::user("go"), assistant(vec![Block::Stopped, wrap_up("w", Some("Commit?"), json!([{"label": "Commit"}]))])];
+        assert!(kinds(&build_turns(&before, TranscriptView::Normal, None)).contains(&"endcard"));
+    }
+
+    #[test]
+    fn a_wrap_up_without_a_question_is_neither_a_row_nor_counted() {
+        let messages = vec![Message::user("go"), assistant(vec![bash("b", None), wrap_up("w", None, json!([])), text("x")])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        let a = activity(&items);
+        assert_eq!(a.rows.len(), 1);
+        assert_eq!(a.summary, "Ran ls -la");
+    }
+
+    #[test]
+    fn a_reply_with_spaces_around_the_message_spends_the_card_but_a_different_case_does_not() {
+        let first = vec![Message::user("go"), assistant(vec![wrap_up("w", Some("Commit?"), json!([{"label": "Commit", "message": "commit it"}])), text("x")])];
+        let mut spaced = first.clone();
+        spaced.push(Message::user("  commit it \n"));
+        let items = build_turns(&spaced, TranscriptView::Normal, None);
+        let Some(Item::EndCard(card)) = items.iter().find(|i| matches!(i, Item::EndCard(_))) else { panic!("spent card kept") };
+        assert_eq!(card.state, EndCardState::Spent { chosen: "Commit".to_string() });
+        let mut cased = first.clone();
+        cased.push(Message::user("Commit it"));
+        assert!(!kinds(&build_turns(&cased, TranscriptView::Normal, None)).contains(&"endcard"));
     }
 }
