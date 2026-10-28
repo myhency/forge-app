@@ -58,7 +58,6 @@ mod tests {
         assert_eq!(end_card_reply(Some(&card(&[])), true, false), None);
     }
 
-
     #[test]
     fn the_placeholder_is_the_suggestion_only_when_the_box_is_empty_and_nothing_runs() {
         assert_eq!(composer_placeholder(Some("run the tests"), true, false, DEFAULT), "run the tests");
