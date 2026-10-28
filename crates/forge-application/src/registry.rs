@@ -134,6 +134,7 @@ impl SessionRegistry {
             return Err(OpenError::ProjectMissing(project.path.clone()));
         }
         let session = Session {
+            forked_at: None,
             forked_from: None,
             finished_tasks: Vec::new(),
             id: SessionId(String::new()),
@@ -326,6 +327,7 @@ mod tests {
 
     fn past_session(id: &str) -> Session {
         Session {
+            forked_at: None,
             forked_from: None,
             finished_tasks: Vec::new(),
             id: SessionId(id.to_string()),

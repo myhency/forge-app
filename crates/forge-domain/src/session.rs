@@ -19,6 +19,8 @@ pub struct Session {
     pub finished_tasks: Vec<crate::FinishedTask>,
     /// The session this one was forked from (its immediate source), read from the `forkedFrom` a fork writes.
     pub forked_from: Option<SessionId>,
+    /// When the fork was made (RFC 3339), from the time on the title line a fork writes; `None` for a session that is not a fork or whose record does not say.
+    pub forked_at: Option<String>,
 }
 
 /// The text the SDK writes as a user line when the person stops a turn.
@@ -303,6 +305,7 @@ mod tests {
     #[test]
     fn a_new_session_has_used_nothing() {
         let session = Session {
+            forked_at: None,
             forked_from: None,
             finished_tasks: Vec::new(),
             id: SessionId("s".to_string()),

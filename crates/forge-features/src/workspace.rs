@@ -977,7 +977,7 @@ impl Workspace {
         let view = self.live_view(id)?;
         let view = view.read();
         let origin = view.session.forked_from.as_ref()?;
-        crate::sidebar::fork_origin(&self.past.read(), &view.project_path, origin, view.claude_session_id.as_ref())
+        crate::sidebar::fork_origin(&self.past.read(), &view.project_path, origin, view.session.forked_at.as_deref())
     }
 
     /// Whether a folder dialog is open; the button is disabled meanwhile so only one can be.
@@ -3398,6 +3398,7 @@ mod plan_text_tests {
             id: LiveSessionId(1),
             project_path: PathBuf::from("/work/a"),
             session: forge_domain::Session {
+                forked_at: None,
                 forked_from: None,
                 finished_tasks: Vec::new(),
                 id: SessionId(String::new()),

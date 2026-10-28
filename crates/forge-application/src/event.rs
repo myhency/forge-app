@@ -254,6 +254,7 @@ mod tests {
 
     fn empty_session() -> Session {
         Session {
+            forked_at: None,
             forked_from: None,
             finished_tasks: Vec::new(),
             id: SessionId("s-1".to_string()),

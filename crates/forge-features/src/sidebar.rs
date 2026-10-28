@@ -179,26 +179,22 @@ pub struct ForkOrigin {
     pub project: ProjectSummary,
     pub session_id: SessionId,
     pub title: String,
-    /// When the fork began (RFC 3339); empty while the fork is not in the listing yet.
+    /// When the fork was made (RFC 3339); empty when its record does not say.
     pub forked_at: String,
 }
 
-/// The origin of the fork `own`, looked up in the listing of `project_path`. `None` (the line is
+/// The origin of a fork, looked up in the listing of `project_path`; `forked_at` is the time the fork's record gives. `None` (the line is
 /// hidden) when the origin is not listed there or has no title.
 pub fn fork_origin(
     past: &[(ProjectSummary, Vec<SessionSummary>)],
     project_path: &std::path::Path,
     origin: &SessionId,
-    own: Option<&SessionId>,
+    forked_at: Option<&str>,
 ) -> Option<ForkOrigin> {
     let (project, sessions) = past.iter().find(|(project, _)| project.path == project_path)?;
     let found = sessions.iter().find(|session| &session.id == origin)?;
     let title = found.title.clone().filter(|title| !title.trim().is_empty())?;
-    let forked_at = own
-        .and_then(|own| sessions.iter().find(|session| &session.id == own))
-        .map(|session| session.created_at.clone())
-        .unwrap_or_default();
-    Some(ForkOrigin { project: project.clone(), session_id: found.id.clone(), title, forked_at })
+    Some(ForkOrigin { project: project.clone(), session_id: found.id.clone(), title, forked_at: forked_at.unwrap_or_default().to_string() })
 }
 
 /// Puts `sessions` in place of one project's listing and refreshes its count; other projects and
@@ -500,30 +496,29 @@ mod tests {
     }
 
     #[test]
-    fn the_origin_of_a_fork_is_found_in_its_own_project_with_the_forks_start_time() {
+    fn the_origin_of_a_fork_is_found_in_its_own_project_with_the_time_of_the_fork() {
         let past = past_with("/work/a", vec![summary("origin", Some("Fix login")), summary("fork", Some("Fix login (fork)"))]);
 
-        let found = fork_origin(&past, std::path::Path::new("/work/a"), &SessionId("origin".to_string()), Some(&SessionId("fork".to_string()))).unwrap();
+        let found = fork_origin(&past, std::path::Path::new("/work/a"), &SessionId("origin".to_string()), Some("2026-10-28T10:00:00Z")).unwrap();
 
         assert_eq!(found.title, "Fix login");
         assert_eq!(found.session_id, SessionId("origin".to_string()));
         assert_eq!(found.project.path, PathBuf::from("/work/a"));
-        assert_eq!(found.forked_at, "2026-09-28T00:00:04Z", "the fork's created_at");
+        assert_eq!(found.forked_at, "2026-10-28T10:00:00Z");
     }
 
     #[test]
     fn a_missing_untitled_or_other_project_origin_hides_the_line() {
         let past = past_with("/work/a", vec![summary("origin", None), summary("fork", Some("F"))]);
-        let fork = SessionId("fork".to_string());
         let path = std::path::Path::new("/work/a");
 
-        assert_eq!(fork_origin(&past, path, &SessionId("origin".to_string()), Some(&fork)), None, "no title");
-        assert_eq!(fork_origin(&past, path, &SessionId("gone".to_string()), Some(&fork)), None, "not listed");
-        assert_eq!(fork_origin(&past, std::path::Path::new("/work/b"), &SessionId("origin".to_string()), Some(&fork)), None, "another folder");
+        assert_eq!(fork_origin(&past, path, &SessionId("origin".to_string()), None), None, "no title");
+        assert_eq!(fork_origin(&past, path, &SessionId("gone".to_string()), None), None, "not listed");
+        assert_eq!(fork_origin(&past, std::path::Path::new("/work/b"), &SessionId("origin".to_string()), None), None, "another folder");
     }
 
     #[test]
-    fn a_fork_that_is_not_listed_yet_has_no_time_but_still_shows_its_origin() {
+    fn a_fork_without_a_recorded_time_still_shows_its_origin() {
         let past = past_with("/work/a", vec![summary("origin", Some("Mine"))]);
 
         let found = fork_origin(&past, std::path::Path::new("/work/a"), &SessionId("origin".to_string()), None).unwrap();
@@ -675,6 +670,7 @@ mod tests {
             id: LiveSessionId(1),
             project_path: PathBuf::from("/work/a"),
             session: Session {
+                forked_at: None,
                 forked_from: None,
                 finished_tasks: Vec::new(),
                 id: SessionId(String::new()),

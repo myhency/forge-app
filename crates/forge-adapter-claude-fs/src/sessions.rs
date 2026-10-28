@@ -417,13 +417,16 @@ fn apply_assistant_line(session: &mut Session, line: &Value) {
 }
 
 /// The session a fork came from: the `forkedFrom.sessionId` of the first line that has one. A fork
-/// writes it on every line it copies and on its title line, always naming its immediate source.
+/// writes it on every line it copies and on its title line, always naming its immediate source. The
+/// title line also holds the time the fork was made.
 fn note_fork(session: &mut Session, line: &Value) {
-    if session.forked_from.is_some() {
-        return;
+    if session.forked_from.is_none() {
+        if let Some(id) = line.pointer("/forkedFrom/sessionId").and_then(Value::as_str).filter(|id| !id.is_empty()) {
+            session.forked_from = Some(SessionId(id.to_string()));
+        }
     }
-    if let Some(id) = line.pointer("/forkedFrom/sessionId").and_then(Value::as_str).filter(|id| !id.is_empty()) {
-        session.forked_from = Some(SessionId(id.to_string()));
+    if session.forked_at.is_none() && line.get("type").and_then(Value::as_str) == Some("custom-title") && line.get("forkedFrom").is_some() {
+        session.forked_at = line.get("timestamp").and_then(Value::as_str).filter(|at| !at.is_empty()).map(str::to_string);
     }
 }
 
@@ -647,6 +650,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         let mut titles = TitleTracker::default();
         let mut usage = UsageCollector::default();
         let mut session = Session {
+            forked_at: None,
             forked_from: None,
             finished_tasks: Vec::new(),
             id: session_id.clone(),
@@ -1090,6 +1094,9 @@ mod tests {
         let fork = adapter.fork_session(&project(), &first, "T (fork)").await.unwrap();
         let fork_loaded = adapter.load_session(&project(), &fork).await.unwrap();
         assert_eq!(fork_loaded.forked_from, Some(first.clone()));
+        let made_at = fork_loaded.forked_at.clone().expect("the title line of a fork carries the time it was made");
+        assert!(time::OffsetDateTime::parse(&made_at, &time::format_description::well_known::Rfc3339).is_ok(), "an RFC 3339 time: {made_at}");
+        assert_eq!(plain.forked_at, None);
 
         let second_uuid = fork_loaded.messages[1].uuid.clone().unwrap();
         let grandchild = adapter.fork_session_before(&project(), &fork, &second_uuid, "T (fork) (fork)").await.unwrap();
