@@ -35,10 +35,10 @@ Left out, on purpose:
 
 ### 1. The sidecar (`sidecar/src/turn_tools.ts`, new)
 
-`createSdkMcpServer({ name: "ccd_turn", tools: [update_plan, wrap_up] })`. The server name is the desktop app's, so the model sees the same tool names, and a session made in the desktop app and opened in Forge draws the same cards from its old calls.
+`createSdkMcpServer({ name: "ccd_turn", tools: [update_plan, wrap_up], alwaysLoad: true })`. `alwaysLoad` (also set on each tool) keeps the two tools out of tool search: without it the SDK sends only their names, the model never sees the descriptions, and the first real turn called neither tool. The server name is the desktop app's, so the model sees the same tool names, and a session made in the desktop app and opened in Forge draws the same cards from its old calls.
 
 - `update_plan` input (zod): `scope?` (enum, ignored), `items?` (1-12 of `{content, status, ...}`), `advance?`, `done?` (numbers), `start?` (number). The handler checks that at least one of `items`, `advance`, `done`, `start` is present and that the numbers are in range of the last list it was given; a bad call returns an error text the model can read, not a throw. It keeps the last list only to count steps and to say `Plan shown (N steps).` The cards are drawn by the app side from the calls, not from this memory.
-- `wrap_up` input: `recap` (required), `ask?`, `blocked?` (accepted, ignored), `actions?` (up to 2 of `{label, message}`). `label` over 24 characters and `message` over 300 are cut. Result: `Shown in the next-step box. Your closing message is your answer to the user: write it now, in full, as the last thing you say this turn.` and, when there was an `ask`, `The box asks your question, so do not ask it again.`
+- `wrap_up` input: `recap` (required), `ask?`, `blocked?` (accepted, ignored), `actions?` (up to 2 of `{label, message}`). The label and message limits (24 and 300 characters) are applied by the app when it reads the call, since the recorded call keeps what the model sent. Result: `Shown in the next-step box. Your closing message is your answer to the user: write it now, in full, as the last thing you say this turn.` and, when there was an `ask`, `The box asks your question, so do not ask it again.`
 - Descriptions are Forge's own words (not the desktop app's text), but carry the same rules: one plan for any request that edits files or runs more than one command; send `update_plan` in the same message as another tool call; keep exactly one step in progress; call `wrap_up` once at the end of such a turn, before the closing message; skip both for a short answer.
 - `start_session` gets `turn_tools: boolean` (`protocol.ts`, `protocol.rs`). When true, `session.ts` adds the server to `mcpServers` and `mcp__ccd_turn__update_plan`, `mcp__ccd_turn__wrap_up` to `allowedTools`, so no permission question appears. When missing or false nothing changes.
 
@@ -51,11 +51,11 @@ Left out, on purpose:
 New module `turn_cards.rs`, pure functions with no Dioxus:
 
 - `PlanSteps`: `fn apply(steps: &mut Vec<Step>, input: &Value)` folds one `update_plan` input: `items` replaces the list; `advance` completes the `in_progress` step and starts the next `pending` one (none left: nothing is in progress); `done` marks the 1-based numbers completed; `start` makes that step `in_progress` (and any other `in_progress` step goes back to `pending`); a number out of range is skipped. `Step { content, state }` with `StepState::{Pending, InProgress, Done}`; an unknown `status` reads as pending. `fn plan_of(calls: &[&ToolCall]) -> Option<Vec<Step>>` folds the calls of one turn in order.
-- `EndCard { recap, ask: Option<String>, actions: Vec<CardAction> }`, `CardAction { label, message }`; `fn end_card_of(call: &ToolCall) -> Option<EndCard>` reads a `wrap_up` call (empty `recap` -> none; more than 2 actions -> first 2; an action with no `label` and no `message` is dropped; a reply with no `message` sends its `label`; no `ask` -> no actions are shown, the box would have nothing to answer).
-- Both tool names are matched with and without the `mcp__ccd_turn__` prefix of the desktop app's server, plus Forge's own server name if it differs (it does not).
+- `EndCard { recap, ask: Option<String>, actions: Vec<CardAction> }`, `CardAction { label, message }`; `fn end_card_of(call: &ToolCall) -> Option<EndCard>` reads a `wrap_up` call (empty `recap` -> none; more than 2 actions -> first 2; an action with no `label` and no `message` is dropped; a reply with no `message` sends its `label`; no `ask` -> no card at all (the tool's own rule: a turn with nothing pending ends with no box)).
+- Only the full name `mcp__ccd_turn__…` counts (Forge uses the desktop app's server name).
 
 `turn_view.rs`:
-- `Item::PlanList(Vec<Step>)` placed at the position of the **last** `update_plan` call of the turn, **only while the turn is live** (the live state is already passed to `build_turns`). A finished turn emits none.
+- `Item::PlanList(Vec<Step>)` placed just above the live line, after the text that came before the first tool call, **only while the turn is live** (the live state is already passed to `build_turns`). A finished turn emits none.
 - `Item::EndCard(EndCardItem { card, state })`, built from the **last** `wrap_up` call of the **last** turn of the transcript:
   - `Live` when nothing came after the turn;
   - `Spent { chosen }` when the next user message equals the `message` (or `label`) of one of its buttons: it stays in place, grey, with the chosen label;
@@ -69,7 +69,7 @@ New module `turn_cards.rs`, pure functions with no Dioxus:
 `forge-entities/src/turn.rs` draws the two new items; the key and the send go through callbacks, like the existing `on_open_file`:
 
 - `PlanListView`: a bordered card, one `plan-step` row per step with the ring or check icon (CSS, no images) and the text; the in-progress ring may spin slowly (`prefers-reduced-motion` stops it).
-- `EndCardView` (Live): `×` button (`on_dismiss`), recap, question, buttons. The first button is `kbd`-marked `⌘⏎`; the second is plain. A click calls `on_send(message)` and the card turns Spent when the transcript shows the message. `×` hides the card for this view (kept in the session's view state, not saved).
+- `EndCardView` (Live): `×` button (`on_dismiss`), recap, question, buttons. The first button is `kbd`-marked `⌘⏎`; the second is plain. A click calls `on_send(message)` and the card turns Spent when the transcript shows the message. `×` hides the card for this view (kept only while the card is on screen (a component-local flag)).
 - `EndCardView` (Spent): about 70% of the column width, grey text, the chosen label under the question, no buttons, no `×`.
 - The `⌘⏎` key works when the composer is empty and a live end card has a first button; with text in the box `⌘⏎` keeps its present meaning. Where this is wired is decided in the plan, by reading how the composer handles `⌘⏎` now (queue, `⌘⏎` adds to the queue while a turn runs, so the key only applies when no turn is running).
 - With a live end card, the composer's grey next-prompt suggestion is not shown (the card is the suggestion).
@@ -80,7 +80,7 @@ All new text goes through `tr!` with a Korean entry in `ko.rs` (the table is sor
 
 ## Testing
 
-- Sidecar (`vitest`): the server lists both tools with the right names; `update_plan` accepts each of the four input shapes and refuses an empty call and an out-of-range number with a readable text; `wrap_up` cuts long labels, keeps at most 2 actions and words the result with and without `ask`; `session.test.ts`: with `turn_tools` the SDK options carry the server and the two allowed names, without it they do not.
+- Sidecar (`vitest`): the server lists both tools with the right names; `update_plan` accepts each of the four input shapes and refuses an empty call and an out-of-range number with a readable text; `wrap_up` keeps at most 2 actions and words the result with and without `ask`; `session.test.ts`: with `turn_tools` the SDK options carry the server and the two allowed names, without it they do not.
 - Rust: `apply` (items, advance past the end, done, start, out of range, unknown status), `end_card_of` (every drop rule above), `build_turns` (plan card only while live and at the last call; end card Live, Spent by label, Spent by message, gone after another message; both tools hidden in the folded line; the desktop app's prefixed names), the config default for a file with no `turn_tools`, the protocol field in `protocol.rs` tests (present and defaulting to off for an older parent).
 - Real window (harness): a sample session whose transcript holds an `update_plan` call and a `wrap_up` call, for the Live card, and a second one whose next message is a button's text, for the Spent card; the plan card is checked with a session that is running (the fixture has to keep a turn live, or the card is looked at through a unit test of the view data only, said so in the report).
 - Real SDK: one real turn with the real sidecar in a throwaway folder, to see that the model calls both tools and that the permission question does not appear. The tool descriptions are only proven by this.
