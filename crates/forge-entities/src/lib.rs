@@ -30,6 +30,7 @@ mod sidebar_item;
 mod tool_summary;
 mod turn;
 mod turn_view;
+mod turn_card_views;
 mod turn_cards;
 mod usage_card;
 mod usage_view;

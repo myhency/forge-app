@@ -106,6 +106,11 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     on_open_plan: move |_| workspace.change_dock(id, |dock| dock.open(Panel::Plan)),
                     on_rewind: move |uuid: String| workspace.request_rewind(id, uuid),
                     on_fork: move |uuid: String| workspace.fork_from_message(id, uuid),
+                    on_send: move |text: String| {
+                        if let Some(handle) = workspace.handle(id) {
+                            handle.send_with(text, Vec::new());
+                        }
+                    },
                 }
             }
             ScrollToEnd {}

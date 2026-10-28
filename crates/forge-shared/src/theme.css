@@ -1358,3 +1358,26 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .mcp-status.ok { color: var(--fg-muted); }
 .mcp-status.action { color: var(--warning); }
 .mcp-empty { padding: 8px 0; font-size: 12px; color: var(--fg-muted); }
+
+.plan-list { margin: 8px 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); display: flex; flex-direction: column; gap: 8px; }
+.plan-step { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--fg); }
+.plan-icon { flex: none; width: 16px; height: 16px; border-radius: 999px; box-sizing: border-box; }
+.plan-icon.waiting { border: 1.5px solid var(--fg-muted); }
+.plan-icon.doing { border: 1.5px dashed var(--fg-muted); animation: plan-spin 3s linear infinite; }
+.plan-icon.done { background: var(--fg-muted); position: relative; }
+.plan-icon.done::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px; border: solid var(--bg-card); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.plan-step:has(.done) .plan-step-text { color: var(--fg-muted); }
+@keyframes plan-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .plan-icon.doing { animation: none; } }
+.end-card { position: relative; margin: 10px 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); display: flex; flex-direction: column; gap: 10px; }
+.end-card-close { position: absolute; top: 8px; right: 10px; border: none; background: none; color: var(--fg-muted); font: inherit; font-size: 16px; cursor: pointer; }
+.end-card-close:hover { color: var(--fg); }
+.end-card-recap { padding-right: 24px; color: var(--fg-muted); font-size: 14px; line-height: 1.5; }
+.end-card-ask { color: var(--fg); font-size: 14px; font-weight: 500; }
+.end-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.end-card-button { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 0; border-radius: 8px; background: var(--bg-hover); color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; }
+.end-card-button.primary { background: var(--fg); color: var(--bg-card); }
+.end-card-key { padding: 0 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.2); font-size: 11px; }
+.end-card.spent { width: 70%; min-width: 260px; }
+.end-card.spent .end-card-ask { color: var(--fg-muted); font-weight: 400; }
+.end-card-chosen { color: var(--fg-muted); font-size: 13px; }

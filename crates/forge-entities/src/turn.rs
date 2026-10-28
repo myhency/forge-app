@@ -14,6 +14,7 @@ use crate::question::AnswerPair;
 use crate::relative_time::relative_time;
 use crate::tool_summary::elapsed_label;
 use forge_domain::TranscriptView;
+use crate::turn_card_views::{EndCardView, PlanListView};
 use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolRow, WorkflowItem};
 use crate::workflow_progress::{dot_class, JournalAgent};
 use forge_shared::tr;
@@ -57,6 +58,8 @@ pub fn Turns(
     #[props(default)] on_rewind: Option<EventHandler<String>>,
     /// Asked to fork the session before the user message with this id (its action row's ⑂); no ⑂ without it.
     #[props(default)] on_fork: Option<EventHandler<String>>,
+    /// Asked to send this text as the next message (an end card's button); its buttons do nothing without it.
+    #[props(default)] on_send: Option<EventHandler<String>>,
 ) -> Element {
     let known = known_paths(&messages);
     let forkable: Vec<String> = messages.iter().filter_map(|message| message.uuid.clone()).filter(|uuid| forge_domain::can_fork_before(&messages, uuid)).collect();
@@ -65,7 +68,7 @@ pub fn Turns(
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, forkable: forkable.clone() }
+                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, forkable: forkable.clone() }
             }
         }
     }
@@ -83,6 +86,7 @@ fn TurnItem(
     on_open_plan: EventHandler<()>,
     on_rewind: Option<EventHandler<String>>,
     on_fork: Option<EventHandler<String>>,
+    on_send: Option<EventHandler<String>>,
     forkable: Vec<String>,
 ) -> Element {
     match item {
@@ -165,7 +169,8 @@ fn TurnItem(
             rsx! { WorkflowLine { item, running, ended, on_open_tasks } }
         }
         // Task 6 draws these two.
-        Item::PlanList(_) | Item::EndCard(_) => rsx! {},
+        Item::PlanList(steps) => rsx! { PlanListView { steps } },
+        Item::EndCard(item) => rsx! { EndCardView { item, on_send } },
         Item::Stopped => rsx! { div { class: "stopped-line", {tr!("Stopped")} } },
         Item::Compacted { before, after } => {
             let label = compacted_label(before, after);
