@@ -7,7 +7,7 @@ use forge_shared::{tr, Button, ButtonKind};
 use crate::cards::line_count;
 use crate::composer_cards::ComposerCards;
 use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCard};
-use crate::suggestion::{composer_placeholder, suggestion_to_accept};
+use crate::suggestion::{composer_placeholder, end_card_reply, suggestion_to_accept};
 
 use crate::command_box::CommandTextArea;
 use crate::queued_card::QueuedCard;
@@ -39,7 +39,9 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
     let mut seen_failures = use_signal(|| 0u32);
     let mut rewinding = use_signal(|| false);
     let view = workspace.live_view(id);
-    let suggestion = view.and_then(|view| view.read().suggestion.clone());
+    // A live next-step card is the suggestion: the grey text gives way to it.
+    let end_card = view.and_then(|view| forge_entities::live_end_card(&view.read().session.messages)).filter(|_| !running);
+    let suggestion = if end_card.is_some() { None } else { view.and_then(|view| view.read().suggestion.clone()) };
     let accept = suggestion.clone();
 
     // A send that never reached the sidecar hands its text back through the view; put it in the box
@@ -152,7 +154,19 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                 open_token: composer.popup_token(),
                 oninput: move |text| draft.set(text),
                 onsubmit: move |_| submit(),
-                onqueue: move |_| queue(),
+                onqueue: {
+                    let end_card = end_card.clone();
+                    move |_| {
+                        // ⌘⏎ on an empty box with a live card presses the card's first button.
+                        if let Some(message) = end_card_reply(end_card.as_ref(), draft.peek().is_empty(), running) {
+                            if let Some(handle) = workspace.handle(id) {
+                                handle.send_with(message, Vec::new());
+                            }
+                            return;
+                        }
+                        queue()
+                    }
+                },
             }
             div { class: "composer-row",
                 {children}

@@ -20,11 +20,44 @@ fn usable(suggestion: Option<&str>) -> Option<&str> {
     suggestion.filter(|text| !text.trim().is_empty())
 }
 
+/// The message `⌘⏎` sends while a next-step card is live: its first button's, when the box is empty and
+/// no turn runs. With text in the box `⌘⏎` keeps queueing it.
+pub fn end_card_reply(card: Option<&forge_entities::EndCard>, draft_empty: bool, running: bool) -> Option<String> {
+    if !draft_empty || running {
+        return None;
+    }
+    card?.actions.first().map(|action| action.message.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const DEFAULT: &str = "Message Claude…";
+
+    fn card(actions: &[(&str, &str)]) -> forge_entities::EndCard {
+        forge_entities::EndCard {
+            recap: "r".to_string(),
+            ask: "q".to_string(),
+            actions: actions.iter().map(|(label, message)| forge_entities::CardAction { label: label.to_string(), message: message.to_string() }).collect(),
+        }
+    }
+
+    #[test]
+    fn command_enter_in_an_empty_idle_box_sends_the_first_button_of_a_live_card() {
+        let with = card(&[("Commit", "commit it"), ("Not now", "not now")]);
+        assert_eq!(end_card_reply(Some(&with), true, false).as_deref(), Some("commit it"));
+    }
+
+    #[test]
+    fn it_does_nothing_with_text_in_the_box_a_running_turn_no_card_or_no_buttons() {
+        let with = card(&[("Commit", "commit it")]);
+        assert_eq!(end_card_reply(Some(&with), false, false), None);
+        assert_eq!(end_card_reply(Some(&with), true, true), None);
+        assert_eq!(end_card_reply(None, true, false), None);
+        assert_eq!(end_card_reply(Some(&card(&[])), true, false), None);
+    }
+
 
     #[test]
     fn the_placeholder_is_the_suggestion_only_when_the_box_is_empty_and_nothing_runs() {
