@@ -63,6 +63,8 @@ pub struct SessionSummary {
     /// RFC 3339 time the session began: its first transcript timestamp, else the file's creation
     /// time, else `updated_at`.
     pub created_at: String,
+    /// The session this one was forked from (its immediate source), when it is a fork.
+    pub forked_from: Option<SessionId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

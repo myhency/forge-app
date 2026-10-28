@@ -232,6 +232,9 @@ pub fn Sidebar() -> Element {
                                 Heading::Project(_) => None,
                                 _ => Some(project_label_in(scratch_root.as_deref(), &item.project.path)),
                             },
+                            depth: item.depth,
+                            fork_count: item.fork_count,
+                            forks_folded: item.forks_folded,
                             active: match &item.entry.key {
                                 EntryKey::Live(id) => active == Active::Live(*id),
                                 EntryKey::Past { .. } => false,

@@ -36,6 +36,8 @@ pub struct SidebarEntry {
     pub marker: SessionMarker,
     /// The person archived it (Forge's config remembers; `mark_archived` sets this).
     pub archived: bool,
+    /// The session this one was forked from, when it is a fork (sidebar nesting).
+    pub forked_from: Option<SessionId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -308,6 +310,7 @@ pub fn merge_sidebar(
                     created_at: Some(summary.created_at.clone()),
                     marker: open.marker,
                     archived: false,
+                    forked_from: summary.forked_from.clone(),
                 },
                 None => SidebarEntry {
                     key: EntryKey::Past { project: project.path.clone(), session: summary.id.clone() },
@@ -317,6 +320,7 @@ pub fn merge_sidebar(
                     created_at: Some(summary.created_at.clone()),
                     marker: SessionMarker::Idle,
                     archived: false,
+                    forked_from: summary.forked_from.clone(),
                 },
             };
             groups[index].entries.push(entry);
@@ -341,6 +345,7 @@ pub fn merge_sidebar(
             created_at: None,
             marker: open.marker,
             archived: false,
+            forked_from: None,
         };
         match extras.iter_mut().find(|(path, _, _)| *path == open.project_path) {
             Some((_, _, entries)) => entries.push(entry),
@@ -463,6 +468,7 @@ mod tests {
             title: title.map(str::to_string),
             updated_at: format!("2026-09-29T00:00:0{}Z", id.len() % 10),
             created_at: format!("2026-09-28T00:00:0{}Z", id.len() % 10),
+            forked_from: None,
         }
     }
 
@@ -475,6 +481,7 @@ mod tests {
             created_at: None,
             marker: SessionMarker::Idle,
             archived: false,
+            forked_from: None,
         }
     }
 

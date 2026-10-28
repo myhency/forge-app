@@ -102,7 +102,7 @@ mod tests {
     }
 
     fn session(id: &str) -> SessionSummary {
-        SessionSummary { id: SessionId(id.to_string()), title: None, updated_at: String::new(), created_at: String::new() }
+        SessionSummary { id: SessionId(id.to_string()), title: None, updated_at: String::new(), created_at: String::new(), forked_from: None }
     }
 
     #[test]

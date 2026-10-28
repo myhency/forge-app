@@ -114,6 +114,7 @@ mod tests {
             created_at: None,
             marker: SessionMarker::Idle,
             archived: false,
+            forked_from: None,
         }
     }
 
@@ -137,6 +138,7 @@ mod tests {
                 title: Some(title.to_string()),
                 updated_at: updated.to_string(),
                 created_at: updated.to_string(),
+                forked_from: None,
             },
             snippet: snippet.map(|matched| Snippet {
                 before: String::new(),

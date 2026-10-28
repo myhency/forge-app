@@ -29,6 +29,14 @@ pub fn SessionRow(
     /// Set in date and no-grouping lists, where the heading does not say which project a row is in.
     #[props(default)]
     project_name: Option<String>,
+    /// How many forks deep the row is drawn (0 = not under another session).
+    #[props(default)]
+    depth: u8,
+    /// Forks under this session, shown or folded; a fold button is drawn when there are any.
+    #[props(default)]
+    fork_count: usize,
+    #[props(default)]
+    forks_folded: bool,
 ) -> Element {
     let workspace = use_workspace();
     let mut mode = use_signal(|| RowMode::Normal);
@@ -150,10 +158,16 @@ pub fn SessionRow(
                 EntryKey::Live(id) => workspace.plan_ready_hint(id).unwrap_or_default(),
                 _ => String::new(),
             };
+            let shown_title = if entry.archived { format!("🗄 {}", entry.title) } else { entry.title.clone() };
+            let shown_title = if depth > 0 { format!("└ {shown_title}") } else { shown_title };
+            let fold_id = session_id.as_ref().map(forge_features::fork_fold_id);
             rsx! {
-                div { class: "sidebar-row", title: "{plan_hint}",
+                div {
+                    class: "sidebar-row",
+                    style: "margin-left: {fork_indent(depth)}px",
+                    title: "{plan_hint}",
                     SidebarItem {
-                        title: if entry.archived { format!("🗄 {}", entry.title) } else { entry.title.clone() },
+                        title: shown_title,
                         subtitle: row_subtitle(
                             project_name.as_deref(),
                             entry.updated_at.as_deref().map(|updated_at| relative_time(updated_at, now)),
@@ -165,6 +179,18 @@ pub fn SessionRow(
                             mode.set(RowMode::Normal);
                             onopen.call(event.modifiers().alt());
                         },
+                        if let (true, Some(fold_id)) = (fork_count > 0, fold_id.clone()) {
+                            button {
+                                class: "fork-fold",
+                                title: if forks_folded { tr!("Show the forks of this session") } else { tr!("Fold the forks of this session") },
+                                "aria-label": if forks_folded { "Show forks" } else { "Fold forks" },
+                                onclick: move |event| {
+                                    event.stop_propagation();
+                                    workspace.update_prefs(|prefs| prefs.toggle_collapsed(&fold_id));
+                                },
+                                if forks_folded { "▸" } else { "▾" }
+                            }
+                        }
                         if has_menu {
                             button {
                                 class: if menu_open { "row-menu-button open" } else { "row-menu-button" },
@@ -303,6 +329,11 @@ pub fn SessionRow(
     }
 }
 
+/// How far a fork row is moved in (pixels); a deep chain stops moving at the third step.
+pub fn fork_indent(depth: u8) -> u32 {
+    u32::from(depth.min(3)) * 14
+}
+
 /// The grey text at the right of a row: how long ago, or in a date or no-grouping list the project
 /// (the date heading already says when, and a longer text squeezes the title to a few letters).
 pub fn row_subtitle(project_name: Option<&str>, ago: Option<String>) -> String {
@@ -351,5 +382,13 @@ mod tests {
         assert_eq!(row_subtitle(Some("forge"), Some("3d ago".to_string())), "forge");
         assert_eq!(row_subtitle(Some("forge"), None), "forge");
         assert_eq!(row_subtitle(None, None), "");
+    }
+
+    #[test]
+    fn a_fork_row_moves_in_one_step_per_level_and_stops_at_the_third() {
+        assert_eq!(fork_indent(0), 0);
+        assert_eq!(fork_indent(1), 14);
+        assert_eq!(fork_indent(3), 42);
+        assert_eq!(fork_indent(9), 42);
     }
 }

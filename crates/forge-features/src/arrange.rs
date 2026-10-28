@@ -1,8 +1,9 @@
 use std::cmp::Reverse;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use forge_application::LiveSessionId;
-use forge_domain::{GroupBy, ProjectSummary, SidebarPrefs, SortBy, StatusFilter};
+use forge_domain::{GroupBy, ProjectSummary, SessionId, SidebarPrefs, SortBy, StatusFilter};
 use time::format_description::well_known::Rfc3339;
 use std::sync::OnceLock;
 
@@ -57,6 +58,19 @@ pub enum Heading {
 pub struct ArrangedEntry {
     pub project: ProjectSummary,
     pub entry: SidebarEntry,
+    /// How many forks deep the row sits: 0 for an ordinary session or a fork whose source is not in
+    /// the same list, 1 for a fork drawn under its source (`└`), and so on.
+    pub depth: u8,
+    /// All forks under this row, shown or folded away; the `▾` is drawn when it is above 0.
+    pub fork_count: usize,
+    /// The forks under this row are folded away (`▸`).
+    pub forks_folded: bool,
+}
+
+impl ArrangedEntry {
+    fn plain(project: ProjectSummary, entry: SidebarEntry) -> Self {
+        Self { project, entry, depth: 0, fork_count: 0, forks_folded: false }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,6 +80,82 @@ pub struct ArrangedGroup {
     pub heading: Heading,
     pub collapsed: bool,
     pub entries: Vec<ArrangedEntry>,
+}
+
+/// The id in `SidebarPrefs::collapsed` of a session whose forks are folded away.
+pub fn fork_fold_id(session: &SessionId) -> String {
+    format!("fork:{}", session.0)
+}
+
+/// Draws each fork right under the session it was made from, when that session is in the same
+/// list (a fork whose source is in another group, or hidden by the status filter, stays a plain
+/// row). Forks keep their sorted order among their siblings. A folded session keeps its forks out
+/// of sight, except the one on screen. `entries` must already be sorted.
+fn nest_forks(entries: Vec<ArrangedEntry>, prefs: &SidebarPrefs, active: Option<LiveSessionId>) -> Vec<ArrangedEntry> {
+    let listed: HashSet<SessionId> = entries.iter().filter_map(|item| item.entry.session_id.clone()).collect();
+    let source_of = |item: &ArrangedEntry| {
+        item.entry
+            .forked_from
+            .clone()
+            .filter(|source| listed.contains(source) && Some(source) != item.entry.session_id.as_ref())
+    };
+    let mut children: HashMap<SessionId, Vec<usize>> = HashMap::new();
+    let mut roots: Vec<usize> = Vec::new();
+    for (index, item) in entries.iter().enumerate() {
+        match source_of(item) {
+            Some(source) => children.entry(source).or_default().push(index),
+            None => roots.push(index),
+        }
+    }
+    if children.is_empty() {
+        return entries;
+    }
+
+    let mut slots: Vec<Option<ArrangedEntry>> = entries.into_iter().map(Some).collect();
+    let mut out: Vec<ArrangedEntry> = Vec::with_capacity(slots.len());
+    // A row is placed once, so a loop of forks (a damaged transcript) cannot recurse for ever.
+    fn place(
+        index: usize,
+        depth: u8,
+        slots: &mut Vec<Option<ArrangedEntry>>,
+        children: &HashMap<SessionId, Vec<usize>>,
+        prefs: &SidebarPrefs,
+        active: Option<LiveSessionId>,
+        out: &mut Vec<ArrangedEntry>,
+    ) {
+        let Some(mut item) = slots[index].take() else {
+            return;
+        };
+        item.depth = depth;
+        let own = item.entry.session_id.clone();
+        let kids: Vec<usize> = own.as_ref().and_then(|id| children.get(id)).cloned().unwrap_or_default();
+        let folded = own.as_ref().is_some_and(|id| prefs.is_collapsed(&fork_fold_id(id)));
+        let start = out.len();
+        out.push(item);
+        for kid in kids {
+            place(kid, depth.saturating_add(1), slots, children, prefs, active, out);
+        }
+        let below = out.len() - start - 1;
+        out[start].fork_count = below;
+        if folded && below > 0 {
+            out[start].forks_folded = true;
+            // The row of the session on screen stays, so the person never loses sight of where they are.
+            let mut position = 0;
+            out.retain(|item| {
+                position += 1;
+                position <= start + 1
+                    || matches!((&item.entry.key, active), (EntryKey::Live(open), Some(shown)) if *open == shown)
+            });
+        }
+    }
+    for root in roots {
+        place(root, 0, &mut slots, &children, prefs, active, &mut out);
+    }
+    // Rows that only a loop of forks reached are drawn plainly.
+    for index in 0..slots.len() {
+        place(index, 0, &mut slots, &children, prefs, active, &mut out);
+    }
+    out
 }
 
 pub fn folder_group_id(path: &Path) -> String {
@@ -140,7 +230,7 @@ fn all_entries(groups: &[SidebarGroup]) -> Vec<ArrangedEntry> {
             group
                 .entries
                 .iter()
-                .map(|entry| ArrangedEntry { project: group.project.clone(), entry: entry.clone() })
+                .map(|entry| ArrangedEntry::plain(group.project.clone(), entry.clone()))
         })
         .collect()
 }
@@ -225,7 +315,7 @@ fn arrange_filtered(
                 let items: Vec<ArrangedEntry> = group
                     .entries
                     .iter()
-                    .map(|entry| ArrangedEntry { project: group.project.clone(), entry: entry.clone() })
+                    .map(|entry| ArrangedEntry::plain(group.project.clone(), entry.clone()))
                     .collect();
                 match merged.iter_mut().find(|(path, _, _)| *path == home) {
                     Some((_, heading, entries)) => {
@@ -245,6 +335,7 @@ fn arrange_filtered(
                 .filter(|(_, _, entries)| prefs.show_empty || !entries.is_empty())
                 .map(|(home, heading, mut entries)| {
                     sort_entries(&mut entries, prefs.sort_by);
+                    let entries = nest_forks(entries, prefs, active);
                     finish(folder_group_id(&home), Heading::Project(heading), entries, prefs, active)
                 })
                 .collect()
@@ -268,7 +359,10 @@ fn arrange_filtered(
             buckets.sort_by_key(|(bucket, _)| *bucket);
             buckets
                 .into_iter()
-                .map(|(bucket, list)| finish(bucket_group_id(bucket), Heading::Bucket(bucket), list, prefs, active))
+                .map(|(bucket, list)| {
+                    let list = nest_forks(list, prefs, active);
+                    finish(bucket_group_id(bucket), Heading::Bucket(bucket), list, prefs, active)
+                })
                 .collect()
         }
         GroupBy::Flat => {
@@ -277,7 +371,7 @@ fn arrange_filtered(
                 return Vec::new();
             }
             sort_entries(&mut items, prefs.sort_by);
-            vec![ArrangedGroup { id: "flat".to_string(), heading: Heading::None, collapsed: false, entries: items }]
+            vec![ArrangedGroup { id: "flat".to_string(), heading: Heading::None, collapsed: false, entries: nest_forks(items, prefs, active) }]
         }
     }
 }
@@ -341,6 +435,7 @@ mod tests {
             created_at: created.map(str::to_string),
             marker: SessionMarker::Idle,
             archived: false,
+            forked_from: None,
         }
     }
 
@@ -764,5 +859,105 @@ mod tests {
         let prefs = SidebarPrefs { sort_by: SortBy::Name, ..SidebarPrefs::default() };
         let order = open_session_order_with_origins(&groups, &prefs, now(), &origin);
         assert_eq!(order, vec![LiveSessionId(1), LiveSessionId(3), LiveSessionId(2)]);
+    }
+
+    fn fork_of(title: &str, source: &str, updated: &str) -> SidebarEntry {
+        SidebarEntry { forked_from: Some(SessionId(source.to_string())), ..entry(title, None, Some(updated)) }
+    }
+
+    fn depths(group: &ArrangedGroup) -> Vec<(String, u8)> {
+        group.entries.iter().map(|item| (item.entry.title.clone(), item.depth)).collect()
+    }
+
+    #[test]
+    fn a_fork_is_drawn_under_its_source_with_its_siblings_in_sorted_order() {
+        let groups = vec![group(
+            "/a",
+            vec![
+                entry("other", None, Some("2026-10-03T09:00:00Z")),
+                fork_of("fork-new", "src", "2026-10-03T08:00:00Z"),
+                entry("src", None, Some("2026-10-01T00:00:00Z")),
+                fork_of("fork-old", "src", "2026-10-02T00:00:00Z"),
+                fork_of("grandchild", "fork-old", "2026-10-02T12:00:00Z"),
+            ],
+        )];
+
+        let arranged = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Folder), now(), None);
+
+        assert_eq!(
+            depths(&arranged[0]),
+            [("other".to_string(), 0), ("src".to_string(), 0), ("fork-new".to_string(), 1), ("fork-old".to_string(), 1), ("grandchild".to_string(), 2)]
+        );
+        let src = &arranged[0].entries[1];
+        assert_eq!(src.fork_count, 3);
+        assert!(!src.forks_folded);
+        assert_eq!(arranged[0].entries[0].fork_count, 0);
+    }
+
+    #[test]
+    fn a_fork_whose_source_is_not_in_the_list_is_a_plain_row() {
+        let groups = vec![group("/a", vec![fork_of("orphan", "gone", "2026-10-03T08:00:00Z"), fork_of("self", "self", "2026-10-03T07:00:00Z")])];
+
+        let arranged = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Folder), now(), None);
+
+        assert_eq!(depths(&arranged[0]), [("orphan".to_string(), 0), ("self".to_string(), 0)]);
+    }
+
+    #[test]
+    fn a_source_in_another_date_bucket_leaves_the_fork_a_plain_row() {
+        let groups = vec![group("/a", vec![entry("src", None, Some("2026-09-01T00:00:00Z")), fork_of("fork", "src", "2026-10-03T08:00:00Z")])];
+
+        let arranged = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Date), now(), None);
+
+        assert_eq!(arranged.len(), 2);
+        assert_eq!(depths(&arranged[0]), [("fork".to_string(), 0)]);
+        assert_eq!(depths(&arranged[1]), [("src".to_string(), 0)]);
+    }
+
+    #[test]
+    fn folding_a_source_hides_its_forks_but_keeps_the_open_one() {
+        let open = |title: &str, source: &str, id: u64| SidebarEntry {
+            key: EntryKey::Live(LiveSessionId(id)),
+            forked_from: Some(SessionId(source.to_string())),
+            ..entry(title, None, Some("2026-10-02T00:00:00Z"))
+        };
+        let groups = vec![group(
+            "/a",
+            vec![entry("src", None, Some("2026-10-03T00:00:00Z")), open("shown", "src", 7), fork_of("hidden", "src", "2026-10-01T00:00:00Z"), fork_of("deep", "shown", "2026-09-30T00:00:00Z")],
+        )];
+        let folded = SidebarPrefs { collapsed: vec![fork_fold_id(&SessionId("src".to_string()))], ..prefs(SortBy::Activity, GroupBy::Folder) };
+
+        let arranged = arrange(&groups, &folded, now(), Some(LiveSessionId(7)));
+
+        assert_eq!(depths(&arranged[0]), [("src".to_string(), 0), ("shown".to_string(), 1)]);
+        assert!(arranged[0].entries[0].forks_folded);
+        assert_eq!(arranged[0].entries[0].fork_count, 3, "the count still includes the folded forks");
+
+        let unfolded = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Folder), now(), Some(LiveSessionId(7)));
+        assert_eq!(unfolded[0].entries.len(), 4);
+    }
+
+    #[test]
+    fn a_loop_of_forks_cannot_hang_the_sidebar() {
+        let groups = vec![group("/a", vec![fork_of("a", "b", "2026-10-03T08:00:00Z"), fork_of("b", "a", "2026-10-03T07:00:00Z")])];
+
+        let arranged = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Folder), now(), None);
+
+        assert_eq!(arranged[0].entries.len(), 2);
+    }
+
+    #[test]
+    fn nested_forks_keep_their_place_in_the_ctrl_tab_order() {
+        let open = |title: &str, id: u64, source: Option<&str>| SidebarEntry {
+            key: EntryKey::Live(LiveSessionId(id)),
+            forked_from: source.map(|source| SessionId(source.to_string())),
+            ..entry(title, None, Some("2026-09-29T00:00:00Z"))
+        };
+        let groups = vec![group("/a", vec![open("src", 1, None), open("other", 2, None), open("fork", 3, Some("src"))])];
+        let prefs = SidebarPrefs { sort_by: SortBy::Name, ..SidebarPrefs::default() };
+
+        let order = open_session_order(&groups, &prefs, now());
+
+        assert_eq!(order, vec![LiveSessionId(2), LiveSessionId(1), LiveSessionId(3)]);
     }
 }

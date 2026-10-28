@@ -92,6 +92,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .sidebar-item.active { background: var(--bg-hover); font-weight: 600; }
 .sidebar-item .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-item .subtitle { flex: none; font-size: 11px; color: var(--fg-muted); }
+.fork-fold { flex: none; width: 22px; height: 22px; border: none; border-radius: 6px; background: transparent; color: var(--fg-muted); font: inherit; line-height: 1; cursor: pointer; }
+.fork-fold:hover { background: var(--bg-hover); color: var(--fg); }
 .row-menu-button { flex: none; width: 22px; height: 22px; border: none; border-radius: 6px; background: transparent; color: var(--fg-muted); font: inherit; line-height: 1; cursor: pointer; opacity: 0; }
 .sidebar-item:hover .row-menu-button, .row-menu-button:focus-visible, .row-menu-button.open { opacity: 1; }
 .row-menu-button:hover { background: var(--bg-hover); color: var(--fg); }

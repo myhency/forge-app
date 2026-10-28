@@ -164,6 +164,26 @@ async fn read_title(path: &Path) -> Option<String> {
 // within a few lines; the bound only stops a pathological file from being read in full.
 const MAX_TIMESTAMP_SCAN_LINES: usize = 20;
 
+/// The session a fork was made from, read from the first lines of its transcript: a fork writes
+/// `forkedFrom` on every line it copies and on its own title line. Only the first lines are read,
+/// the same bound as `first_timestamp`.
+async fn fork_source(path: &Path) -> Option<SessionId> {
+    let file = tokio::fs::File::open(path).await.ok()?;
+    let mut lines = BufReader::new(file).split(b'\n');
+    for _ in 0..MAX_TIMESTAMP_SCAN_LINES {
+        let Ok(Some(line)) = lines.next_segment().await else {
+            return None;
+        };
+        let Ok(value) = serde_json::from_slice::<Value>(&line) else {
+            continue;
+        };
+        if let Some(id) = value.pointer("/forkedFrom/sessionId").and_then(Value::as_str).filter(|id| !id.is_empty()) {
+            return Some(SessionId(id.to_string()));
+        }
+    }
+    None
+}
+
 async fn first_timestamp(path: &Path) -> Option<String> {
     let file = tokio::fs::File::open(path).await.ok()?;
     let mut lines = BufReader::new(file).split(b'\n');
@@ -255,9 +275,10 @@ async fn search_transcript(transcript: &Transcript, query: &str) -> Option<Searc
     }
     let updated_at = time::OffsetDateTime::from(transcript.modified).format(&Rfc3339).ok()?;
     let created_at = created_at_of(&transcript.path, &updated_at).await;
+    let forked_from = fork_source(&transcript.path).await;
     Some(SearchHit {
         project: transcript.cwd.clone(),
-        session: SessionSummary { id: SessionId(id), title, updated_at, created_at },
+        session: SessionSummary { id: SessionId(id), title, updated_at, created_at, forked_from },
         snippet,
     })
 }
@@ -604,6 +625,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
             };
             let title = read_title(&path).await;
             let created_at = created_at_of(&path, &updated_at).await;
+            let forked_from = fork_source(&path).await;
             found.push((
                 modified,
                 SessionSummary {
@@ -611,6 +633,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
                     title,
                     updated_at,
                     created_at,
+                    forked_from,
                 },
             ));
         }
@@ -1116,6 +1139,23 @@ mod tests {
         let loaded = adapter.load_session(&project(), &fork).await.unwrap();
         assert!(loaded.messages.is_empty());
         assert_eq!(loaded.forked_from, Some(first));
+    }
+
+    #[tokio::test]
+    async fn the_session_list_names_the_source_of_a_fork_even_an_empty_one() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[message("u1", None, "hello"), message("u2", Some("u1"), "again")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        let first = SessionId("s1".to_string());
+        let whole = adapter.fork_session(&project(), &first, "A (fork)").await.unwrap();
+        let empty = adapter.fork_session_before(&project(), &first, "u1", "B (fork)").await.unwrap();
+
+        let listed = adapter.list_sessions(&project()).await.unwrap();
+        let source = |id: &SessionId| listed.iter().find(|summary| &summary.id == id).unwrap().forked_from.clone();
+
+        assert_eq!(source(&first), None);
+        assert_eq!(source(&whole), Some(first.clone()));
+        assert_eq!(source(&empty), Some(first));
     }
 
     #[tokio::test]

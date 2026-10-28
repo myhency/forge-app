@@ -3330,7 +3330,7 @@ mod tests {
     }
 
     fn summary(id: &str) -> SessionSummary {
-        SessionSummary { id: SessionId(id.to_string()), title: None, updated_at: String::new(), created_at: String::new() }
+        SessionSummary { id: SessionId(id.to_string()), title: None, updated_at: String::new(), created_at: String::new(), forked_from: None }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

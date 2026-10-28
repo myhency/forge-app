@@ -67,3 +67,9 @@ An origin without a title hides the line.
 
 
 **Found in the final review and fixed:** a fork before the FIRST user message holds no conversation, and the SDK cannot resume it (`No conversation found with session ID`: the bundled `claude` 2.1.295 answers that for a transcript holding only a title line, while a fork-shaped copy of a real session resumes and remembers the earlier turn; both were tried directly with the binary in a throwaway folder). The `⑂` icon is not shown on the first user message and `fork_from_message` refuses it (`forge_domain::can_fork_before`), the same rule `/rewind` uses for its conversation buttons. The first-message cases in the Tests section above and in the as-built notes no longer apply.
+
+## 68B: nested sidebar rows (as built, unit tests only)
+
+Design call (the user opted out of questions): follow round 32. A fork is drawn right under its source in the same list with `└` and an indent per level (stops at the third); the source has a `▾` button that folds the forks away (`▸`), kept in `SidebarPrefs.collapsed` as `fork:<session id>`, so it survives restarts like group folds. Sibling forks keep the sorted order. A fork whose source is in another group, another date bucket, or hidden by the status filter stays a plain row. A folded source still shows the open session on screen. Ctrl+Tab follows the drawn order.
+
+Checked in the real window (harness, 2026-10-28, light mode, `add_fork_samples.py`): two forks and a fork of a fork nest with `└` and growing indent under the source; `▾` on each row that has forks; with `FORGE_HARNESS_FOLD=1` the folded fork shows `▸` and its child is gone. The click on `▾` folded all three forks of the source (`▸`), and a second click opened them again (the first clicks of the session did not reach the window; a retry did). Not checked: dark mode, Windows. Titles are cut shorter by the `▾` button beside the full date.
