@@ -159,8 +159,10 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                     move |_| {
                         // ⌘⏎ on an empty box with a live card presses the card's first button.
                         if let Some(message) = end_card_reply(end_card.as_ref(), draft.peek().is_empty(), running) {
-                            if let Some(handle) = workspace.handle(id) {
-                                handle.send_with(message, Vec::new());
+                            if !workspace.session_is_moving(id) {
+                                if let Some(handle) = workspace.handle(id) {
+                                    handle.send_with(message, Vec::new());
+                                }
                             }
                             return;
                         }

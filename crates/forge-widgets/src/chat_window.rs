@@ -107,6 +107,9 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     on_rewind: move |uuid: String| workspace.request_rewind(id, uuid),
                     on_fork: move |uuid: String| workspace.fork_from_message(id, uuid),
                     on_send: move |text: String| {
+                        if workspace.session_is_moving(id) {
+                            return;
+                        }
                         if let Some(handle) = workspace.handle(id) {
                             handle.send_with(text, Vec::new());
                         }
