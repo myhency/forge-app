@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { buildContent, type ContentBlock } from "./content.js";
 import { buildSkillsPlugin } from "./skills_plugin.js";
 import { turnUsage } from "./usage.js";
+import { createTurnToolsServer, TURN_SERVER_NAME, UPDATE_PLAN_TOOL, WRAP_UP_TOOL } from "./turn_tools.js";
 import type { SidecarCommand, SidecarEvent, WireAvailableModel, WireEffort, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
 
 export type QueryHandle = AsyncIterable<unknown> & {
@@ -455,6 +456,8 @@ export class SidecarSession {
       ...(skillsPlugin ? [{ type: "local" as const, path: skillsPlugin.path }] : []),
     ];
 
+    // The task list and next-step tools: an in-process server, allowed up front so no question appears.
+    const turnTools = command.turn_tools === true;
     let query: QueryHandle;
     try {
       query = this.queryFn({
@@ -489,9 +492,9 @@ export class SidecarSession {
                 },
               }
             : {}),
-          mcpServers: command.mcp_servers ?? {},
+          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer() } : {}) },
           additionalDirectories: command.additional_directories ?? [],
-          allowedTools: command.allowed_tools ?? [],
+          allowedTools: [...(command.allowed_tools ?? []), ...(turnTools ? [UPDATE_PLAN_TOOL, WRAP_UP_TOOL] : [])],
           // Variables of the environment the session starts from, over Forge's own (the SDK would
           // replace the whole environment with what it is given).
           ...(command.env && Object.keys(command.env).length > 0 ? { env: { ...process.env, ...command.env } } : {}),

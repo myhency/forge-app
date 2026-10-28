@@ -57,6 +57,8 @@ export type SidecarCommand =
       prompt_suggestions: boolean;
       allow_bypass: boolean;
       dynamic_workflows: boolean;
+      // Offers Claude the update_plan and wrap_up tools (a parent that omits it means off).
+      turn_tools?: boolean;
     }
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision; reason?: string }

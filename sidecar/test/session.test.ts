@@ -45,6 +45,37 @@ function makeSkillDir(name: string): string {
 }
 
 describe("SidecarSession", () => {
+  it("adds the ccd_turn server and allows its two tools when turn_tools is on", async () => {
+    let captured: Record<string, any> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+    const session = new SidecarSession(queryFn, () => {});
+    await session.handle({
+      ...startCommand,
+      turn_tools: true,
+      mcp_servers: { files: { command: "npx", args: ["files-mcp"] } },
+      allowed_tools: ["Read"],
+    });
+    expect(Object.keys(captured!.mcpServers).sort()).toEqual(["ccd_turn", "files"]);
+    expect(captured!.allowedTools).toEqual(["Read", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
+  });
+
+  it("adds nothing when turn_tools is off or missing (an older parent)", async () => {
+    const seen: Array<Record<string, any>> = [];
+    const queryFn: QueryFn = ({ options }) => {
+      seen.push(options);
+      return toQueryHandle((async function* () {})());
+    };
+    await new SidecarSession(queryFn, () => {}).handle({ ...startCommand, turn_tools: false });
+    await new SidecarSession(queryFn, () => {}).handle({ ...startCommand });
+    for (const options of seen) {
+      expect(options.mcpServers).toEqual({});
+      expect(options.allowedTools).toEqual([]);
+    }
+  });
+
   it("starts the SDK with only the project settings source and exactly the enabled extensions", async () => {
     let captured: Record<string, unknown> | undefined;
     const queryFn: QueryFn = ({ options }) => {
