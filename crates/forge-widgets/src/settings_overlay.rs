@@ -300,6 +300,11 @@ fn CodeSection() -> Element {
             description: tr!("Lets Claude run several agents in parallel for a complex task. Workflows can use up your usage limit quickly."),
             Switch { on: settings.dynamic_workflows(), onchange: move |on| settings.set_dynamic_workflows(on) }
         }
+        SettingRow {
+            title: tr!("Task list and next step"),
+            description: tr!("Claude shows its plan as a list while it works and ends a turn with a summary and a question."),
+            Switch { on: settings.turn_tools(), onchange: move |on| settings.set_turn_tools(on) }
+        }
         if cfg!(target_os = "macos") {
             SettingRow {
                 title: tr!("Bounce the Dock icon"),
@@ -308,7 +313,7 @@ fn CodeSection() -> Element {
             }
         }
         div { class: "hint", style: "margin-top: 12px;",
-            {tr!("Output style, prompt suggestions, the bypass switch and dynamic workflows apply to sessions that start after the change. The default view also applies to open sessions you have not changed.")}
+            {tr!("Output style, prompt suggestions, the bypass switch, dynamic workflows and the task list apply to sessions that start after the change. The default view also applies to open sessions you have not changed.")}
         }
     }
 }

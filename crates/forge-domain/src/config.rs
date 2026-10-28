@@ -332,6 +332,10 @@ pub struct AppConfig {
     /// Whether Claude may run several agents in parallel for a complex task (the SDK's Workflow tool).
     #[serde(default)]
     pub dynamic_workflows: bool,
+    /// Whether Claude gets the `update_plan` and `wrap_up` tools: a task list while it works and a
+    /// next-step card at the end of a turn.
+    #[serde(default = "default_true")]
+    pub turn_tools: bool,
     #[serde(default)]
     pub appearance: Appearance,
     #[serde(default)]
@@ -411,6 +415,7 @@ impl Default for AppConfig {
             prompt_suggestions: true,
             allow_bypass_mode: false,
             dynamic_workflows: false,
+            turn_tools: true,
             appearance: Appearance::default(),
             notifications: NotificationPrefs::default(),
             attention_bounce: false,
@@ -820,6 +825,15 @@ mod tests {
     }
 
     #[test]
+    fn turn_tools_are_on_for_a_config_written_before_the_switch_existed() {
+        let config: AppConfig = serde_json::from_str("{}").unwrap();
+        assert!(config.turn_tools);
+        assert!(AppConfig::default().turn_tools);
+        let off: AppConfig = serde_json::from_str(r#"{"turn_tools": false}"#).unwrap();
+        assert!(!off.turn_tools);
+    }
+
+    #[test]
     fn the_code_tab_values_round_trip() {
         let config = AppConfig {
             default_transcript_view: crate::TranscriptView::Detailed,
@@ -827,6 +841,7 @@ mod tests {
             prompt_suggestions: false,
             allow_bypass_mode: true,
             dynamic_workflows: true,
+            turn_tools: true,
             ..AppConfig::default()
         };
         let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();

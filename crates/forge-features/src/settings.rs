@@ -55,6 +55,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::PromptSuggestions(on) => config.prompt_suggestions = on,
         CodeChange::AllowBypass(on) => config.allow_bypass_mode = on,
         CodeChange::DynamicWorkflows(on) => config.dynamic_workflows = on,
+        CodeChange::TurnTools(on) => config.turn_tools = on,
         CodeChange::WorktreeLocation(value) => config.worktree_location = value,
         CodeChange::AutoArchiveDays(days) => config.auto_archive_days = days,
         CodeChange::Theme(value) => config.appearance.theme = value,
@@ -102,6 +103,7 @@ pub(crate) enum CodeChange {
     PromptSuggestions(bool),
     AllowBypass(bool),
     DynamicWorkflows(bool),
+    TurnTools(bool),
     WorktreeLocation(WorktreeLocation),
     AutoArchiveDays(Option<u32>),
     Theme(Theme),
@@ -287,6 +289,14 @@ impl Settings {
 
     pub fn allow_bypass_mode(&self) -> bool {
         self.saved.read().allow_bypass_mode
+    }
+
+    pub fn turn_tools(&self) -> bool {
+        self.saved.read().turn_tools
+    }
+
+    pub fn set_turn_tools(&self, on: bool) {
+        self.change_code(CodeChange::TurnTools(on));
     }
 
     pub fn dynamic_workflows(&self) -> bool {
@@ -679,6 +689,7 @@ impl Settings {
             current.prompt_suggestions = config.prompt_suggestions;
             current.allow_bypass_mode = config.allow_bypass_mode;
             current.dynamic_workflows = config.dynamic_workflows;
+            current.turn_tools = config.turn_tools;
             current.worktree_location = config.worktree_location;
             current.auto_archive_days = config.auto_archive_days;
             current.appearance = config.appearance;
@@ -802,6 +813,15 @@ mod tests {
         assert!(config.allow_bypass_mode);
         assert!(config.dynamic_workflows);
         assert_eq!(config.model, None, "nothing else is touched");
+    }
+
+    #[test]
+    fn the_turn_tools_switch_changes_only_that_value() {
+        let mut config = AppConfig::default();
+        assert!(config.turn_tools);
+        apply_code_change(&mut config, CodeChange::TurnTools(false));
+        assert!(!config.turn_tools);
+        assert!(config.prompt_suggestions, "nothing else is touched");
     }
 
     #[test]
