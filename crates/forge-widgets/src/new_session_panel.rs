@@ -12,7 +12,7 @@ pub fn NewSessionPanel() -> Element {
     let workspace = use_workspace();
     let name = user_name(std::env::var("USER").ok().as_deref(), std::env::var("USERNAME").ok().as_deref());
     rsx! {
-        div { class: "main-pane",
+        div { class: "main-pane new-session-pane",
             div { class: "home-top",
                 h1 { class: "greeting", {tr!("{name}, what's next?", name = name)} }
                 UsageCard {}

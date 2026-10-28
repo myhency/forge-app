@@ -732,7 +732,9 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .dock-note .error { color: var(--danger); }
 
 /* New-session composer: chips above the box, the send icon inside it. */
-.new-session { justify-content: flex-start; min-height: 0; overflow-y: auto; }
+.new-session { justify-content: flex-start; }
+/* The pane scrolls, not `.new-session`: an overflow box would cut off the folder and branch menus that open upward from the chips. */
+.new-session-pane { min-height: 0; overflow-y: auto; }
 /* With room the content sits at the bottom; in a pane too short for it the top stays reachable and the panel scrolls. */
 .new-session > :first-child { margin-top: auto; }
 .env-chips .chip { padding: 4px 10px; font-size: 13px; }
