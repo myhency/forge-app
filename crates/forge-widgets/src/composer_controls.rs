@@ -64,7 +64,7 @@ pub(crate) fn Picker(
                     },
                 }
                 div {
-                    class: "picker-menu",
+                    class: "picker-menu picker-list",
                     role: "menu",
                     tabindex: "0",
                     // The list takes focus when it opens so its number keys work at once.
