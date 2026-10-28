@@ -11,7 +11,7 @@ const MAX_STEPS = 12;
 const MAX_ACTIONS = 2;
 
 const UPDATE_PLAN_DESCRIPTION = [
-  "Show the person a task list of your plan while you work. Use it for any request that edits files or runs more than one command; skip it for a single-command answer or plain conversation.",
+  "Show the person a task list of your plan while you work. Call it at the start of every request that will create or edit a file or run more than one command, even a small one: the person watches the list instead of waiting. Skip it only for a single-command answer or plain conversation.",
   "Send it in the same message as another tool call, never alone, so it costs no extra round trip.",
   'First call: {items: [...]}, the whole plan in order, short imperative phrases (about 7 words, no numbering), the step you are starting "in_progress", the rest "pending".',
   "To move on: {advance: true} together with the call that begins the next step (it completes the step in progress and starts the next pending one).",
@@ -21,13 +21,17 @@ const UPDATE_PLAN_DESCRIPTION = [
 ].join("\n\n");
 
 const WRAP_UP_DESCRIPTION = [
-  "End a turn that changed files, ran commands or finished multi-step work with a box for the person: a two-or-three-sentence recap and, when the next move is theirs, one question with one or two reply buttons.",
-  "Call it once, when the turn's work is done, before your closing message; it also checks off the task list. Skip it for short answers and plain conversation.",
+  "Call this once at the end of every turn in which you created or edited a file or ran a command, right before your closing message. It shows the person a box: a two-or-three-sentence recap and, when the next move is theirs (for example whether to commit, run or keep going), one question with one or two reply buttons.",
+  "It also checks off the task list. Skip it only for short answers and plain conversation with no file or command work.",
   "Your closing message is still your full answer, written right after this call; the recap never replaces it.",
   "recap: what is now true or changed and where it stands, including what is not done or not verified (300 characters or fewer, said to the person, no recommendation).",
   "ask: only when the next move is the person's call. One short question (100 characters or fewer) that does not list the buttons' options. Without ask no box is drawn.",
   "actions: one or two reply buttons, your recommendation first. label is the button text (1-3 words, 24 characters or fewer); message is what a click sends (300 characters or fewer; leave it out when the label says it all).",
 ].join("\n\n");
+
+/** Without this the SDK defers MCP tools behind tool search: the model sees only the two names, never the
+ *  descriptions, and (checked with a real turn) never calls them. */
+const ALWAYS_LOADED = { alwaysLoad: true };
 
 const stepSchema = z.object({
   content: z.string(),
@@ -69,6 +73,7 @@ export function turnToolDefinitions(): SdkMcpToolDefinition<any>[] {
       }
       return answer(`Plan updated (${steps} steps).`);
     },
+    ALWAYS_LOADED,
   );
   const wrapUp = tool(
     "wrap_up",
@@ -87,10 +92,11 @@ export function turnToolDefinitions(): SdkMcpToolDefinition<any>[] {
         "Shown in the next-step box. Your closing message is your answer to the user: write it now, in full, as the last thing you say this turn.";
       return answer(args.ask ? `${base} The box asks your question, so do not ask it again.` : base);
     },
+    ALWAYS_LOADED,
   );
   return [updatePlan, wrapUp];
 }
 
 export function createTurnToolsServer(): McpSdkServerConfigWithInstance {
-  return createSdkMcpServer({ name: TURN_SERVER_NAME, tools: turnToolDefinitions() });
+  return createSdkMcpServer({ name: TURN_SERVER_NAME, tools: turnToolDefinitions(), alwaysLoad: true });
 }

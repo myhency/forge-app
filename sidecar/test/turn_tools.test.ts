@@ -21,6 +21,12 @@ describe("turn tools", () => {
     expect(createTurnToolsServer().type).toBe("sdk");
   });
 
+  it("keeps both tools out of tool search, so the model sees their descriptions from the first turn", () => {
+    for (const definition of turnToolDefinitions()) {
+      expect(definition._meta?.["anthropic/alwaysLoad"]).toBe(true);
+    }
+  });
+
   it("update_plan answers with the step count for a whole plan", async () => {
     const { updatePlan } = tools();
     const out = await text(

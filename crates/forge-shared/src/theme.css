@@ -1377,7 +1377,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .end-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .end-card-button { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 0; border-radius: 8px; background: var(--bg-hover); color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; }
 .end-card-button.primary { background: var(--fg); color: var(--bg-card); }
-.end-card-key { padding: 0 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.2); font-size: 11px; }
+.end-card-key { padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, currentColor 18%, transparent); font-size: 11px; }
 .end-card.spent { width: 70%; min-width: 260px; }
 .end-card.spent .end-card-ask { color: var(--fg-muted); font-weight: 400; }
 .end-card-chosen { color: var(--fg-muted); font-size: 13px; }
