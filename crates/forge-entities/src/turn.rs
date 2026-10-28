@@ -55,6 +55,8 @@ pub fn Turns(
     #[props(default)] on_open_plan: EventHandler<()>,
     /// Asked to go back to the user message with this id (its action row's ↺); no ↺ without it.
     #[props(default)] on_rewind: Option<EventHandler<String>>,
+    /// Asked to fork the session before the user message with this id (its action row's ⑂); no ⑂ without it.
+    #[props(default)] on_fork: Option<EventHandler<String>>,
 ) -> Element {
     let known = known_paths(&messages);
     let items = build_turns(&messages, view, live.as_ref());
@@ -62,7 +64,7 @@ pub fn Turns(
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind }
+                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork }
             }
         }
     }
@@ -79,6 +81,7 @@ fn TurnItem(
     on_open_tasks: EventHandler<()>,
     on_open_plan: EventHandler<()>,
     on_rewind: Option<EventHandler<String>>,
+    on_fork: Option<EventHandler<String>>,
 ) -> Element {
     match item {
         Item::User(message) => {
@@ -127,6 +130,16 @@ fn TurnItem(
                                     "aria-label": tr!("Go back to an earlier point"),
                                     onclick: move |_| on_rewind.call(uuid.clone()),
                                     "↺"
+                                }
+                            }
+                            if let (Some(on_fork), Some(uuid)) = (on_fork, message.uuid.clone()) {
+                                button {
+                                    class: "icon-button",
+                                    r#type: "button",
+                                    title: tr!("Fork from this message"),
+                                    "aria-label": tr!("Fork from this message"),
+                                    onclick: move |_| on_fork.call(uuid.clone()),
+                                    "⑂"
                                 }
                             }
                         }

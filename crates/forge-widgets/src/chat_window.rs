@@ -12,6 +12,7 @@ use crate::question_panel::QuestionPanel;
 use crate::session_title_menu::SessionTitleMenu;
 use crate::session_tools::SessionTools;
 use crate::sidebar::project_label_in;
+use crate::fork_line::ForkLine;
 use crate::start_line::StartLine;
 use crate::tasks_panel::use_running_workflows;
 use crate::usage_ring::UsageRing;
@@ -93,6 +94,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
             }
             div { class: "messages",
                 StartLine { id }
+                ForkLine { id }
                 Turns {
                     messages: view.session.messages.clone(),
                     view: mode,
@@ -103,6 +105,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     on_open_tasks: move |_| workspace.change_dock(id, |dock| if !dock.is_open(Panel::Tasks) { dock.toggle(Panel::Tasks) }),
                     on_open_plan: move |_| workspace.change_dock(id, |dock| dock.open(Panel::Plan)),
                     on_rewind: move |uuid: String| workspace.request_rewind(id, uuid),
+                    on_fork: move |uuid: String| workspace.fork_from_message(id, uuid),
                 }
             }
             ScrollToEnd {}

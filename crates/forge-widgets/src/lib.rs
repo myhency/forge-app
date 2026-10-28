@@ -22,6 +22,7 @@ mod files_office;
 mod files_panel;
 mod files_sheet;
 mod files_state;
+mod fork_line;
 mod files_tabs;
 mod filter_menu;
 mod lightbox;
