@@ -8,7 +8,7 @@ use crate::card_view::CardView;
 use crate::diff::diff_for_tool_call;
 use crate::diff_view::DiffView;
 use crate::links::{known_paths, render_markdown_linked};
-use crate::attachment_card::SentAttachment;
+use crate::attachment_card::{ReadThumbnail, SentAttachment};
 use crate::message::ToolDetail;
 use crate::question::AnswerPair;
 use crate::relative_time::relative_time;
@@ -244,6 +244,9 @@ fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<
                 span { class: "activity-summary", "{activity.summary}" }
                 CountChips { added: activity.added, removed: activity.removed }
                 span { class: "chevron", "{chevron}" }
+                if let Some(path) = activity.image.clone() {
+                    ReadThumbnail { path }
+                }
             }
             if shown {
                 div { class: "activity-box",

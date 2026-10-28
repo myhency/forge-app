@@ -7,7 +7,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use forge_domain::Attachment;
+use forge_domain::{Attachment, AttachmentKind};
 
 use crate::mention::{shorten_middle, type_tag};
 
@@ -61,6 +61,30 @@ pub fn SentAttachment(attachment: Attachment) -> Element {
     }));
     let thumbnail = loaded.read().clone().and_then(|(path, thumbnail)| if path == attachment.path { thumbnail } else { None });
     rsx! { AttachmentCard { attachment, thumbnail, on_remove: None } }
+}
+
+/// The small picture at the end of a folded line that read one image; nothing until the loader
+/// has the image, and nothing for a file it cannot show.
+#[component]
+pub fn ReadThumbnail(path: String) -> Element {
+    let loader = try_use_context::<ThumbnailLoader>();
+    let attachment = Attachment { path: std::path::PathBuf::from(&path), kind: AttachmentKind::Image };
+    let for_load = attachment.clone();
+    let loaded = use_resource(use_reactive!(|(for_load)| {
+        let loader = loader.clone();
+        async move {
+            let thumbnail = match loader {
+                Some(loader) => (loader.0)(for_load.clone()).await,
+                None => None,
+            };
+            (for_load.path, thumbnail)
+        }
+    }));
+    let thumbnail = loaded.read().clone().and_then(|(loaded_path, thumbnail)| if loaded_path == attachment.path { thumbnail } else { None });
+    match thumbnail {
+        Some(src) => rsx! { img { class: "read-thumb", src: "{src}", alt: "" } },
+        None => rsx! {},
+    }
 }
 
 #[cfg(test)]

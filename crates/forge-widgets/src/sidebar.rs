@@ -7,7 +7,7 @@ use forge_shared::{tr, Button, ButtonKind};
 
 use crate::account_menu::AccountMenu;
 use crate::filter_menu::SidebarFilterMenu;
-use crate::session_row::SessionRow;
+use crate::session_row::{fork_indent, SessionRow};
 
 /// The folder's own name for a sidebar heading; the full path stays available as a tooltip. A
 /// path with no final component (the filesystem root) is shown whole.
@@ -254,6 +254,9 @@ pub fn Sidebar() -> Element {
                                 }
                             },
                         }
+                        if item.hidden_forks > 0 {
+                            div { class: "fork-hidden", style: "margin-left: {fork_indent(item.depth.saturating_add(1))}px", {nested_label(item.hidden_forks)} }
+                        }
                     }
                 }
             }
@@ -263,6 +266,12 @@ pub fn Sidebar() -> Element {
             }
         }
     }
+}
+
+/// The grey line under a folded session: how many forks are folded away.
+fn nested_label(count: usize) -> String {
+    let text = if count == 1 { tr!("{count} nested session", count = count) } else { tr!("{count} nested sessions", count = count) };
+    format!("└ {text}")
 }
 
 // A heading that collapses and expands its group when clicked.
@@ -301,6 +310,12 @@ mod tests {
         assert_eq!(project_label(Path::new("/Users/me/Developer/forge")), "forge");
         assert_eq!(project_label(Path::new("/Users/me/my project")), "my project");
         assert_eq!(project_label(Path::new("/work/한글 폴더")), "한글 폴더");
+    }
+
+    #[test]
+    fn the_line_under_a_folded_session_counts_its_forks() {
+        assert_eq!(nested_label(1), "└ 1 nested session");
+        assert_eq!(nested_label(3), "└ 3 nested sessions");
     }
 
     #[test]

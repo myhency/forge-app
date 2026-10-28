@@ -3,7 +3,9 @@ use std::time::SystemTime;
 use forge_domain::{Block, Message, MessageRole, PermissionRequest, ToolCall};
 use serde_json::Value;
 
+use crate::background::background_ref;
 use crate::diff::{diff_for_tool, diff_for_tool_call};
+use crate::preview::{preview_kind, PreviewKind};
 use crate::question::{answer_pairs, AnswerPair, QUESTION_TOOL};
 use crate::tool_summary::{tool_call_status, tool_input_summary, ToolCallStatus};
 use crate::workflow_progress::workflow_ref;
@@ -56,6 +58,8 @@ pub struct Activity {
     pub added: usize,
     pub removed: usize,
     pub failed: usize,
+    /// The one image the turn read, shown as a small thumbnail at the end of the folded line.
+    pub image: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -221,6 +225,7 @@ fn tool_row(call: &ToolCall) -> ToolRow {
             };
             (verb.to_string(), file_name(&path), path)
         }
+        ToolKind::Command if is_background_start(call) => (tr!("Background task").to_string(), summary.clone(), String::new()),
         ToolKind::Command => {
             let label = call
                 .input
@@ -229,7 +234,12 @@ fn tool_row(call: &ToolCall) -> ToolRow {
                 .filter(|text| !text.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| summary.clone());
-            (String::new(), label, String::new())
+            let verb = if call.result.is_some() { tr!("Ran|tool") } else { tr!("Running|tool") };
+            (verb.to_string(), label, String::new())
+        }
+        ToolKind::Other if call.name == SKILL_TOOL => {
+            let name = call.input.get("skill").and_then(Value::as_str).unwrap_or_default();
+            (tr!("Skill ran|tool").to_string(), format!("/{name}"), String::new())
         }
         ToolKind::Other => (call.name.clone(), summary.clone(), String::new()),
     };
@@ -238,29 +248,80 @@ fn tool_row(call: &ToolCall) -> ToolRow {
     ToolRow { call: call.clone(), kind, verb, subject, path, added, removed, has_diff, failed: tool_call_status(call) == ToolCallStatus::Failed && !stopped, stopped, error }
 }
 
+const SKILL_TOOL: &str = "Skill";
+const TOOL_SEARCH: &str = "ToolSearch";
+
+/// A Bash call whose result says the command was started in the background.
+fn is_background_start(call: &ToolCall) -> bool {
+    call.result.as_ref().is_some_and(|result| background_ref(&result.output).is_some())
+}
+
+/// Whether a path is one of Claude's memory files (`~/.claude/projects/<project>/memory/…`).
+pub(crate) fn is_memory_path(path: &str) -> bool {
+    let path = path.replace('\\', "/");
+    path.contains("/.claude/projects/") && path.contains("/memory/")
+}
+
+/// How the folded line counts a call: a memory read and a started background command are not
+/// counted as a file read and a command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Counted {
+    Created,
+    Edited,
+    Command,
+    Read,
+    Memory,
+    Background,
+    Skill,
+    LoadedTools,
+    Other,
+}
+
+fn counted(row: &ToolRow) -> Counted {
+    match row.kind {
+        ToolKind::Created => Counted::Created,
+        ToolKind::Edited => Counted::Edited,
+        ToolKind::Read if is_memory_path(&row.path) => Counted::Memory,
+        ToolKind::Read => Counted::Read,
+        ToolKind::Command if is_background_start(&row.call) => Counted::Background,
+        ToolKind::Command => Counted::Command,
+        ToolKind::Other if row.call.name == SKILL_TOOL => Counted::Skill,
+        ToolKind::Other if row.call.name == TOOL_SEARCH => Counted::LoadedTools,
+        ToolKind::Other => Counted::Other,
+    }
+}
+
 fn summarize(tools: &[&ToolRow], failed: usize) -> String {
-    let mut text = if tools.len() == 1 {
-        let row = tools[0];
+    let single = match tools {
+        [row] if !matches!(counted(row), Counted::Memory | Counted::Background | Counted::LoadedTools) => Some(*row),
+        _ => None,
+    };
+    let mut text = if let Some(row) = single {
         if row.verb.is_empty() { row.subject.clone() } else { format!("{} {}", row.verb, row.subject) }
     } else {
-        let distinct = |kind: ToolKind| {
+        let distinct = |kind: Counted| {
             let mut seen: Vec<&str> = Vec::new();
-            for row in tools.iter().filter(|row| row.kind == kind) {
+            for row in tools.iter().filter(|row| counted(row) == kind) {
                 if !seen.contains(&row.path.as_str()) {
                     seen.push(&row.path);
                 }
             }
             seen.len()
         };
-        let commands = tools.iter().filter(|row| row.kind == ToolKind::Command).count();
-        let others = tools.iter().filter(|row| row.kind == ToolKind::Other).count();
-        let (created, edited, read) = (distinct(ToolKind::Created), distinct(ToolKind::Edited), distinct(ToolKind::Read));
+        let count = |kind: Counted| tools.iter().filter(|row| counted(row) == kind).count();
+        let (commands, background, skills, others) = (count(Counted::Command), count(Counted::Background), count(Counted::Skill), count(Counted::Other));
+        let (created, edited, read, memory) = (distinct(Counted::Created), distinct(Counted::Edited), distinct(Counted::Read), distinct(Counted::Memory));
+        let loaded_tools = count(Counted::LoadedTools);
         // One sentence per count, so a language with other plural rules can word each one.
         let parts = [
             (created, if created == 1 { tr!("Created {count} file") } else { tr!("Created {count} files") }),
             (edited, if edited == 1 { tr!("Edited {count} file") } else { tr!("Edited {count} files") }),
             (commands, if commands == 1 { tr!("Ran {count} command") } else { tr!("Ran {count} commands") }),
+            (background, if background == 1 { tr!("Started {count} background task") } else { tr!("Started {count} background tasks") }),
             (read, if read == 1 { tr!("Read {count} file") } else { tr!("Read {count} files") }),
+            (memory, if memory == 1 { tr!("Loaded {count} memory file") } else { tr!("Loaded {count} memory files") }),
+            (skills, if skills == 1 { tr!("Ran {count} skill") } else { tr!("Ran {count} skills") }),
+            (loaded_tools, tr!("Loaded tools")),
             (others, if others == 1 { tr!("Used {count} other tool") } else { tr!("Used {count} other tools") }),
         ];
         parts
@@ -274,6 +335,13 @@ fn summarize(tools: &[&ToolRow], failed: usize) -> String {
         text = tr!("{text} ({failed} failed)", text = text, failed = failed);
     }
     text
+}
+
+/// The path of the image the calls read, when they read exactly one image (even several times).
+fn read_image(tools: &[&ToolRow]) -> Option<String> {
+    let mut images = tools.iter().filter(|row| row.kind == ToolKind::Read && preview_kind(&row.path) == PreviewKind::Image).map(|row| row.path.as_str());
+    let first = images.next()?;
+    images.all(|path| path == first).then(|| first.to_string())
 }
 
 fn build_activity(blocks: &[Block], tool_rows: &[Option<ToolRow>], view: TranscriptView) -> Activity {
@@ -290,7 +358,8 @@ fn build_activity(blocks: &[Block], tool_rows: &[Option<ToolRow>], view: Transcr
     let failed = tools.iter().filter(|row| row.failed).count();
     let (added, removed) = tools.iter().fold((0, 0), |(a, r), row| (a + row.added, r + row.removed));
     let summary = summarize(&tools, failed);
-    Activity { rows, summary, added, removed, failed }
+    let image = read_image(&tools);
+    Activity { rows, summary, added, removed, failed, image }
 }
 
 fn build_card(tool_rows: &[Option<ToolRow>]) -> Option<FileCard> {
@@ -684,7 +753,7 @@ mod tests {
         let messages = vec![Message::user("go"), assistant(vec![bash("t-1", None), text("")])];
         let items = build_turns(&messages, TranscriptView::Normal, None);
         assert_eq!(kinds(&items), vec!["user", "activity", "footer"]);
-        assert_eq!(activity(&items).summary, "ls -la");
+        assert_eq!(activity(&items).summary, "Ran ls -la");
     }
 
     #[test]
@@ -809,8 +878,73 @@ mod tests {
         let Row::Tool(notebook) = &rows[1] else { panic!() };
         assert_eq!((notebook.verb.as_str(), notebook.subject.as_str()), ("Edited", "n.ipynb"));
         let Row::Tool(command) = &rows[2] else { panic!() };
-        assert_eq!((command.verb.as_str(), command.subject.as_str()), ("", "ls -la"));
+        assert_eq!((command.verb.as_str(), command.subject.as_str()), ("Ran", "ls -la"));
         assert!(!items.iter().any(|i| matches!(i, Item::FileCard(_))), "no diff, no card entry");
+    }
+
+    fn bash_in_background(id: &str) -> Block {
+        Block::Tool(ToolCall {
+            id: id.to_string(),
+            name: "Bash".to_string(),
+            input: json!({"command": "sleep 4 && ls", "run_in_background": true}),
+            result: Some(ToolResult {
+                output: "Command running in background with ID: bk1. Output is being written to: /p/tasks/bk1.output. You will be notified when it completes.".to_string(),
+                is_error: false,
+            }),
+        })
+    }
+    fn summary_of(blocks: Vec<Block>) -> String {
+        let items = build_turns(&[Message::user("go"), assistant(blocks)], TranscriptView::Normal, None);
+        activity(&items).summary.clone()
+    }
+    fn read(id: &str, path: &str) -> Block {
+        tool(id, "Read", json!({"file_path": path}), Some(false))
+    }
+    const MEMORY: &str = "/Users/me/.claude/projects/-p/memory/MEMORY.md";
+
+    #[test]
+    fn a_memory_read_is_counted_as_memory_not_as_a_file() {
+        assert_eq!(summary_of(vec![read("t-1", MEMORY), bash("t-2", None), bash("t-3", None)]), "Ran 2 commands, Loaded 1 memory file");
+        assert_eq!(summary_of(vec![read("t-1", MEMORY)]), "Loaded 1 memory file");
+        assert_eq!(summary_of(vec![read("t-1", "/p/a.rs"), read("t-2", MEMORY)]), "Read 1 file, Loaded 1 memory file");
+    }
+
+    #[test]
+    fn a_started_background_command_is_counted_apart_from_commands() {
+        assert_eq!(summary_of(vec![bash("t-1", None), bash_in_background("t-2")]), "Ran 1 command, Started 1 background task");
+        let items = build_turns(&[Message::user("go"), assistant(vec![bash_in_background("t-1")])], TranscriptView::Normal, None);
+        let Row::Tool(row) = &activity(&items).rows[0] else { panic!() };
+        assert_eq!((row.verb.as_str(), row.subject.as_str()), ("Background task", "sleep 4 && ls"));
+    }
+
+    #[test]
+    fn a_skill_shows_its_name_and_tool_search_shows_loaded_tools() {
+        assert_eq!(summary_of(vec![tool("t-1", "Skill", json!({"skill": "superpowers:brainstorming"}), Some(false))]), "Skill ran /superpowers:brainstorming");
+        let skill = |id| tool(id, "Skill", json!({"skill": "x"}), Some(false));
+        assert_eq!(summary_of(vec![skill("t-1"), skill("t-2")]), "Ran 2 skills");
+        assert_eq!(summary_of(vec![tool("t-1", "ToolSearch", json!({"query": "select:A"}), Some(false)), bash("t-2", None)]), "Ran 1 command, Loaded tools");
+    }
+
+    #[test]
+    fn a_command_row_says_whether_it_ran_or_is_running() {
+        let messages = vec![Message::user("go"), assistant(vec![bash("t-1", Some("List")), tool("t-2", "Bash", json!({"command": "sleep 9"}), None)])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        let rows = &activity(&items).rows;
+        let Row::Tool(done) = &rows[0] else { panic!() };
+        let Row::Tool(running) = &rows[1] else { panic!() };
+        assert_eq!((done.verb.as_str(), running.verb.as_str()), ("Ran", "Running"));
+    }
+
+    #[test]
+    fn a_turn_that_read_one_image_names_it_for_a_thumbnail() {
+        let image = |blocks| {
+            let items = build_turns(&[Message::user("go"), assistant(blocks)], TranscriptView::Normal, None);
+            activity(&items).image.clone()
+        };
+        assert_eq!(image(vec![read("t-1", "/p/shot.png"), bash("t-2", None)]), Some("/p/shot.png".to_string()));
+        assert_eq!(image(vec![read("t-1", "/p/shot.png"), read("t-2", "/p/shot.png")]), Some("/p/shot.png".to_string()));
+        assert_eq!(image(vec![read("t-1", "/p/a.png"), read("t-2", "/p/b.png")]), None);
+        assert_eq!(image(vec![read("t-1", "/p/a.rs")]), None);
     }
 
     #[test]

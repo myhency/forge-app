@@ -65,11 +65,14 @@ pub struct ArrangedEntry {
     pub fork_count: usize,
     /// The forks under this row are folded away (`▸`).
     pub forks_folded: bool,
+    /// How many of those forks the fold took out of the list (the open session's row stays); the
+    /// line `└ N nested sessions` under a folded row says this number.
+    pub hidden_forks: usize,
 }
 
 impl ArrangedEntry {
     fn plain(project: ProjectSummary, entry: SidebarEntry) -> Self {
-        Self { project, entry, depth: 0, fork_count: 0, forks_folded: false }
+        Self { project, entry, depth: 0, fork_count: 0, forks_folded: false, hidden_forks: 0 }
     }
 }
 
@@ -146,6 +149,7 @@ fn nest_forks(entries: Vec<ArrangedEntry>, prefs: &SidebarPrefs, active: Option<
                 position <= start + 1
                     || matches!((&item.entry.key, active), (EntryKey::Live(open), Some(shown)) if *open == shown)
             });
+            out[start].hidden_forks = below - (out.len() - start - 1);
         }
     }
     for root in roots {
@@ -932,9 +936,23 @@ mod tests {
         assert_eq!(depths(&arranged[0]), [("src".to_string(), 0), ("shown".to_string(), 1)]);
         assert!(arranged[0].entries[0].forks_folded);
         assert_eq!(arranged[0].entries[0].fork_count, 3, "the count still includes the folded forks");
+        assert_eq!(arranged[0].entries[0].hidden_forks, 2, "the open session's row is not hidden");
 
         let unfolded = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Folder), now(), Some(LiveSessionId(7)));
         assert_eq!(unfolded[0].entries.len(), 4);
+    }
+
+    #[test]
+    fn a_folded_source_counts_the_forks_it_hides() {
+        let groups = vec![group("/a", vec![entry("src", None, Some("2026-10-03T00:00:00Z")), fork_of("one", "src", "2026-10-01T00:00:00Z"), fork_of("two", "one", "2026-09-30T00:00:00Z")])];
+        let folded = SidebarPrefs { collapsed: vec![fork_fold_id(&SessionId("src".to_string()))], ..prefs(SortBy::Activity, GroupBy::Folder) };
+
+        let arranged = arrange(&groups, &folded, now(), None);
+        assert_eq!(arranged[0].entries.len(), 1);
+        assert_eq!(arranged[0].entries[0].hidden_forks, 2);
+
+        let unfolded = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Folder), now(), None);
+        assert!(unfolded[0].entries.iter().all(|item| item.hidden_forks == 0));
     }
 
     #[test]
