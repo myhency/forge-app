@@ -59,12 +59,13 @@ pub fn Turns(
     #[props(default)] on_fork: Option<EventHandler<String>>,
 ) -> Element {
     let known = known_paths(&messages);
+    let forkable: Vec<String> = messages.iter().filter_map(|message| message.uuid.clone()).filter(|uuid| forge_domain::can_fork_before(&messages, uuid)).collect();
     let items = build_turns(&messages, view, live.as_ref());
     let detailed = view.expands_tool_calls();
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork }
+                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, forkable: forkable.clone() }
             }
         }
     }
@@ -82,6 +83,7 @@ fn TurnItem(
     on_open_plan: EventHandler<()>,
     on_rewind: Option<EventHandler<String>>,
     on_fork: Option<EventHandler<String>>,
+    forkable: Vec<String>,
 ) -> Element {
     match item {
         Item::User(message) => {
@@ -132,7 +134,7 @@ fn TurnItem(
                                     "↺"
                                 }
                             }
-                            if let (Some(on_fork), Some(uuid)) = (on_fork, message.uuid.clone()) {
+                            if let (Some(on_fork), Some(uuid)) = (on_fork, message.uuid.clone().filter(|uuid| forkable.contains(uuid))) {
                                 button {
                                     class: "icon-button",
                                     r#type: "button",

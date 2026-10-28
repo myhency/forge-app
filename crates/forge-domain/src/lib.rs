@@ -67,7 +67,7 @@ pub use routine::{
     KEEP_RUNS, MAX_DELAY_MS, MISSED_AFTER_MS,
 };
 pub use search::{find_snippet, split_at_match, title_matches, SearchHit, Snippet};
-pub use session::{is_denial_text, is_interrupt_text, RewindOutcome, 
+pub use session::{can_fork_before, is_denial_text, is_interrupt_text, RewindOutcome, 
     Block, Message, MessageRole, PermissionRequest, Session, SessionId, SessionSummary, ToolCall,
     ToolResult,
 };

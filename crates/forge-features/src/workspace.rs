@@ -956,6 +956,10 @@ impl Workspace {
         let (Some(session_id), Some(message)) = (session_id, message) else {
             return self.report(tr!("This message cannot be forked yet.").to_string());
         };
+        // Nothing before the first message: the copy would hold no conversation, and the SDK cannot resume that.
+        if !forge_domain::can_fork_before(&view.peek().session.messages, &message_uuid) {
+            return self.report(tr!("This message cannot be forked yet.").to_string());
+        }
         let unsent = (forge_domain::with_cards(&message.cards, &message.text()), message.attachments.clone());
         // Root scope: the copy is made on disk and must be opened even if this chat re-renders meanwhile.
         dioxus::core::spawn_forever(async move {

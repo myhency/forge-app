@@ -33,7 +33,7 @@ The existing whole-session fork (row menu, key F) is unchanged, but its copy car
 
 `Workspace::fork_from_message(id, message_uuid)`:
 
-1. Read the open session's project, Claude session id, title and the message (its text with cards, attachments). Nothing to fork when the id or message is missing: a notice `This message cannot be forked yet.`
+1. Read the open session's project, Claude session id, title and the message (its text with cards, attachments). Nothing to fork when the id or message is missing, or when the message is the first user message (`can_fork_before`): a notice `This message cannot be forked yet.`
 2. `registry.fork_before(project, session, uuid, title)` makes the copy and returns its id. A failure is a notice; nothing opens.
 3. Reload the project's session list, open the copy (`open_past`), then load the copy's session and call `handle.replace_session(session, Some((text, attachments)))` on its handle so the message is in the box.
 4. The original stays as it is. A running turn does not matter: the cut only reads the transcript file.
@@ -43,7 +43,7 @@ The unused `Workspace::fork_session_before` is replaced by this function (same s
 ### 3. The `포크 원본` line
 
 - `forge-domain` `Session` gets `forked_from: Option<SessionId>`. The claude-fs reader (`sessions.rs`) sets it from `forkedFrom.sessionId` on the first line that has one. The fork's own title line carries `forkedFrom: {sessionId}` too, so a fork cut before the first message (no copied lines) is still known as a fork. Every place that builds a `Session` sets `None`.
-- New widget `ForkLine { id }` in `forge-widgets`, rendered in `chat_window.rs` after `StartLine`. It looks the origin up in the workspace's past session list (same project): the title and the project summary. Shown only when the origin is found in the listing and has a title. It reads `포크 원본 <title as a link> <time>`; the time is the open session's `created_at` through `relative_time` (omitted when empty). A click calls `open_past_clicked(project, origin_id)`.
+- New widget `ForkLine { id }` in `forge-widgets`, rendered in `chat_window.rs` after `StartLine`. It looks the origin up in the workspace's past session list (same project): the title and the project summary. Shown only when the origin is found in the listing and has a title. It reads `포크 원본 <title as a link> <time>`; the time is `Session.forked_at` (the `timestamp` of the fork's own title line) through `relative_time` (omitted when empty). A click calls `open_past_clicked(project, origin_id)`.
 - English text: `Forked from`. Korean: `포크 원본`.
 
 ## Out of scope
@@ -65,3 +65,5 @@ Checked in the real window (harness, 2026-10-28, light mode): the `⑂` icon on 
 
 An origin without a title hides the line.
 
+
+**Found in the final review and fixed:** a fork before the FIRST user message holds no conversation, and the SDK cannot resume it (`No conversation found with session ID`: the bundled `claude` 2.1.295 answers that for a transcript holding only a title line, while a fork-shaped copy of a real session resumes and remembers the earlier turn; both were tried directly with the binary in a throwaway folder). The `⑂` icon is not shown on the first user message and `fork_from_message` refuses it (`forge_domain::can_fork_before`), the same rule `/rewind` uses for its conversation buttons. The first-message cases in the Tests section above and in the as-built notes no longer apply.

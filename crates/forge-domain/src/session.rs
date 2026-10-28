@@ -23,6 +23,17 @@ pub struct Session {
     pub forked_at: Option<String>,
 }
 
+/// Whether a copy of the session cut just before the user message `uuid` can be used: the message
+/// must exist and must not be the first user message (a session with no conversation cannot be
+/// resumed: the SDK answers "No conversation found").
+pub fn can_fork_before(messages: &[Message], uuid: &str) -> bool {
+    let mut users = messages.iter().filter(|message| message.role == MessageRole::User);
+    match users.next() {
+        Some(first) if first.uuid.as_deref() != Some(uuid) => messages.iter().any(|message| message.uuid.as_deref() == Some(uuid)),
+        _ => false,
+    }
+}
+
 /// The text the SDK writes as a user line when the person stops a turn.
 pub fn is_interrupt_text(text: &str) -> bool {
     text.trim_start().starts_with("[Request interrupted by user")
@@ -317,4 +328,19 @@ mod tests {
         };
         assert!(session.usage.is_empty());
     }
+
+    #[test]
+    fn only_a_user_message_after_the_first_one_can_start_a_fork() {
+        let mut first = Message::user("one");
+        first.uuid = Some("u1".to_string());
+        let mut second = Message::user("two");
+        second.uuid = Some("u2".to_string());
+        let messages = vec![first, Message::assistant_text("reply"), second];
+
+        assert!(!can_fork_before(&messages, "u1"), "nothing is left before the first message, and an empty session cannot be resumed");
+        assert!(can_fork_before(&messages, "u2"));
+        assert!(!can_fork_before(&messages, "missing"));
+        assert!(!can_fork_before(&[], "u1"));
+    }
 }
+
