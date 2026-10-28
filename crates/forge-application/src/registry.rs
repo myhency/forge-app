@@ -134,6 +134,7 @@ impl SessionRegistry {
             return Err(OpenError::ProjectMissing(project.path.clone()));
         }
         let session = Session {
+            forked_from: None,
             finished_tasks: Vec::new(),
             id: SessionId(String::new()),
             project_path: project.path.clone(),
@@ -325,6 +326,7 @@ mod tests {
 
     fn past_session(id: &str) -> Session {
         Session {
+            forked_from: None,
             finished_tasks: Vec::new(),
             id: SessionId(id.to_string()),
             project_path: PathBuf::from("/work/a"),

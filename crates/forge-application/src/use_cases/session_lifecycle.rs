@@ -111,6 +111,7 @@ mod tests {
         let mut sessions_mock = MockSessionRepositoryPort::new();
         sessions_mock.expect_load_session().times(1).returning(|_, id| {
             Ok(Session {
+                forked_from: None,
                 finished_tasks: Vec::new(),
                 id: id.clone(),
                 project_path: PathBuf::from("/tmp/project"),
@@ -161,6 +162,7 @@ mod tests {
         let mut sessions_mock = MockSessionRepositoryPort::new();
         sessions_mock.expect_load_session().times(1).returning(|_, id| {
             Ok(Session {
+                forked_from: None,
                 finished_tasks: Vec::new(),
                 id: id.clone(),
                 project_path: PathBuf::from("/tmp/project"),
@@ -190,6 +192,7 @@ mod tests {
         let mut sessions_mock = MockSessionRepositoryPort::new();
         sessions_mock.expect_load_session().times(1).returning(|_, id| {
             Ok(Session {
+                forked_from: None,
                 finished_tasks: Vec::new(),
                 id: id.clone(),
                 project_path: PathBuf::from("/tmp/project"),

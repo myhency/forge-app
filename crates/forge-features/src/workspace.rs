@@ -3363,6 +3363,7 @@ mod plan_text_tests {
             id: LiveSessionId(1),
             project_path: PathBuf::from("/work/a"),
             session: forge_domain::Session {
+                forked_from: None,
                 finished_tasks: Vec::new(),
                 id: SessionId(String::new()),
                 project_path: PathBuf::from("/work/a"),

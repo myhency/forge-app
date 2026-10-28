@@ -17,6 +17,8 @@ pub struct Session {
     /// The tasks that have ended, in the order they ended. Filled live from the sidecar and, for a
     /// session read from its record, from the `<task-notification>` lines.
     pub finished_tasks: Vec<crate::FinishedTask>,
+    /// The session this one was forked from (its immediate source), read from the `forkedFrom` a fork writes.
+    pub forked_from: Option<SessionId>,
 }
 
 /// The text the SDK writes as a user line when the person stops a turn.
@@ -301,6 +303,7 @@ mod tests {
     #[test]
     fn a_new_session_has_used_nothing() {
         let session = Session {
+            forked_from: None,
             finished_tasks: Vec::new(),
             id: SessionId("s".to_string()),
             project_path: PathBuf::from("/p"),

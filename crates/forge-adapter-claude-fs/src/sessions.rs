@@ -416,6 +416,17 @@ fn apply_assistant_line(session: &mut Session, line: &Value) {
     }
 }
 
+/// The session a fork came from: the `forkedFrom.sessionId` of the first line that has one. A fork
+/// writes it on every line it copies and on its title line, always naming its immediate source.
+fn note_fork(session: &mut Session, line: &Value) {
+    if session.forked_from.is_some() {
+        return;
+    }
+    if let Some(id) = line.pointer("/forkedFrom/sessionId").and_then(Value::as_str).filter(|id| !id.is_empty()) {
+        session.forked_from = Some(SessionId(id.to_string()));
+    }
+}
+
 fn apply_line(session: &mut Session, line: &Value) {
     let flagged = |key: &str| line.get(key).and_then(Value::as_bool) == Some(true);
     // The summary a compaction leaves as a user line is for the model, not something the person said.
@@ -636,6 +647,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         let mut titles = TitleTracker::default();
         let mut usage = UsageCollector::default();
         let mut session = Session {
+            forked_from: None,
             finished_tasks: Vec::new(),
             id: session_id.clone(),
             project_path: project_path.to_path_buf(),
@@ -677,6 +689,7 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
                         titles.see(kind, found);
                     }
                     usage.see(&value);
+                    note_fork(&mut session, &value);
                     apply_line(&mut session, &value)
                 }
                 None => malformed_line = Some(line_number),
@@ -1062,6 +1075,40 @@ mod tests {
         assert_eq!(source.messages.len(), 3, "the source is untouched");
         let missing = adapter.fork_session_before(&project(), &SessionId("s1".to_string()), "nope", "T").await;
         assert!(matches!(missing, Err(SessionRepositoryError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn a_fork_knows_its_immediate_source_and_an_ordinary_session_has_none() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[message("u1", None, "hello"), message("u2", Some("u1"), "again")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        let first = SessionId("s1".to_string());
+
+        let plain = adapter.load_session(&project(), &first).await.unwrap();
+        assert_eq!(plain.forked_from, None);
+
+        let fork = adapter.fork_session(&project(), &first, "T (fork)").await.unwrap();
+        let fork_loaded = adapter.load_session(&project(), &fork).await.unwrap();
+        assert_eq!(fork_loaded.forked_from, Some(first.clone()));
+
+        let second_uuid = fork_loaded.messages[1].uuid.clone().unwrap();
+        let grandchild = adapter.fork_session_before(&project(), &fork, &second_uuid, "T (fork) (fork)").await.unwrap();
+        let loaded = adapter.load_session(&project(), &grandchild).await.unwrap();
+        assert_eq!(loaded.forked_from, Some(fork), "the immediate source, not the first ancestor");
+    }
+
+    #[tokio::test]
+    async fn forking_before_the_first_message_gives_an_empty_session_that_still_knows_its_source() {
+        let home = tempfile::tempdir().unwrap();
+        write_session(home.path(), &project(), "s1", &[message("u1", None, "hello"), message("u2", Some("u1"), "again")]);
+        let adapter = ClaudeSessionAdapter::new(home.path().to_path_buf());
+        let first = SessionId("s1".to_string());
+
+        let fork = adapter.fork_session_before(&project(), &first, "u1", "T (fork)").await.unwrap();
+
+        let loaded = adapter.load_session(&project(), &fork).await.unwrap();
+        assert!(loaded.messages.is_empty());
+        assert_eq!(loaded.forked_from, Some(first));
     }
 
     #[tokio::test]

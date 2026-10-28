@@ -40,7 +40,7 @@ pub(crate) fn truncated_before(source: &str, uuid: &str) -> Option<String> {
 /// `forkSession` does (seen on a probe transcript, spec 2026-10-03-fork-effort-design.md): every
 /// line with a `uuid` gets a new one and a `forkedFrom: {sessionId, messageUuid}`; `parentUuid`
 /// follows the new uuids (a parent that is not in the file stays); `sessionId` becomes the new id;
-/// the old `custom-title` lines are dropped and one new one, with `title`, ends the file. A line
+/// the old `custom-title` lines are dropped and one new one, with `title` and a `forkedFrom` naming the source, ends the file. A line
 /// that is not a JSON object is copied as it is; blank lines are dropped.
 pub(crate) fn forked_transcript(
     source: &str,
@@ -98,7 +98,7 @@ pub(crate) fn forked_transcript(
         }
         out.push('\n');
     }
-    out.push_str(&json!({"type": "custom-title", "customTitle": title, "sessionId": new_id, "uuid": new_uuid(), "timestamp": now}).to_string());
+    out.push_str(&json!({"type": "custom-title", "customTitle": title, "sessionId": new_id, "uuid": new_uuid(), "timestamp": now, "forkedFrom": {"sessionId": old_id}}).to_string());
     out.push('\n');
     out
 }
@@ -189,6 +189,15 @@ mod tests {
         assert_eq!(out[1]["sessionId"], "new");
         assert_eq!(out[1]["uuid"], "new-2");
         assert_eq!(out[1]["timestamp"], "2026-10-03T00:00:00Z");
+    }
+
+    #[test]
+    fn the_new_title_line_names_the_source_so_an_empty_fork_is_still_a_fork() {
+        let out = parse(&forked_transcript("", "old", "new", "Old (fork)", "now", counter()));
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["type"], "custom-title");
+        assert_eq!(out[0]["forkedFrom"], json!({"sessionId": "old"}));
     }
 
     #[test]
