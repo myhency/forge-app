@@ -42,8 +42,8 @@ The unused `Workspace::fork_session_before` is replaced by this function (same s
 
 ### 3. The `포크 원본` line
 
-- `forge-domain` `Session` gets `forked_from: Option<SessionId>`. The claude-fs reader (`sessions.rs`) sets it from `forkedFrom.sessionId` on the first line that has one. Every place that builds a `Session` sets `None`.
-- New widget `ForkLine { id }` in `forge-widgets`, rendered in `chat_window.rs` after `StartLine`. It looks the origin up in the workspace's past session list (same project): the title and the project summary. Shown only when the origin is found. It reads `포크 원본 <title as a link> <time>`; the time is the open session's `created_at` through `relative_time` (omitted when empty). A click calls `open_past_clicked(project, origin_id)`.
+- `forge-domain` `Session` gets `forked_from: Option<SessionId>`. The claude-fs reader (`sessions.rs`) sets it from `forkedFrom.sessionId` on the first line that has one. The fork's own title line carries `forkedFrom: {sessionId}` too, so a fork cut before the first message (no copied lines) is still known as a fork. Every place that builds a `Session` sets `None`.
+- New widget `ForkLine { id }` in `forge-widgets`, rendered in `chat_window.rs` after `StartLine`. It looks the origin up in the workspace's past session list (same project): the title and the project summary. Shown only when the origin is found in the listing and has a title. It reads `포크 원본 <title as a link> <time>`; the time is the open session's `created_at` through `relative_time` (omitted when empty). A click calls `open_past_clicked(project, origin_id)`.
 - English text: `Forked from`. Korean: `포크 원본`.
 
 ## Out of scope
