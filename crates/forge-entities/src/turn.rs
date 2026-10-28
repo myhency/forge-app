@@ -164,6 +164,8 @@ fn TurnItem(
             let ended = finished.iter().find(|task| task.task_id == item.task_id).cloned();
             rsx! { WorkflowLine { item, running, ended, on_open_tasks } }
         }
+        // Task 6 draws these two.
+        Item::PlanList(_) | Item::EndCard(_) => rsx! {},
         Item::Stopped => rsx! { div { class: "stopped-line", {tr!("Stopped")} } },
         Item::Compacted { before, after } => {
             let label = compacted_label(before, after);

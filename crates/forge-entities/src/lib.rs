@@ -62,7 +62,7 @@ pub use relative_time::{month_short, relative_time};
 pub use sidebar_item::{SessionMarker, SidebarItem};
 pub use forge_domain::TranscriptView;
 pub use turn::{Clock, RunningWorkflow, Turns};
-pub use turn_view::{build_turns, latest_plan, live_state, PlanItem, WorkflowItem, Activity, CardFile, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolKind, ToolRow, Waiting};
+pub use turn_view::{build_turns, latest_plan, live_end_card, EndCardItem, EndCardState, live_state, PlanItem, WorkflowItem, Activity, CardFile, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolKind, ToolRow, Waiting};
 pub use tool_summary::{elapsed_label, tool_call_status, tool_detail_text, tool_input_lines, tool_input_summary, InputLine, ToolCallStatus};
 pub use extension_rows::{mcp_rows, mcp_summary, plugin_rows, project_label, skill_rows, ExtensionRow};
 pub use usage_card::{
