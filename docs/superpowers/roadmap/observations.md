@@ -943,3 +943,23 @@ Same method. Throwaway folder `/private/tmp/forge-observe/task-r31` (`items.csv`
 - **Answers:** the model put the summary in a code block with a copy icon at its corner; a file name in the text is a link that opens the Files panel.
 
 **Round 31, `되감기` pressed (same session, first message, `코드와 대화`):** the **same session** goes back: the chat reads `아직 메시지가 없습니다`, the rewound message's text is put back in the composer (ready to edit and send again), the file the turn made (`summary.txt`) is deleted from the folder and the `결과물` card empties, the context card keeps its old figures with a note `마지막 업데이트: 56분 전. 새로고침하려면 메시지를 보내세요.`, and the `/btw` side panel stays open. No new session, no confirmation after the button. So Forge's `대화 열기` (a new session) differs: the desktop cuts the session itself back.
+
+## Round 32 (2026-10-28): fork from a message, sidebar edit, the Preview panel menus
+
+Same method (`scripts/observe/claude_app.py`, shown scale 1.39, window 1391 x 893 points), in the throwaway session `백그라운드 sleep 및 출력` (folder `task-r31`). Goal: the items the roadmap still lists as `partly`: what the message fork icon does, `사이드바 편집…`, and the Preview panel's own menus.
+
+- **`사이드바 편집…` (SES-10):** the `더 보기` item of the sidebar holds only this one entry. It opens a small modal `사이드바 편집`, text `사이드바에 표시할 항목을 선택하세요.`, three checkboxes with their icons, all on: `아티팩트`, `예약됨`, `사용자 지정`, and a black `완료` button (and `×`). So it only hides or shows those three sidebar rows (`새로 만들기`, `검색`, `더 보기` cannot be hidden). Nothing was changed.
+- **Message row, third icon = fork:** hover a user bubble: `✓✓ 그저께 · copy ↺ fork`. Pressing the fork icon on the SECOND message of the session made a **new session** at once and switched to it:
+  - Title `<old title> (fork)` in the header and the sidebar; it keeps the folder (`task-r31`).
+  - The fork holds the conversation **up to before the clicked message**: the first turn only. The clicked message's text sits in the composer, ready to send again (like `되감기`, but the old session is left whole).
+  - A grey line at the top of the chat: `포크 원본 <old title as a link> 지금`. The link goes back to the original.
+  - Sidebar: the new row sits under the original in the `오늘` group, indented with an elbow line `└`, and the original row got a `▾` (collapse the forks). Group by date puts the fork in `오늘`.
+  - The details panel opened with the fuller context list (Messages, System tools, System prompt, Skills, Custom agents, Autocompact buffer, Free space) and the connector list (`Context7 인증`, `M365 다시 연결`, `Figma`).
+  - No confirmation, no menu: one click.
+- **Preview panel (globe icon):** first-run modal `사이트에 로그인 상태 유지` (cookie import: Chrome, Edge, Firefox icons; three ticks: only cookies and site data, you choose the sites, nothing leaves this computer; `다시 표시 안 함`, `나중에`, `쿠키 가져오기`). Empty state: a globe, `Claude로 브라우징하기`, `URL을 입력하거나 Claude에게 사이트를 열어달라고 요청하세요. Claude는 읽기, 클릭, 입력이 가능합니다.`, and `앱을 미리 볼까요? 개발 서버 감지`.
+  - **`⋮` menu** (top right of the panel): `다음 브라우저에서 열기: Google Chrome`, `URL 복사`, `스크린샷 저장` (the three grey while no page is open), `HTML 파일 열기…`; a row `뷰포트 · 반응형` (grey); `기본 제공 브라우저에서 링크 열기` ✓; `Claude가 작성한 파일 자동으로 열기` ✓; `변경사항 자동 확인`; `허용된 사이트 관리…`; a `쿠키` group: `쿠키 가져오기…`, `쿠키 유지 · 종료 시까지 ›`, and a red `브라우징 데이터 삭제`.
+  - **Layout icon** (left of `⋮`): a one-item menu `서버 추가` (a dev server, looks like the launch config). Not pressed.
+  - **Element picker** (cursor icon at the right of the address bar): does nothing while no page is open.
+  - The modal was dismissed with `나중에`; the panel was closed again.
+- **State left in the desktop app:** one new session `백그라운드 sleep 및 출력 (fork)` in `task-r31` (delete it by hand if unwanted).
+- **For Forge:** the Preview `⋮` menu is mostly built in Forge's own tab bar; the missing pieces are `HTML 파일 열기…`, `스크린샷 저장`, the viewport row, the `Claude가 작성한 파일 자동으로 열기` switch, `허용된 사이트 관리…` and the cookie group (cookie import stays out on the work PCs). Fork from a message needs the session copy Plan 19 already has, cut at a message, plus the original-link line and the nested row in the sidebar.
