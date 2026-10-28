@@ -22,7 +22,7 @@ const UPDATE_PLAN_DESCRIPTION = [
 
 const WRAP_UP_DESCRIPTION = [
   "Call this once at the end of every turn in which you created or edited a file or ran a command, right before your closing message. It shows the person a box: a two-or-three-sentence recap and, when the next move is theirs (for example whether to commit, run or keep going), one question with one or two reply buttons.",
-  "It also checks off the task list. Skip it only for short answers and plain conversation with no file or command work.",
+  "Skip it only for short answers and plain conversation with no file or command work.",
   "Your closing message is still your full answer, written right after this call; the recap never replaces it.",
   "recap: what is now true or changed and where it stands, including what is not done or not verified (300 characters or fewer, said to the person, no recommendation).",
   "ask: only when the next move is the person's call. One short question (100 characters or fewer) that does not list the buttons' options. Without ask no box is drawn.",

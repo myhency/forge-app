@@ -58,7 +58,7 @@ New module `turn_cards.rs`, pure functions with no Dioxus:
 - `Item::PlanList(Vec<Step>)` placed just above the live line, after the text that came before the first tool call, **only while the turn is live** (the live state is already passed to `build_turns`). A finished turn emits none.
 - `Item::EndCard(EndCardItem { card, state })`, built from the **last** `wrap_up` call of the **last** turn of the transcript:
   - `Live` when nothing came after the turn;
-  - `Spent { chosen }` when the next user message equals the `message` (or `label`) of one of its buttons: it stays in place, grey, with the chosen label;
+  - `Spent { chosen }` when the next user message equals the `message` of one of its buttons (spaces around it ignored, case not): it stays in place, grey, with the chosen label;
   - nothing otherwise (any other next message makes the card disappear, as a later card replaces an earlier live one).
   An earlier turn's card is drawn only as `Spent`.
 - The calls of both tools are left out of the folded line (`summarize`, `build_activity`): they are neither counted nor listed as rows.
@@ -69,7 +69,7 @@ New module `turn_cards.rs`, pure functions with no Dioxus:
 `forge-entities/src/turn.rs` draws the two new items; the key and the send go through callbacks, like the existing `on_open_file`:
 
 - `PlanListView`: a bordered card, one `plan-step` row per step with the ring or check icon (CSS, no images) and the text; the in-progress ring may spin slowly (`prefers-reduced-motion` stops it).
-- `EndCardView` (Live): `×` button (`on_dismiss`), recap, question, buttons. The first button is `kbd`-marked `⌘⏎`; the second is plain. A click calls `on_send(message)` and the card turns Spent when the transcript shows the message. `×` hides the card for this view (kept only while the card is on screen (a component-local flag)).
+- `EndCardView` (Live): `×` button (`on_dismiss`), recap, question, buttons. The first button is `kbd`-marked `⌘⏎`; the second is plain. A click calls `on_send(message)` and the card turns Spent when the transcript shows the message. `×` marks the card `Dismissed` and a click or `⌘⏎` marks it `Sent`, both kept per session in the workspace by the `wrap_up` call id: a dismissed card is not drawn and is not offered to `⌘⏎`, a sent card has its buttons disabled. Without `on_send` (archived or view-only session) the live card has no buttons.
 - `EndCardView` (Spent): about 70% of the column width, grey text, the chosen label under the question, no buttons, no `×`.
 - The `⌘⏎` key works when the composer is empty and a live end card has a first button; with text in the box `⌘⏎` keeps its present meaning. Where this is wired is decided in the plan, by reading how the composer handles `⌘⏎` now (queue, `⌘⏎` adds to the queue while a turn runs, so the key only applies when no turn is running).
 - With a live end card, the composer's grey next-prompt suggestion is not shown (the card is the suggestion).
@@ -81,7 +81,7 @@ All new text goes through `tr!` with a Korean entry in `ko.rs` (the table is sor
 ## Testing
 
 - Sidecar (`vitest`): the server lists both tools with the right names; `update_plan` accepts each of the four input shapes and refuses an empty call and an out-of-range number with a readable text; `wrap_up` keeps at most 2 actions and words the result with and without `ask`; `session.test.ts`: with `turn_tools` the SDK options carry the server and the two allowed names, without it they do not.
-- Rust: `apply` (items, advance past the end, done, start, out of range, unknown status), `end_card_of` (every drop rule above), `build_turns` (plan card only while live and at the last call; end card Live, Spent by label, Spent by message, gone after another message; both tools hidden in the folded line; the desktop app's prefixed names), the config default for a file with no `turn_tools`, the protocol field in `protocol.rs` tests (present and defaulting to off for an older parent).
+- Rust: `apply` (items, advance past the end, done, start, out of range, unknown status), `end_card_of` (every drop rule above), `build_turns` (plan card only while live and at the last call; end card Live, Spent by message (spaces around it ignored, case not), gone after another message; both tools hidden in the folded line; the desktop app's prefixed names), the config default for a file with no `turn_tools`, the protocol field in `protocol.rs` tests (present and defaulting to off for an older parent).
 - Real window (harness): a sample session whose transcript holds an `update_plan` call and a `wrap_up` call, for the Live card, and a second one whose next message is a button's text, for the Spent card; the plan card is checked with a session that is running (the fixture has to keep a turn live, or the card is looked at through a unit test of the view data only, said so in the report).
 - Real SDK: one real turn with the real sidecar in a throwaway folder, to see that the model calls both tools and that the permission question does not appear. The tool descriptions are only proven by this.
 
@@ -90,4 +90,8 @@ All new text goes through `tr!` with a Korean entry in `ko.rs` (the table is sor
 - The model calls these tools only as often as the descriptions make it. The first real turn may show it calls neither or calls `wrap_up` every time; the wording is adjusted then, and that is part of this plan, not a new one.
 - `strictMcpConfig: true` is set today. An in-process SDK server passed in `mcpServers` is expected to be allowed; the first real turn confirms it, and if it is not, the fallback is to drop the flag only when `turn_tools` is on.
 - Whether to also show the card of a session resumed from a transcript that ends in a live-looking `wrap_up` (the process died before the next message): it is drawn Live until the next message, which matches the desktop app's behaviour as far as observed.
+- The SDK deferred the two tools behind tool search until `alwaysLoad` was set (fixed, tested).
+- `strictMcpConfig: true` did not block the in-process server in a real turn.
+- Haiku 5.5 did not call the tools in three real turns while Opus 5.5 did. The description tuning is ongoing; the setting is on by default, so users on Haiku will not see the cards.
+- The card's text is model-written and is sent as a user message when a button is pressed. Buttons whose message starts with `/` or `!` are dropped, so the model cannot make a button run a command.
 - Windows is not checked (no Windows environment).
