@@ -56,3 +56,12 @@ Sidebar nesting and fold; `✓✓`.
 - features: a pure helper picks the origin title and project from the past list (found, other project, missing).
 - application: unchanged (`fork_before` and `replace_session` are covered).
 - Real window (harness): fork a message of the second turn, check the new session shows the first turn only, the message text is in the box, the `포크 원본` line shows and its link opens the original; fork the first message (the copy is empty, the text is in the box).
+
+## As built
+
+Built as written (plan `docs/superpowers/plans/2026-10-28-message-fork.md`), with one change found in the real window: the `포크 원본` time comes from the `timestamp` of the fork's own title line (`Session.forked_at`), not from the session list's `created_at` (that is the time of the first copied line, which is the original's).
+
+Checked in the real window (harness, 2026-10-28, light mode): the `⑂` icon on the second message; the fork opened with the first turn only, the message text in the box, the line `포크 원본 Read the config 방금`; the link opened the original, whole and without the line; a fork of the first message opened empty with its text in the box and the line; the fork showed in the same sidebar group as a flat row. Not checked: a fork while a turn runs, a message with attachments or cards, dark mode, Windows, a fork made from the row menu (key F; covered by a unit test that `forked_from` is read).
+
+An origin without a title hides the line.
+
