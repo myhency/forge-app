@@ -1,6 +1,6 @@
 # Fork from a message (NEW-18, part 1)
 
-Plan 63A. Branch `plan-67` carries the work. Observation: round 32 (`docs/superpowers/roadmap/observations.md`).
+Plan 68A. Built on branch `plan-67`, after the Background tasks card work. Observation: round 32 (`docs/superpowers/roadmap/observations.md`).
 
 ## What the desktop app does
 
@@ -9,12 +9,12 @@ Hover a user message: `✓✓ time · copy ↺ fork`. The fork icon makes a new 
 - Title `<old title> (fork)`, same folder.
 - The conversation holds everything **before** the clicked message. The clicked message's text sits in the composer. The original session is left whole.
 - A grey line at the top of the chat: `포크 원본 <old title, a link> <time>` (`지금`, `3분 전`). The link opens the original.
-- In the sidebar the fork nests under the original (`└`, and `▾` on the original). **Not part of this plan** (63B).
+- In the sidebar the fork nests under the original (`└`, and `▾` on the original). **Not part of this plan** (68B).
 
 ## Scope
 
 Built: the fork icon on the message row, the composer text coming back, the `포크 원본` line.
-Left for 63B: the nested sidebar row and its fold.
+Left for 68B: the nested sidebar row and its fold.
 The existing whole-session fork (row menu, key F) is unchanged, but its copy carries `forkedFrom` too, so it gets the `포크 원본` line.
 
 ## What already exists
@@ -48,7 +48,7 @@ The unused `Workspace::fork_session_before` is replaced by this function (same s
 
 ## Out of scope
 
-Sidebar nesting and fold; `✓✓`; keeping Claude Code CLI forks (`/branch`) in sync.
+Sidebar nesting and fold; `✓✓`.
 
 ## Tests
 
