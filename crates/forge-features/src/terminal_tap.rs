@@ -5,6 +5,8 @@ use std::rc::Rc;
 pub trait TerminalTap {
     fn output(&self, bytes: &[u8]) -> Vec<u8>;
     fn tick(&self) -> Vec<u8>;
+    /// The shell ended or the view was taken away. Most taps do not care.
+    fn shell_ended(&self) {}
 }
 
 /// A tap as a component prop: equal to itself only.
