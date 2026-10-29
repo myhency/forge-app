@@ -465,6 +465,9 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .code-wrap { position: relative; width: fit-content; max-width: 100%; margin: 0 0 10px; }
 .code-copy { appearance: none; position: absolute; top: 6px; right: 6px; border: none; background: var(--bg-card); color: var(--fg-muted); border-radius: 6px; padding: 2px 6px; cursor: pointer; opacity: 0; transition: opacity 0.12s; }
 .code-wrap:hover .code-copy { opacity: 1; }
+.code-run { display: none; appearance: none; position: absolute; top: 6px; right: 34px; border: none; background: var(--bg-card); color: var(--fg-muted); border-radius: 6px; padding: 2px 6px; cursor: pointer; opacity: 0; transition: opacity 0.12s; }
+html[data-code-run="on"] .messages .code-run { display: inline-block; }
+.code-wrap:hover .code-run { opacity: 1; }
 .markdown a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
 .markdown code { font-family: var(--mono); font-size: 0.9em; padding: 1px 5px; background: var(--code-bg); border-radius: 5px; }
 .code-block { margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; }

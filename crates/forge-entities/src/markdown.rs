@@ -1,5 +1,6 @@
 use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
+use crate::code_run::{is_shell_language, text_hash};
 use crate::highlight::{escape_html, highlight_code};
 
 // Above this many bytes a code block is shown escaped but not highlighted. The whole message is
@@ -81,8 +82,14 @@ fn code_block_html(language: Option<&str>, code: &str) -> String {
         .unwrap_or_else(|| escape_html(code));
     // The button's script is fixed text; nothing from the message is put into it.
     const COPY: &str = "<button class=\"code-copy\" type=\"button\" title=\"Copy\" onclick=\"navigator.clipboard.writeText(this.nextElementSibling.innerText)\">⧉</button>";
+    // Before the copy button, which copies its next sibling (the pre). The click is handled by the page-wide
+    // handler of the chat (`code_run_watcher`); the key is the block's hash and holds no message text.
+    let run = match language {
+        Some(language) if is_shell_language(language) => format!("<button class=\"code-run\" type=\"button\" title=\"Run\" data-hash=\"{}\">▷</button>", text_hash(code)),
+        _ => String::new(),
+    };
     match language {
-        Some(language) => format!("<div class=\"code-wrap\">{COPY}<pre class=\"code-block\"><code class=\"language-{language}\">{body}</code></pre></div>\n"),
+        Some(language) => format!("<div class=\"code-wrap\">{run}{COPY}<pre class=\"code-block\"><code class=\"language-{language}\">{body}</code></pre></div>\n"),
         None => format!("<div class=\"code-wrap\">{COPY}<pre class=\"code-block\"><code>{body}</code></pre></div>\n"),
     }
 }
@@ -124,6 +131,35 @@ mod tests {
         assert!(html.contains("class=\"code-copy\""), "{html}");
         assert!(html.contains("<pre class=\"code-block\">"), "{html}");
         assert!(html.contains("</pre></div>"), "{html}");
+    }
+
+    #[test]
+    fn a_bash_block_has_a_run_button_before_the_copy_button() {
+        let html = render_markdown("```bash\necho hi\n```");
+        let run = html.find("class=\"code-run\"").expect("run button");
+        let copy = html.find("class=\"code-copy\"").expect("copy button");
+        // The copy button copies its next sibling, which must stay the pre.
+        assert!(run < copy, "{html}");
+        assert!(html.contains("data-hash=\""), "{html}");
+        assert!(html.contains("</button><pre class=\"code-block\">"), "{html}");
+    }
+
+    #[test]
+    fn a_python_block_has_no_run_button() {
+        assert!(!render_markdown("```python\nprint(1)\n```").contains("code-run"));
+    }
+
+    #[test]
+    fn a_block_without_a_language_has_no_run_button() {
+        assert!(!render_markdown("```\nls\n```").contains("code-run"));
+        assert!(!render_markdown("    ls\n").contains("code-run"));
+    }
+
+    #[test]
+    fn the_run_button_has_no_script_and_no_message_text() {
+        let html = render_markdown("```bash\n\"><script>alert(1)</script>\n```");
+        let button = html.split("</button>").next().unwrap();
+        assert!(!button.contains("onclick") && !button.contains("alert") && !button.contains("script"), "{button}");
     }
 
     #[test]
