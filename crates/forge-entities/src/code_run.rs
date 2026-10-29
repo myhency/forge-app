@@ -7,6 +7,10 @@ pub const RUN_MESSAGE_MARK: &str = "[forge-run]";
 /// The most lines, and then characters, of output a box and the message to the model hold.
 pub const OUTPUT_LINES: usize = 200;
 pub const OUTPUT_CHARS: usize = 20_000;
+// The longest piece of a line the scanner holds; a longer line is handed out in pieces.
+const LINE_LIMIT: usize = 64 * 1024;
+// What a shell reports for a command that Ctrl-C stopped.
+const SIGINT_CODE: i32 = 130;
 
 /// Whether a fenced block with this language name is shell code.
 pub fn is_shell_language(language: &str) -> bool {
@@ -18,6 +22,9 @@ pub fn is_shell_language(language: &str) -> bool {
 /// exit code. The shell takes it as one buffer, so it prints no prompt between the lines, and its echo of the
 /// whole buffer comes before the start marker: what follows the marker is output.
 pub fn typed_text(id: u64, block: &str) -> Vec<u8> {
+    // The text of an answer is not trusted: a control character inside the paste (an escape that ends it early, a
+    // carriage return) would type things the person never saw. Only newlines and tabs stay.
+    let block: String = block.chars().filter(|c| !c.is_control() || matches!(c, '\n' | '\t')).collect();
     let block = block.trim_end();
     let mut typed = format!("\x1b[200~printf '\\033]777;forge-run-start;{id}\\007'; {block}\n");
     typed.push_str(&format!("printf '\\033]777;forge-run-end;{id};%s\\007' \"$?\"\x1b[201~\r"));
@@ -37,8 +44,8 @@ pub enum RunEvent {
 #[derive(Default)]
 pub struct MarkerScanner {
     escape: Escape,
-    // Whether a run is open: between its start and end marker.
-    open: bool,
+    // The run that is open: between its start and end marker.
+    open: Option<u64>,
     // The line being read. A carriage return is held back: a `\n` right after it is a line end, anything else
     // empties the line first (a progress line keeps its last state).
     line: Vec<u8>,
@@ -51,8 +58,8 @@ enum Escape {
     None,
     // After ESC.
     Seen,
-    // In `ESC [ …` until the final byte.
-    Csi,
+    // In `ESC [ …` until the final byte; the bytes before it.
+    Csi(Vec<u8>),
     // In `ESC ] …` until BEL or `ESC \`; the bytes so far.
     Osc(Vec<u8>),
     // In an OSC, after an ESC that may end it.
@@ -62,6 +69,11 @@ enum Escape {
 impl MarkerScanner {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    #[cfg(test)]
+    fn buffered(&self) -> usize {
+        self.line.len()
     }
 
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<RunEvent> {
@@ -81,18 +93,35 @@ impl MarkerScanner {
                         if std::mem::take(&mut self.return_seen) {
                             self.line.clear();
                         }
-                        self.line.push(byte);
+                        // Nothing is kept outside a run (a full-screen program may print for hours without a newline).
+                        if self.open.is_some() {
+                            self.line.push(byte);
+                            if self.line.len() >= LINE_LIMIT {
+                                self.flush_line(&mut events);
+                            }
+                        }
                     }
                 },
                 Escape::Seen => match byte {
-                    b'[' => self.escape = Escape::Csi,
+                    b'[' => self.escape = Escape::Csi(Vec::new()),
                     b']' => self.escape = Escape::Osc(Vec::new()),
                     // A two-byte sequence (`ESC =`, `ESC 7`…) is dropped whole.
                     _ => {}
                 },
-                Escape::Csi => {
-                    if !(0x40..=0x7e).contains(&byte) {
-                        self.escape = Escape::Csi;
+                Escape::Csi(mut params) => {
+                    if (0x40..=0x7e).contains(&byte) {
+                        // A shell turns bracketed paste on again for each new prompt. A prompt that comes while a run
+                        // is open means the end line never ran (Ctrl-C): the run ends as the shell would report it.
+                        if byte == b'h' && params == b"?2004" {
+                            if let Some(id) = self.open {
+                                self.flush_line(&mut events);
+                                self.open = None;
+                                events.push(RunEvent::Ended { id, code: SIGINT_CODE });
+                            }
+                        }
+                    } else {
+                        params.push(byte);
+                        self.escape = Escape::Csi(params);
                     }
                 }
                 Escape::Osc(mut body) => match byte {
@@ -120,12 +149,12 @@ impl MarkerScanner {
         if let Some(id) = rest.strip_prefix("start;").and_then(|id| id.parse().ok()) {
             self.line.clear();
             self.return_seen = false;
-            self.open = true;
+            self.open = Some(id);
             events.push(RunEvent::Started(id));
         } else if let Some((id, code)) = rest.strip_prefix("end;").and_then(|tail| tail.split_once(';')) {
             let (Ok(id), Ok(code)) = (id.parse(), code.trim().parse()) else { return };
             self.flush_line(events);
-            self.open = false;
+            self.open = None;
             events.push(RunEvent::Ended { id, code });
         }
     }
@@ -133,7 +162,7 @@ impl MarkerScanner {
     // Hands out the line read so far as text, unless no run is open or it is the shell's echo of a marker line.
     fn flush_line(&mut self, events: &mut Vec<RunEvent>) {
         let line = std::mem::take(&mut self.line);
-        if !self.open || line.is_empty() {
+        if self.open.is_none() || line.is_empty() {
             return;
         }
         let line = String::from_utf8_lossy(&line).into_owned();
@@ -298,6 +327,56 @@ mod tests {
         let input = format!("{START}no newline{END_0}");
         let events = merged(feed_all(input.as_bytes(), input.len()));
         assert_eq!(events, vec![RunEvent::Started(7), RunEvent::Text("no newline".into()), RunEvent::Ended { id: 7, code: 0 }]);
+    }
+
+    #[test]
+    fn control_characters_in_a_block_are_not_typed() {
+        // An embedded paste end and Enter would let text of the answer type commands the person did not see.
+        let typed = String::from_utf8(typed_text(7, "echo hi\x1b[201~\rrm -rf x\x03\x7f\ttab")).unwrap();
+        assert_eq!(typed.matches("\x1b").count(), 2, "only our paste start and end: {typed:?}");
+        assert_eq!(typed.matches('\r').count(), 1, "only our Enter: {typed:?}");
+        assert!(!typed.contains('\x03') && !typed.contains('\x7f'));
+        assert!(typed.contains("echo hi[201~rm -rf x\ttab"), "{typed:?}");
+    }
+
+    #[test]
+    fn a_shell_that_comes_back_to_its_prompt_ends_the_open_run_as_interrupted() {
+        // After Ctrl-C the end line never runs; the shell turns bracketed paste on again for its next prompt.
+        let input = format!("{START}partial\n\x1b[?2004h");
+        let events = merged(feed_all(input.as_bytes(), input.len()));
+        assert_eq!(events, vec![RunEvent::Started(7), RunEvent::Text("partial\n".into()), RunEvent::Ended { id: 7, code: 130 }]);
+        for step in 1..input.len() {
+            assert_eq!(merged(feed_all(input.as_bytes(), step)), events, "step {step}");
+        }
+    }
+
+    #[test]
+    fn the_prompt_after_a_finished_run_ends_nothing_more() {
+        let input = format!("{START}out\n{END_0}\x1b[?2004h\x1b[?2004l{START}x\n\x1b[?2004h");
+        let events = merged(feed_all(input.as_bytes(), input.len()));
+        let ended: Vec<_> = events.iter().filter(|event| matches!(event, RunEvent::Ended { .. })).collect();
+        assert_eq!(ended.len(), 2, "{events:?}");
+        assert_eq!(events[2], RunEvent::Ended { id: 7, code: 0 });
+    }
+
+    #[test]
+    fn the_scanner_keeps_no_text_while_no_run_is_open_and_caps_a_line_in_a_run() {
+        let mut scanner = MarkerScanner::new();
+        for _ in 0..1000 {
+            scanner.feed(&[b'x'; 1024]);
+        }
+        assert!(scanner.buffered() < 1024, "nothing is kept outside a run: {}", scanner.buffered());
+        scanner.feed(START.as_bytes());
+        let mut text = 0;
+        for _ in 0..200 {
+            for event in scanner.feed(&[b'y'; 1024]) {
+                if let RunEvent::Text(piece) = event {
+                    text += piece.len();
+                }
+            }
+        }
+        assert!(scanner.buffered() <= 64 * 1024, "{}", scanner.buffered());
+        assert!(text > 0, "a very long line is handed out in pieces");
     }
 
     #[test]

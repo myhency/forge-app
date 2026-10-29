@@ -71,6 +71,8 @@ impl Run {
 struct Inner {
     next_id: u64,
     runs: Vec<Run>,
+    // The last time `expire` saw a run in flight: a run queued behind it waits from then, not from when it was made.
+    last_busy: Option<Instant>,
 }
 
 impl Inner {
@@ -184,11 +186,16 @@ impl CodeRuns {
 
     /// Ends the runs that no terminal took in `START_WAIT`, unless a run is in flight (they are only queued behind it).
     pub fn expire(&self, now: Instant) {
-        if self.in_flight() {
+        let busy = self.in_flight();
+        let mut inner = self.0.borrow_mut();
+        if busy {
+            inner.last_busy = Some(now);
             return;
         }
-        for run in self.0.borrow_mut().runs.iter_mut() {
-            if !run.typed && run.state == RunState::Waiting && now.saturating_duration_since(run.created) >= START_WAIT {
+        let idle_since = inner.last_busy;
+        for run in inner.runs.iter_mut() {
+            let since = idle_since.map_or(run.created, |busy| busy.max(run.created));
+            if !run.typed && run.state == RunState::Waiting && now.saturating_duration_since(since) >= START_WAIT {
                 run.close(RunState::Ended);
             }
         }
@@ -268,9 +275,11 @@ impl TerminalTap for RunTap {
     }
 }
 
-/// Whether the run button can work with this shell: zsh and bash print the exit code the way the end marker needs.
+/// Whether the run button can work with this shell: zsh and a bash with bracketed paste (not Apple's 3.2).
 pub fn shell_supported(shell: Option<&str>, windows: bool) -> bool {
-    !windows && shell.and_then(|shell| shell.rsplit('/').next()).is_some_and(|name| matches!(name, "zsh" | "bash"))
+    // Apple's `/bin/bash` is version 3.2: no bracketed paste, so the block would be typed as raw text and a Ctrl-C
+    // would leave the run open. A newer bash from elsewhere is fine.
+    !windows && shell != Some("/bin/bash") && shell.and_then(|shell| shell.rsplit('/').next()).is_some_and(|name| matches!(name, "zsh" | "bash"))
 }
 
 #[cfg(test)]
@@ -389,6 +398,23 @@ mod tests {
     }
 
     #[test]
+    fn a_run_queued_behind_a_long_one_is_given_its_own_ten_seconds_after_the_first_ends() {
+        let runs = CodeRuns::default();
+        let (tap, _) = tap_for(&runs, true);
+        let t0 = Instant::now();
+        let first = runs.start("sleep 30", t0);
+        runs.start("echo two", t0);
+        tap.tick();
+        tap.output(format!("{START}{first}\x07").as_bytes());
+        runs.expire(t0 + Duration::from_secs(30));
+        tap.output(format!("{END}{first};0\x07").as_bytes());
+        runs.expire(t0 + Duration::from_millis(30_100));
+        assert_eq!(runs.snapshot()[1].state, RunState::Waiting, "the first has only just ended");
+        runs.expire(t0 + Duration::from_secs(41));
+        assert_eq!(runs.snapshot()[1].state, RunState::Ended, "nobody took it in ten seconds");
+    }
+
+    #[test]
     fn a_shell_that_ends_ends_the_running_run_with_no_code() {
         let runs = CodeRuns::default();
         let (tap, _) = tap_for(&runs, true);
@@ -479,6 +505,8 @@ mod tests {
     fn shell_support() {
         assert!(shell_supported(Some("/bin/zsh"), false));
         assert!(shell_supported(Some("/usr/bin/bash"), false));
+        assert!(shell_supported(Some("/opt/homebrew/bin/bash"), false));
+        assert!(!shell_supported(Some("/bin/bash"), false), "macOS's own bash 3.2 has no bracketed paste");
         assert!(!shell_supported(Some("/usr/bin/fish"), false));
         assert!(!shell_supported(None, false));
         assert!(!shell_supported(Some("/bin/zsh"), true));
