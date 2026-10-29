@@ -6,7 +6,7 @@ use std::sync::Arc;
 use base64::Engine;
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{use_workspace, Panel, TabId, TapHandle, TerminalTabs};
+use forge_features::{use_workspace, CodeRuns, Panel, RunTap, TabId, TapHandle, TerminalTap, TerminalTabs};
 use forge_ports::{TerminalEvent, TerminalId, TerminalPort, TerminalSize};
 use serde::Deserialize;
 
@@ -143,6 +143,9 @@ async fn drive(
                     let _ = page.send(serde_json::json!({ "t": "out", "b": b }));
                 }
                 Some(TerminalEvent::Exited(code)) => {
+                    if let Some(tap) = &tap {
+                        tap.0.shell_ended();
+                    }
                     let line = match code {
                         Some(code) => format!("\r\n[{}]\r\n", tr!("Process exited ({code})", code = code)),
                         None => format!("\r\n[{}]\r\n", tr!("Process exited")),
@@ -167,12 +170,17 @@ async fn drive(
 }
 
 #[component]
-fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<TabId>, #[props(default)] tap: Option<TapHandle>) -> Element {
+fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<TabId>, #[props(default)] tap: Option<TapHandle>, #[props(default)] runs: Option<CodeRuns>) -> Element {
     let workspace = use_workspace();
     let host_id = format!("forge-terminal-{}", tab.0);
     let phase = use_signal(|| Phase::Starting);
     // Not a signal: `use_drop` runs while the component's own signals may already be gone.
     let running = use_hook(|| Rc::new(Cell::new(None::<TerminalId>)));
+    // The runs of code blocks that the chat asked for are typed into the active tab only.
+    let active_cell = use_hook(|| Rc::new(Cell::new(active)));
+    active_cell.set(active);
+    let run_tap = use_hook(|| runs.clone().map(|runs| Rc::new(RunTap::new(runs, active_cell.clone()))));
+    let tap = tap.or_else(|| run_tap.as_ref().map(|run_tap| TapHandle(run_tap.clone() as Rc<dyn TerminalTap>)));
 
     {
         let host_id = host_id.clone();
@@ -184,7 +192,11 @@ fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<
     }
     {
         let running = running.clone();
+        let run_tap = run_tap.clone();
         use_drop(move || {
+            if let Some(tap) = &run_tap {
+                tap.shell_ended();
+            }
             if let Some(id) = running.get() {
                 workspace.terminal().close(id);
             }
@@ -215,6 +227,7 @@ fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<
 #[component]
 pub fn TerminalPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let workspace = use_workspace();
+    let runs = use_hook(|| workspace.code_runs(id));
     let mut tabs = use_signal(|| {
         let mut tabs = TerminalTabs::default();
         tabs.open();
@@ -262,6 +275,7 @@ pub fn TerminalPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                     tab,
                     cwd: cwd.clone(),
                     active: Some(tab) == active,
+                    runs: Some(runs.clone()),
                     on_restart: move |tab| {
                         let mut tabs = tabs.write();
                         tabs.close(tab);

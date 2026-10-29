@@ -468,6 +468,14 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .code-run { display: none; appearance: none; position: absolute; top: 6px; right: 34px; border: none; background: var(--bg-card); color: var(--fg-muted); border-radius: 6px; padding: 2px 6px; cursor: pointer; opacity: 0; transition: opacity 0.12s; }
 html[data-code-run="on"] .messages .code-run { display: inline-block; }
 .code-wrap:hover .code-run { opacity: 1; }
+.run-box { width: fit-content; min-width: 280px; max-width: 100%; margin: -4px 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+.run-out { margin: 0; padding: 8px 12px; max-height: 240px; overflow: auto; font-family: var(--mono); font-size: 12px; color: var(--fg-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-foot { display: flex; align-items: center; gap: 12px; padding: 4px 8px 6px 12px; font-family: var(--mono); font-size: 11px; color: var(--fg-muted); }
+.run-cwd { color: var(--link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-meta { margin-left: auto; opacity: 0.8; white-space: nowrap; }
+.run-meta.failed { color: var(--danger); opacity: 1; }
+.run-open-terminal { appearance: none; border: none; background: transparent; color: var(--fg-muted); font-family: var(--mono); cursor: pointer; padding: 0 4px; }
+.run-open-terminal:hover { color: var(--fg); }
 .markdown a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
 .markdown code { font-family: var(--mono); font-size: 0.9em; padding: 1px 5px; background: var(--code-bg); border-radius: 5px; }
 .code-block { margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; }

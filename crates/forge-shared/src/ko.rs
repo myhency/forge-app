@@ -3,6 +3,7 @@
 
 pub static KO: &[(&str, &str)] = &[
     (" or ", " 또는 "),
+    ("(earlier output cut)", "(앞부분 출력 생략)"),
     ("(no marketplace)", "(마켓플레이스 없음)"),
     ("(optional)", "(선택 사항)"),
     ("+ Add", "+ 추가"),
@@ -248,6 +249,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Editor settings", "편집기 설정"),
     ("Effort", "추론 강도"),
     ("Enable", "활성화"),
+    ("Ended", "종료됨"),
     ("Enter a URL", "URL 입력"),
     ("Enter a web address, such as localhost:3000", "localhost:3000 같은 웹 주소를 입력하세요"),
     ("Enter an address above.", "위에 주소를 입력하세요."),
@@ -490,6 +492,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Open in terminal", "터미널에서 열기"),
     ("Open in the default program", "기본 프로그램으로 열기"),
     ("Open plan", "계획 열기"),
+    ("Open terminal", "터미널 열기"),
     ("Open the effort menu", "노력 선택기 열기"),
     ("Open the mode menu", "모드 메뉴 열기"),
     ("Open the model menu", "모델 메뉴 열기"),
@@ -585,6 +588,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Routine needs your approval", "루틴에 승인이 필요합니다"),
     ("Routines", "루틴"),
     ("Routines run only while Forge is open and the computer is awake.", "루틴은 Forge가 열려 있고 컴퓨터가 켜져 있는 동안에만 실행됩니다."),
+    ("Run", "실행"),
     ("Run now", "지금 실행"),
     ("Running", "실행 중"),
     ("Running|tool", "실행 중"),

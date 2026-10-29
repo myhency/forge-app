@@ -189,6 +189,7 @@ pub struct Workspace {
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
     /// What became of each session's end cards (by the `wrap_up` call's id): closed, or already sent.
     end_card_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::CardMark>>>,
+    code_runs: Signal<HashMap<LiveSessionId, crate::code_runs::CodeRuns>>,
     /// The person's comments on the plan of each session, sent along with a request for changes.
     plan_comments: Signal<HashMap<LiveSessionId, Vec<forge_entities::PlanComment>>>,
     /// The usage limit bar the person closed: it stays closed until the limit's level, window or reset time changes.
@@ -288,6 +289,7 @@ pub fn use_workspace_provider() -> Workspace {
             queued_files: root_signal(HashMap::new()),
             rewind_requests: root_signal(HashMap::new()),
             end_card_marks: root_signal(HashMap::new()),
+            code_runs: root_signal(HashMap::new()),
             plan_comments: root_signal(HashMap::new()),
             auto_details: root_signal(std::collections::HashSet::new()),
             rate_dismissed: root_signal(None),
@@ -1457,6 +1459,39 @@ impl Workspace {
     /// The end cards of a session that were closed or already sent.
     pub fn end_card_marks(&self, id: LiveSessionId) -> HashMap<String, forge_entities::CardMark> {
         self.end_card_marks.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    /// The code block runs of a session, made on first use. Read with `peek`: asking never subscribes.
+    pub fn code_runs(&self, id: LiveSessionId) -> crate::code_runs::CodeRuns {
+        if let Some(runs) = self.code_runs.peek().get(&id) {
+            return runs.clone();
+        }
+        let runs = crate::code_runs::CodeRuns::default();
+        let mut all = self.code_runs;
+        all.write().insert(id, runs.clone());
+        runs
+    }
+
+    /// Every session that has runs.
+    pub fn code_run_sessions(&self) -> Vec<(LiveSessionId, crate::code_runs::CodeRuns)> {
+        self.code_runs.peek().iter().map(|(id, runs)| (*id, runs.clone())).collect()
+    }
+
+    /// Runs a shell block of an answer in the session's terminal: the run is stored and the Terminal panel is
+    /// opened; the panel's tab types it in once it is up.
+    pub fn run_code(&self, id: LiveSessionId, block: &str) {
+        self.code_runs(id).start(block, std::time::Instant::now());
+        self.open_terminal_panel(id);
+    }
+
+    /// Opens the Terminal panel of a session (nothing changes when it is open).
+    pub fn open_terminal_panel(&self, id: LiveSessionId) {
+        self.open_panel_over_auto_details(id, Panel::Terminal);
+    }
+
+    /// Whether the run button works with this machine's shell (zsh or bash, not on Windows).
+    pub fn code_run_available(&self) -> bool {
+        crate::code_runs::shell_supported(std::env::var("SHELL").ok().as_deref(), cfg!(windows))
     }
 
     /// The message a row asked to go back to, once; reading it clears it.

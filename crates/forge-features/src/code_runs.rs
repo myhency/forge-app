@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use forge_entities::code_run::{cut_output, text_hash, typed_text, MarkerScanner, RunEvent};
+use forge_entities::code_run::{cut_output, model_message, text_hash, typed_text, MarkerScanner, RunEvent};
 
 use crate::terminal_tap::TerminalTap;
 
@@ -36,6 +36,8 @@ pub struct RunView {
     pub state: RunState,
     pub output: String,
     pub cut: bool,
+    /// When the run ended, in milliseconds since the Unix epoch.
+    pub ended_ms: Option<u64>,
 }
 
 /// A run that is over, handed out once so the model can be told.
@@ -55,6 +57,14 @@ struct Run {
     raw: String,
     created: Instant,
     reported: bool,
+    ended_ms: Option<u64>,
+}
+
+impl Run {
+    fn close(&mut self, state: RunState) {
+        self.state = state;
+        self.ended_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().map(|since| since.as_millis() as u64);
+    }
 }
 
 #[derive(Default)]
@@ -73,6 +83,18 @@ impl Inner {
 #[derive(Clone, Default)]
 pub struct CodeRuns(Rc<RefCell<Inner>>);
 
+/// A handle as a component prop: equal to itself only.
+impl PartialEq for CodeRuns {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+/// The messages to send the model for runs that ended, in order.
+pub fn finished_messages(finished: Vec<Finished>) -> Vec<String> {
+    finished.into_iter().map(|run| model_message(&run.block, run.code, &run.output, run.cut)).collect()
+}
+
 impl CodeRuns {
     /// Adds a run for `block`. A block that is already waiting or running gives that run's id and adds nothing.
     pub fn start(&self, block: &str, now: Instant) -> u64 {
@@ -82,7 +104,7 @@ impl CodeRuns {
         }
         let id = inner.next_id;
         inner.next_id += 1;
-        inner.runs.push(Run { id, block: block.to_string(), state: RunState::Waiting, typed: false, raw: String::new(), created: now, reported: false });
+        inner.runs.push(Run { id, block: block.to_string(), state: RunState::Waiting, typed: false, raw: String::new(), created: now, reported: false, ended_ms: None });
         while inner.runs.len() > KEPT_RUNS {
             let Some(position) = inner.runs.iter().position(|run| !run.state.is_open()) else { break };
             inner.runs.remove(position);
@@ -97,7 +119,7 @@ impl CodeRuns {
             .iter()
             .map(|run| {
                 let (output, cut) = cut_output(&run.raw);
-                RunView { id: run.id, hash: text_hash(&run.block), state: run.state, output, cut }
+                RunView { id: run.id, hash: text_hash(&run.block), state: run.state, output, cut, ended_ms: run.ended_ms }
             })
             .collect()
     }
@@ -156,7 +178,7 @@ impl CodeRuns {
 
     fn end(&self, id: u64, state: RunState) {
         if let Some(run) = self.0.borrow_mut().run_mut(id).filter(|run| run.state.is_open()) {
-            run.state = state;
+            run.close(state);
         }
     }
 
@@ -167,7 +189,7 @@ impl CodeRuns {
         }
         for run in self.0.borrow_mut().runs.iter_mut() {
             if !run.typed && run.state == RunState::Waiting && now.saturating_duration_since(run.created) >= START_WAIT {
-                run.state = RunState::Ended;
+                run.close(RunState::Ended);
             }
         }
     }
@@ -393,6 +415,36 @@ mod tests {
         runs.expire(Instant::now() + Duration::from_secs(60));
         runs.start("echo last", Instant::now());
         assert!(runs.snapshot().len() <= 50);
+    }
+
+    #[test]
+    fn a_run_that_ended_has_an_end_time_and_one_that_runs_has_none() {
+        let runs = CodeRuns::default();
+        let (tap, _) = tap_for(&runs, true);
+        let id = runs.start("echo hi", Instant::now());
+        tap.tick();
+        tap.output(format!("{START}{id}\x07").as_bytes());
+        assert_eq!(runs.snapshot()[0].ended_ms, None);
+        tap.output(format!("{END}{id};0\x07").as_bytes());
+        assert!(runs.snapshot()[0].ended_ms.is_some_and(|ms| ms > 1_700_000_000_000));
+    }
+
+    #[test]
+    fn handles_of_one_session_are_equal_and_those_of_two_are_not() {
+        let runs = CodeRuns::default();
+        assert!(runs == runs.clone());
+        assert!(runs != CodeRuns::default());
+    }
+
+    #[test]
+    fn finished_runs_become_model_messages_in_order() {
+        let messages = finished_messages(vec![
+            Finished { block: "ls".into(), code: Some(0), output: "a\n".into(), cut: false },
+            Finished { block: "sleep 9".into(), code: None, output: String::new(), cut: false },
+        ]);
+        assert_eq!(messages.len(), 2);
+        assert!(messages[0].starts_with("[forge-run]\n") && messages[0].contains("exit 0"));
+        assert!(messages[1].contains("shell ended"));
     }
 
     #[test]
