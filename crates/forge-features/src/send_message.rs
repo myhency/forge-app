@@ -56,6 +56,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
         };
         if failures != *seen_failures.peek() {
             seen_failures.set(failures);
+            workspace.clear_sent_marks(id);
             // The cards were written into the text that came back: take them out again.
             let unsent = unsent.map(|text| {
                 let (cards, rest) = split_cards(&text);

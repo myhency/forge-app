@@ -1456,6 +1456,15 @@ impl Workspace {
         marks.write().entry(id).or_default().insert(call_id, mark);
     }
 
+    /// Takes back the `Sent` marks of a session: its send never went out, so the card offers its buttons again.
+    pub fn clear_sent_marks(&self, id: LiveSessionId) {
+        let mut marks = self.end_card_marks;
+        let mut all = marks.write();
+        if let Some(session) = all.get_mut(&id) {
+            session.retain(|_, mark| *mark != forge_entities::CardMark::Sent);
+        }
+    }
+
     /// The end cards of a session that were closed or already sent.
     pub fn end_card_marks(&self, id: LiveSessionId) -> HashMap<String, forge_entities::CardMark> {
         self.end_card_marks.read().get(&id).cloned().unwrap_or_default()
