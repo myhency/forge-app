@@ -4,6 +4,7 @@ use forge_domain::{Block, Message, MessageRole, PermissionRequest, ToolCall};
 use serde_json::Value;
 
 use crate::background::background_ref;
+use crate::code_run::is_run_message;
 use crate::diff::{diff_for_tool, diff_for_tool_call};
 use crate::preview::{preview_kind, PreviewKind};
 use crate::question::{answer_pairs, AnswerPair, QUESTION_TOOL};
@@ -605,7 +606,10 @@ pub fn build_turns(messages: &[Message], view: TranscriptView, live: Option<&Liv
             MessageRole::User => {
                 let text = message.text();
                 finish_turn(&mut items, std::mem::take(&mut blocks), at.take(), view, None, Next::Message(&text));
-                items.push(Item::User(message.clone()));
+                // What a run of a code block told the model is not something the person said.
+                if !is_run_message(&text) {
+                    items.push(Item::User(message.clone()));
+                }
             }
             MessageRole::Assistant => {
                 blocks.extend(message.blocks.iter().cloned());
@@ -868,6 +872,21 @@ mod tests {
         });
         let items = build_turns(&[Message::user("go"), assistant(vec![nameless])], TranscriptView::Normal, None);
         assert_eq!(kinds(&items), vec!["user", "activity", "footer"]);
+    }
+
+    #[test]
+    fn a_run_message_is_not_drawn_and_the_answer_after_it_still_shows() {
+        let run = crate::code_run::model_message("echo hi", Some(0), "hi\n", false);
+        let messages = vec![
+            Message::user("hi"),
+            assistant(vec![text("a")]),
+            Message::user(&run),
+            assistant(vec![text("The command printed hi.")]),
+        ];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        assert_eq!(kinds(&items), vec!["user", "text", "footer", "text", "footer"]);
+        assert!(items.iter().all(|item| !matches!(item, Item::User(message) if message.text().contains("[forge-run]"))));
+        assert_eq!(items[3], Item::Text("The command printed hi.".to_string()));
     }
 
     #[test]

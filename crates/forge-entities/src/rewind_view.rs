@@ -1,6 +1,8 @@
 use forge_domain::{Message, MessageRole, RewindOutcome};
 use forge_shared::tr;
 
+use crate::code_run::is_run_message;
+
 /// One earlier message the person can go back to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RewindRow {
@@ -27,6 +29,7 @@ pub fn rewind_rows(messages: &[Message]) -> Vec<RewindRow> {
         .iter()
         .rev()
         .filter(|message| message.role == MessageRole::User)
+        .filter(|message| !is_run_message(&message.text()))
         .filter_map(|message| {
             let label = first_line(&message.text());
             let uuid = message.uuid.clone()?;
@@ -71,6 +74,13 @@ mod tests {
         ];
         let rows = rewind_rows(&messages);
         assert_eq!(rows, vec![RewindRow { uuid: "u3".into(), label: "last".into() }, RewindRow { uuid: "u1".into(), label: "first".into() }]);
+    }
+
+    #[test]
+    fn a_run_message_is_not_a_rewind_point() {
+        let run = crate::code_run::model_message("ls", Some(0), "a\n", false);
+        let rows = rewind_rows(&[said("first", Some("u1")), said(&run, Some("u2"))]);
+        assert_eq!(rows, vec![RewindRow { uuid: "u1".into(), label: "first".into() }]);
     }
 
     #[test]
