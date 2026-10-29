@@ -204,16 +204,25 @@ pub struct RunTap {
     typed: Cell<Option<u64>>,
     // The run the scanner is inside.
     current: Cell<Option<u64>>,
+    // Whether the shell has printed anything yet, and how many ticks have passed since it last did. A run is typed
+    // only once the shell has started and settled: input that comes earlier is echoed raw by the terminal.
+    seen_output: Cell<bool>,
+    quiet_ticks: Cell<u32>,
 }
+
+// Ticks (a quarter of a second each) of silence after the shell's output before a run is typed.
+const SETTLE_TICKS: u32 = 2;
 
 impl RunTap {
     pub fn new(runs: CodeRuns, active: Rc<Cell<bool>>) -> Self {
-        Self { runs, active, scanner: RefCell::new(MarkerScanner::new()), typed: Cell::new(None), current: Cell::new(None) }
+        Self { runs, active, scanner: RefCell::new(MarkerScanner::new()), typed: Cell::new(None), current: Cell::new(None), seen_output: Cell::new(false), quiet_ticks: Cell::new(0) }
     }
 }
 
 impl TerminalTap for RunTap {
     fn output(&self, bytes: &[u8]) -> Vec<u8> {
+        self.seen_output.set(true);
+        self.quiet_ticks.set(0);
         let events = self.scanner.borrow_mut().feed(bytes);
         for event in events {
             match event {
@@ -238,7 +247,8 @@ impl TerminalTap for RunTap {
     }
 
     fn tick(&self) -> Vec<u8> {
-        if !self.active.get() || self.runs.in_flight() {
+        self.quiet_ticks.set(self.quiet_ticks.get().saturating_add(1));
+        if !self.seen_output.get() || self.quiet_ticks.get() < SETTLE_TICKS || !self.active.get() || self.runs.in_flight() {
             return Vec::new();
         }
         match self.runs.take_next_to_type() {
@@ -274,9 +284,26 @@ mod tests {
         format!("{START}{id}\x07{text}{END}{id};{code}\x07").into_bytes()
     }
 
+    // A tap whose shell has printed its prompt and been quiet for one tick: the next tick may type.
     fn tap_for(runs: &CodeRuns, active: bool) -> (RunTap, Rc<Cell<bool>>) {
         let flag = Rc::new(Cell::new(active));
-        (RunTap::new(runs.clone(), flag.clone()), flag)
+        let tap = RunTap::new(runs.clone(), flag.clone());
+        tap.output(b"% ");
+        assert!(tap.tick().is_empty());
+        (tap, flag)
+    }
+
+    #[test]
+    fn nothing_is_typed_until_the_shell_has_printed_and_gone_quiet() {
+        let runs = CodeRuns::default();
+        let tap = RunTap::new(runs.clone(), Rc::new(Cell::new(true)));
+        let id = runs.start("echo hi", Instant::now());
+        assert!(tap.tick().is_empty() && tap.tick().is_empty() && tap.tick().is_empty(), "the shell has not printed yet");
+        tap.output(b"banner\r\n");
+        assert!(tap.tick().is_empty(), "one quiet tick is not enough");
+        tap.output(b"more\r\n");
+        assert!(tap.tick().is_empty(), "output starts the quiet again");
+        assert_eq!(tap.tick(), typed_text(id, "echo hi"));
     }
 
     #[test]
@@ -315,6 +342,7 @@ mod tests {
         assert_eq!(tap.tick(), typed_text(first, "sleep 1"));
         assert!(tap.tick().is_empty(), "the first is still in flight");
         tap.output(&marked(first, "", 0));
+        assert!(tap.tick().is_empty(), "the shell is let to settle after the first");
         assert_eq!(tap.tick(), typed_text(second, "echo two"));
     }
 
