@@ -13,13 +13,14 @@ pub fn is_shell_language(language: &str) -> bool {
     matches!(language.to_ascii_lowercase().as_str(), "bash" | "sh" | "zsh" | "shell" | "console" | "shellscript" | "terminal")
 }
 
-/// What is typed into the shell for run `id`: the block's first line after a `printf` of the start marker
-/// (the shell's echo of that line comes before the marker, so what follows it is output), the other lines,
-/// and a last line that prints the end marker with the exit code. Every line ends with a newline.
+/// What is typed into the shell for run `id`, as one bracketed paste followed by Enter: the block's first line
+/// after a `printf` of the start marker, the other lines, and a last line that prints the end marker with the
+/// exit code. The shell takes it as one buffer, so it prints no prompt between the lines, and its echo of the
+/// whole buffer comes before the start marker: what follows the marker is output.
 pub fn typed_text(id: u64, block: &str) -> Vec<u8> {
     let block = block.trim_end();
-    let mut typed = format!("printf '\\033]777;forge-run-start;{id}\\007'; {block}\n");
-    typed.push_str(&format!("printf '\\033]777;forge-run-end;{id};%s\\007' \"$?\"\n"));
+    let mut typed = format!("\x1b[200~printf '\\033]777;forge-run-start;{id}\\007'; {block}\n");
+    typed.push_str(&format!("printf '\\033]777;forge-run-end;{id};%s\\007' \"$?\"\x1b[201~\r"));
     typed.into_bytes()
 }
 
@@ -221,10 +222,11 @@ mod tests {
     #[test]
     fn typed_text_wraps_the_block_between_the_two_markers() {
         let typed = String::from_utf8(typed_text(7, "echo hi")).unwrap();
-        assert!(typed.starts_with("printf '\\033]777;forge-run-start;7\\007'; echo hi\n"), "{typed}");
-        let last = typed.lines().last().unwrap();
+        // One bracketed paste, so the shell takes the block as one buffer and prints no prompt between its lines.
+        assert!(typed.starts_with("\x1b[200~printf '\\033]777;forge-run-start;7\\007'; echo hi\n"), "{typed}");
+        assert!(typed.ends_with("\x1b[201~\r"), "{typed}");
+        let last = typed.trim_end_matches("\x1b[201~\r").lines().last().unwrap();
         assert!(last.starts_with("printf '\\033]777;forge-run-end;7;%s\\007'") && last.ends_with("\"$?\""), "{typed}");
-        assert!(typed.ends_with('\n'));
         assert_eq!(typed_text(7, "echo hi"), typed_text(7, "echo hi\n"));
         assert_eq!(typed_text(7, "echo hi"), typed_text(7, "echo hi\n\n"));
     }
@@ -236,6 +238,7 @@ mod tests {
         assert_eq!(lines.len(), 3, "{typed}");
         assert!(lines[0].ends_with("; cd /tmp"));
         assert_eq!(lines[1], "ls");
+        assert_eq!(typed.matches("\x1b[200~").count(), 1, "one paste for the whole block");
     }
 
     #[test]
