@@ -55,7 +55,7 @@ enum Escape {
     // In `ESC ] …` until BEL or `ESC \`; the bytes so far.
     Osc(Vec<u8>),
     // In an OSC, after an ESC that may end it.
-    OscEscape(Vec<u8>),
+    OscEnding(Vec<u8>),
 }
 
 impl MarkerScanner {
@@ -96,13 +96,13 @@ impl MarkerScanner {
                 }
                 Escape::Osc(mut body) => match byte {
                     0x07 => self.finish_osc(&body, &mut events),
-                    0x1b => self.escape = Escape::OscEscape(body),
+                    0x1b => self.escape = Escape::OscEnding(body),
                     _ => {
                         body.push(byte);
                         self.escape = Escape::Osc(body);
                     }
                 },
-                Escape::OscEscape(body) => {
+                Escape::OscEnding(body) => {
                     // `ESC \` ends the sequence; an ESC that starts something else drops it unread.
                     if byte == b'\\' {
                         self.finish_osc(&body, &mut events);
