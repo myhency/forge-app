@@ -8,6 +8,7 @@ use crate::code_run::is_run_message;
 use crate::diff::{diff_for_tool, diff_for_tool_call};
 use crate::preview::{preview_kind, PreviewKind};
 use crate::question::{answer_pairs, AnswerPair, QUESTION_TOOL};
+use crate::generated_ui::{generated_ui_of, is_ui_call, GeneratedUi};
 use crate::turn_cards::{chosen_action, end_card_of, plan_of, turn_tool, EndCard, Step, TurnTool};
 use crate::tool_summary::{tool_call_status, tool_input_summary, ToolCallStatus};
 use crate::workflow_progress::workflow_ref;
@@ -105,6 +106,8 @@ pub enum Item {
     PlanList(Vec<Step>),
     /// The next-step card Claude fills with `wrap_up`.
     EndCard(EndCardItem),
+    /// An interactive page Claude drew with `generate_sandboxed_ui`.
+    GeneratedUi(GeneratedUi),
     /// The conversation was compacted here (token counts before and after, when known).
     Compacted { before: Option<u64>, after: Option<u64> },
     /// The person stopped the turn here.
@@ -141,8 +144,9 @@ fn plan_proposal(call: &ToolCall) -> Option<PlanItem> {
     (!text.is_empty()).then_some(PlanItem { text })
 }
 
+/// The calls that have a card of their own and so are neither counted nor listed in the folded line.
 fn is_turn_tool(call: &ToolCall) -> bool {
-    turn_tool(&call.name).is_some()
+    turn_tool(&call.name).is_some() || is_ui_call(call)
 }
 
 /// What follows a turn: nothing (it is the last one) or the next user message.
@@ -514,6 +518,11 @@ fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<Too
         for block in &blocks[..first.unwrap_or(blocks.len())] {
             plain(items, block);
         }
+        for block in blocks {
+            if let Block::Tool(call) = block {
+                items.extend(generated_ui_of(call).map(Item::GeneratedUi));
+            }
+        }
         if let Some(steps) = steps {
             items.push(Item::PlanList(steps));
         }
@@ -542,6 +551,7 @@ fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<Too
                         if let Block::Tool(call) = block {
                             items.extend(workflow_launch(call).map(Item::Workflow));
                             items.extend(plan_proposal(call).map(Item::Plan));
+                            items.extend(generated_ui_of(call).map(Item::GeneratedUi));
                         }
                     }
                 }
@@ -694,6 +704,7 @@ mod tests {
                 Item::Plan(_) => "plan",
                 Item::PlanList(_) => "planlist",
                 Item::EndCard(_) => "endcard",
+                Item::GeneratedUi(_) => "generatedui",
                 Item::Compacted { .. } => "compacted",
                 Item::Stopped => "stopped",
             })
@@ -738,6 +749,31 @@ mod tests {
         let a = activity(&items);
         assert_eq!(a.rows.len(), 1);
         assert_eq!(a.summary, "Ran ls -la");
+    }
+
+    fn ui_page(id: &str, done: bool) -> Block {
+        tool(id, "mcp__forge_ui__generate_sandboxed_ui", json!({"html": "<p>hi</p>"}), done.then_some(false))
+    }
+
+    #[test]
+    fn a_generated_page_gets_its_own_card_and_is_not_counted_in_the_folded_line() {
+        let messages = vec![Message::user("go"), assistant(vec![bash("b", None), ui_page("u", true), text("Here it is.")])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        assert_eq!(kinds(&items), vec!["user", "activity", "generatedui", "text", "footer"]);
+        assert_eq!(activity(&items).rows.len(), 1);
+        let Item::GeneratedUi(ui) = &items[2] else { panic!() };
+        assert_eq!(ui.id, "u");
+        let only = vec![Message::user("go"), assistant(vec![ui_page("u", true), text("Done.")])];
+        assert!(!kinds(&build_turns(&only, TranscriptView::Normal, None)).contains(&"activity"));
+    }
+
+    #[test]
+    fn a_page_shows_while_the_turn_runs_and_is_not_the_live_label() {
+        let messages = vec![Message::user("go"), assistant(vec![text("Sure."), ui_page("u", false)])];
+        let items = build_turns(&messages, TranscriptView::Normal, Some(&running()));
+        assert_eq!(kinds(&items), vec!["user", "text", "generatedui", "live"]);
+        let Some(Item::Live(line)) = items.last() else { panic!() };
+        assert_eq!(line.kind, LiveKind::Thinking);
     }
 
     #[test]

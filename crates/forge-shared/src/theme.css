@@ -1391,6 +1391,13 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .end-card-button { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 0; border-radius: 8px; background: var(--bg-hover); color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; }
 .end-card-button.primary { background: var(--fg); color: var(--bg-card); }
 .end-card-key { padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, currentColor 18%, transparent); font-size: 11px; }
+.generated-ui { margin: 10px 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); overflow: hidden; }
+.generated-ui-frame { display: block; width: 100%; border: 0; background: transparent; }
+.generated-ui.pending, .generated-ui.failed { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; color: var(--fg-muted); font-size: 14px; }
+.generated-ui.pending .generated-ui-line { animation: generated-ui-pulse 1.6s ease-in-out infinite; }
+.generated-ui-reason { font-size: 13px; }
+@keyframes generated-ui-pulse { 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .generated-ui.pending .generated-ui-line { animation: none; } }
 .end-card.spent { width: 70%; min-width: 260px; }
 .end-card.spent .end-card-ask { color: var(--fg-muted); font-weight: 400; }
 .end-card-chosen { color: var(--fg-muted); font-size: 13px; }
