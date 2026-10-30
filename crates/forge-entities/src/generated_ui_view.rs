@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use dioxus::prelude::*;
 use forge_shared::tr;
 
-use crate::generated_ui::{bridge_message, page_document, GeneratedUi, UiState};
+use crate::generated_ui::{bridge_message, page_document, GeneratedUi, UiState, MAX_AUTO_HEIGHT, MIN_AUTO_HEIGHT};
 
 /// A page may send at most one message in this time.
 const SEND_GAP: Duration = Duration::from_secs(1);
@@ -50,6 +50,11 @@ fn bridge_watch(id: &str) -> String {
       var frames = document.querySelectorAll('iframe.generated-ui-frame');
       for (var i = 0; i < frames.length; i++) {{
         if (frames[i].contentWindow === e.source) {{
+          if (typeof e.data.resize === 'number') {{
+            var h = Math.max({min}, Math.min({max}, Math.round(e.data.resize)));
+            if (isFinite(h)) frames[i].style.height = h + 'px';
+            return;
+          }}
           if (document.activeElement !== frames[i]) return;
           var handler = window.__forgeUiHandlers[frames[i].dataset.id];
           if (handler) handler(JSON.stringify(e.data));
@@ -63,7 +68,9 @@ fn bridge_watch(id: &str) -> String {
   }}
   var frame = document.getElementById("gui-" + id);
   if (frame) {{ frame.addEventListener('load', function () {{ push(frame); }}); push(frame); }}
-}})();"#
+}})();"#,
+        min = MIN_AUTO_HEIGHT,
+        max = MAX_AUTO_HEIGHT
     )
 }
 

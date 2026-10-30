@@ -114,7 +114,10 @@ fn csp() -> String {
 
 /// The colours a page may use. They follow the app's theme: the parent tells the frame (`forgeTheme`), and the
 /// bridge script sets `data-forge-theme` on the root.
-const THEME_CSS: &str = ":root{color-scheme:light;--bg:#ffffff;--fg:#1f1e1c;--muted:#6f6b63;--line:#e4e1da;--accent:#c4552d}:root[data-forge-theme=dark]{color-scheme:dark;--bg:#1f1e1c;--fg:#ece9e2;--muted:#9d998f;--line:#3a3834;--accent:#d97757}";
+const THEME_CSS: &str = ":root{color-scheme:light;--bg:#ffffff;--fg:#1f1e1c;--muted:#6f6b63;--line:#e4e1da;--accent:#c4552d;--surface:#faf9f6;--c1:#c4552d;--c2:#3e63dd;--c3:#30a46c;--c4:#e5a50a;--c5:#8e4ec6;--c6:#0b8da3}:root[data-forge-theme=dark]{color-scheme:dark;--bg:#1f1e1c;--fg:#ece9e2;--muted:#9d998f;--line:#3a3834;--accent:#d97757;--surface:#2a2926;--c1:#d97757;--c2:#7d96f2;--c3:#4cc38a;--c4:#f0b429;--c5:#b88be0;--c6:#35b9cc}";
+
+/// The Forge UI kit (`fx-` classes): see `ui_kit.css` and `sidecar/src/ui_examples/kit.md`.
+pub const UI_KIT_CSS: &str = include_str!("ui_kit.css");
 
 const BASE_CSS: &str = "html,body{margin:0;padding:0}body{background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:12px;box-sizing:border-box}button,input,select,textarea{font:inherit;color:inherit}*{box-sizing:border-box}";
 
@@ -128,18 +131,34 @@ fn guard_style(css: &str) -> String {
     css.replace("</", "\\3c /")
 }
 
-/// The script the frame starts with. `forge.send` is the only way out: it gives the parent a label and a few
-/// values, tagged with this card's nonce.
+/// The tallest a card grows to by following its page (the page reports its height, see `BRIDGE_JS`).
+pub const MAX_AUTO_HEIGHT: u32 = 1400;
+/// The shortest a card shrinks to.
+pub const MIN_AUTO_HEIGHT: u32 = 80;
+
+/// The script the frame starts with. It sets the theme the parent tells it, cancels link clicks, wires the kit's
+/// tabs, reports the page's height (`resize`) and gives the page its one way out, `forge.send`: a label and a few
+/// values, tagged with this card's nonce. `__NONCE__` is replaced by the card's token.
+const BRIDGE_JS: &str = r#"(function(){
+var post=window.parent.postMessage.bind(window.parent);var n=__NONCE__;
+window.addEventListener('message',function(e){if(e.source===window.parent&&e.data&&typeof e.data.forgeTheme==='string'){document.documentElement.setAttribute('data-forge-theme',e.data.forgeTheme==='dark'?'dark':'light')}});
+function pick(set,name){set.querySelectorAll('.fx-tab[data-tab]').forEach(function(b){b.setAttribute('aria-selected',b.getAttribute('data-tab')===name?'true':'false')});set.querySelectorAll('.fx-panel[data-panel]').forEach(function(p){p.hidden=p.getAttribute('data-panel')!==name})}
+document.addEventListener('click',function(e){var t=e.target;if(!t||!t.closest)return;if(t.closest('a'))e.preventDefault();var tab=t.closest('.fx-tab[data-tab]');if(tab){pick(tab.closest('.fx-tabset')||document,tab.getAttribute('data-tab'))}},true);
+document.querySelectorAll('.fx-tabset').forEach(function(set){var first=set.querySelector('.fx-tab[aria-selected="true"]')||set.querySelector('.fx-tab[data-tab]');if(first)pick(set,first.getAttribute('data-tab'))});
+var last=0;function size(){var h=Math.ceil(document.body.getBoundingClientRect().height);if(Math.abs(h-last)>=2){last=h;try{post({n:n,resize:h},'*')}catch(e){}}}
+if(window.ResizeObserver){new ResizeObserver(function(){requestAnimationFrame(size)}).observe(document.body)}
+window.addEventListener('load',size);size();
+window.forge=Object.freeze({send:function(m){try{var v=m&&m.values&&typeof m.values==='object'?m.values:{};post({n:n,label:String(m&&m.label||''),values:v},'*')}catch(e){}}});
+})();"#;
+
 fn bridge_script(nonce: &str) -> String {
-    format!(
-        "(function(){{var post=window.parent.postMessage.bind(window.parent);var n={nonce:?};window.addEventListener('message',function(e){{if(e.source===window.parent&&e.data&&typeof e.data.forgeTheme==='string'){{document.documentElement.setAttribute('data-forge-theme',e.data.forgeTheme==='dark'?'dark':'light')}}}});document.addEventListener('click',function(e){{var a=e.target&&e.target.closest&&e.target.closest('a');if(a)e.preventDefault()}},true);window.forge=Object.freeze({{send:function(m){{try{{var v=m&&m.values&&typeof m.values==='object'?m.values:{{}};post({{n:n,label:String(m&&m.label||''),values:v}},'*')}}catch(e){{}}}}}})}})();"
-    )
+    BRIDGE_JS.replace("__NONCE__", &format!("{nonce:?}"))
 }
 
 /// The document the frame shows. `nonce` is this card's token.
 pub fn page_document(ui: &GeneratedUi, nonce: &str) -> String {
     format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"{csp}\"><style>{THEME_CSS}{BASE_CSS}{css}</style></head><body>{html}<script>{bridge}</script><script>{functions}</script><script>{expressions}</script></body></html>",
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"{csp}\"><style>{THEME_CSS}{BASE_CSS}{UI_KIT_CSS}{css}</style></head><body>{html}<script>{bridge}</script><script>{functions}</script><script>{expressions}</script></body></html>",
         csp = csp(),
         css = guard_style(&ui.css),
         html = ui.html,
@@ -303,6 +322,61 @@ mod tests {
         let script = bridge_script("tok\"en");
         assert!(script.contains("\"tok\\\"en\""), "{script}");
         assert!(script.contains("Object.freeze"));
+        assert!(!script.contains("__NONCE__"));
+    }
+
+    #[test]
+    fn the_frame_carries_the_kit_after_the_base_and_before_the_page() {
+        let doc = page_document(&ready("p{color:red}", "<p>x</p>", "", ""), "abc");
+        let base = doc.find("html,body{margin:0").unwrap();
+        let kit = doc.find(".fx-card").unwrap();
+        let page = doc.find("p{color:red}").unwrap();
+        assert!(base < kit && kit < page, "a page's own css overrides the kit");
+        for token in ["--surface", "--c1", "--c6", "data-forge-theme=dark"] {
+            assert!(doc.contains(token), "{token}");
+        }
+    }
+
+    #[test]
+    fn the_bridge_wires_tabs_and_reports_the_height() {
+        let script = bridge_script("n");
+        for needle in [".fx-tab[data-tab]", ".fx-panel[data-panel]", "resize:h", "ResizeObserver", "aria-selected"] {
+            assert!(script.contains(needle), "{needle}");
+        }
+        assert!(MIN_AUTO_HEIGHT < MAX_AUTO_HEIGHT);
+    }
+
+    #[test]
+    fn every_kit_class_is_documented_and_every_documented_class_exists() {
+        let css_classes = fx_classes(UI_KIT_CSS);
+        let doc = include_str!("../../../sidecar/src/ui_examples/kit.md");
+        let doc_classes = fx_classes(doc);
+        assert!(css_classes.len() > 25, "{css_classes:?}");
+        let undocumented: Vec<_> = css_classes.difference(&doc_classes).collect();
+        let imaginary: Vec<_> = doc_classes.difference(&css_classes).collect();
+        assert!(undocumented.is_empty(), "in the css but not in kit.md: {undocumented:?}");
+        assert!(imaginary.is_empty(), "in kit.md but not in the css: {imaginary:?}");
+    }
+
+    /// The `fx-` class names a text mentions (`.fx-card`, `class="fx-card fx-row"`).
+    fn fx_classes(text: &str) -> std::collections::BTreeSet<String> {
+        let mut found = std::collections::BTreeSet::new();
+        let bytes: Vec<char> = text.chars().collect();
+        let mut i = 0;
+        while i + 3 < bytes.len() {
+            let boundary = i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == '-' || bytes[i - 1] == '_');
+            if boundary && bytes[i] == 'f' && bytes[i + 1] == 'x' && bytes[i + 2] == '-' {
+                let mut j = i;
+                while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == '-' || bytes[j] == '_') {
+                    j += 1;
+                }
+                found.insert(bytes[i..j].iter().collect::<String>().trim_end_matches('-').to_string());
+                i = j;
+            } else {
+                i += 1;
+            }
+        }
+        found
     }
 
     fn msg(label: &str, values: serde_json::Value) -> String {
