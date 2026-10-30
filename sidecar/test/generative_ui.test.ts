@@ -34,6 +34,8 @@ describe("generative ui tool", () => {
     expect(text).not.toContain("no network");
     expect(text).toContain("including Korea");
     expect(text).toContain("maplibregl.Map");
+    expect(text).toContain("Special:FilePath");
+    expect(text).toContain("onerror");
     expect(text).not.toContain("leaflet");
     expect(text).not.toContain("tile.openstreetmap.org/{z}");
   });

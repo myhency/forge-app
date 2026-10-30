@@ -98,13 +98,17 @@ const LIBRARY_HOSTS: &str = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.n
 /// The one host a page may talk to: OpenFreeMap serves map styles, tiles, fonts and sprites for the whole world
 /// with no key and no usage limit. A page can ask it for data, and nothing else on the network.
 const MAP_HOST: &str = "https://tiles.openfreemap.org";
+/// Where a page may show photos from: Wikimedia Commons (free-licensed pictures). `commons.wikimedia.org` is the
+/// `Special:FilePath` address that redirects through `commons.wikimedia.org` to `thumb.wikimedia.org` (or
+/// `upload.wikimedia.org`); all three are needed because every hop of a redirect is checked. Images only: no script, style or connection.
+const PHOTO_HOSTS: &str = "https://upload.wikimedia.org https://thumb.wikimedia.org https://commons.wikimedia.org";
 
 /// Nothing may be sent anywhere but `MAP_HOST`: `default-src 'none'` closes fetch, XHR and WebSocket to every other
 /// address, and there are no frames, forms or navigation. `worker-src blob:` is what the map library's tile
 /// workers run from.
 fn csp() -> String {
     format!(
-        "default-src 'none'; script-src 'unsafe-inline' {LIBRARY_HOSTS}; style-src 'unsafe-inline' {LIBRARY_HOSTS}; connect-src {MAP_HOST}; img-src data: blob: {LIBRARY_HOSTS} {MAP_HOST}; font-src data: {LIBRARY_HOSTS}; worker-src blob:; child-src blob:; media-src data:; base-uri 'none'; form-action 'none'"
+        "default-src 'none'; script-src 'unsafe-inline' {LIBRARY_HOSTS}; style-src 'unsafe-inline' {LIBRARY_HOSTS}; connect-src {MAP_HOST}; img-src data: blob: {LIBRARY_HOSTS} {MAP_HOST} {PHOTO_HOSTS}; font-src data: {LIBRARY_HOSTS}; worker-src blob:; child-src blob:; media-src data:; base-uri 'none'; form-action 'none'"
     )
 }
 
@@ -266,12 +270,20 @@ mod tests {
         assert_eq!(directive("connect-src"), "connect-src https://tiles.openfreemap.org");
         // Workers only from a blob the page's own library makes.
         assert_eq!(directive("worker-src"), "worker-src blob:");
-        let allowed = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "tiles.openfreemap.org"];
+        let allowed = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "tiles.openfreemap.org", "upload.wikimedia.org", "thumb.wikimedia.org", "commons.wikimedia.org"];
         for host in policy.split_whitespace().filter(|part| part.starts_with("https://")) {
             assert!(allowed.contains(&host.trim_start_matches("https://").trim_end_matches(';')), "{host}");
         }
-        // Scripts only from the library hosts, never from the map host.
-        assert!(!directive("script-src").contains("openfreemap"));
+        // Scripts and styles only from the library hosts, never from the map or photo hosts.
+        for kind in ["script-src", "style-src", "font-src"] {
+            let d = directive(kind);
+            assert!(!d.contains("openfreemap") && !d.contains("wikimedia"), "{d}");
+        }
+        // Photos are images only.
+        for host in ["upload.wikimedia.org", "thumb.wikimedia.org", "commons.wikimedia.org"] {
+            assert!(directive("img-src").contains(host), "{host}");
+        }
+        assert!(!directive("connect-src").contains("wikimedia"));
         // The raster tile hosts that limit use or need a key are gone.
         for gone in ["openstreetmap", "arcgisonline", "nationalmap", "cartocdn"] {
             assert!(!policy.contains(gone), "{gone}");
