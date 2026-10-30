@@ -81,11 +81,45 @@ function init(){map=L.map('map',{zoomControl:true,scrollWheelZoom:false}).setVie
     "jsExpressions": "init()",
 }
 
+TILES = {
+    "initialHeight": 560,
+    "css": "table{border-collapse:collapse;width:100%}td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:13px}img{width:96px;height:96px;object-fit:cover;border:1px solid var(--line);border-radius:6px;background:var(--line)}.ok{color:#30a46c;font-weight:600}.no{color:#e5484d;font-weight:600}",
+    "html": "<table id='t'></table>",
+    "jsFunctions": """
+var Z=11,X=1746,Y=793;
+var P=[['OpenStreetMap (a)','https://a.tile.openstreetmap.org/'+Z+'/'+X+'/'+Y+'.png'],['OpenStreetMap (plain)','https://tile.openstreetmap.org/'+Z+'/'+X+'/'+Y+'.png'],['CARTO Voyager','https://a.basemaps.cartocdn.com/rastertiles/voyager/'+Z+'/'+X+'/'+Y+'.png'],['CARTO Light','https://a.basemaps.cartocdn.com/light_all/'+Z+'/'+X+'/'+Y+'.png'],['Esri World Imagery','https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+Z+'/'+Y+'/'+X],['Esri World Street Map','https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/'+Z+'/'+Y+'/'+X],['USGS Imagery Topo','https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/'+Z+'/'+Y+'/'+X]];
+function run(){var t=document.getElementById('t');P.forEach(function(p){var tr=document.createElement('tr');tr.innerHTML='<td>'+p[0]+'</td><td class=\\"im\\"></td><td class=\\"st\\">loading...</td>';t.appendChild(tr);var im=new Image();im.onload=function(){tr.querySelector('.st').innerHTML='<span class=\\"ok\\">loaded '+im.naturalWidth+'x'+im.naturalHeight+'</span>'};im.onerror=function(){tr.querySelector('.st').innerHTML='<span class=\\"no\\">failed</span>'};tr.querySelector('.im').appendChild(im);im.src=p[1]})}
+""",
+    "jsExpressions": "run()",
+}
+
+def _korea():
+    page = dict(MAP)
+    js = page["jsFunctions"]
+    start = js.index("var S=[")
+    end = js.index("];", start) + 2
+    stops = ("var S=[{n:'Seoul',ll:[37.5665,126.978],t:'Gyeongbokgung Palace, Bukchon and the Han River.'},"
+             "{n:'Gyeongju',ll:[35.8562,129.2247],t:'Bulguksa Temple and the royal tombs of Silla.'},"
+             "{n:'Busan',ll:[35.1796,129.0756],t:'Haeundae Beach, Gamcheon Culture Village and Jagalchi Market.'},"
+             "{n:'Jeju',ll:[33.4996,126.5312],t:'Hallasan, volcanic coast and the Seongsan Sunrise Peak.'}];")
+    js = js[:start] + stops + js[end:]
+    js = js.replace("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:17,attribution:'Imagery: Esri, Maxar, Earthstar Geographics'}",
+                    "https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}")
+    js = js.replace("setView([36.3,-121.6],8)", "setView([36.0,127.8],7)").replace("i===0?11:10", "i===0?11:10")
+    page["jsFunctions"] = js
+    page["html"] = page["html"].replace("Basemap: Esri World Imagery.", "Basemap: OpenStreetMap.").replace("California Highway 1", "Korea road trip")
+    return page
+
+
+KOREA = _korea()
+
 SAMPLES = (
     ("00000000-0000-4000-8000-000000000501", "3D plane", PLANE, "Rotate the airplane with the sliders, or press Play.", 20),
     ("00000000-0000-4000-8000-000000000502", "Tables and charts", CHART, "Here is the comparison; press the button to see it as a chart.", 19),
     ("00000000-0000-4000-8000-000000000503", "Bill splitter", BILL, "Change the total, tip and group size.", 18),
     ("00000000-0000-4000-8000-000000000504", "Coastal trip", MAP, "Select a stop or replay the trip.", 17),
+    ("00000000-0000-4000-8000-000000000505", "Korea tiles", TILES, "Seoul tile (z11) from each allowed host.", 16),
+    ("00000000-0000-4000-8000-000000000506", "Korea trip", KOREA, "Seoul, Gyeongju, Busan and Jeju on an OpenStreetMap basemap.", 15),
 )
 
 

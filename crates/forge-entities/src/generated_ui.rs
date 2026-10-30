@@ -97,7 +97,7 @@ pub fn generated_ui_of(call: &ToolCall) -> Option<GeneratedUi> {
 const LIBRARY_HOSTS: &str = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com";
 /// Hosts a page may show map tiles from. A page can only fetch images from here and from the library hosts, none of
 /// which an attacker controls, so an image address cannot carry data out.
-const TILE_HOSTS: &str = "https://basemap.nationalmap.gov https://server.arcgisonline.com https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://*.basemaps.cartocdn.com";
+const TILE_HOSTS: &str = "https://basemap.nationalmap.gov https://server.arcgisonline.com https://*.tile.openstreetmap.org https://tile.openstreetmap.org";
 
 /// Nothing may be sent: no connections (`default-src 'none'` covers fetch, XHR and WebSocket), no frames, no forms,
 /// no navigation. A page draws with what it carries plus libraries and map tiles from the lists above.
@@ -262,7 +262,7 @@ mod tests {
         assert!(!policy.contains("'unsafe-eval'") && !policy.contains(" * ") && !policy.contains("https: "), "{policy}");
         let hosts: Vec<&str> = policy.split_whitespace().filter(|part| part.starts_with("https://")).collect();
         assert!(!hosts.is_empty());
-        let allowed = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "basemap.nationalmap.gov", "server.arcgisonline.com", "*.tile.openstreetmap.org", "tile.openstreetmap.org", "*.basemaps.cartocdn.com"];
+        let allowed = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "basemap.nationalmap.gov", "server.arcgisonline.com", "*.tile.openstreetmap.org", "tile.openstreetmap.org"];
         for host in hosts {
             assert!(allowed.contains(&host.trim_start_matches("https://").trim_end_matches(';')), "{host}");
         }
