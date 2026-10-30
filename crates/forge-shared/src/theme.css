@@ -468,6 +468,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; word-break: 
 .code-run { display: none; appearance: none; position: absolute; top: 6px; right: 34px; border: none; background: var(--bg-card); color: var(--fg-muted); border-radius: 6px; padding: 2px 6px; cursor: pointer; opacity: 0; transition: opacity 0.12s; }
 html[data-code-run="on"] .messages .code-run { display: inline-block; }
 .code-wrap:hover .code-run { opacity: 1; }
+/* Room for the two buttons, so a short line of a narrow block does not run under them. */
+html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { padding-right: 64px; }
 .run-box { width: fit-content; min-width: 280px; max-width: 100%; margin: -4px 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
 .run-out { margin: 0; padding: 8px 12px; max-height: 240px; overflow: auto; font-family: var(--mono); font-size: 12px; color: var(--fg-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .run-foot { display: flex; align-items: center; gap: 12px; padding: 4px 8px 6px 12px; font-family: var(--mono); font-size: 11px; color: var(--fg-muted); }

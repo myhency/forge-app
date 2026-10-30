@@ -2666,6 +2666,8 @@ impl Workspace {
         crate::details::forget_card_flags(&mut folded.write(), id);
         let mut counts = self.change_counts;
         counts.write().remove(&id);
+        let mut runs = self.code_runs;
+        runs.write().remove(&id);
         let mut outputs = self.outputs;
         outputs.write().forget(id);
         let mut file_lists = self.file_lists;

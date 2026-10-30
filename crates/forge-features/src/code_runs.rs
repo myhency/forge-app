@@ -108,7 +108,7 @@ impl CodeRuns {
         inner.next_id += 1;
         inner.runs.push(Run { id, block: block.to_string(), state: RunState::Waiting, typed: false, raw: String::new(), created: now, reported: false, ended_ms: None });
         while inner.runs.len() > KEPT_RUNS {
-            let Some(position) = inner.runs.iter().position(|run| !run.state.is_open()) else { break };
+            let Some(position) = inner.runs.iter().position(|run| !run.state.is_open() && run.reported) else { break };
             inner.runs.remove(position);
         }
         id
@@ -467,8 +467,24 @@ mod tests {
             runs.start(&format!("echo {n}"), Instant::now());
         }
         runs.expire(Instant::now() + Duration::from_secs(60));
+        // Only runs the model has been told about are let go.
+        assert_eq!(runs.take_finished().len(), 60);
         runs.start("echo last", Instant::now());
         assert!(runs.snapshot().len() <= 50);
+    }
+
+    #[test]
+    fn pruning_keeps_a_run_the_model_has_not_been_told_about() {
+        let runs = CodeRuns::default();
+        let t0 = Instant::now();
+        runs.start("echo first", t0);
+        runs.expire(t0 + Duration::from_secs(60));
+        // The first has ended but nobody has taken it yet; fifty more must not push it out.
+        for n in 0..60 {
+            runs.start(&format!("echo {n}"), t0 + Duration::from_secs(60));
+        }
+        let told = runs.take_finished();
+        assert!(told.iter().any(|run| run.block == "echo first"), "the ended run was dropped before it was reported");
     }
 
     #[test]
