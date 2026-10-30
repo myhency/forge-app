@@ -64,6 +64,12 @@ enum Escape {
     Osc(Vec<u8>),
     // In an OSC, after an ESC that may end it.
     OscEnding(Vec<u8>),
+    // After `ESC (` and the like: one more byte names a character set and is dropped.
+    Charset,
+    // In a device control, application command, privacy message or start-of-string, until BEL or `ESC \`.
+    Str,
+    // In one of those, after an ESC that may end it.
+    StrEnding,
 }
 
 impl MarkerScanner {
@@ -88,7 +94,8 @@ impl MarkerScanner {
                         self.flush_line(&mut events);
                     }
                     b'\r' => self.return_seen = true,
-                    0..=0x08 | 0x0a..=0x1f | 0x7f => {}
+                    0x08 => self.backspace(),
+                    0..=0x07 | 0x0a..=0x1f | 0x7f => {}
                     _ => {
                         if std::mem::take(&mut self.return_seen) {
                             self.line.clear();
@@ -102,12 +109,7 @@ impl MarkerScanner {
                         }
                     }
                 },
-                Escape::Seen => match byte {
-                    b'[' => self.escape = Escape::Csi(Vec::new()),
-                    b']' => self.escape = Escape::Osc(Vec::new()),
-                    // A two-byte sequence (`ESC =`, `ESC 7`…) is dropped whole.
-                    _ => {}
-                },
+                Escape::Seen => self.after_escape(byte),
                 Escape::Csi(mut params) => {
                     if (0x40..=0x7e).contains(&byte) {
                         // A shell turns bracketed paste on again for each new prompt. A prompt that comes while a run
@@ -138,9 +140,46 @@ impl MarkerScanner {
                         self.finish_osc(&body, &mut events);
                     }
                 }
+                Escape::Charset => {}
+                Escape::Str => match byte {
+                    0x07 => {}
+                    0x1b => self.escape = Escape::StrEnding,
+                    _ => self.escape = Escape::Str,
+                },
+                // The ESC may start the end marker, so an unterminated string cannot hide it.
+                Escape::StrEnding => {
+                    if byte != b'\\' {
+                        self.after_escape(byte);
+                    }
+                }
             }
         }
         events
+    }
+
+    // What follows an ESC.
+    fn after_escape(&mut self, byte: u8) {
+        self.escape = match byte {
+            b'[' => Escape::Csi(Vec::new()),
+            b']' => Escape::Osc(Vec::new()),
+            b'(' | b')' | b'*' | b'+' | b'-' | b'.' | b'/' | b'#' | b'%' => Escape::Charset,
+            b'P' | b'_' | b'^' | b'X' => Escape::Str,
+            // A two-byte sequence (`ESC =`, `ESC 7`…) is dropped whole.
+            _ => Escape::None,
+        };
+    }
+
+    // Takes back the last character of the line (a progress bar draws and erases with it).
+    fn backspace(&mut self) {
+        if std::mem::take(&mut self.return_seen) {
+            self.line.clear();
+        }
+        while let Some(byte) = self.line.pop() {
+            // Continuation bytes belong to the character whose first byte comes next.
+            if byte & 0xc0 != 0x80 {
+                break;
+            }
+        }
     }
 
     fn finish_osc(&mut self, body: &[u8], events: &mut Vec<RunEvent>) {
@@ -313,6 +352,33 @@ mod tests {
         let input = format!("{START}10%\r50%\r100%\n{END_0}");
         let events = merged(feed_all(input.as_bytes(), input.len()));
         assert_eq!(events[1], RunEvent::Text("100%\n".into()));
+    }
+
+    #[test]
+    fn a_backspace_takes_back_the_last_character_of_the_line() {
+        let input = format!("{START}ab\x08c\n한\x08x\n\x08\x08y\n{END_0}");
+        let events = merged(feed_all(input.as_bytes(), input.len()));
+        assert_eq!(events[1], RunEvent::Text("ac\nx\ny\n".into()));
+        let input = format!("{START}[##  ]\x08\x08\x08\x08#\x08\x08 \n{END_0}");
+        assert_eq!(merged(feed_all(input.as_bytes(), input.len()))[1], RunEvent::Text("[ \n".into()));
+    }
+
+    #[test]
+    fn a_character_set_code_leaves_no_stray_character() {
+        let input = format!("{START}a\x1b(Bb\x1b)0c\n{END_0}");
+        for step in [input.len(), 1, 2] {
+            assert_eq!(merged(feed_all(input.as_bytes(), step))[1], RunEvent::Text("abc\n".into()), "step {step}");
+        }
+    }
+
+    #[test]
+    fn a_device_control_string_is_dropped_whole_and_does_not_hide_the_end_marker() {
+        let input = format!("{START}a\x1bP1$r0m\x1b\\b\x1b_note\x07c\n\x1bPnever closed{END_0}");
+        for step in [input.len(), 1, 3] {
+            let events = merged(feed_all(input.as_bytes(), step));
+            assert_eq!(events[1], RunEvent::Text("abc\n".into()), "step {step}");
+            assert_eq!(events.last(), Some(&RunEvent::Ended { id: 7, code: 0 }), "step {step}");
+        }
     }
 
     #[test]
