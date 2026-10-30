@@ -337,7 +337,7 @@ pub struct AppConfig {
     #[serde(default = "default_true")]
     pub turn_tools: bool,
     /// Whether Claude gets the `generate_sandboxed_ui` tool: an interactive page drawn in the chat.
-    #[serde(default = "default_true")]
+    #[serde(default = "default_generative_ui")]
     pub generative_ui: bool,
     #[serde(default)]
     pub appearance: Appearance,
@@ -372,6 +372,12 @@ pub struct AppConfig {
 
 fn default_true() -> bool {
     true
+}
+
+/// On, except on Windows: the frame check that keeps a page away from the app's IPC handler is only proven
+/// where wry reports the sending frame's address (macOS), so there the person turns it on.
+fn default_generative_ui() -> bool {
+    cfg!(not(windows))
 }
 
 // A value this Forge does not know (a hand edit, or a newer Forge) reads as the default, so the
@@ -419,7 +425,7 @@ impl Default for AppConfig {
             allow_bypass_mode: false,
             dynamic_workflows: false,
             turn_tools: true,
-            generative_ui: true,
+            generative_ui: default_generative_ui(),
             appearance: Appearance::default(),
             notifications: NotificationPrefs::default(),
             attention_bounce: false,
@@ -831,7 +837,7 @@ mod tests {
     #[test]
     fn generative_ui_is_on_for_a_config_written_before_the_switch_existed() {
         let config: AppConfig = serde_json::from_str("{}").unwrap();
-        assert!(config.generative_ui);
+        assert_eq!(config.generative_ui, cfg!(not(windows)));
         let off: AppConfig = serde_json::from_str(r#"{"generative_ui": false}"#).unwrap();
         assert!(!off.generative_ui);
     }

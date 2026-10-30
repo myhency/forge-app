@@ -7,7 +7,7 @@ Claude can call `mcp__forge_ui__generate_sandboxed_ui` (`initialHeight`, `placeh
 
 ## Isolation (checked in the real window, 2026-10-30)
 - `fetch`, `window.parent.document`, `localStorage`: blocked.
-- IPC: wry reports the sending frame's URL, and for a srcdoc frame it is `about:srcdoc`. The vendored `dioxus-desktop` (`vendor/dioxus-desktop`, `[patch.crates-io]`) drops every IPC message whose URL is not `dioxus://`, `http(s)://dioxus.`, and logs `forge: dropped an IPC message from about:srcdoc`. Forge's own clicks still work. Windows reports the frame differently and was not run.
+- IPC: wry reports the sending frame's URL, and for a srcdoc frame it is `about:srcdoc`. The vendored `dioxus-desktop` (`vendor/dioxus-desktop`, `[patch.crates-io]`) drops every IPC message whose URL is not `dioxus://`, `http(s)://dioxus.`, and logs `forge: dropped an IPC message from about:srcdoc`. Forge's own clicks still work. On Windows wry reports the message's `Source` (the top-level document, not clearly the frame), so the check may not tell a frame from the app: the setting is therefore off by default on Windows until someone proves it with `add_generated_ui_samples.py`.
 - Links: the page's bridge script cancels every click on an `<a>`.
 - Known gap: a page can still set `location.href` to an http(s) address, which Dioxus' navigation handler opens in the system browser (same as the html file preview).
 
