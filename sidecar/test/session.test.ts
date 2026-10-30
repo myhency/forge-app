@@ -70,7 +70,7 @@ describe("SidecarSession", () => {
     };
     await new SidecarSession(queryFn, () => {}).handle({ ...startCommand, generative_ui: true, allowed_tools: ["Read"] });
     expect(Object.keys(captured!.mcpServers)).toEqual(["forge_ui"]);
-    expect(captured!.allowedTools).toEqual(["Read", "mcp__forge_ui__generate_sandboxed_ui"]);
+    expect(captured!.allowedTools).toEqual(["Read", "mcp__forge_ui__ui_guide", "mcp__forge_ui__generate_sandboxed_ui"]);
   });
 
   it("adds nothing when turn_tools is off or missing (an older parent)", async () => {

@@ -47,6 +47,6 @@ h1, h2, h3, p { margin: 0; }
 .fx-check input:checked + span { color: var(--muted); text-decoration: line-through; }
 .fx-bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
 .fx-bar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .3s ease; }
-.fx-chart { width: 100%; height: auto; display: block; }
+.fx-chart { width: 100%; max-width: 560px; height: auto; display: block; margin: 0 auto; }
 .fx-c1 { color: var(--c1); } .fx-c2 { color: var(--c2); } .fx-c3 { color: var(--c3); }
 .fx-c4 { color: var(--c4); } .fx-c5 { color: var(--c5); } .fx-c6 { color: var(--c6); }

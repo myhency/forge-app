@@ -32,3 +32,14 @@ Written 2026-10-30. The OpenAI page (https://openai.com/ko-KR/index/gpt-6-for-ev
 - Prompting alone caps out; OpenAI's quality comes partly from training and evaluation we cannot copy, so the kit plus examples plus an eval loop is the realistic substitute.
 - The kit adds a stable style surface that must be kept in sync with Forge's themes.
 - Each item that opens a new capability (image tool, streaming) widens what a page can trigger; keep the frame policy and the nonce-checked bridge as the only ways out.
+
+## Status (2026-10-31): items 1 to 4 built
+Plan: `docs/plans/2026-10-31-0900-feat-generative-ui-quality-plan.md`.
+1. **UI kit**: `crates/forge-entities/src/ui_kit.css` is injected into every frame (theme tokens `--surface`, `--c1`..`--c6`; tabs wired by the bridge script). A test keeps it in step with `sidecar/src/ui_examples/kit.md`.
+2. **Auto height**: the frame reports its body height and the card follows it (80 to 1400 px).
+3. **Reviewed examples**: seven pages under `sidecar/src/ui_examples/` (authored in `scripts/make_ui_examples.py`), served by the `ui_guide` tool, which the `generate_sandboxed_ui` description tells Claude to call first.
+4. **Evaluation loop**: `sidecar/scripts/eval_ui.mjs` (real SDK, costs tokens) writes one file per prompt of `scripts/harness/ui_eval_prompts.json`; `scripts/harness/ui_lint.py report <run>` scores them; `scripts/harness/add_eval_samples.py` shows them in the window.
+
+First real run (Sonnet 5.5, 3 prompts, about $0.21): both page prompts called `ui_guide` first (topics `calculator`, `map_trip`) and produced pages that scored 100; the plain question was answered in text. Three prompts are a smoke test, not a benchmark: run all 20 before and after any change to the tool description or the kit, and compare models (Opus, Haiku) the same way.
+
+Still open from the list: 5 (page errors back to Claude), 6 (streaming draw), 7 (image search tool), 8 (visuals setting).
