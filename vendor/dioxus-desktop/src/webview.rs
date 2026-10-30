@@ -312,6 +312,7 @@ impl WebviewInstance {
                 // Forge patch: only the app's own page may talk to the app. wry reports the URL of the frame
                 // that sent the message, so a sandboxed iframe (about:srcdoc, data:, blob:) is dropped here.
                 if !crate::ipc_origin_allowed(&payload.uri().to_string()) {
+                    eprintln!("forge: dropped an IPC message from {}", payload.uri());
                     return;
                 }
                 // defer the event to the main thread
