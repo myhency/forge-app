@@ -336,6 +336,9 @@ pub struct AppConfig {
     /// next-step card at the end of a turn.
     #[serde(default = "default_true")]
     pub turn_tools: bool,
+    /// Whether Claude gets the `generate_sandboxed_ui` tool: an interactive page drawn in the chat.
+    #[serde(default = "default_true")]
+    pub generative_ui: bool,
     #[serde(default)]
     pub appearance: Appearance,
     #[serde(default)]
@@ -416,6 +419,7 @@ impl Default for AppConfig {
             allow_bypass_mode: false,
             dynamic_workflows: false,
             turn_tools: true,
+            generative_ui: true,
             appearance: Appearance::default(),
             notifications: NotificationPrefs::default(),
             attention_bounce: false,
@@ -822,6 +826,14 @@ mod tests {
         assert!(!config.allow_bypass_mode);
         assert!(!config.dynamic_workflows, "workflows stay off for a config written before the switch existed");
         assert!(AppConfig::default().prompt_suggestions, "the manual Default agrees with the file default");
+    }
+
+    #[test]
+    fn generative_ui_is_on_for_a_config_written_before_the_switch_existed() {
+        let config: AppConfig = serde_json::from_str("{}").unwrap();
+        assert!(config.generative_ui);
+        let off: AppConfig = serde_json::from_str(r#"{"generative_ui": false}"#).unwrap();
+        assert!(!off.generative_ui);
     }
 
     #[test]

@@ -305,6 +305,11 @@ fn CodeSection() -> Element {
             description: tr!("Claude shows its plan as a list while it works and ends a turn with a summary and a question."),
             Switch { on: settings.turn_tools(), onchange: move |on| settings.set_turn_tools(on) }
         }
+        SettingRow {
+            title: tr!("Interactive pages"),
+            description: tr!("Claude can draw a small interactive page in the chat, such as a calculator or a chart, when text would explain less."),
+            Switch { on: settings.generative_ui(), onchange: move |on| settings.set_generative_ui(on) }
+        }
         if cfg!(target_os = "macos") {
             SettingRow {
                 title: tr!("Bounce the Dock icon"),

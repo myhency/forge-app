@@ -56,6 +56,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::AllowBypass(on) => config.allow_bypass_mode = on,
         CodeChange::DynamicWorkflows(on) => config.dynamic_workflows = on,
         CodeChange::TurnTools(on) => config.turn_tools = on,
+        CodeChange::GenerativeUi(on) => config.generative_ui = on,
         CodeChange::WorktreeLocation(value) => config.worktree_location = value,
         CodeChange::AutoArchiveDays(days) => config.auto_archive_days = days,
         CodeChange::Theme(value) => config.appearance.theme = value,
@@ -104,6 +105,7 @@ pub(crate) enum CodeChange {
     AllowBypass(bool),
     DynamicWorkflows(bool),
     TurnTools(bool),
+    GenerativeUi(bool),
     WorktreeLocation(WorktreeLocation),
     AutoArchiveDays(Option<u32>),
     Theme(Theme),
@@ -297,6 +299,14 @@ impl Settings {
 
     pub fn set_turn_tools(&self, on: bool) {
         self.change_code(CodeChange::TurnTools(on));
+    }
+
+    pub fn generative_ui(&self) -> bool {
+        self.saved.read().generative_ui
+    }
+
+    pub fn set_generative_ui(&self, on: bool) {
+        self.change_code(CodeChange::GenerativeUi(on));
     }
 
     pub fn dynamic_workflows(&self) -> bool {
@@ -690,6 +700,7 @@ impl Settings {
             current.allow_bypass_mode = config.allow_bypass_mode;
             current.dynamic_workflows = config.dynamic_workflows;
             current.turn_tools = config.turn_tools;
+            current.generative_ui = config.generative_ui;
             current.worktree_location = config.worktree_location;
             current.auto_archive_days = config.auto_archive_days;
             current.appearance = config.appearance;
@@ -813,6 +824,15 @@ mod tests {
         assert!(config.allow_bypass_mode);
         assert!(config.dynamic_workflows);
         assert_eq!(config.model, None, "nothing else is touched");
+    }
+
+    #[test]
+    fn the_generative_ui_switch_changes_only_that_value() {
+        let mut config = AppConfig::default();
+        assert!(config.generative_ui);
+        apply_code_change(&mut config, CodeChange::GenerativeUi(false));
+        assert!(!config.generative_ui);
+        assert!(config.turn_tools);
     }
 
     #[test]

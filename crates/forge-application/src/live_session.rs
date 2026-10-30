@@ -492,7 +492,7 @@ mod tests {
 
         assert_eq!(
             started_defaults(control.calls()),
-            SessionDefaults { output_style: Some(OutputStyle::Concise), prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, turn_tools: true }
+            SessionDefaults { output_style: Some(OutputStyle::Concise), prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, turn_tools: true, generative_ui: true }
         );
     }
 

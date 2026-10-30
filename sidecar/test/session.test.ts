@@ -62,6 +62,17 @@ describe("SidecarSession", () => {
     expect(captured!.allowedTools).toEqual(["Read", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
   });
 
+  it("adds the forge_ui server and allows its tool when generative_ui is on", async () => {
+    let captured: Record<string, any> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+    await new SidecarSession(queryFn, () => {}).handle({ ...startCommand, generative_ui: true, allowed_tools: ["Read"] });
+    expect(Object.keys(captured!.mcpServers)).toEqual(["forge_ui"]);
+    expect(captured!.allowedTools).toEqual(["Read", "mcp__forge_ui__generate_sandboxed_ui"]);
+  });
+
   it("adds nothing when turn_tools is off or missing (an older parent)", async () => {
     const seen: Array<Record<string, any>> = [];
     const queryFn: QueryFn = ({ options }) => {
