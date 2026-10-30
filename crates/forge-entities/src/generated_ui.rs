@@ -93,8 +93,19 @@ pub fn generated_ui_of(call: &ToolCall) -> Option<GeneratedUi> {
     Some(ui)
 }
 
-/// Nothing may be loaded or sent: no network, no frames, no forms, no navigation. The page draws with what it carries.
-const CSP: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:; base-uri 'none'; form-action 'none'";
+/// Script and style hosts a page may load libraries from (three.js, Leaflet, chart libraries).
+const LIBRARY_HOSTS: &str = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com";
+/// Hosts a page may show map tiles from. A page can only fetch images from here and from the library hosts, none of
+/// which an attacker controls, so an image address cannot carry data out.
+const TILE_HOSTS: &str = "https://basemap.nationalmap.gov https://server.arcgisonline.com https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://*.basemaps.cartocdn.com";
+
+/// Nothing may be sent: no connections (`default-src 'none'` covers fetch, XHR and WebSocket), no frames, no forms,
+/// no navigation. A page draws with what it carries plus libraries and map tiles from the lists above.
+fn csp() -> String {
+    format!(
+        "default-src 'none'; script-src 'unsafe-inline' {LIBRARY_HOSTS}; style-src 'unsafe-inline' {LIBRARY_HOSTS}; img-src data: blob: {LIBRARY_HOSTS} {TILE_HOSTS}; font-src data: {LIBRARY_HOSTS}; media-src data:; base-uri 'none'; form-action 'none'"
+    )
+}
 
 /// The colours a page may use. They follow the app's theme: the parent tells the frame (`forgeTheme`), and the
 /// bridge script sets `data-forge-theme` on the root.
@@ -123,7 +134,8 @@ fn bridge_script(nonce: &str) -> String {
 /// The document the frame shows. `nonce` is this card's token.
 pub fn page_document(ui: &GeneratedUi, nonce: &str) -> String {
     format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"{CSP}\"><style>{THEME_CSS}{BASE_CSS}{css}</style></head><body>{html}<script>{bridge}</script><script>{functions}</script><script>{expressions}</script></body></html>",
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"{csp}\"><style>{THEME_CSS}{BASE_CSS}{css}</style></head><body>{html}<script>{bridge}</script><script>{functions}</script><script>{expressions}</script></body></html>",
+        csp = csp(),
         css = guard_style(&ui.css),
         html = ui.html,
         bridge = bridge_script(nonce),
@@ -236,8 +248,27 @@ mod tests {
         let expressions = doc.find("f()</script>").unwrap();
         assert!(csp < style && style < html && html < bridge && bridge < functions && functions < expressions);
         assert!(doc.contains("default-src 'none'"));
-        assert!(!doc.contains("connect-src"), "the default of none applies to connections");
         assert!(doc.contains("color-scheme:light") && doc.contains("data-forge-theme=dark"));
+    }
+
+    #[test]
+    fn the_policy_opens_only_libraries_and_tiles_and_keeps_every_way_out_closed() {
+        let policy = csp();
+        for closed in ["connect-src", "frame-src", "child-src", "worker-src", "object-src", "navigate-to"] {
+            assert!(!policy.contains(closed), "{closed} must fall back to default-src 'none'");
+        }
+        assert!(policy.starts_with("default-src 'none'; "));
+        assert!(policy.contains("form-action 'none'") && policy.contains("base-uri 'none'"));
+        assert!(!policy.contains("'unsafe-eval'") && !policy.contains(" * ") && !policy.contains("https: "), "{policy}");
+        let hosts: Vec<&str> = policy.split_whitespace().filter(|part| part.starts_with("https://")).collect();
+        assert!(!hosts.is_empty());
+        let allowed = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "basemap.nationalmap.gov", "server.arcgisonline.com", "*.tile.openstreetmap.org", "tile.openstreetmap.org", "*.basemaps.cartocdn.com"];
+        for host in hosts {
+            assert!(allowed.contains(&host.trim_start_matches("https://").trim_end_matches(';')), "{host}");
+        }
+        // Scripts may come only from the library hosts; images also from the tile hosts.
+        let script = policy.split("; ").find(|d| d.starts_with("script-src")).unwrap();
+        assert!(script.contains("cdnjs.cloudflare.com") && !script.contains("tile"));
     }
 
     #[test]

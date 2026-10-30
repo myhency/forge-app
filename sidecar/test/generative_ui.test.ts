@@ -25,6 +25,15 @@ describe("generative ui tool", () => {
     expect(tool()._meta?.["anthropic/alwaysLoad"]).toBe(true);
   });
 
+  it("names the allowlist and the libraries the page may use, and asks for quality", () => {
+    const text = tool().description;
+    for (const word of ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "basemap.nationalmap.gov", "server.arcgisonline.com", "three.js", "Leaflet"]) {
+      expect(text).toContain(word);
+    }
+    expect(text).toContain("polished product");
+    expect(text).not.toContain("no network");
+  });
+
   it("lists the parameters in the order the page streams", () => {
     expect(Object.keys((tool().inputSchema as any).shape ?? tool().inputSchema)).toEqual([
       "initialHeight",
