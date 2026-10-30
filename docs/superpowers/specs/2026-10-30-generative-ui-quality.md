@@ -43,3 +43,21 @@ Plan: `docs/plans/2026-10-31-0900-feat-generative-ui-quality-plan.md`.
 First real run (Sonnet 5.5, 3 prompts, about $0.21): both page prompts called `ui_guide` first (topics `calculator`, `map_trip`) and produced pages that scored 100; the plain question was answered in text. Three prompts are a smoke test, not a benchmark: run all 20 before and after any change to the tool description or the kit, and compare models (Opus, Haiku) the same way.
 
 Still open from the list: 5 (page errors back to Claude), 6 (streaming draw), 7 (image search tool), 8 (visuals setting).
+
+## First full evaluation (2026-10-31): 20 prompts, Sonnet 5.5 and Haiku 5.5 (Opus not run, by request)
+Run with `node sidecar/scripts/eval_ui.mjs --out DIR --model ID`, scored with `scripts/harness/ui_lint.py report DIR`. 16 prompts want a page, 4 want plain text.
+
+| | Sonnet 5.5 | Haiku 5.5 |
+|---|---|---|
+| Right page-or-text choice | 20 / 20 | 19 / 20 |
+| Pages made when wanted | 16 / 16 | 15 / 16 |
+| Called `ui_guide` first | 16 / 16 | 15 / 15 |
+| Mean lint score | 99.4 | 98.7 |
+| Cost for the 20 prompts | $1.53 | $0.11 |
+| Median time per page | about 26 s | about 25 s |
+
+- Haiku used the tool and the guide as well as Sonnet did, unlike its earlier habit of ignoring Forge's turn tools. Its one miss: it answered the Sunday-roast plan as a text checklist.
+- Lint findings were minor: `height` (an `initialHeight` outside 100-800) and `inline-script` (a `<script>` in `html`) on `monty`, `compound`, `seasons` and `solar_system`.
+- `temp_chart` shows a tool error in both runs: the model tried another tool for real temperature data and the evaluation refuses everything but the two forge_ui tools. It is an artefact of the harness, not of Forge.
+- The lint score checks structure (hosts, kit use, height, blocked providers), not looks. Looked at in the window: Haiku's solar system (lit planets, Saturn's rings, orbits, Hangul labels, star field) and its Seoul line 2 map (five stations, Hangul river name) both read as finished pages; Sonnet's Korea road trip map earlier did too.
+- Not a benchmark of taste: 20 prompts, one run each, one rater. Re-run before and after any change to the tool description, the kit or the examples.
