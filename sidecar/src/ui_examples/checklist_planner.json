@@ -1,0 +1,15 @@
+{
+  "name": "checklist_planner",
+  "title": "A plan with a checklist",
+  "use_for": "A plan someone follows: a quantity that scales the list, steps to tick off, progress, a button to send the result.",
+  "page": {
+    "initialHeight": 560,
+    "placeholderMessages": [
+      "Planning the meal…"
+    ],
+    "css": ".qty button{width:32px;height:32px;padding:0}",
+    "html": "<div class=\"fx-stack\">\n  <div class=\"fx-row fx-spread\">\n    <div><h1 class=\"fx-title\">Sunday roast</h1><p class=\"fx-sub\">Lamb, potatoes and greens, timed backwards from serving.</p></div>\n    <div class=\"fx-row qty\"><button class=\"fx-btn ghost\" id=\"minus\" aria-label=\"Fewer\">−</button><span class=\"fx-value\" id=\"serv\">4 people</span><button class=\"fx-btn ghost\" id=\"plus\" aria-label=\"More\">+</button></div>\n  </div>\n  <div class=\"fx-grid cols-2\">\n    <div class=\"fx-card\"><div class=\"fx-label\">Shopping list</div><table class=\"fx-table\" id=\"shop\"></table></div>\n    <div class=\"fx-card\"><div class=\"fx-row fx-spread\"><span class=\"fx-label\">Timeline</span><span class=\"fx-muted\" id=\"prog\">0 of 5 done</span></div><div class=\"fx-bar\"><span id=\"barfill\" style=\"width:0%\"></span></div><div id=\"steps\"></div></div>\n  </div>\n  <div class=\"fx-row\"><button class=\"fx-btn\" id=\"send\">Send the shopping list</button></div>\n</div>",
+    "jsFunctions": "var ITEMS=[['Leg of lamb',0.5,'kg'],['Potatoes',0.3,'kg'],['Carrots',0.2,'kg'],['Green beans',0.15,'kg'],['Garlic',0.5,'bulb'],['Rosemary',0.5,'bunch']];\nvar STEPS=['Take the lamb out of the fridge (2 h before)','Heat the oven to 200°C and season the lamb','Roast the lamb; add the potatoes after 30 min','Steam the carrots and beans (15 min before)','Rest the lamb 20 min, then carve'];\nvar serv=4;\nfunction q(x){var v=x*serv;return (Math.round(v*10)/10).toString().replace(/\\.0$/,'')}\nfunction shop(){document.getElementById('serv').textContent=serv+(serv===1?' person':' people');document.getElementById('shop').innerHTML=ITEMS.map(function(i){return '<tr><td>'+i[0]+'</td><td class=\"num\">'+q(i[1])+' '+i[2]+'</td></tr>'}).join('')}\nfunction prog(){var all=document.querySelectorAll('#steps input'),done=document.querySelectorAll('#steps input:checked').length;document.getElementById('prog').textContent=done+' of '+all.length+' done';document.getElementById('barfill').style.width=(all.length?done/all.length*100:0)+'%'}\nfunction steps(){document.getElementById('steps').innerHTML=STEPS.map(function(s){return '<label class=\"fx-check\"><input type=\"checkbox\"><span>'+s+'</span></label>'}).join('');document.getElementById('steps').addEventListener('change',prog);prog()}\nfunction send(){forge.send({label:'Shopping list',values:{servings:serv,items:ITEMS.map(function(i){return i[0]+' '+q(i[1])+i[2]}).join(', ').slice(0,190)}})}",
+    "jsExpressions": "document.getElementById('minus').addEventListener('click',function(){serv=Math.max(1,serv-1);shop()});document.getElementById('plus').addEventListener('click',function(){serv=Math.min(20,serv+1);shop()});document.getElementById('send').addEventListener('click',send);shop();steps()"
+  }
+}

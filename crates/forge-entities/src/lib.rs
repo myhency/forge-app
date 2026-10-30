@@ -32,6 +32,8 @@ mod turn;
 mod turn_view;
 mod turn_card_views;
 mod turn_cards;
+mod generated_ui;
+mod generated_ui_view;
 pub mod code_run;
 mod usage_card;
 mod usage_view;
@@ -71,6 +73,8 @@ pub use usage_card::{
     axis_ticks, chart_layout, dashboard_model_label, day_label, heat_level, hour_label, legend_rows, overview_tiles, with_commas, ChartBar,
     ChartLayout, LegendRow, Tile,
 };
+pub use generated_ui::{bridge_message, generated_ui_of, is_ui_call, page_document, GeneratedUi, UiState};
+pub use generated_ui_view::GeneratedUiView;
 pub use turn_cards::{apply, chosen_action, end_card_of, offered, CardMark, plan_of, turn_tool, CardAction, EndCard, Step as PlanStep, StepState, TurnTool};
 pub use usage_view::{format_cost, format_tokens, ring_dash, ring_level, ContextView, ModelLine, RingLevel, UsageView};
 

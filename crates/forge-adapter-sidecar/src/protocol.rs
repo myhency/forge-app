@@ -28,6 +28,7 @@ pub enum SidecarCommand {
         allow_bypass: bool,
         dynamic_workflows: bool,
         turn_tools: bool,
+        generative_ui: bool,
     },
     SendMessage {
         id: String,
@@ -138,6 +139,7 @@ impl SidecarCommand {
             allow_bypass: params.defaults.allow_bypass,
             dynamic_workflows: params.defaults.dynamic_workflows,
             turn_tools: params.defaults.turn_tools,
+            generative_ui: params.defaults.generative_ui,
         }
     }
 
@@ -230,6 +232,7 @@ mod tests {
         assert_eq!(json["allow_bypass"], serde_json::json!(false));
         assert_eq!(json["dynamic_workflows"], serde_json::json!(false));
         assert_eq!(json["turn_tools"], serde_json::json!(true));
+        assert_eq!(json["generative_ui"], serde_json::json!(true));
     }
 
     #[test]
@@ -241,6 +244,7 @@ mod tests {
             allow_bypass: true,
             dynamic_workflows: true,
             turn_tools: false,
+            generative_ui: false,
         };
         let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params)).unwrap();
         assert_eq!(json["output_style"], serde_json::json!("Concise"));
@@ -248,6 +252,7 @@ mod tests {
         assert_eq!(json["allow_bypass"], serde_json::json!(true));
         assert_eq!(json["dynamic_workflows"], serde_json::json!(true));
         assert_eq!(json["turn_tools"], serde_json::json!(false));
+        assert_eq!(json["generative_ui"], serde_json::json!(false));
     }
 
     #[test]
@@ -358,7 +363,8 @@ mod tests {
                 "prompt_suggestions": true,
                 "allow_bypass": false,
                 "dynamic_workflows": false,
-                "turn_tools": true
+                "turn_tools": true,
+                "generative_ui": true
             })
         );
     }

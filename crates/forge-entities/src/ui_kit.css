@@ -1,0 +1,52 @@
+/* The Forge UI kit: what every interactive page starts with. Documented in sidecar/src/ui_examples/kit.md (a test
+   keeps the two in step). Colours come from the theme variables, so light and dark need no page code. */
+body { line-height: 1.5; }
+h1, h2, h3, p { margin: 0; }
+.fx-stack { display: flex; flex-direction: column; gap: 14px; }
+.fx-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fx-spread { justify-content: space-between; }
+.fx-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.fx-grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fx-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fx-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.fx-title { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
+.fx-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.fx-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.fx-muted { color: var(--muted); }
+.fx-badge { display: inline-block; padding: 1px 9px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12px; font-weight: 600; }
+.fx-btn { padding: 7px 14px; border: 0; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+.fx-btn:hover { filter: brightness(1.08); }
+.fx-btn:active { transform: translateY(1px); }
+.fx-btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+.fx-btn.ghost:hover { background: var(--surface); filter: none; }
+.fx-field { display: flex; flex-direction: column; gap: 5px; }
+.fx-value { font-variant-numeric: tabular-nums; font-weight: 650; }
+.fx-input, .fx-select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); min-width: 0; }
+.fx-input:focus, .fx-select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
+.fx-range { width: 100%; accent-color: var(--accent); }
+.fx-stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.fx-stat-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.fx-stat-label { color: var(--muted); font-size: 12px; }
+.fx-table { width: 100%; border-collapse: collapse; }
+.fx-table th { text-align: left; color: var(--muted); font-size: 12px; font-weight: 600; }
+.fx-table th, .fx-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.fx-table td.num, .fx-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.fx-callout { padding: 10px 14px; border-radius: 10px; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.fx-callout.warn { border-left-color: #e5a50a; background: color-mix(in srgb, #e5a50a 12%, transparent); }
+.fx-steps { list-style: none; margin: 0; padding: 0; counter-reset: fxn; display: flex; flex-direction: column; gap: 10px; }
+.fx-steps > li { counter-increment: fxn; display: flex; gap: 10px; align-items: flex-start; }
+.fx-steps > li::before { content: counter(fxn); flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.fx-tabset { display: block; }
+.fx-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 12px; overflow-x: auto; }
+.fx-tab { padding: 8px 14px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.fx-tab:hover { color: var(--fg); }
+.fx-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.fx-panel[hidden] { display: none; }
+.fx-check { display: flex; align-items: center; gap: 9px; padding: 6px 0; cursor: pointer; }
+.fx-check input { width: 17px; height: 17px; accent-color: var(--accent); }
+.fx-check input:checked + span { color: var(--muted); text-decoration: line-through; }
+.fx-bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.fx-bar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .3s ease; }
+.fx-chart { width: 100%; max-width: 560px; height: auto; display: block; margin: 0 auto; }
+.fx-c1 { color: var(--c1); } .fx-c2 { color: var(--c2); } .fx-c3 { color: var(--c3); }
+.fx-c4 { color: var(--c4); } .fx-c5 { color: var(--c5); } .fx-c6 { color: var(--c6); }

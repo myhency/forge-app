@@ -1,0 +1,15 @@
+{
+  "name": "calculator",
+  "title": "Bill splitter",
+  "use_for": "A calculator or planner: a few inputs, a live result, a button that sends it back.",
+  "page": {
+    "initialHeight": 320,
+    "placeholderMessages": [
+      "Setting up the calculator…"
+    ],
+    "css": "",
+    "html": "<div class=\"fx-stack\">\n  <div><h1 class=\"fx-title\">Split the bill</h1><p class=\"fx-sub\">Change the numbers; the share updates as you type.</p></div>\n  <div class=\"fx-grid cols-3\">\n    <label class=\"fx-field\"><span class=\"fx-label\">Total ($)</span><input id=\"total\" class=\"fx-input\" type=\"number\" min=\"0\" step=\"0.01\" value=\"120\"></label>\n    <label class=\"fx-field\"><span class=\"fx-label\">Tip <span id=\"tipv\" class=\"fx-value\">15%</span></span><input id=\"tip\" class=\"fx-range\" type=\"range\" min=\"0\" max=\"30\" value=\"15\"></label>\n    <label class=\"fx-field\"><span class=\"fx-label\">People</span><input id=\"people\" class=\"fx-input\" type=\"number\" min=\"1\" step=\"1\" value=\"4\"></label>\n  </div>\n  <div class=\"fx-grid cols-3\">\n    <div class=\"fx-stat\"><div class=\"fx-stat-value\" id=\"each\">$0.00</div><div class=\"fx-stat-label\">Each pays</div></div>\n    <div class=\"fx-stat\"><div class=\"fx-stat-value\" id=\"tipamt\">$0.00</div><div class=\"fx-stat-label\">Tip in total</div></div>\n    <div class=\"fx-stat\"><div class=\"fx-stat-value\" id=\"grand\">$0.00</div><div class=\"fx-stat-label\">Grand total</div></div>\n  </div>\n  <div class=\"fx-row\"><button class=\"fx-btn\" id=\"send\">Send this split</button><span class=\"fx-muted\">Amounts are rounded to cents.</span></div>\n</div>",
+    "jsFunctions": "function money(x){return '$'+(isFinite(x)?x:0).toFixed(2)}\nfunction read(){var t=Math.max(0,parseFloat(document.getElementById('total').value)||0);var p=+document.getElementById('tip').value;var n=Math.max(1,Math.floor(+document.getElementById('people').value||1));return {t:t,p:p,n:n}}\nfunction calc(){var v=read();var tip=v.t*v.p/100,grand=v.t+tip;document.getElementById('tipv').textContent=v.p+'%';document.getElementById('each').textContent=money(grand/v.n);document.getElementById('tipamt').textContent=money(tip);document.getElementById('grand').textContent=money(grand)}\nfunction send(){var v=read();forge.send({label:'Bill split',values:{total:v.t,tip:v.p+'%',people:v.n,each:((v.t*(1+v.p/100))/v.n).toFixed(2)}})}",
+    "jsExpressions": "['total','tip','people'].forEach(function(id){document.getElementById(id).addEventListener('input',calc)});document.getElementById('send').addEventListener('click',send);calc()"
+  }
+}

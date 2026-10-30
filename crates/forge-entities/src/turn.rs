@@ -14,6 +14,7 @@ use crate::question::AnswerPair;
 use crate::relative_time::relative_time;
 use crate::tool_summary::elapsed_label;
 use forge_domain::TranscriptView;
+use crate::generated_ui_view::GeneratedUiView;
 use crate::turn_card_views::{EndCardView, PlanListView};
 use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolRow, WorkflowItem};
 use crate::workflow_progress::{dot_class, JournalAgent};
@@ -177,6 +178,7 @@ fn TurnItem(
         // Task 6 draws these two.
         Item::PlanList(steps) => rsx! { PlanListView { steps } },
         Item::EndCard(item) => rsx! { EndCardView { item, on_send, marks: card_marks, on_mark: on_card_mark } },
+        Item::GeneratedUi(ui) => rsx! { GeneratedUiView { key: "{ui.id}", ui, on_send } },
         Item::Stopped => rsx! { div { class: "stopped-line", {tr!("Stopped")} } },
         Item::Compacted { before, after } => {
             let label = compacted_label(before, after);

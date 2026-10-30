@@ -59,6 +59,8 @@ export type SidecarCommand =
       dynamic_workflows: boolean;
       // Offers Claude the update_plan and wrap_up tools (a parent that omits it means off).
       turn_tools?: boolean;
+      // Offers Claude the generate_sandboxed_ui tool (a parent that omits it means off).
+      generative_ui?: boolean;
     }
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision; reason?: string }
