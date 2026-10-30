@@ -62,64 +62,86 @@ CHART = {
     "jsFunctions": "function show(){var d=[['Starter',9.67],['Team',6.6],['Business',4.98]],s=document.getElementById('s'),h='';d.forEach(function(r,i){var bh=r[1]*10,x=40+i*120;h+='<rect x=\"'+x+'\" y=\"'+(140-bh)+'\" width=\"70\" height=\"'+bh+'\" rx=\"4\" fill=\"var(--accent)\"/><text x=\"'+(x+35)+'\" y=\"'+(132-bh)+'\" text-anchor=\"middle\" font-size=\"12\" fill=\"var(--fg)\">$'+r[1]+'</text><text x=\"'+(x+35)+'\" y=\"158\" text-anchor=\"middle\" font-size=\"12\" fill=\"var(--muted)\">'+r[0]+'</text>'});s.innerHTML=h;s.style.display='block';document.getElementById('b').style.display='none'}",
 }
 
-MAP = {
-    "initialHeight": 600,
-    "css": """#map{height:340px;border:1px solid var(--line);border-radius:10px}.pin{width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--accent);border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;animation:drop .5s cubic-bezier(.3,1.6,.5,1)}.pin span{transform:rotate(45deg);color:#fff;font:700 13px sans-serif}.pin.on{background:#1f1e1c;transform:rotate(-45deg) scale(1.15)}@keyframes drop{from{opacity:0;margin-top:-40px}to{opacity:1}}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.stop{padding:5px 12px;border:1px solid var(--line);border-radius:16px;background:none;color:var(--fg);cursor:pointer;font-size:13px}.stop.on{background:var(--accent);border-color:var(--accent);color:#fff}.card{margin-top:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;min-height:62px}.card b{display:block;margin-bottom:2px}.card span{color:var(--muted);font-size:13px}.act button{padding:5px 12px;border:0;border-radius:8px;background:var(--line);color:var(--fg);cursor:pointer;margin-right:6px}.note{color:var(--muted);font-size:11px;margin-top:8px}""",
-    "html": """<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"><script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script><div id="map"></div><div class="row" id="stops"></div><div class="card" id="card"><b>California Highway 1</b><span>Press Replay to drop the pins, or pick a stop.</span></div><div class="row act"><button id="rp">Replay</button><button id="ps">Pause</button></div><div class="note">Basemap: Esri World Imagery. Connections are illustrative, not verified driving directions.</div>""",
-    "jsFunctions": """
-var S=[{n:'Santa Cruz',ll:[36.9741,-122.0308],t:'Boardwalk, wharf and surf breaks at Steamer Lane.'},{n:'Monterey',ll:[36.6002,-121.8947],t:'Aquarium, Cannery Row and the Old Fisherman\\'s Wharf.'},{n:'Big Sur',ll:[36.3715,-121.9018],t:'Bixby Creek Bridge and cliffs above the Pacific.'},{n:'San Simeon',ll:[35.6852,-121.1668],t:'Hearst Castle and the elephant seal beaches.'}];
-var map,markers=[],line,timer=null,cur=-1;
-function icon(i,on){return L.divIcon({className:'',html:'<div class=\"pin'+(on?' on':'')+'\"><span>'+(i+1)+'</span></div>',iconSize:[30,30],iconAnchor:[15,30]})}
-function show(i){cur=i;markers.forEach(function(m,j){m.setIcon(icon(j,j===i))});document.querySelectorAll('.stop').forEach(function(b,j){b.className='stop'+(j===i?' on':'')});if(i>=0){document.getElementById('card').innerHTML='<b>'+(i+1)+'. '+S[i].n+'</b><span>'+S[i].t+'</span>';map.flyTo(S[i].ll,i===0?11:10,{duration:1})}}
-function stop(){if(timer){clearInterval(timer);timer=null}}
-function replay(){stop();markers.forEach(function(m){map.removeLayer(m)});markers=[];line.setLatLngs([]);var n=0;map.fitBounds(S.map(function(s){return s.ll}),{padding:[30,30]});timer=setInterval(function(){if(n>=S.length){stop();return}var m=L.marker(S[n].ll,{icon:icon(n,false)}).addTo(map);(function(k){m.on('click',function(){stop();show(k)})})(n);markers.push(m);line.setLatLngs(S.slice(0,n+1).map(function(s){return s.ll}));show(n);n++},1500)}
-function init(){map=L.map('map',{zoomControl:true,scrollWheelZoom:false}).setView([36.3,-121.6],8);L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:17,attribution:'Imagery: Esri, Maxar, Earthstar Geographics'}).addTo(map);line=L.polyline([],{color:'#c4552d',weight:3,dashArray:'8 8'}).addTo(map);
- document.getElementById('stops').innerHTML=S.map(function(s,i){return '<button class=\"stop\" data-i=\"'+i+'\">'+(i+1)+'. '+s.n+'</button>'}).join('');
- document.getElementById('stops').addEventListener('click',function(e){var b=e.target.closest('.stop');if(!b)return;stop();var i=+b.dataset.i;while(markers.length<=i){var k=markers.length;var m=L.marker(S[k].ll,{icon:icon(k,false)}).addTo(map);markers.push(m)}line.setLatLngs(S.slice(0,i+1).map(function(s){return s.ll}));show(i)});
- document.getElementById('rp').addEventListener('click',replay);document.getElementById('ps').addEventListener('click',stop);replay()}
-""",
-    "jsExpressions": "init()",
-}
+_MAP_CSS = """#map{height:340px;border:1px solid var(--line);border-radius:10px}.pin{width:30px;height:30px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;color:#fff;font:700 13px sans-serif;cursor:pointer;animation:drop .5s cubic-bezier(.3,1.6,.5,1)}.pin.on{background:#1f1e1c;transform:scale(1.2)}@keyframes drop{from{opacity:0;transform:translateY(-30px)}to{opacity:1}}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.stop{padding:5px 12px;border:1px solid var(--line);border-radius:16px;background:none;color:var(--fg);cursor:pointer;font-size:13px}.stop.on{background:var(--accent);border-color:var(--accent);color:#fff}.card{margin-top:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;min-height:62px}.card b{display:block;margin-bottom:2px}.card span{color:var(--muted);font-size:13px}.act button{padding:5px 12px;border:0;border-radius:8px;background:var(--line);color:var(--fg);cursor:pointer;margin-right:6px}.note{color:var(--muted);font-size:11px;margin-top:8px}"""
 
-TILES = {
-    "initialHeight": 560,
-    "css": "table{border-collapse:collapse;width:100%}td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:13px}img{width:96px;height:96px;object-fit:cover;border:1px solid var(--line);border-radius:6px;background:var(--line)}.ok{color:#30a46c;font-weight:600}.no{color:#e5484d;font-weight:600}",
-    "html": "<table id='t'></table>",
+_MAP_JS = """
+var S=__STOPS__;
+var map,markers=[],timer=null;
+function el(i){var o=document.createElement('div');var d=document.createElement('div');d.className='pin';d.textContent=i+1;o.appendChild(d);o.onclick=function(){stop();show(i)};return o}
+function drawLine(n){var c=S.slice(0,n).map(function(s){return s.ll});var src=map.getSource('route');if(src)src.setData({type:'Feature',geometry:{type:'LineString',coordinates:c.length>1?c:[]}})}
+function show(i){document.querySelectorAll('.stop').forEach(function(b,j){b.className='stop'+(j===i?' on':'')});markers.forEach(function(m,j){m.getElement().firstChild.className='pin'+(j===i?' on':'')});if(i>=0){document.getElementById('card').innerHTML='<b>'+(i+1)+'. '+S[i].n+'</b><span>'+S[i].t+'</span>';map.flyTo({center:S[i].ll,zoom:__ZOOM__,duration:1400})}}
+function stop(){if(timer){clearInterval(timer);timer=null}}
+function fit(){var b=new maplibregl.LngLatBounds();S.forEach(function(s){b.extend(s.ll)});map.fitBounds(b,{padding:60,duration:900})}
+function replay(){stop();markers.forEach(function(m){m.remove()});markers=[];drawLine(0);fit();var n=0;timer=setInterval(function(){if(n>=S.length){stop();return}var m=new maplibregl.Marker({element:el(n)}).setLngLat(S[n].ll).addTo(map);markers.push(m);drawLine(n+1);show(n);n++},1700)}
+function init(){map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/liberty',center:__CENTER__,zoom:__OVERVIEW__});map.addControl(new maplibregl.NavigationControl(),'top-right');
+ document.getElementById('stops').innerHTML=S.map(function(s,i){return '<button class="stop" data-i="'+i+'">'+(i+1)+'. '+s.n+'</button>'}).join('');
+ document.getElementById('stops').addEventListener('click',function(e){var b=e.target.closest('.stop');if(!b)return;stop();var i=+b.dataset.i;while(markers.length<=i){var k=markers.length;markers.push(new maplibregl.Marker({element:el(k)}).setLngLat(S[k].ll).addTo(map))}drawLine(i+1);show(i)});
+ document.getElementById('rp').addEventListener('click',replay);document.getElementById('ps').addEventListener('click',stop);
+ map.on('load',function(){map.addSource('route',{type:'geojson',data:{type:'Feature',geometry:{type:'LineString',coordinates:[]}}});map.addLayer({id:'route',type:'line',source:'route',paint:{'line-color':'#c4552d','line-width':3,'line-dasharray':[2,2]}});replay()})}
+"""
+
+
+def map_page(title, stops, center, overview, zoom, note):
+    js = (_MAP_JS.replace("__STOPS__", json.dumps(stops)).replace("__ZOOM__", str(zoom))
+          .replace("__CENTER__", json.dumps(center)).replace("__OVERVIEW__", str(overview)))
+    html = ('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.css">'
+            '<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.js"></script>'
+            '<div id="map"></div><div class="row" id="stops"></div>'
+            f'<div class="card" id="card"><b>{title}</b><span>Press Replay to drop the pins, or pick a stop.</span></div>'
+            '<div class="row act"><button id="rp">Replay</button><button id="ps">Pause</button></div>'
+            f'<div class="note">{note}</div>')
+    return {"initialHeight": 600, "css": _MAP_CSS, "html": html, "jsFunctions": js, "jsExpressions": "init()"}
+
+
+MAP = map_page("California Highway 1", [
+    {"n": "Santa Cruz", "ll": [-122.0308, 36.9741], "t": "Boardwalk, wharf and surf breaks at Steamer Lane."},
+    {"n": "Monterey", "ll": [-121.8947, 36.6002], "t": "Aquarium, Cannery Row and the Old Fisherman's Wharf."},
+    {"n": "Big Sur", "ll": [-121.9018, 36.3715], "t": "Bixby Creek Bridge and cliffs above the Pacific."},
+    {"n": "San Simeon", "ll": [-121.1668, 35.6852], "t": "Hearst Castle and the elephant seal beaches."}],
+    [-121.6, 36.3], 6, 10, "Map: OpenFreeMap, data from OpenStreetMap. Connections are illustrative, not driving directions.")
+
+KOREA = map_page("Korea road trip", [
+    {"n": "서울", "ll": [126.978, 37.5665], "t": "경복궁, 북촌 한옥마을, 한강."},
+    {"n": "경주", "ll": [129.2247, 35.8562], "t": "불국사와 신라 왕릉."},
+    {"n": "부산", "ll": [129.0756, 35.1796], "t": "해운대, 감천문화마을, 자갈치시장."},
+    {"n": "제주", "ll": [126.5312, 33.4996], "t": "한라산과 화산 해안, 성산일출봉."}],
+    [127.8, 36.0], 5, 10, "지도: OpenFreeMap (OpenStreetMap 데이터). 경로는 예시입니다.")
+
+WORLD = map_page("World tour", [
+    {"n": "Reykjavik", "ll": [-21.9426, 64.1466], "t": "Geothermal pools and the northern lights."},
+    {"n": "Cairo", "ll": [31.2357, 30.0444], "t": "The pyramids of Giza and the Nile."},
+    {"n": "Nairobi", "ll": [36.8219, -1.2921], "t": "Gateway to the savanna and Nairobi National Park."},
+    {"n": "서울", "ll": [126.978, 37.5665], "t": "Seoul: palaces and the Han River."},
+    {"n": "Sydney", "ll": [151.2093, -33.8688], "t": "Harbour Bridge and the Opera House."},
+    {"n": "Buenos Aires", "ll": [-58.3816, -34.6037], "t": "Tango, cafes and wide avenues."}],
+    [20, 15], 1.3, 8, "Map: OpenFreeMap, data from OpenStreetMap.")
+
+IMAGES = {
+    "initialHeight": 760,
+    "css": "table{border-collapse:collapse;width:100%}td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:13px}td.im{width:120px}td.im>*{max-width:104px;max-height:70px;border:1px solid var(--line);border-radius:6px;background:var(--line);display:block}.ok{color:#30a46c;font-weight:600}.no{color:#e5484d;font-weight:600}.hint{color:var(--muted);font-size:12px}",
+    "html": "<table id='t'></table><div class='hint' style='margin-top:8px'>Images from hosts that are not allowed must show 'blocked'.</div>",
     "jsFunctions": """
-var Z=11,X=1746,Y=793;
-var P=[['OpenStreetMap (a)','https://a.tile.openstreetmap.org/'+Z+'/'+X+'/'+Y+'.png'],['OpenStreetMap (plain)','https://tile.openstreetmap.org/'+Z+'/'+X+'/'+Y+'.png'],['CARTO Voyager','https://a.basemaps.cartocdn.com/rastertiles/voyager/'+Z+'/'+X+'/'+Y+'.png'],['CARTO Light','https://a.basemaps.cartocdn.com/light_all/'+Z+'/'+X+'/'+Y+'.png'],['Esri World Imagery','https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+Z+'/'+Y+'/'+X],['Esri World Street Map','https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/'+Z+'/'+Y+'/'+X],['USGS Imagery Topo','https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/'+Z+'/'+Y+'/'+X]];
-function run(){var t=document.getElementById('t');P.forEach(function(p){var tr=document.createElement('tr');tr.innerHTML='<td>'+p[0]+'</td><td class=\\"im\\"></td><td class=\\"st\\">loading...</td>';t.appendChild(tr);var im=new Image();im.onload=function(){tr.querySelector('.st').innerHTML='<span class=\\"ok\\">loaded '+im.naturalWidth+'x'+im.naturalHeight+'</span>'};im.onerror=function(){tr.querySelector('.st').innerHTML='<span class=\\"no\\">failed</span>'};tr.querySelector('.im').appendChild(im);im.src=p[1]})}
+var SVG='<svg xmlns="http://www.w3.org/2000/svg" width="104" height="70"><rect width="104" height="70" fill="#3e63dd"/><circle cx="52" cy="35" r="22" fill="#ffd166"/></svg>';
+var P=[['Inline SVG in the page','inline'],['data: URI (SVG)','data:image/svg+xml;utf8,'+encodeURIComponent(SVG)],['Canvas drawing','canvas'],['jsDelivr npm: flag-icons (Korea)','https://cdn.jsdelivr.net/npm/flag-icons@7.2.3/flags/4x3/kr.svg'],['jsDelivr GitHub: twemoji (Korean flag)','https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f1f0-1f1f7.svg'],['unpkg: Leaflet marker','https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png'],['cdnjs: Leaflet marker','https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png'],['Wikimedia photo (not allowed)','https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png'],['Unsplash photo (not allowed)','https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=200']];
+function row(name){var tr=document.createElement('tr');tr.innerHTML='<td>'+name+'</td><td class="im"></td><td class="st">loading...</td>';document.getElementById('t').appendChild(tr);return tr}
+function ok(tr,txt){tr.querySelector('.st').innerHTML='<span class="ok">'+txt+'</span>'}
+function no(tr){tr.querySelector('.st').innerHTML='<span class="no">blocked</span>'}
+function run(){P.forEach(function(p){var tr=row(p[0]),box=tr.querySelector('.im');
+ if(p[1]==='inline'){box.innerHTML=SVG;ok(tr,'shown');return}
+ if(p[1]==='canvas'){var c=document.createElement('canvas');c.width=104;c.height=70;var g=c.getContext('2d');var gr=g.createLinearGradient(0,0,104,70);gr.addColorStop(0,'#c4552d');gr.addColorStop(1,'#ffd166');g.fillStyle=gr;g.fillRect(0,0,104,70);g.fillStyle='#fff';g.font='bold 16px sans-serif';g.fillText('canvas',26,40);box.appendChild(c);ok(tr,'shown');return}
+ var im=new Image();im.onload=function(){ok(tr,'loaded '+im.naturalWidth+'x'+im.naturalHeight)};im.onerror=function(){no(tr)};box.appendChild(im);im.src=p[1]})}
 """,
     "jsExpressions": "run()",
 }
-
-def _korea():
-    page = dict(MAP)
-    js = page["jsFunctions"]
-    start = js.index("var S=[")
-    end = js.index("];", start) + 2
-    stops = ("var S=[{n:'Seoul',ll:[37.5665,126.978],t:'Gyeongbokgung Palace, Bukchon and the Han River.'},"
-             "{n:'Gyeongju',ll:[35.8562,129.2247],t:'Bulguksa Temple and the royal tombs of Silla.'},"
-             "{n:'Busan',ll:[35.1796,129.0756],t:'Haeundae Beach, Gamcheon Culture Village and Jagalchi Market.'},"
-             "{n:'Jeju',ll:[33.4996,126.5312],t:'Hallasan, volcanic coast and the Seongsan Sunrise Peak.'}];")
-    js = js[:start] + stops + js[end:]
-    js = js.replace("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:17,attribution:'Imagery: Esri, Maxar, Earthstar Geographics'}",
-                    "https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}")
-    js = js.replace("setView([36.3,-121.6],8)", "setView([36.0,127.8],7)").replace("i===0?11:10", "i===0?11:10")
-    page["jsFunctions"] = js
-    page["html"] = page["html"].replace("Basemap: Esri World Imagery.", "Basemap: OpenStreetMap.").replace("California Highway 1", "Korea road trip")
-    return page
-
-
-KOREA = _korea()
 
 SAMPLES = (
     ("00000000-0000-4000-8000-000000000501", "3D plane", PLANE, "Rotate the airplane with the sliders, or press Play.", 20),
     ("00000000-0000-4000-8000-000000000502", "Tables and charts", CHART, "Here is the comparison; press the button to see it as a chart.", 19),
     ("00000000-0000-4000-8000-000000000503", "Bill splitter", BILL, "Change the total, tip and group size.", 18),
     ("00000000-0000-4000-8000-000000000504", "Coastal trip", MAP, "Select a stop or replay the trip.", 17),
-    ("00000000-0000-4000-8000-000000000505", "Korea tiles", TILES, "Seoul tile (z11) from each allowed host.", 16),
-    ("00000000-0000-4000-8000-000000000506", "Korea trip", KOREA, "Seoul, Gyeongju, Busan and Jeju on an OpenStreetMap basemap.", 15),
+    ("00000000-0000-4000-8000-000000000506", "Korea trip", KOREA, "서울, 경주, 부산, 제주를 OpenFreeMap으로 보여줍니다.", 16),
+    ("00000000-0000-4000-8000-000000000507", "World tour", WORLD, "Six cities on six continents from one map.", 15),
+    ("00000000-0000-4000-8000-000000000508", "Image test", IMAGES, "Which kinds of image the card can show.", 14),
 )
 
 

@@ -93,17 +93,18 @@ pub fn generated_ui_of(call: &ToolCall) -> Option<GeneratedUi> {
     Some(ui)
 }
 
-/// Script and style hosts a page may load libraries from (three.js, Leaflet, chart libraries).
+/// Script and style hosts a page may load libraries from (three.js, MapLibre, chart libraries).
 const LIBRARY_HOSTS: &str = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com";
-/// Hosts a page may show map tiles from. A page can only fetch images from here and from the library hosts, none of
-/// which an attacker controls, so an image address cannot carry data out.
-const TILE_HOSTS: &str = "https://basemap.nationalmap.gov https://server.arcgisonline.com https://*.tile.openstreetmap.org https://tile.openstreetmap.org";
+/// The one host a page may talk to: OpenFreeMap serves map styles, tiles, fonts and sprites for the whole world
+/// with no key and no usage limit. A page can ask it for data, and nothing else on the network.
+const MAP_HOST: &str = "https://tiles.openfreemap.org";
 
-/// Nothing may be sent: no connections (`default-src 'none'` covers fetch, XHR and WebSocket), no frames, no forms,
-/// no navigation. A page draws with what it carries plus libraries and map tiles from the lists above.
+/// Nothing may be sent anywhere but `MAP_HOST`: `default-src 'none'` closes fetch, XHR and WebSocket to every other
+/// address, and there are no frames, forms or navigation. `worker-src blob:` is what the map library's tile
+/// workers run from.
 fn csp() -> String {
     format!(
-        "default-src 'none'; script-src 'unsafe-inline' {LIBRARY_HOSTS}; style-src 'unsafe-inline' {LIBRARY_HOSTS}; img-src data: blob: {LIBRARY_HOSTS} {TILE_HOSTS}; font-src data: {LIBRARY_HOSTS}; media-src data:; base-uri 'none'; form-action 'none'"
+        "default-src 'none'; script-src 'unsafe-inline' {LIBRARY_HOSTS}; style-src 'unsafe-inline' {LIBRARY_HOSTS}; connect-src {MAP_HOST}; img-src data: blob: {LIBRARY_HOSTS} {MAP_HOST}; font-src data: {LIBRARY_HOSTS}; worker-src blob:; child-src blob:; media-src data:; base-uri 'none'; form-action 'none'"
     )
 }
 
@@ -252,23 +253,29 @@ mod tests {
     }
 
     #[test]
-    fn the_policy_opens_only_libraries_and_tiles_and_keeps_every_way_out_closed() {
+    fn the_policy_opens_only_libraries_and_the_map_host_and_keeps_every_other_way_out_closed() {
         let policy = csp();
-        for closed in ["connect-src", "frame-src", "child-src", "worker-src", "object-src", "navigate-to"] {
+        for closed in ["frame-src", "object-src", "navigate-to", "frame-ancestors"] {
             assert!(!policy.contains(closed), "{closed} must fall back to default-src 'none'");
         }
         assert!(policy.starts_with("default-src 'none'; "));
         assert!(policy.contains("form-action 'none'") && policy.contains("base-uri 'none'"));
         assert!(!policy.contains("'unsafe-eval'") && !policy.contains(" * ") && !policy.contains("https: "), "{policy}");
-        let hosts: Vec<&str> = policy.split_whitespace().filter(|part| part.starts_with("https://")).collect();
-        assert!(!hosts.is_empty());
-        let allowed = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "basemap.nationalmap.gov", "server.arcgisonline.com", "*.tile.openstreetmap.org", "tile.openstreetmap.org"];
-        for host in hosts {
+        let directive = |name: &str| policy.split("; ").find(|d| d.starts_with(name)).unwrap_or_else(|| panic!("{name}")).to_string();
+        // Connections go to the map host and nowhere else.
+        assert_eq!(directive("connect-src"), "connect-src https://tiles.openfreemap.org");
+        // Workers only from a blob the page's own library makes.
+        assert_eq!(directive("worker-src"), "worker-src blob:");
+        let allowed = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "tiles.openfreemap.org"];
+        for host in policy.split_whitespace().filter(|part| part.starts_with("https://")) {
             assert!(allowed.contains(&host.trim_start_matches("https://").trim_end_matches(';')), "{host}");
         }
-        // Scripts may come only from the library hosts; images also from the tile hosts.
-        let script = policy.split("; ").find(|d| d.starts_with("script-src")).unwrap();
-        assert!(script.contains("cdnjs.cloudflare.com") && !script.contains("tile"));
+        // Scripts only from the library hosts, never from the map host.
+        assert!(!directive("script-src").contains("openfreemap"));
+        // The raster tile hosts that limit use or need a key are gone.
+        for gone in ["openstreetmap", "arcgisonline", "nationalmap", "cartocdn"] {
+            assert!(!policy.contains(gone), "{gone}");
+        }
     }
 
     #[test]
