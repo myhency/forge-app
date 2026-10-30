@@ -74,10 +74,10 @@ pub fn GeneratedUiView(ui: GeneratedUi, on_send: Option<EventHandler<String>>) -
     let nonce = use_hook(fresh_nonce);
     let last_sent = use_hook(|| Rc::new(Cell::new(None::<Instant>)));
     let id = dom_id(&ui.id);
-    {
+    use_future({
         let nonce = nonce.clone();
         let id = id.clone();
-        use_future(move || {
+        move || {
             let nonce = nonce.clone();
             let id = id.clone();
             let last_sent = last_sent.clone();
@@ -94,8 +94,8 @@ pub fn GeneratedUiView(ui: GeneratedUi, on_send: Option<EventHandler<String>>) -
                     }
                 }
             }
-        });
-    }
+        }
+    });
     let height = ui.height;
     match &ui.state {
         UiState::Pending => rsx! {

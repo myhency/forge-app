@@ -236,7 +236,7 @@ mod tests {
         let expressions = doc.find("f()</script>").unwrap();
         assert!(csp < style && style < html && html < bridge && bridge < functions && functions < expressions);
         assert!(doc.contains("default-src 'none'"));
-        assert!(doc.contains("connect") == false, "no connect-src: the default of none applies");
+        assert!(!doc.contains("connect-src"), "the default of none applies to connections");
         assert!(doc.contains("color-scheme:light") && doc.contains("data-forge-theme=dark"));
     }
 
