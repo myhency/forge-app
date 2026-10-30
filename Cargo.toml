@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,3 +14,9 @@ opt-level = 3
 
 [profile.dev.package.forge-adapter-claude-fs]
 opt-level = 3
+
+# Dioxus accepts a message from the web view's IPC handler without looking at which frame sent it, so a script in
+# a sandboxed iframe could drive the app. The vendored copy drops a message whose frame is not the app's own page
+# (`ipc_origin_allowed`). Remove this patch when upstream checks the sender.
+[patch.crates-io]
+dioxus-desktop = { path = "vendor/dioxus-desktop" }
