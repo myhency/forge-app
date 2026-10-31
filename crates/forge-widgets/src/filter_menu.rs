@@ -88,12 +88,13 @@ pub fn SidebarFilterMenu() -> Element {
                         }
                     },
                     for (index, row) in FILTER_ROWS.iter().enumerate() {
-                        // The reset is a button, not a setting: a divider sets it apart.
+                        // The reset is a button, not a setting: a divider sets it apart. The group takes the key, so
+                        // the divider and the button are one keyed item.
+                        Fragment { key: "{index}",
                         if *row == FilterRow::Reset {
                             div { class: "row-menu-divider", role: "separator" }
                         }
                         button {
-                            key: "{index}",
                             class: if state.top == index { "row-menu-item highlight" } else { "row-menu-item" },
                             onclick: {
                                 let row = *row;
@@ -128,15 +129,16 @@ pub fn SidebarFilterMenu() -> Element {
                                 FilterRow::Reset => rsx! { span { {tr!("Reset to defaults")} } },
                             }
                         }
+                        }
                     }
                     if let Some(highlighted) = state.sub {
                         div { class: "filter-submenu",
                             for (index, (label, current, choice)) in sub_items.into_iter().enumerate() {
+                                Fragment { key: "{index}",
                                 if index == divider_before {
                                     div { class: "row-menu-divider", role: "separator" }
                                 }
                                 button {
-                                    key: "{index}",
                                     class: if highlighted == index { "row-menu-item highlight" } else { "row-menu-item" },
                                     onclick: move |_| {
                                         workspace.update_prefs(|prefs| choice.apply(prefs));
@@ -145,6 +147,7 @@ pub fn SidebarFilterMenu() -> Element {
                                     },
                                     span { "{label}" }
                                     span { class: "value", if current { Icon { kind: IconKind::Check, size: IconSize::Small } } }
+                                }
                                 }
                             }
                         }
