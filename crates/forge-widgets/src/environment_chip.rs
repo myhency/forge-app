@@ -10,7 +10,7 @@ use forge_shared::{tr, Icon, IconKind, IconSize};
 #[component]
 pub fn EnvironmentChip() -> Element {
     let workspace = use_workspace();
-    let mut draft = use_new_session_draft();
+    let draft = use_new_session_draft();
     let mut open = use_signal(|| false);
     use_picker_request(Some(PickerKind::Environment), open);
     let mut more = use_signal(|| false);

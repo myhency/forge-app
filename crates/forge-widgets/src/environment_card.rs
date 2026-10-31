@@ -18,7 +18,7 @@ pub fn EnvironmentCard() -> Element {
     }
     let picked = draft.environment.read().clone();
     rsx! {
-        div { class: "env-card", role: "menu", "aria-label": tr!("Environment"),
+        div { class: "env-shortcut", role: "menu", "aria-label": tr!("Environment"),
             for environment in rows {
                 button {
                     class: "picker-item",

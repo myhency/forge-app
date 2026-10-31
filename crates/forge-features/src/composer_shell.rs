@@ -20,10 +20,9 @@ pub fn composer_action(running: bool, ready: bool, disabled: bool) -> ComposerAc
 
 /// The message box of both the new session and an open session: one rounded box holding `+`, the text and the
 /// round action button, and a quiet line under it for the pickers. `top` (cards, chips) and `overlay` (popups)
-/// live inside the box; `above` is a card over it; `start` and `end` are the two ends of the line below it.
+/// live inside the box; `start` and `end` are the two ends of the line below it.
 #[component]
 pub fn ComposerShell(
-    #[props(default = rsx! {})] above: Element,
     top: Element,
     overlay: Element,
     leading: Element,
@@ -37,7 +36,6 @@ pub fn ComposerShell(
 ) -> Element {
     rsx! {
         div { class: "composer-wrap",
-            {above}
             div { class: "composer", onkeydown: move |event| onkeydown.call(event),
                 {top}
                 div { class: "composer-input-row",

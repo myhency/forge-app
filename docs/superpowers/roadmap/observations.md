@@ -1022,3 +1022,5 @@ Forge already has the whole environment concept (`EnvironmentChip`: search, `이
 Mistake recorded: a first version (PR #6 before the fix) built the card from recent FOLDERS after one screenshot, without pressing it. The screenshot already contradicted that (box said `task-r31`, card did not list it; laptop icons; footer said `환경 선택`).
 
 Not ported: CLI session import (Forge reads `~/.claude`), mic, mascot. Not checked: the cloud group, where the desktop menu opens relative to the card.
+
+Follow-up (same day): the user asked for Forge's card to sit in the middle of the screen like the desktop app's, and the usage box on the new-session screen to go. Both done: the card is centred between the greeting and the box, and the usage box (`UsageCard` widget) is removed from that screen (its `.usage-*` styles and the data code in `forge-entities` are left, now unused by this screen).

@@ -588,11 +588,14 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .picker-button { display: inline-flex; align-items: center; gap: var(--sp-4); white-space: nowrap; padding: var(--sp-3) var(--sp-8); border: none; border-radius: var(--r-8); background: transparent; color: var(--fg-muted); font: inherit; font-size: var(--text-sm); cursor: pointer; }
 .picker-button:hover, .picker-button.open { background: var(--bg-hover); color: var(--fg); }
 .picker-chevron { font-size: var(--text-2xs); }
-/* The environments card above the new-session box: rows like the picker menu, in a card of the box's width. */
-.env-card { display: flex; flex-direction: column; margin-bottom: var(--sp-8); padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
-.env-card .picker-item { align-items: center; }
-.env-card .picker-divider { margin: var(--sp-4) var(--sp-6); }
-.env-card .picker-item.more { color: var(--fg-muted); }
+/* The environments shortcut card of the new-session screen, centred between the greeting and the box. */
+.env-shortcut-slot { flex: 1 0 auto; display: flex; align-items: center; justify-content: center; }
+.new-session-pane > .new-session { flex: none; }
+.env-shortcut { display: flex; flex-direction: column; width: calc(100% - 56px); max-width: var(--chat-column); box-sizing: border-box; padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+.env-shortcut .picker-item { align-items: center; }
+.env-shortcut .picker-divider { margin: var(--sp-4) var(--sp-6); }
+.env-shortcut .picker-item.more { color: var(--fg-muted); }
+.chat-narrow .env-shortcut { width: calc(100% - 32px); }
 .picker-backdrop { position: fixed; inset: 0; z-index: 9; }
 .picker-menu { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 10; min-width: 260px; padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); box-shadow: var(--shadow); outline: none; }
 /* A long list (many folders or branches) scrolls inside the menu instead of running off the window. */
