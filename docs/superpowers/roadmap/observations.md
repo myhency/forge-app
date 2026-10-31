@@ -1004,3 +1004,13 @@ Method: the throwaway session `3단계 계획 및 진행 관리` in `forge-obser
 - **The output is sent to the model**: with no user bubble and nothing typed, a new turn started (the stop square showed in the composer, the placeholder changed to `⏎ 키로 보내기, ⌘⏎ 키로 대기열에 추가하여 나중에 보내기`), and the model answered under the box: ``echo forge-observe-hello`를 실행했고 `forge-observe-hello`가 출력됐습니다. 오류는 없었습니다.`` So `▷` = run in the terminal, show the result in the chat, and tell the model what happened.
 - **Not checked:** a command that fails or never ends; a multi-line block (one run or one per line); whether the box is saved in the transcript after a restart (nothing was seen in the transcript file); what `▷` does in a block that is not shell (python); long output (cut or scroll).
 - **State left in the desktop app:** two more turns in `3단계 계획 및 진행 관리` and its terminal tab `forge-observe`.
+
+## Round 35 (2026-10-31): new-session screen, desktop app vs Forge
+
+Method: `scripts/observe/claude_app.py` (shown scale 1.24) on the desktop app, `scripts/harness/` on Forge (shown scale 1.20). The desktop app was on a session whose folder is gone (no composer, a `폴더 선택` / `보관` bar); `새로 만들기` opened the new-session screen. Nothing was sent.
+
+Desktop new-session screen: header `새 세션`; centered, above the box, a **recent-environments card** (rows with a laptop icon: `forge`, `forge-observe`, `mywork`, then a footer `환경 선택 ⌄`); under it a card `Claude Code CLI 세션 2개 가져오기`; the box has `+` at the left and a mic at the right; the line under it: `이 컴퓨터`, folder `task-r31` at the left, model `Sonnet 5.5 중간`, mode `자동` and a usage ring at the right. A small pixel mascot sits on the card's top edge.
+
+Forge new-session screen: greeting `james님, 다음 일정은 무엇인가요?` at the top left of the column, the box (`+`, send arrow), the line under it `이 컴퓨터`, folder, add-folder icon at the left, `기본 모델 · 기본값 · 수동` at the right. No list of recent folders: picking a folder is only through the folder control.
+
+Gap for the backlog: NEW-26 recent-environments card on the new-session screen (one click starts in a recently used folder). Not applicable to Forge: CLI session import (Forge already reads `~/.claude`), the mic, the mascot.
