@@ -1167,3 +1167,22 @@ Backlog NEW-43; NEW-23 gets "seen again, shows after an idle moment" (below).
 - Files panel facts: the folder `todo-app` stays open in the tree after the build, and `target`/`dist` are listed like any folder; no change counters (not a git repo).
 
 Backlog NEW-44 (links that fall back to code style), NEW-45 (no permission cards in auto mode: Forge already has auto, check parity of what auto allows).
+
+### Round 36, part 14: account menu and the Settings window pages
+
+Method as before. Account menu (press the name at the bottom left): the email at the top (grey), `설정 ⌘,`, `사용량`, `언어`, `도움 받기`; a line; `플랜 업그레이드`, `앱 및 확장 프로그램 다운로드`, `게스트 패스 공유`, `변경 로그 보기`, `더 알아보기 ›`; a line; `API 키 받기` (external-link icon), `로그아웃`. `더 알아보기 ›` opens a submenu: `Anthropic에 대하여 ↗`, `Claude Academy`, `사용 정책 ↗`, `개인정보 처리방침 ↗`, `이용약관 ↗`, `글꼴 라이선스 ↗`, `개인정보 보호 선택`, a line, `단축키 ⌘/`. `사용량` in that menu opens the Settings window on the `사용량` page (not a popover). `⌘,` is not reachable with the driver's key list (no `comma`).
+
+Settings window: a modal over the app (about 83% of the window wide), title `설정` and `×` at the top, a search field `검색`, a left list in three groups: `환경설정` (일반, 계정, 개인정보보호, 결제, 사용량, 기능, 메모리, 디자인 시스템, Claude Code, Claude in Chrome), `이 컴퓨터` (시스템, 확장 프로그램, 개발자), `사용자 지정` (Skills, 커넥터, 플러그인). Pages seen now (Claude Code, 커넥터, 플러그인, Skills, 개발자 were seen in rounds 32-33, 38):
+
+- **일반**: `화면 모드`: `테마` (three icon buttons: system, sun, moon), `인터페이스 글꼴` (select, `기본값 · 시스템`), `응답 글꼴` (`인터페이스와 맞추기`), `트랜스크립트 텍스트 크기` (`보통`), `트랜스크립트 너비` (`좁게`), `모션` (`시스템`). `작업`: `신뢰할 수 있는 폴더` + `관리` (text says trusting a folder does not add it to new sessions; re-add it here when a prompt asks), `기본 브라우저` (`내장 브라우저`). `음성`: `언어` (`한국어`), `스타일` (`선택`), `속도` (`보통`). `알림`: switches `응답 완료`, `예약된 작업`, `Code 알림`, `Code 권한 요청` (push when a command needs approval), `Claude Code 클라우드 세션 이메일`.
+- **사용량** (`Pro` pill): a bold warning line (`이 속도라면 수요일 초기화 전에 화요일 오전에 사용량이 모두 소진됩니다`), buttons `플랜 업그레이드` (black) and `사용 크레딧 구매`; meters `현재 세션` (reset time, amber bar at 83%, `83% 사용됨`; the bar is AMBER at high use, blue otherwise) and `이번 주` (blue, `52% 사용됨`); `제한 초기화` (`현재 초기화 없음`); `클라우드 세션 크레딧` with `?`; `포함된 크레딧` bar; `사용 크레딧 US$0` with a switch to keep going past the plan limit.
+- **기능**: `일반` (`도구 액세스 모드` select `필요할 때 도구 로드`, switches `커넥터 검색`, `메시지가 플래그 지정되면 모델 전환`), `비주얼` (`아티팩트` forced on with the note `코드 실행 및 파일 생성에 필요`, `AI 기반 아티팩트`, `채팅 내 시각화`), `코드 실행 및 파일 생성` (`클라우드에서 코드 실행`), more below.
+- **메모리**: switches `채팅 검색 및 참조`, `채팅에서 메모리 생성`, `민감한 주제를 메모리에 포함`; `다른 AI 제공업체에서 메모리 가져오기` + `가져오기 시작`; `메모리 내보내기` + `내보내기` (zip of Markdown files); then the memory itself as lists `나` / `주제` (name, one-line description, `<date> 업데이트됨`), and a box at the bottom `Claude에게 변경할 내용을 알려 주세요` with a send arrow: memory is edited by talking to Claude.
+- **디자인 시스템**: title, a sentence, `+ 새 디자인 시스템 ⌄`, a search `이름으로 검색`, table headers `이름` / `사용 가능 대상 ⓘ` / `게시일`, empty text `아직 디자인 시스템이 없습니다…`.
+- **Claude in Chrome**: switch `Claude in Chrome 사용 설정`; `사이트 권한` (`이 권한은 Claude in Chrome과 Claude 데스크톱 앱의 내장 브라우저에 적용됩니다`), `모든 사이트 기본값` select `기본 정책 선택`.
+- **시스템**: `데스크톱 앱 버전`, `시작 시 실행`, `빠른 액세스 바로가기` (select `사용자 설정…` plus a key field showing `⇧⌘ Space` with a clear `×`), `음성 단축키`, `음성 입력 단축키` (`Command+D`), `메뉴 바`, `컴퓨터 절전 모드 방지` (long text, display may still sleep, closing the lid still sleeps), `저장 공간` + `관리`, `저장 폴더` (path link, button `권장 폴더 사용` with a warning icon, button `변경`), `Dispatch` `베타` (phone sends tasks to this computer).
+- **확장 프로그램**: `확장 프로그램 찾아보기`; `컴퓨터에 설치됨` list (one row: icon, name, `구성`, `…`); `고급 설정` button; a hint `.MCPB 또는 .DXT 파일을 여기에 드래그해서 설치하세요`.
+
+String search of Forge's `ko.rs` (English keys) found none of: `Transcript width`, `Transcript text size`, `Response font`, `Interface font`, `Motion`, `Menu bar`, `Quick access`, `Dispatch`, `Default browser`, `Tool access mode`, `Connector search`, `Memory`, `Design system`; only `Trusted folders` exists. Many of these are the account/Claude.ai side and have no Forge meaning (billing, memory, design systems, Dispatch, Chrome).
+
+Backlog NEW-46 (display settings that may apply to Forge: transcript text size, transcript width, fonts, motion), NEW-47 (memory page).
