@@ -178,6 +178,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Context window not measured yet", "컨텍스트 창을 아직 측정하지 않았습니다"),
     ("Conversation only", "대화만"),
     ("Copy", "복사"),
+    ("Copy address", "주소 복사"),
     ("Copy file contents", "파일 내용 복사"),
     ("Copy path", "경로 복사"),
     ("Cost", "비용"),

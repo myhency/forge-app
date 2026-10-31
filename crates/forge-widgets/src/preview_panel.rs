@@ -78,6 +78,8 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
         }
     };
     let web_address = current.as_deref().is_some_and(|url| url.starts_with("http://") || url.starts_with("https://"));
+    // The copy button shows a check for a moment after it copied.
+    let mut copied = use_signal(|| false);
 
     let tools = rsx! {
         for tab in ids.iter().copied() {
@@ -177,6 +179,27 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                             submit();
                         }
                     },
+                }
+                button {
+                    class: "icon-button",
+                    r#type: "button",
+                    title: tr!("Copy address"),
+                    "aria-label": tr!("Copy address"),
+                    disabled: current.is_none(),
+                    onclick: {
+                        let current = current.clone();
+                        move |_| {
+                            if let Some(url) = current.as_deref() {
+                                forge_entities::copy_text(url);
+                                copied.set(true);
+                                spawn(async move {
+                                    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                                    copied.set(false);
+                                });
+                            }
+                        }
+                    },
+                    Icon { kind: if copied() { IconKind::Check } else { IconKind::Copy }, size: IconSize::Small }
                 }
                 button {
                     class: "preview-open",
