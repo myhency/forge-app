@@ -1100,3 +1100,11 @@ Typing `/` in an empty box opens a list above the box, filter placeholder `입�
 - Not pressed: the trash icon (clear finished tasks?), a running task's stop control (the earlier `백그라운드 작업` card in the Details panel had a stop square).
 
 Backlog NEW-39.
+
+### Round 36, part 7: panel reflow, fold detail, wide chat
+
+- **Panels re-flow when one is closed.** With Changes, Files and Preview stacked in the right column and a side chat under Preview, closing Preview made the side chat take the full height of that column; its tab then showed the whole exchange (the question as a grey bubble at the right, the answer below). Closing the side chat later brought back the earlier two-column layout and the chat column grew to about 600 px (all seven header icons returned: tasks, terminal, changes, globe, phone, folder, `…`).
+- **Fold line `실행된 명령 4개 (1개 실패)`** (same wording family as NEW-20) opens to one grey row per command; each row's TITLE is the description the model wrote for the call, in English (`Generated app icon set from drawn source`, `Removed unused mobile icon folders`, `Typecheck, build, cargo check`, `Ran cargo check with absolute path`); a failed one carries a red `실패` after its title. Opening a row shows `$ <command>` in a grey code block (long lines wrap), then a red line `종료 코드 1`, then the output (`✓ built in 96ms`, `(eval):cd:1: no such file or directory: src-tauri`). Rows open independently. The fold line's `실패` count counts only the rows that failed.
+- **A `↓` button** (round, white, shadow) floats in the chat at the bottom centre whenever the view is above the last message.
+- **Reply footer** shows `4분 전` (relative time) after copy, share, pin and read-aloud icons; it said `지금` for the newest reply.
+- The scroll helper moves the chat by only a few lines per call; six calls of 60 lines moved about one screen.
