@@ -248,7 +248,6 @@ fn WorkflowLine(item: WorkflowItem, running: Option<RunningWorkflow>, ended: Opt
 fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<String>) -> Element {
     let mut open = use_signal(|| false);
     let shown = open() || detailed;
-    let chevron = rsx! { Icon { kind: IconKind::Chevron, size: IconSize::Small, open: shown } };
     rsx! {
         div { class: "activity",
             button {
@@ -258,7 +257,7 @@ fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<
                 onclick: move |_| open.set(!shown),
                 span { class: "activity-summary", "{activity.summary}" }
                 CountChips { added: activity.added, removed: activity.removed }
-                span { class: "chevron", {chevron.clone()} }
+                span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: shown } }
                 if let Some(path) = activity.image.clone() {
                     ReadThumbnail { path }
                 }
@@ -287,7 +286,6 @@ fn ActivityRow(row: Row, detailed: bool, on_open_file: EventHandler<String>) -> 
 fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>) -> Element {
     let mut expanded = use_signal(|| false);
     let open = expanded() || detailed;
-    let chevron = rsx! { Icon { kind: IconKind::Chevron, size: IconSize::Small, open: open } };
     let class = if tool.failed { "activity-row-head failed" } else { "activity-row-head" };
     rsx! {
         div { class: "activity-row",
@@ -321,7 +319,7 @@ fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>
                     span { class: "row-stopped", {tr!("Stopped")} }
                 }
                 CountChips { added: tool.added, removed: tool.removed }
-                span { class: "chevron", {chevron.clone()} }
+                span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open } }
             }
             if open {
                 if let Some(diff) = tool.has_diff.then(|| diff_for_tool_call(&tool.call)).flatten() {

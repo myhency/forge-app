@@ -360,17 +360,29 @@ pub fn Icon(kind: IconKind, #[props(default)] size: IconSize, #[props(default)] 
     }
 }
 
+/// An icon as markup for a page that has no stylesheet of ours (the chat's HTML, the code runner's page): it carries its own
+/// size, stroke and colour as attributes.
+macro_rules! markup_icon {
+    ($shapes:literal) => {
+        concat!(
+            r#"<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">"#,
+            $shapes,
+            "</svg>"
+        )
+    };
+}
+
 /// The run mark of a code block, as markup, for the chat's HTML. It sets its own size and colour because that page has no stylesheet of ours.
-pub const RUN_ICON_SVG: &str = r#"<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3.5l7 4.5-7 4.5z"/></svg>"#;
+pub const RUN_ICON_SVG: &str = markup_icon!(r#"<path d="M5 3.5l7 4.5-7 4.5z"/>"#);
 
 /// The copy mark of a code block, as markup, for the chat's HTML.
-pub const COPY_ICON_SVG: &str = r#"<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M3 10.5V4a1 1 0 0 1 1-1h6.5"/></svg>"#;
+pub const COPY_ICON_SVG: &str = markup_icon!(r#"<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M3 10.5V4a1 1 0 0 1 1-1h6.5"/>"#);
 
 /// The terminal mark beside a result, as markup for the page of the code runner.
-pub const TERMINAL_ICON_SVG: &str = r#"<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5l3.5 3.5L3 11.5M8 12h5"/></svg>"#;
+pub const TERMINAL_ICON_SVG: &str = markup_icon!(r#"<path d="M3 4.5l3.5 3.5L3 11.5M8 12h5"/>"#);
 
 /// The "running" mark shown next to a result while a block runs, as markup for the page of the code runner.
-pub const PENDING_ICON_SVG: &str = r#"<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke-dasharray="2.5 2.5"/></svg>"#;
+pub const PENDING_ICON_SVG: &str = markup_icon!(r#"<circle cx="8" cy="8" r="5.5" stroke-dasharray="2.5 2.5"/>"#);
 
 #[cfg(test)]
 mod icon_tests {
