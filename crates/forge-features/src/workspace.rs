@@ -2763,6 +2763,15 @@ impl Workspace {
         self.show_new_session();
     }
 
+    /// `/tasks` and `/diff`: shows the panel in this session's dock. `/tasks` only opens it (the person asked to see
+    /// the tasks); `/diff` shows or hides the changes panel, as the desktop app does.
+    pub fn run_panel_command(&self, id: LiveSessionId, command: forge_entities::PanelCommand) {
+        self.change_dock(id, |dock| match command {
+            forge_entities::PanelCommand::Tasks => dock.open(Panel::Tasks),
+            forge_entities::PanelCommand::Diff => dock.toggle(Panel::Changes),
+        });
+    }
+
     /// Opens or closes `panel` in the active session's dock; nothing on the other pages.
     pub fn toggle_panel(&self, panel: Panel) {
         if let Active::Live(id) = self.active() {

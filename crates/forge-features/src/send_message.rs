@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{split_cards, SlashCommand};
-use forge_entities::{arrange_commands, btw_question, is_rewind};
+use forge_entities::{arrange_commands, btw_question, is_rewind, panel_command};
 use forge_shared::tr;
 
 use crate::cards::line_count;
@@ -25,6 +25,8 @@ fn local_commands() -> Vec<SlashCommand> {
             argument_hint: Some(tr!("[question]").to_string()),
         },
         SlashCommand { name: "rewind".to_string(), description: Some(tr!("Go back to an earlier point").to_string()), argument_hint: None },
+        SlashCommand { name: "tasks".to_string(), description: Some(tr!("Show the background tasks").to_string()), argument_hint: None },
+        SlashCommand { name: "diff".to_string(), description: Some(tr!("Show or hide the changes").to_string()), argument_hint: None },
     ]
 }
 
@@ -90,6 +92,13 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay:
         }
         if is_rewind(&draft.read()) {
             rewinding.set(true);
+            draft.set(String::new());
+            return;
+        }
+        // `/tasks` and `/diff` show a panel: they are not sent as messages.
+        let panel = panel_command(&draft.read());
+        if let Some(command) = panel {
+            workspace.run_panel_command(id, command);
             draft.set(String::new());
             return;
         }
