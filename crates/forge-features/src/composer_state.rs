@@ -474,7 +474,7 @@ pub fn ComposerChips() -> Element {
                         r#type: "button",
                         "aria-label": "Remove",
                         onclick: move |_| composer.remove_folder(index),
-                        "×"
+                        Icon { kind: IconKind::Close, size: IconSize::Small }
                     }
                 }
             }

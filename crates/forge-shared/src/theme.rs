@@ -385,6 +385,22 @@ mod tests {
     }
 
     #[test]
+    fn the_icon_box_rule_does_not_show_what_an_earlier_rule_hides() {
+        // A control that is hidden by default (`display: none`) must not be named in a later rule that sets its display.
+        let hidden: Vec<&str> = rule_lines()
+            .filter(|(_, line)| line.contains("{ display: none;") || line.contains("; display: none;"))
+            .map(|(_, line)| line.split('{').next().unwrap().trim())
+            .filter(|selector| !selector.contains(' ') && !selector.contains(','))
+            .collect();
+        let at = THEME_CSS.find("/* An icon in a row sits in a box of its own").expect("the icon box rules");
+        let boxes = &THEME_CSS[at..];
+        for selector in hidden {
+            let named = boxes.lines().filter(|line| line.contains("display: inline-flex")).any(|line| line.split('{').next().unwrap().split(',').any(|part| part.trim() == selector));
+            assert!(!named, "{selector} is hidden by default but the icon box rule sets its display");
+        }
+    }
+
+    #[test]
     fn the_stylesheet_has_a_rule_for_every_attribute_value() {
         for rule in [
             "[data-text-size=\"small\"]",

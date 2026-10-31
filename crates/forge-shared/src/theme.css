@@ -1499,6 +1499,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 /* An icon in a row sits in a box of its own, so a chevron, a check or a mark keeps the alignment the glyph had. */
 .picker-chevron, .picker-check, .cd-chevron, .chevron, .files-mark, .wf-step-chevron, .wf-agent-mark, .customize-check, .mention-tick, .env-chevron, .archived-mark { display: inline-flex; align-items: center; justify-content: center; }
 .picker-hint, .menu-key { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--sp-4); }
-.icon-button, .settings-close, .env-back, .env-icon, .queue-action, .cd-comment-ok, .send-icon, .rail-close { display: inline-flex; align-items: center; justify-content: center; }
+.icon-button, .settings-close, .env-back, .env-icon, .queue-action, .cd-comment-ok, .send-icon { display: inline-flex; align-items: center; justify-content: center; }
 .customize-icon .icon { width: 18px; height: 18px; }
 .customize-icon.big .icon { width: 24px; height: 24px; }

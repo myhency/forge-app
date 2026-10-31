@@ -531,7 +531,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                             title: tr!("Clear"),
                             "aria-label": "Clear",
                             onclick: move |_| filter.set(String::new()),
-                            "×"
+                            Icon { kind: IconKind::Close, size: IconSize::Small }
                         }
                     }
                 }

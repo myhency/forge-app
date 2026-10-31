@@ -2,7 +2,7 @@ use base64::Engine;
 use dioxus::prelude::*;
 use forge_features::{run_blocking, use_workspace, Picture};
 use forge_ports::FileContent;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// A picture over the dimmed window, opened by a click on a picture path in the chat: the picture
 /// in the middle, its path under it, `×` at its corner. A click anywhere, `×` or Escape closes it.
@@ -74,7 +74,7 @@ fn LightboxBody(picture: Picture) -> Element {
                                 event.stop_propagation();
                                 workspace.close_lightbox();
                             },
-                            "×"
+                            Icon { kind: IconKind::Close, size: IconSize::Small }
                         }
                     }
                     figcaption { class: "lightbox-caption", "{caption}" }

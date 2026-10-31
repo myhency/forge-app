@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, QueuedMessage};
-use forge_shared::{tr, Icon, IconKind};
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 use crate::composer_state::use_composer_state;
 use crate::workspace::use_workspace;
@@ -75,7 +75,7 @@ pub fn QueuedCard(id: LiveSessionId, draft: Signal<String>) -> Element {
                                 handle.dequeue(index, false);
                             }
                         },
-                        "×"
+                        Icon { kind: IconKind::Close, size: IconSize::Small }
                     }
                 }
             }

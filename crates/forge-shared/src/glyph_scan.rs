@@ -27,6 +27,7 @@ fn is_pictograph(c: char) -> bool {
         | 0x27F0..=0x27FF   // long arrows
         | 0x2900..=0x29FF   // arrows and symbols
         | 0x2440..=0x245F   // OCR
+        | 0x00D7            // multiplication sign, used as a close mark
         | 0x2261            // identical to
         | 0x22EE..=0x22EF   // vertical and midline ellipsis
         | 0x2039..=0x203A   // single angle quotation marks, used as chevrons
@@ -159,6 +160,7 @@ mod tests {
         assert_eq!(pictographs("let a = \"\u{1F4C1}\";"), vec![(1, '\u{1F4C1}')]);
         assert_eq!(pictographs("a\nb \"\u{2715}\""), vec![(2, '\u{2715}')]);
         assert_eq!(pictographs("\"\u{2713}\""), vec![(1, '\u{2713}')]);
+        assert_eq!(pictographs("\"\u{00D7}\""), vec![(1, '\u{00D7}')]);
     }
 
     #[test]

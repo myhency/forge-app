@@ -77,7 +77,7 @@ pub fn PlanPanel(id: LiveSessionId) -> Element {
                                                 title: tr!("Remove"),
                                                 "aria-label": tr!("Remove"),
                                                 onclick: move |_| workspace.remove_plan_comment(id, index),
-                                                "×"
+                                                Icon { kind: IconKind::Close, size: IconSize::Small }
                                             }
                                         }
                                     }

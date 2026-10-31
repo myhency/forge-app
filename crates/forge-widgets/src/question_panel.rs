@@ -112,7 +112,7 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
                     onclick: move |_| collapsed.set(!collapsed()),
                     Icon { kind: IconKind::Chevron, size: IconSize::Small, open: !collapsed() }
                 }
-                button { class: "icon-button", r#type: "button", title: tr!("Skip"), onclick: move |_| skip_button(), "×" }
+                button { class: "icon-button", r#type: "button", title: tr!("Skip"), onclick: move |_| skip_button(), Icon { kind: IconKind::Close, size: IconSize::Small } }
             }
             if !collapsed() {
                 div { class: "question-options",

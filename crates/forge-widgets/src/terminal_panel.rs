@@ -11,7 +11,7 @@ use forge_ports::{TerminalEvent, TerminalId, TerminalPort, TerminalSize};
 use serde::Deserialize;
 
 use crate::panel_frame::PanelFrame;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 // What the page tells Rust: its size (columns and rows) and what the person typed.
 #[derive(Deserialize)]
@@ -251,7 +251,7 @@ pub fn TerminalPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                             workspace.change_dock(id, |dock| dock.close(Panel::Terminal));
                         }
                     },
-                    "×"
+                    Icon { kind: IconKind::Close, size: IconSize::Small }
                 }
             }
         }

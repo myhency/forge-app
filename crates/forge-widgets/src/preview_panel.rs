@@ -3,7 +3,7 @@ use forge_application::LiveSessionId;
 use forge_features::{preview_key_from_event, use_workspace, Panel, PreviewKey, Workspace};
 
 use crate::panel_frame::PanelFrame;
-use forge_shared::{tr, Icon, IconKind};
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// Puts the keyboard in the address field, once the field is there (a new tab draws it a moment later).
 fn focus_address() {
@@ -94,7 +94,7 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                     title: tr!("Close tab"),
                     "aria-label": "Close tab",
                     onclick: move |_| workspace.close_preview_tab(id, tab),
-                    "×"
+                    Icon { kind: IconKind::Close, size: IconSize::Small }
                 }
             }
         }

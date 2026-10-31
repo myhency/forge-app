@@ -382,7 +382,7 @@ fn FolderRow(draft: Signal<EnvironmentDraft>, path: PathBuf) -> Element {
                         draft.write().remove_folder(index);
                     }
                 },
-                "×"
+                Icon { kind: IconKind::Close, size: IconSize::Small }
             }
         }
     }
