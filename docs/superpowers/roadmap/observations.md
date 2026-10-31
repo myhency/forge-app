@@ -1285,3 +1285,17 @@ A modal (about 50% of the window wide, `×` at the top right, footer `취소` an
 - **Fold behaviour**: opening `고급 설정` scrolls the form body (the label and title scroll up) and the footer stays pinned.
 
 Forge's Routines form (Plan 31) was built to match the desktop app's files at the time (cron string, folder, model, mode). Compare for: the trigger select with three kinds (only `스케줄` applies), several triggers on one task, the `이 컴퓨터에서만` / `이 컴퓨터 필요` pair, the notification switch default on, the three-item permission list with descriptions. Backlog NEW-55.
+
+### Round 36, part 24: a template opens a full-page form, not the modal
+
+Pressing the template row `브리핑` (templates tab) opened a FULL PAGE inside the main area, not the `직접 설정` modal of part 23. Breadcrumb in the title bar: `예약된 작업 / 새 예약된 작업`. The page is a centred column about 1100 px wide:
+
+- `이름 *` (required, red star) filled with the template name, focus in it (blue ring).
+- `지침` filled with the template's whole prompt (an intro line, a numbered list of four items, a closing rule: `섹션에 눈에 띄는 내용이 없으면 "보고할 내용 없음"이라고 쓰지 말고 해당 섹션을 건너뛰세요.`). A grey box at the bottom of the prompt holds, at the right, a mic with a chevron, and a model select `기본값 · Sonnet 5.5 ⌄`; and a lower strip with `▭ 저장소 선택` at the left and `☁ 기본값` at the right (the cloud environment).
+- `트리거 선택`: a chip `🕐 평일 오후 9:18 GMT+9에 실행됩니다` with an `×`, and a link `+ 트리거 더 추가`. The time zone is written out.
+- Three tabs in a pill group: `커넥터` (selected first: `각 실행 중 Claude가 사용할 수 있는 커넥터입니다.` and a dashed button `⊞ 커넥터 추가`), `동작` (one switch `풀 리퀘스트 자동 수정`: `이 예약된 작업이 생성하는 PR의 CI 및 리뷰 댓글을 모니터링하고 Claude가 수정 사항을 푸시하도록 허용합니다.`, off), `알림` (a switch `이 예약된 작업이 완료되면 알림 받기` ON, then three check rows: `푸시 알림` (checked; `Claude 모바일 및 데스크톱 앱으로 전송됩니다.`), `이메일` (`계정에 등록된 이메일 주소로 전송됩니다.`), `Slack` (`Slack 워크스페이스의 Claude 앱이 계정 이메일과 일치하는 Slack 사용자에게 다이렉트 메시지로 전송합니다. 다음에 예약된 작업이 실행될 때부터 적용됩니다.`)).
+- Footer at the bottom of the page: `취소` and a black `만들기`; the page scrolls.
+
+The modal of part 23 and this page hold the same data with different layouts: the modal puts the settings behind a `고급 설정` fold with tabs `일반 / 커넥터 / 알림`; the page shows the tab group directly with `커넥터 / 동작 / 알림`. So the form exists in two versions (quick modal from `직접 설정`, full page from templates). The `알림` tab reveals the notification channels the modal cut off: push, email, Slack. I pressed `취소` after looking; nothing was created.
+
+Backlog NEW-55 gets an addendum below.
