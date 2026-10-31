@@ -1225,3 +1225,15 @@ The desktop app is version 4.4212.0 (Settings → 시스템). The sidebar differ
 - Group headers show the environment name (`claude-code-study`, `features`, `forge-obs-r26`, a branch line `claude/create-file-b-txt-6eeb0c` under a session in a worktree), with a triangle `▾` at the right of the name.
 
 Compared with Forge by string search: only part of this was checked (see the backlog row). Backlog NEW-50.
+
+### Round 36, part 18: recovery screen of a session whose folder and transcript are gone (SES-09)
+
+My third click in the `표시` menu missed and opened the session `Debug and identify error cause` (an old session in `claude-code-study`; the `사이드 채팅` toggle was NOT confirmed, so its effect on the sidebar is still unseen). The page shows what SES-09 describes:
+
+- Middle: `디스크에서 세션을 찾을 수 없음` (bold) and a grey line `이 디렉터리에서 새로 시작하려면 메시지를 보내세요.`, then three text buttons: `CLI 세션 가져오기` (grey fill), `보관`, `삭제`.
+- Where the box should be, a grey bar instead: `작업 폴더가 더 이상 존재하지 않습니다. 계속하려면 다른 폴더를 선택하세요.` with buttons `폴더 선택` and `보관`. There is no composer, no model or mode row.
+- The Details panel opened by itself at the right (the header's first icon highlighted) with the new layout of `환경`: a row `이 컴퓨터` with a link `저장` (save this environment?) at the right, a row with the folder icon `claude-code-study · ~/Developer` (path cut), and a row `Remote Control` with a switch (off); `컨텍스트` says `컨텍스트 사용량을 확인하려면 메시지를 보내세요.`; `커넥터` shows a grey loading bar.
+- The chat header shows only title and the same panel icons (details, terminal, changes, globe, folder, `…`).
+- Not pressed: all five buttons (`삭제` is destructive; `보관` changes the user's list; `CLI 세션 가져오기` and `폴더 선택` open dialogs). Forge treats such a session as view-only (SES-09 is "won't" in the backlog); this screen shows what the desktop app offers in its place.
+
+Note for NEW-50: `환경` in the Details panel now carries a `저장` link and a `Remote Control` switch; Forge's environment card (Plan 53) has neither.
