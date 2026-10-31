@@ -189,6 +189,8 @@ pub struct Workspace {
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
     /// What became of each session's end cards (by the `wrap_up` call's id): closed, or already sent.
     end_card_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::CardMark>>>,
+    /// The `/status` and `/usage` cards of each session, oldest first; a send takes them away.
+    local_cards: Signal<HashMap<LiveSessionId, Vec<forge_entities::LocalCard>>>,
     code_runs: Signal<HashMap<LiveSessionId, crate::code_runs::CodeRuns>>,
     /// The person's comments on the plan of each session, sent along with a request for changes.
     plan_comments: Signal<HashMap<LiveSessionId, Vec<forge_entities::PlanComment>>>,
@@ -289,6 +291,7 @@ pub fn use_workspace_provider() -> Workspace {
             queued_files: root_signal(HashMap::new()),
             rewind_requests: root_signal(HashMap::new()),
             end_card_marks: root_signal(HashMap::new()),
+            local_cards: root_signal(HashMap::new()),
             code_runs: root_signal(HashMap::new()),
             plan_comments: root_signal(HashMap::new()),
             auto_details: root_signal(std::collections::HashSet::new()),
@@ -2763,13 +2766,65 @@ impl Workspace {
         self.show_new_session();
     }
 
-    /// `/tasks` and `/diff`: shows the panel in this session's dock. `/tasks` only opens it (the person asked to see
-    /// the tasks); `/diff` shows or hides the changes panel, as the desktop app does.
-    pub fn run_panel_command(&self, id: LiveSessionId, command: forge_entities::PanelCommand) {
-        self.change_dock(id, |dock| match command {
-            forge_entities::PanelCommand::Tasks => dock.open(Panel::Tasks),
-            forge_entities::PanelCommand::Diff => dock.toggle(Panel::Changes),
-        });
+    /// A local command (`/tasks`, `/diff`, `/status`, `/usage`): answered here and never sent. The two panel commands
+    /// show a panel (`/tasks` only opens it, `/diff` shows or hides the changes, as the desktop app does); the
+    /// other two put a card in the chat.
+    pub fn run_local_command(&self, id: LiveSessionId, command: forge_entities::LocalCommand) {
+        use forge_entities::LocalCommand;
+        match command {
+            LocalCommand::Tasks => self.change_dock(id, |dock| dock.open(Panel::Tasks)),
+            LocalCommand::Diff => self.change_dock(id, |dock| dock.toggle(Panel::Changes)),
+            LocalCommand::Status => {
+                if let Some(card) = self.status_card(id) {
+                    self.add_local_card(id, card);
+                }
+            }
+            LocalCommand::Usage => {
+                if let Some(card) = self.usage_card(id) {
+                    self.add_local_card(id, card);
+                }
+            }
+        }
+    }
+
+    fn status_card(&self, id: LiveSessionId) -> Option<forge_entities::LocalCard> {
+        let view = self.live_view(id)?;
+        let view = view.read();
+        let mode = crate::permission_mode::mode_rows(true).into_iter().find(|row| row.mode == view.session.permission_mode).map_or("", |row| row.label);
+        Some(forge_entities::status_card(&forge_entities::StatusInfo {
+            forge_version: env!("CARGO_PKG_VERSION").to_string(),
+            model: forge_entities::model_label(view.model.as_deref()),
+            effort: view.effort.map(|level| forge_shared::i18n::text(level.label()).to_string()),
+            mode: mode.to_string(),
+            messages: view.session.messages.len(),
+            session_id: view.claude_session_id.as_ref().map(|session| session.0.clone()),
+            folder: self.origin_of(&view.project_path).display().to_string(),
+            connectors: view.mcp_servers.clone(),
+        }))
+    }
+
+    fn usage_card(&self, id: LiveSessionId) -> Option<forge_entities::LocalCard> {
+        let view = self.live_view(id)?;
+        let view = view.read();
+        Some(forge_entities::usage_card(&view.session.usage, view.context, view.rate_limit.as_ref(), &forge_domain::PriceTable::list_prices()))
+    }
+
+    fn add_local_card(&self, id: LiveSessionId, card: forge_entities::LocalCard) {
+        let mut cards = self.local_cards;
+        cards.write().entry(id).or_default().push(card);
+    }
+
+    /// The cards `/status` and `/usage` put in this session's chat.
+    pub fn local_cards(&self, id: LiveSessionId) -> Vec<forge_entities::LocalCard> {
+        self.local_cards.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    /// Takes the cards away: a message was sent, so they no longer belong to the end of the chat.
+    pub fn clear_local_cards(&self, id: LiveSessionId) {
+        if self.local_cards.peek().get(&id).is_some_and(|cards| !cards.is_empty()) {
+            let mut cards = self.local_cards;
+            cards.write().remove(&id);
+        }
     }
 
     /// Opens or closes `panel` in the active session's dock; nothing on the other pages.

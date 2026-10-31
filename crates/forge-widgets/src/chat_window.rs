@@ -13,6 +13,7 @@ use crate::session_title_menu::SessionTitleMenu;
 use crate::session_tools::SessionTools;
 use crate::sidebar::project_label_in;
 use crate::fork_line::ForkLine;
+use crate::local_card::LocalCards;
 use crate::start_line::StartLine;
 use crate::tasks_panel::use_running_workflows;
 use crate::usage_ring::UsageRing;
@@ -126,6 +127,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                         workspace.mark_end_card(id, call_id, mark);
                     },
                 }
+                LocalCards { id }
             }
             ScrollToEnd {}
             if let Some(error) = view.last_error.as_ref() {

@@ -50,24 +50,6 @@ pub fn is_rewind(input: &str) -> bool {
     input.trim() == "/rewind"
 }
 
-/// A command that only shows a panel: it is answered on the spot and never sent to the model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PanelCommand {
-    /// `/tasks`: the background tasks panel.
-    Tasks,
-    /// `/diff`: the changes panel, shown or hidden.
-    Diff,
-}
-
-/// The panel command the message is, if it is just that command.
-pub fn panel_command(input: &str) -> Option<PanelCommand> {
-    match input.trim() {
-        "/tasks" => Some(PanelCommand::Tasks),
-        "/diff" => Some(PanelCommand::Diff),
-        _ => None,
-    }
-}
-
 /// The names the desktop app lists first, in its order.
 const DESKTOP_ORDER: [&str; 13] =
     ["btw", "ultrareview", "rewind", "fork", "subtask", "mcp", "plugin", "feedback", "model", "effort", "fast", "plan", "permissions"];
@@ -151,15 +133,6 @@ pub fn typed_after_change(typed: Option<&str>, value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_panel_command_is_the_whole_message_and_nothing_else() {
-        assert_eq!(panel_command("/tasks"), Some(PanelCommand::Tasks));
-        assert_eq!(panel_command("  /diff \n"), Some(PanelCommand::Diff));
-        for text in ["", "/", "/task", "/tasks now", "tasks", "/diffs", "/btw /diff", "please /diff"] {
-            assert_eq!(panel_command(text), None, "{text:?}");
-        }
-    }
 
     fn cmd(name: &str) -> SlashCommand {
         SlashCommand { name: name.to_string(), description: None, argument_hint: None }

@@ -330,6 +330,19 @@ button:not(:disabled):active { scale: 0.98; }
 .mention-tick { flex: none; margin-left: auto; color: var(--accent); }
 .mention-note { padding: var(--sp-6) var(--sp-8); color: var(--fg-muted); font-size: var(--text-sm); }
 .usage-note { margin-top: var(--sp-4); font-size: var(--text-xs); color: var(--fg-muted); }
+/* A card of /status or /usage at the end of the chat. It reuses the usage rows of the popover. */
+.local-cards { max-width: var(--chat-column); margin: var(--sp-12) auto var(--sp-12); display: flex; flex-direction: column; gap: var(--sp-10); }
+.local-card { scroll-margin-bottom: var(--sp-16); padding: var(--sp-12) var(--sp-16) var(--sp-14); border: 1px solid var(--border); border-radius: var(--r-12); background: var(--bg-card); font-size: var(--text-base); }
+.local-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-8); }
+.local-card-head h3 { margin: 0; font-size: var(--text-base); font-weight: var(--weight-semibold); }
+.local-card-heading { margin-top: var(--sp-12); }
+.local-card-heading:first-of-type { margin-top: 0; }
+.local-card-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.local-card-meter + .local-card-meter, .local-card-meter + .local-card-heading { margin-top: var(--sp-10); }
+.meter-track { height: 6px; margin-top: var(--sp-4); border-radius: var(--r-pill); background: var(--border); overflow: hidden; }
+.meter-fill { height: 100%; border-radius: var(--r-pill); background: var(--accent); }
+.meter-fill.warn { background: var(--warning); }
+.meter-fill.danger { background: var(--danger); }
 .textarea { width: 100%; box-sizing: border-box; min-height: 64px; padding: var(--sp-8); resize: vertical; font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
 .select { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-8); padding: var(--sp-4) var(--sp-8); max-width: 100%; }
 .text-input { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-8); padding: var(--sp-6) var(--sp-10); min-width: 280px; box-sizing: border-box; }

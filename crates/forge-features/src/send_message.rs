@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{split_cards, SlashCommand};
-use forge_entities::{arrange_commands, btw_question, is_rewind, panel_command};
+use forge_entities::{arrange_commands, btw_question, is_rewind, local_command};
 use forge_shared::tr;
 
 use crate::cards::line_count;
@@ -27,6 +27,8 @@ fn local_commands() -> Vec<SlashCommand> {
         SlashCommand { name: "rewind".to_string(), description: Some(tr!("Go back to an earlier point").to_string()), argument_hint: None },
         SlashCommand { name: "tasks".to_string(), description: Some(tr!("Show the background tasks").to_string()), argument_hint: None },
         SlashCommand { name: "diff".to_string(), description: Some(tr!("Show or hide the changes").to_string()), argument_hint: None },
+        SlashCommand { name: "status".to_string(), description: Some(tr!("Show this session's model, folder and connectors").to_string()), argument_hint: None },
+        SlashCommand { name: "usage".to_string(), description: Some(tr!("Show what this session used and the usage limit").to_string()), argument_hint: None },
     ]
 }
 
@@ -95,10 +97,10 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay:
             draft.set(String::new());
             return;
         }
-        // `/tasks` and `/diff` show a panel: they are not sent as messages.
-        let panel = panel_command(&draft.read());
-        if let Some(command) = panel {
-            workspace.run_panel_command(id, command);
+        // `/tasks`, `/diff`, `/status` and `/usage` are answered here: they are not sent as messages.
+        let local = local_command(&draft.read());
+        if let Some(command) = local {
+            workspace.run_local_command(id, command);
             draft.set(String::new());
             return;
         }
@@ -120,6 +122,8 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay:
             return;
         };
         if let Some(handle) = workspace.handle(id) {
+            // The message goes out: the cards of `/status` and `/usage` no longer belong to the end of the chat.
+            workspace.clear_local_cards(id);
             if queue {
                 handle.queue(outgoing.text, outgoing.attachments);
             } else {
