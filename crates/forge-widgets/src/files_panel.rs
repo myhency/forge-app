@@ -19,7 +19,7 @@ use crate::files_sheet::failed_offers_open;
 use crate::files_state::FilesCtx;
 use crate::files_tabs::{FilesTabs, TabView};
 use crate::panel_frame::PanelFrame;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 // Typing waits this long before the files are searched.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -226,7 +226,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             "aria-label": "File tree",
             "aria-pressed": "{prefs.tree}",
             onclick: move |_| workspace.update_editor_prefs(|prefs| prefs.tree = !prefs.tree),
-            "☰"
+            Icon { kind: IconKind::Menu }
         }
         if rendered_selected {
             button {
@@ -238,7 +238,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                     let (ctx, path) = (ctx.clone(), selected.clone().unwrap_or_default());
                     move |_| ctx.toggle_source(&path)
                 },
-                if source_on { "👁" } else { "</>" }
+                Icon { kind: if source_on { IconKind::Eye } else { IconKind::Code } }
             }
         }
         FilesMenu {}
@@ -294,7 +294,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                     for row in rows {
                         {
                             let indent = format!("padding-left: {}px", 6 + row.depth * 14);
-                            let mark = if !row.is_dir { " " } else if row.expanded { "▾" } else { "▸" };
+                            let mark: Option<bool> = row.is_dir.then_some(row.expanded);
                             let is_selected = current.as_deref() == Some(row.path.as_str());
                             let path = row.path.clone();
                             let (is_dir, cwd, ctx) = (row.is_dir, cwd.clone(), ctx.clone());
@@ -325,7 +325,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                                             }
                                         },
                                         if is_dir {
-                                            span { class: "files-mark", "{mark}" }
+                                            span { class: "files-mark", if let Some(expanded) = mark { Icon { kind: IconKind::Chevron, size: IconSize::Small, open: expanded } } }
                                         } else {
                                             FileTypeIcon { icon: icon_of(&row.path) }
                                         }
@@ -531,7 +531,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                             title: tr!("Clear"),
                             "aria-label": "Clear",
                             onclick: move |_| filter.set(String::new()),
-                            "×"
+                            Icon { kind: IconKind::Close, size: IconSize::Small }
                         }
                     }
                 }

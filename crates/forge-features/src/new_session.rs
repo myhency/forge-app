@@ -8,7 +8,7 @@ use crate::environment::{folder_missing, start_plan, StartError};
 use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCard};
 use crate::workspace::use_workspace;
 use crate::worktree_view::{NewWorktree, RepoInfo};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 /// What was chosen for the new session before it exists: `None` follows the saved default model,
 /// `Some(None)` is the SDK's default, `Some(Some(id))` is that model.
@@ -197,7 +197,7 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
                     title: tr!("Send"),
                     disabled: !has_folder || !ready,
                     onclick: move |_| submit(),
-                    "↵"
+                    Icon { kind: IconKind::Send }
                 }
             }
             div { class: "composer-row", {children} }

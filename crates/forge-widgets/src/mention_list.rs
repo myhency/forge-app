@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_entities::icon_of;
 use forge_features::{use_composer_state, MentionStatus};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 use crate::files_icons::FileTypeIcon;
 
@@ -54,7 +54,7 @@ pub fn MentionList() -> Element {
                     span { class: "mention-name", "{row.name}" }
                     span { class: "mention-folder", "{row.folder}" }
                     if row.attached {
-                        span { class: "mention-tick", "aria-label": tr!("Attached"), "✓" }
+                        span { class: "mention-tick", "aria-label": tr!("Attached"), Icon { kind: IconKind::Check, size: IconSize::Small } }
                     }
                 }
             }

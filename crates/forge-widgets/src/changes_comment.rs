@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{Card, LineRange};
 use forge_features::{comment_key, comment_text, use_workspace, CommentKey, Workspace};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 /// What saving a comment asks of the card list. A value, so the decision can be tested.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,7 +103,7 @@ pub(crate) fn DiffCommentBox(id: LiveSessionId, path: String, line: u32, card: O
                     title: tr!("Add comment"),
                     "aria-label": tr!("Add comment"),
                     onclick: move |_| finish_icon(true),
-                    "↑"
+                    Icon { kind: IconKind::ArrowUp }
                 }
             } else {
                 div { class: "cd-comment-text", onclick: move |_| editing.set(true), "{saved_text}" }

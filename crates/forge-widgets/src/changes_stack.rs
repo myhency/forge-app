@@ -9,7 +9,7 @@ use forge_domain::{Card, ChangesViewPrefs};
 use forge_entities::{cap_lines, gap_after, gap_lines, icon_of, paired_spans, parse_patch, side_by_side, split_by_spans, DiffLineKind, PatchHunk, PatchLine, Span};
 use forge_features::{absolute_path, comment_line, commentable, comments_of, comments_on, is_folded, run_blocking, split_folder, toggle_fold, use_workspace, ChangesSession};
 use forge_ports::{ChangeSource, ChangeStatus, DiffOptions, FileChange, GitError, PatchState, TOO_LARGE_TO_SHOW};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 use crate::changes_comment::DiffCommentBox;
 use crate::files_icons::FileTypeIcon;
@@ -343,7 +343,7 @@ fn FileSection(
                                                 gaps.write().insert(index, lines);
                                             });
                                         },
-                                        span { class: "cd-chevron open", "›" }
+                                        span { class: "cd-chevron open", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                                         {tr!("Show more lines")}
                                     }
                                 }
@@ -355,7 +355,7 @@ fn FileSection(
                             class: "cd-gap",
                             r#type: "button",
                             onclick: move |_| limit += LINE_STEP,
-                            span { class: "cd-chevron open", "›" }
+                            span { class: "cd-chevron open", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                             {tr!("Show {count} more lines", count = hidden.min(LINE_STEP))}
                         }
                     } else if hidden > 0 {
@@ -393,7 +393,7 @@ fn FileSection(
                         on_menu.call((path.clone(), deleted, point.x, point.y));
                     }
                 },
-                span { class: if folded { "cd-chevron" } else { "cd-chevron open" }, "›" }
+                span { class: if folded { "cd-chevron" } else { "cd-chevron open" }, Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                 FileTypeIcon { icon: icon_of(&path) }
                 span { class: "cd-name", "{name}" }
                 if !folder.is_empty() {

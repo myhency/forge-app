@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_features::{use_workspace, Panel};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 /// The box every dock panel sits in: a header with its title, the panel's own tools, expand and
 /// close, and the body below.
@@ -30,7 +30,7 @@ pub fn PanelFrame(id: LiveSessionId, panel: Panel, tools: Element, children: Ele
                     onclick: move |_| {
                         workspace.change_dock(id, |dock| if expanded { dock.collapse() } else { dock.expand(panel) })
                     },
-                    if expanded { "⤡" } else { "⤢" }
+                    Icon { kind: if expanded { IconKind::Collapse } else { IconKind::Expand } }
                 }
                 button {
                     class: "icon-button",
@@ -38,7 +38,7 @@ pub fn PanelFrame(id: LiveSessionId, panel: Panel, tools: Element, children: Ele
                     title: tr!("Close"),
                     "aria-label": tr!("Close"),
                     onclick: move |_| workspace.change_dock(id, |dock| dock.close(panel)),
-                    "✕"
+                    Icon { kind: IconKind::Close }
                 }
             }
             div { class: "dock-body", {children} }

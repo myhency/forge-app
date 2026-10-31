@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_features::{menu_key_action, refocus_workspace, use_workspace, ArchiveAction, MenuKeyAction, RowActions};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// The chevron after the title of the open session and its menu: rename, fork, archive. It runs the
 /// same actions as the shortcuts (⌥⌘R, F, ⌥⌘A) on the active session. There is no delete: an open
@@ -25,7 +25,7 @@ pub fn SessionTitleMenu(actions: RowActions) -> Element {
                 "aria-haspopup": "menu",
                 "aria-expanded": "{open()}",
                 onclick: move |_| open.set(!open()),
-                "⌄"
+                Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true }
             }
             if open() {
                 div { class: "menu-backdrop", onclick: move |_| open.set(false) }

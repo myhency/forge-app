@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::EditorPrefs;
 use forge_features::use_workspace;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Item {
@@ -99,7 +99,7 @@ pub fn FilesMenu() -> Element {
                     sizes.set(false);
                     open.set(!open());
                 },
-                "⋮"
+                Icon { kind: IconKind::More }
             }
             if open() {
                 div { class: "picker-backdrop", onclick: move |_| open.set(false) }
@@ -128,7 +128,7 @@ pub fn FilesMenu() -> Element {
                                 role: "menuitemcheckbox",
                                 "aria-checked": "{item.is_on(&prefs)}",
                                 onclick: move |_| workspace.update_editor_prefs(|prefs| item.toggle(prefs)),
-                                span { class: "picker-check", if item.is_on(&prefs) { "✓" } }
+                                span { class: "picker-check", if item.is_on(&prefs) { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                                 span { class: "picker-text", "{item.label()}" }
                             }
                         }
@@ -143,7 +143,7 @@ pub fn FilesMenu() -> Element {
                             onclick: move |_| sizes.set(!sizes()),
                             span { class: "picker-check" }
                             span { class: "picker-text", {tr!("Tab size")} }
-                            span { class: "menu-key", "{tab_size} ›" }
+                            span { class: "menu-key", "{tab_size} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                         }
                         if sizes() {
                             div { class: "picker-menu files-menu-sub", role: "menu",
@@ -157,7 +157,7 @@ pub fn FilesMenu() -> Element {
                                             workspace.update_editor_prefs(|prefs| prefs.tab_size = size);
                                             sizes.set(false);
                                         },
-                                        span { class: "picker-check", if size == tab_size { "✓" } }
+                                        span { class: "picker-check", if size == tab_size { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                                         span { class: "picker-text", "{size}" }
                                     }
                                 }

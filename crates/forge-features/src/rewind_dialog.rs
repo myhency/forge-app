@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
 use forge_entities::{preview_text, rewind_rows};
-use forge_shared::{tr, Select};
+use forge_shared::{tr, Select, Icon, IconKind, IconSize};
 
 use crate::workspace::use_workspace;
 
@@ -120,7 +120,7 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
             if let Some(label) = label {
                 div { class: "card-modal-head",
                     span { class: "card-modal-title", {tr!("Go back to this message?")} }
-                    button { class: "card-remove always", r#type: "button", "aria-label": tr!("Close"), onclick: move |_| close(), "×" }
+                    button { class: "card-remove always", r#type: "button", "aria-label": tr!("Close"), onclick: move |_| close(), Icon { kind: IconKind::Close, size: IconSize::Small } }
                 }
                 div { class: "rewind-picked", "{label}" }
                 div { class: "card-modal-note", {tr!("Restore")} }
@@ -182,7 +182,7 @@ pub fn RewindDialog(id: LiveSessionId, open: Signal<bool>) -> Element {
             } else {
                 div { class: "card-modal-head",
                     span { class: "card-modal-title", {tr!("Go back to an earlier point")} }
-                    button { class: "card-remove always", r#type: "button", "aria-label": tr!("Close"), onclick: move |_| close(), "×" }
+                    button { class: "card-remove always", r#type: "button", "aria-label": tr!("Close"), onclick: move |_| close(), Icon { kind: IconKind::Close, size: IconSize::Small } }
                 }
                 div { class: "card-modal-note", {tr!("Pick the message to go back to.")} }
                 if rows.is_empty() {

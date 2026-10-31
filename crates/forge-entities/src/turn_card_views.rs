@@ -1,7 +1,7 @@
 //! The two cards of the task-list tools: the live task list and the end-of-turn card.
 
 use dioxus::prelude::*;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 use std::collections::HashMap;
 
@@ -72,7 +72,7 @@ pub fn EndCardView(
                             }
                         }
                     },
-                    "×"
+                    Icon { kind: IconKind::Close, size: IconSize::Small }
                 }
                 div { class: "end-card-recap", "{card.recap}" }
                 div { class: "end-card-ask", "{card.ask}" }

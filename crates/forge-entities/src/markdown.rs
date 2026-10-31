@@ -81,16 +81,16 @@ fn code_block_html(language: Option<&str>, code: &str) -> String {
         .and_then(|language| highlight_code(language, code))
         .unwrap_or_else(|| escape_html(code));
     // The button's script is fixed text; nothing from the message is put into it.
-    const COPY: &str = "<button class=\"code-copy\" type=\"button\" title=\"Copy\" onclick=\"navigator.clipboard.writeText(this.nextElementSibling.innerText)\">⧉</button>";
+    let copy = format!("<button class=\"code-copy\" type=\"button\" title=\"Copy\" onclick=\"navigator.clipboard.writeText(this.nextElementSibling.innerText)\">{}</button>", forge_shared::COPY_ICON_SVG);
     // Before the copy button, which copies its next sibling (the pre). The click is handled by the page-wide
     // handler of the chat (`code_run_watcher`); the key is the block's hash and holds no message text.
     let run = match language {
-        Some(language) if is_shell_language(language) => format!("<button class=\"code-run\" type=\"button\" title=\"Run\" data-hash=\"{}\">▷</button>", text_hash(code)),
+        Some(language) if is_shell_language(language) => format!("<button class=\"code-run\" type=\"button\" title=\"Run\" data-hash=\"{}\">{}</button>", text_hash(code), forge_shared::RUN_ICON_SVG),
         _ => String::new(),
     };
     match language {
-        Some(language) => format!("<div class=\"code-wrap\">{run}{COPY}<pre class=\"code-block\"><code class=\"language-{language}\">{body}</code></pre></div>\n"),
-        None => format!("<div class=\"code-wrap\">{COPY}<pre class=\"code-block\"><code>{body}</code></pre></div>\n"),
+        Some(language) => format!("<div class=\"code-wrap\">{run}{copy}<pre class=\"code-block\"><code class=\"language-{language}\">{body}</code></pre></div>\n"),
+        None => format!("<div class=\"code-wrap\">{copy}<pre class=\"code-block\"><code>{body}</code></pre></div>\n"),
     }
 }
 
