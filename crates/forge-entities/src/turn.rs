@@ -18,7 +18,7 @@ use crate::generated_ui_view::GeneratedUiView;
 use crate::turn_card_views::{EndCardView, PlanListView};
 use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolRow, WorkflowItem};
 use crate::workflow_progress::{dot_class, JournalAgent};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 fn counts(added: usize, removed: usize) -> Option<(String, String)> {
     (added > 0 || removed > 0).then(|| (format!("+{added}"), format!("−{removed}")))
@@ -133,7 +133,7 @@ fn TurnItem(
                                     let text = text.clone();
                                     move |_| crate::clipboard::copy_text(&text)
                                 },
-                                "⧉"
+                                Icon { kind: IconKind::Copy, size: IconSize::Small }
                             }
                             if let (Some(on_rewind), Some(uuid)) = (on_rewind, message.uuid.clone()) {
                                 button {
@@ -142,7 +142,7 @@ fn TurnItem(
                                     title: tr!("Go back to an earlier point"),
                                     "aria-label": tr!("Go back to an earlier point"),
                                     onclick: move |_| on_rewind.call(uuid.clone()),
-                                    "↺"
+                                    Icon { kind: IconKind::Rewind, size: IconSize::Small }
                                 }
                             }
                             if let (Some(on_fork), Some(uuid)) = (on_fork, message.uuid.clone().filter(|uuid| forkable.contains(uuid))) {
@@ -152,7 +152,7 @@ fn TurnItem(
                                     title: tr!("Fork from this message"),
                                     "aria-label": tr!("Fork from this message"),
                                     onclick: move |_| on_fork.call(uuid.clone()),
-                                    "⑂"
+                                    Icon { kind: IconKind::Fork, size: IconSize::Small }
                                 }
                             }
                         }
@@ -185,7 +185,7 @@ fn TurnItem(
             rsx! { div { class: "compacted-line", span { "{label}" } } }
         }
         Item::Plan(_) => rsx! {
-            button { class: "plan-row", r#type: "button", onclick: move |_| on_open_plan.call(()), {tr!("Plan proposed")} " ▸" }
+            button { class: "plan-row", r#type: "button", onclick: move |_| on_open_plan.call(()), {tr!("Plan proposed")} " " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
         },
     }
 }
@@ -239,7 +239,7 @@ fn WorkflowLine(item: WorkflowItem, running: Option<RunningWorkflow>, ended: Opt
                     }
                 }
             }
-            span { class: "chevron", "›" }
+            span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
         }
     }
 }
@@ -248,7 +248,6 @@ fn WorkflowLine(item: WorkflowItem, running: Option<RunningWorkflow>, ended: Opt
 fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<String>) -> Element {
     let mut open = use_signal(|| false);
     let shown = open() || detailed;
-    let chevron = if shown { "⌄" } else { "›" };
     rsx! {
         div { class: "activity",
             button {
@@ -258,7 +257,7 @@ fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<
                 onclick: move |_| open.set(!shown),
                 span { class: "activity-summary", "{activity.summary}" }
                 CountChips { added: activity.added, removed: activity.removed }
-                span { class: "chevron", "{chevron}" }
+                span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: shown } }
                 if let Some(path) = activity.image.clone() {
                     ReadThumbnail { path }
                 }
@@ -287,7 +286,6 @@ fn ActivityRow(row: Row, detailed: bool, on_open_file: EventHandler<String>) -> 
 fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>) -> Element {
     let mut expanded = use_signal(|| false);
     let open = expanded() || detailed;
-    let chevron = if open { "⌄" } else { "›" };
     let class = if tool.failed { "activity-row-head failed" } else { "activity-row-head" };
     rsx! {
         div { class: "activity-row",
@@ -321,7 +319,7 @@ fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>
                     span { class: "row-stopped", {tr!("Stopped")} }
                 }
                 CountChips { added: tool.added, removed: tool.removed }
-                span { class: "chevron", "{chevron}" }
+                span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open } }
             }
             if open {
                 if let Some(diff) = tool.has_diff.then(|| diff_for_tool_call(&tool.call)).flatten() {
@@ -378,7 +376,7 @@ fn FooterView(footer: Footer) -> Element {
                 r#type: "button",
                 title: tr!("Copy"),
                 onclick: move |_| crate::clipboard::copy_text(&text),
-                "⧉"
+                Icon { kind: IconKind::Copy, size: IconSize::Small }
             }
             if !time.is_empty() {
                 span { class: "footer-time", "{time}" }
@@ -430,7 +428,7 @@ fn RunningLine(line: LiveLine) -> Element {
         LiveKind::NeedsInput => rsx! {
             div { class: "live-line",
                 span { class: "live-ring" }
-                span { class: "needs-input", "{line.label} ›" }
+                span { class: "needs-input", "{line.label} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                 CountChips { added: line.added, removed: line.removed }
             }
         },

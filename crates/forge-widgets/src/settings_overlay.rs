@@ -3,7 +3,7 @@ use forge_domain::{ChatWidth, FontChoice, MotionPref, OutputStyle, TextSize, The
 use forge_entities::{model_from_value, model_options, model_value};
 use forge_features::{filter_pages, nav_groups, use_settings, use_workspace, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
 use crate::developer_section::DeveloperSection;
-use forge_shared::{tr, Button, ButtonKind, Segmented, Select, SettingRow, Switch, TextInput};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, Segmented, Select, SettingRow, Switch, TextInput, IconSize};
 
 /// The settings overlay (spec §16): a left navigation and rows on the right. Renders nothing while
 /// closed. Esc and ⌘, are handled by the page's key handler.
@@ -24,7 +24,7 @@ pub fn SettingsOverlay() -> Element {
                 class: "settings-panel",
                 // A click inside the panel must not reach the backdrop and close it.
                 onclick: move |event| event.stop_propagation(),
-                button { class: "settings-close", title: tr!("Close (Esc)"), onclick: move |_| settings.close(), "✕" }
+                button { class: "settings-close", title: tr!("Close (Esc)"), onclick: move |_| settings.close(), Icon { kind: IconKind::Close } }
                 div { class: "settings-nav",
                     input {
                         class: "settings-search",
@@ -197,7 +197,7 @@ fn TrustedFoldersDialog() -> Element {
                 }
                 for path in folders {
                     div { key: "{path.display()}", class: "trusted-row",
-                        span { "📁" }
+                        span { Icon { kind: IconKind::Folder } }
                         span { class: "trusted-path", title: "{path.display()}", "{path.display()}" }
                         button {
                             class: "chip-remove",
@@ -207,7 +207,7 @@ fn TrustedFoldersDialog() -> Element {
                                 let path = path.clone();
                                 move |_| settings.remove_trusted_folder(path.clone())
                             },
-                            "×"
+                            Icon { kind: IconKind::Close, size: IconSize::Small }
                         }
                     }
                 }

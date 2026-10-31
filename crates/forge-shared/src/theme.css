@@ -10,6 +10,8 @@
   --r-pill: 999px; --r-round: 50%;
   --dur-fast: 0.12s; --dur-base: 0.18s; --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --focus-ring-width: 2px; --focus-ring-offset: 2px; --focus-ring-color: var(--accent);
+  --field-focus-border: var(--accent); --field-focus-halo: 3px;
+  --icon-size: 16px; --icon-size-sm: 12px; --icon-stroke: 1.5;
   --blur-popover: 12px;
   --bg-elevated: var(--surface-3);
   --on-overlay: oklch(1 0 0);
@@ -315,7 +317,7 @@ button:not(:disabled):active { scale: 0.98; }
 .textarea { width: 100%; box-sizing: border-box; min-height: 64px; padding: var(--sp-8); resize: vertical; font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
 .select { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-8); padding: var(--sp-4) var(--sp-8); max-width: 100%; }
 .text-input { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-8); padding: var(--sp-6) var(--sp-10); min-width: 280px; box-sizing: border-box; }
-.text-input:focus-visible, .textarea:focus-visible, .select:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: 0; }
+.select:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: 0; }
 
 .button { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-8); padding: var(--sp-5) var(--sp-14); cursor: pointer; }
 .button:hover:not(:disabled) { background: var(--bg-hover); }
@@ -608,7 +610,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .row-menu-item .value { margin-left: auto; color: var(--fg-muted); font-size: var(--text-sm); }
 .menu-backdrop { position: fixed; inset: 0; z-index: 5; }
 .group-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-6); padding: 0; border: none; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.group-toggle .chevron { flex: none; width: 10px; font-size: var(--text-2xs); color: var(--fg-muted); }
+.group-toggle .chevron { flex: none; width: var(--icon-size-sm); color: var(--fg-muted); }
 .sidebar-resize { flex: none; width: 5px; margin-left: -3px; cursor: col-resize; background: transparent; z-index: 7; }
 .sidebar-resize:hover, .sidebar-resize.dragging { background: var(--accent-soft); }
 .sidebar-rail { flex: none; width: 36px; padding: var(--sp-12) var(--sp-4) 0; box-sizing: border-box; background: var(--bg-sidebar); border-right: 1px solid var(--border); }
@@ -788,7 +790,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .files-row, .files-hit { display: flex; align-items: baseline; gap: var(--sp-4); width: 100%; padding: var(--sp-3) var(--sp-6); border: none; border-radius: var(--r-6); background: transparent; color: var(--fg); font: inherit; font-size: var(--text-sm); text-align: left; cursor: pointer; }
 .files-row:hover, .files-hit:hover, .files-row.selected { background: var(--bg-hover); }
 .files-row { -webkit-user-select: none; user-select: none; }
-.files-mark { flex: none; width: 1em; color: var(--fg-muted); }
+.files-mark { flex: none; width: var(--icon-size-sm); color: var(--fg-muted); }
 .files-hit { flex-direction: row; align-items: baseline; gap: var(--sp-6); }
 .files-hit-path { color: var(--fg-muted); font-size: var(--text-xs); }
 .files-hit-text { font-family: var(--mono); min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
@@ -1470,8 +1472,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 @keyframes pop-in { from { opacity: 0; transform: translateY(var(--sp-4)) scale(0.98); } }
 .permission-panel, .question-panel { animation: pop-in var(--dur-base) var(--ease-out); }
 
-/* A field without its own outline shows focus on the box around it. */
-.composer:focus-within, .palette:focus-within, .cd-search:focus-within, .cm-comment-box:focus-within, .cd-comment:focus-within, .rename-input:focus-visible, .cd-menu-search:focus-visible, .plan-card-text:focus-visible, .cm-find-bar input:focus-visible, .cm-goto-bar input:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: calc(var(--focus-ring-offset) * -1); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0s !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; scroll-behavior: auto !important; }
@@ -1479,3 +1479,26 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 
 /* Numbers that line up in columns or tick over use figures of one width. */
 .wf-step-count, .task-total, .task-row-time, .cm-find-count, .ctx-folded-percent, .count-chips, .count-added, .count-removed, .usage-tile-value, .legend-tokens, .legend-share, .diff-counts, .footer-time, .sidebar-item .subtitle { font-variant-numeric: tabular-nums; }
+
+/* A text field shows focus with a thin accent border and a faint halo; the ring above is for every other control. A field with no box of its own lets the box around it carry the change. */
+.text-input:focus-visible, .textarea:focus-visible, .settings-search:focus-visible, .customize-field:focus-visible, .customize-search:focus-visible, .env-search:focus-visible, .files-filter-input:focus-visible, .question-other:focus-visible, .preview-url:focus-visible, .env-variables:focus-visible, .plan-card-text:focus-visible, .cm-find-bar input:focus-visible, .cm-goto-bar input:focus-visible, .composer:focus-within, .palette:focus-within, .cd-search:focus-within, .cm-comment-box:focus-within, .cd-comment:focus-within { outline: none; border-color: var(--field-focus-border); box-shadow: 0 0 0 var(--field-focus-halo) var(--accent-soft); }
+.composer .textarea:focus-visible { box-shadow: none; }
+.cd-menu-search:focus-visible { outline: none; border-bottom-color: var(--field-focus-border); box-shadow: 0 1px 0 var(--field-focus-border); }
+.rename-input:focus-visible { outline: none; box-shadow: 0 0 0 var(--field-focus-halo) var(--accent-soft); }
+.cm-find-bar input.invalid:focus-visible { border-color: var(--danger); box-shadow: 0 0 0 var(--field-focus-halo) color-mix(in srgb, var(--danger) 30%, transparent); }
+@media (forced-colors: active) {
+  .text-input:focus-visible, .textarea:focus-visible, .settings-search:focus-visible, .customize-field:focus-visible, .customize-search:focus-visible, .env-search:focus-visible, .files-filter-input:focus-visible, .question-other:focus-visible, .preview-url:focus-visible, .env-variables:focus-visible, .plan-card-text:focus-visible, .cm-find-bar input:focus-visible, .cm-goto-bar input:focus-visible, .cd-menu-search:focus-visible, .rename-input:focus-visible, .composer:focus-within, .palette:focus-within, .cd-search:focus-within, .cm-comment-box:focus-within, .cd-comment:focus-within { outline: 2px solid Highlight; }
+}
+
+/* An icon is drawn in the colour of the text around it, in one of two sizes, with one stroke. A chevron points right; open turns it down. */
+.icon { width: var(--icon-size); height: var(--icon-size); stroke-width: var(--icon-stroke); flex: none; vertical-align: middle; }
+.icon.sm { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+.icon.open { transform: rotate(90deg); }
+.archived-mark { display: inline-flex; flex: none; margin-right: var(--sp-4); color: var(--fg-muted); }
+
+/* An icon in a row sits in a box of its own, so a chevron, a check or a mark keeps the alignment the glyph had. */
+.picker-chevron, .picker-check, .cd-chevron, .chevron, .files-mark, .wf-step-chevron, .wf-agent-mark, .customize-check, .mention-tick, .env-chevron, .archived-mark { display: inline-flex; align-items: center; justify-content: center; }
+.picker-hint, .menu-key { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--sp-4); }
+.icon-button, .settings-close, .env-back, .env-icon, .queue-action, .cd-comment-ok, .send-icon { display: inline-flex; align-items: center; justify-content: center; }
+.customize-icon .icon { width: 18px; height: 18px; }
+.customize-icon.big .icon { width: 24px; height: 24px; }

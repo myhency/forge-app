@@ -4,7 +4,7 @@ use forge_domain::{Card, CardKind};
 use forge_entities::{modal_title, CardView};
 
 use crate::workspace::use_workspace;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// The unsent cards above the text. An excerpt opens a modal with its lines; a comment asks the
 /// Files panel to show its box.
@@ -43,7 +43,7 @@ pub fn ComposerCards(id: LiveSessionId) -> Element {
             div { class: "card-modal", role: "dialog",
                 div { class: "card-modal-head",
                     span { class: "card-modal-title", "{modal_title(&card)}" }
-                    button { class: "card-remove always", r#type: "button", "aria-label": tr!("Close"), onclick: move |_| shown.set(None), "×" }
+                    button { class: "card-remove always", r#type: "button", "aria-label": tr!("Close"), onclick: move |_| shown.set(None), Icon { kind: IconKind::Close, size: IconSize::Small } }
                 }
                 div { class: "card-modal-note", {tr!("{size} • May not match the original formatting", size = card.size_label())} }
                 pre { class: "card-modal-code", "{card.text}" }

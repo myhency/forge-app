@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use dioxus::prelude::*;
 use forge_entities::ExtensionRow;
 use forge_features::{menu_digit_row, refocus_composer, use_composer_state, use_settings, ExtensionKind};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// What a row of the `+` menu does when picked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,7 +150,7 @@ pub fn PlusMenu(project: Option<PathBuf>, add_folder_enabled: bool) -> Element {
                                         span { class: "menu-key", "{shortcut}" }
                                     }
                                     if row.submenu {
-                                        span { class: "menu-key", "▸" }
+                                        span { class: "menu-key", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                                     }
                                 }
                             }
@@ -191,7 +191,7 @@ fn PlusSubmenu(kind: PlusAction) -> Element {
                                 let key = row.key.clone();
                                 move |_| settings.toggle(extension, key.clone())
                             },
-                            span { class: "picker-check", if row.enabled { "✓" } }
+                            span { class: "picker-check", if row.enabled { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                             span { class: "picker-text",
                                 span { class: "picker-label", "{row.title}" }
                                 if !row.detail.is_empty() {

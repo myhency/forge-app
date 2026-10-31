@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::Card;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// The title of the excerpt modal: `/abs/a.py:L5` or `/abs/a.py:L5-L8`.
 pub fn modal_title(card: &Card) -> String {
@@ -36,7 +36,7 @@ pub fn CardView(card: Card, on_click: Option<EventHandler<()>>, on_remove: Optio
                         event.stop_propagation();
                         remove.call(());
                     },
-                    "×"
+                    Icon { kind: IconKind::Close, size: IconSize::Small }
                 }
             }
         }

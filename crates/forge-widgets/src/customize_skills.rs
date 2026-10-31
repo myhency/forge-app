@@ -4,7 +4,7 @@ use forge_features::{
     body_after_front_matter, explore_skills, highlighted_code, file_depth, file_leaf, find_skill, is_markdown_file, origin_label, skill_groups,
     use_customize, use_workspace, Busy, CustomizeMode, Dialog, Job, Loaded, SkillPane, SkillRow, SkillText,
 };
-use forge_shared::{tr, Button, ButtonKind, LoadingRows};
+use forge_shared::{tr, Button, ButtonKind, LoadingRows, Icon, IconKind, IconSize};
 
 #[component]
 pub fn SkillsTab() -> Element {
@@ -90,7 +90,7 @@ fn SkillGroup(title: String, rows: Vec<SkillRow>) -> Element {
                             key: "{id}",
                             class: "customize-row",
                             onclick: move |_| customize.open_skill(id.clone(), path.clone()),
-                            div { class: "customize-icon", "✦" }
+                            div { class: "customize-icon", Icon { kind: IconKind::Sparkle } }
                             div { class: "customize-main",
                                 div { class: "customize-name", "{row.entry.name}" span { class: "tag", "{origin_label(&row.entry.origin)}" } }
                                 div { class: "customize-desc", "{row.entry.description}" }
@@ -122,7 +122,7 @@ fn SkillCard(row: SkillRow) -> Element {
     let install = plugin_id.clone();
     rsx! {
         div { class: "customize-card", onclick: move |_| customize.open_skill(id.clone(), path.clone()),
-            div { class: "customize-icon", "✦" }
+            div { class: "customize-icon", Icon { kind: IconKind::Sparkle } }
             div { class: "customize-main",
                 div { class: "customize-name", "{row.entry.name}" }
                 div { class: "customize-card-desc", "{row.entry.description}" }
@@ -155,7 +155,7 @@ fn SkillDetail(row: SkillRow) -> Element {
         div { class: "customize-detail",
             button { class: "customize-back", onclick: move |_| customize.close_detail(), {tr!("← Skills")} }
             div { class: "customize-detail-head",
-                div { class: "customize-icon big", "✦" }
+                div { class: "customize-icon big", Icon { kind: IconKind::Sparkle } }
                 div {
                     h2 { "{row.entry.name}" }
                     div { class: "hint", "{origin_label(&row.entry.origin)}" }
@@ -223,7 +223,7 @@ fn SkillFiles(folder: std::path::PathBuf) -> Element {
                                 style: "padding-left: {8 + depth * 14}px",
                                 disabled: file.is_dir,
                                 onclick: move |_| customize.select_skill_file(relative.clone()),
-                                if file.is_dir { "▸ " }
+                                if file.is_dir { Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                                 "{file_leaf(&file.relative)}"
                             }
                         }

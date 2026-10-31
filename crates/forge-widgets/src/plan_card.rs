@@ -3,7 +3,7 @@ use forge_application::LiveSessionId;
 use forge_domain::PermissionDecision;
 use forge_entities::{plan_card_takes_focus, plan_key, plan_revision_reason, PlanChoice, PlanKey, DEFAULT_PLAN_REFUSAL};
 use forge_features::{use_workspace, Panel};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 use crate::permission_panel::FOCUSED_TEXT_LEN;
 
@@ -125,7 +125,7 @@ pub fn PlanCard(id: LiveSessionId, request_id: String) -> Element {
                             "aria-label": tr!("More choices"),
                             "aria-expanded": "{menu_open()}",
                             onclick: move |_| menu_open.set(!menu_open()),
-                            "⌄"
+                            Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true }
                         }
                         if menu_open() {
                             div { class: "perm-menu",

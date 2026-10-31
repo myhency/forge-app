@@ -3,7 +3,7 @@ use forge_application::LiveSessionId;
 use forge_domain::{ChangesViewPrefs, FileListPosition};
 use forge_features::{branch_label, filter_files, BranchLabel, fold_all, unfold_all, use_workspace, ChangeView};
 use forge_ports::{BranchInfo, ChangedFile, CommitInfo};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// The text of the branch button.
 pub(crate) fn button_label(view: &ChangeView, info: Option<&BranchInfo>, base: Option<&str>, fallback: bool, commits: &[CommitInfo]) -> String {
@@ -17,7 +17,7 @@ pub(crate) fn button_label(view: &ChangeView, info: Option<&BranchInfo>, base: O
             Some(info) => match branch_label(base, &info.head_label, fallback) {
                 BranchLabel::Uncommitted => tr!("Uncommitted changes").to_string(),
                 BranchLabel::Branch(head) => head,
-                BranchLabel::Against { base, head } => format!("{base} → {head}"),
+                BranchLabel::Against { base, head } => format!("{base} → {head}"), // icon-ok: the arrow of a branch label
             },
             None => tr!("Uncommitted changes").to_string(),
         },
@@ -74,7 +74,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                     open_below(button_box, corner, open);
                 },
                 span { "{label}" }
-                span { class: "cd-chevron open", "›" }
+                span { class: "cd-chevron open", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
             }
             if open() {
                 div { class: "picker-backdrop", onclick: move |_| open.set(false) }
@@ -121,7 +121,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                                 },
                                 span { class: "picker-text", "{name}" }
                                 if base.as_deref() == Some(name.as_str()) {
-                                    span { class: "picker-hint", "✓" }
+                                    span { class: "picker-hint", Icon { kind: IconKind::Check, size: IconSize::Small } }
                                 }
                                 if default_base.as_deref() == Some(name.as_str()) {
                                     span { class: "picker-hint", {tr!("Default")} }
@@ -158,7 +158,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                                 },
                                 span { class: "picker-text cd-pick-subject", "{commit.subject}" }
                                 if view == ChangeView::Commit(commit.sha.clone()) {
-                                    span { class: "picker-hint", "✓" }
+                                    span { class: "picker-hint", Icon { kind: IconKind::Check, size: IconSize::Small } }
                                 }
                                 span { class: "picker-hint", "{&commit.sha[..commit.sha.len().min(7)]}" }
                             }
@@ -174,7 +174,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                             },
                             span { class: "picker-text", {tr!("All changes")} }
                             if view == ChangeView::All {
-                                span { class: "picker-hint", "✓" }
+                                span { class: "picker-hint", Icon { kind: IconKind::Check, size: IconSize::Small } }
                             }
                             if let Some(name) = base.clone() {
                                 span { class: "picker-hint", {tr!("vs {base}", base = name)} }
@@ -191,7 +191,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                                 },
                                 span { class: "picker-text", {tr!("Uncommitted changes")} }
                                 if view == ChangeView::Uncommitted {
-                                    span { class: "picker-hint", "✓" }
+                                    span { class: "picker-hint", Icon { kind: IconKind::Check, size: IconSize::Small } }
                                 }
                             }
                         }
@@ -205,7 +205,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                                 choosing_base.set(true);
                             },
                             span { class: "picker-text", {tr!("Compare to")} }
-                            span { class: "picker-hint", "{base.clone().unwrap_or_default()} ›" }
+                            span { class: "picker-hint", "{base.clone().unwrap_or_default()} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                         }
                         if !commits.is_empty() {
                             button {
@@ -217,7 +217,7 @@ pub fn BranchButton(id: LiveSessionId, info: Option<BranchInfo>, base: Option<St
                                     choosing_commit.set(true);
                                 },
                                 span { class: "picker-text", {tr!("Commits")} }
-                                span { class: "picker-hint", "{commits.len()} ›" }
+                                span { class: "picker-hint", "{commits.len()} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                             }
                         }
                     }
@@ -320,7 +320,7 @@ fn PositionRow(current: FileListPosition) -> Element {
                 "aria-haspopup": "menu",
                 onclick: move |_| flyout.set(true),
                 span { class: "picker-text", {tr!("File list position")} }
-                span { class: "picker-hint", "{position_label(current)} ›" }
+                span { class: "picker-hint", "{position_label(current)} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
             }
             if flyout() {
                 div { class: "picker-menu context-submenu left", role: "menu",
@@ -337,7 +337,7 @@ fn PositionRow(current: FileListPosition) -> Element {
                             },
                             span { class: "picker-text", "{position_label(option)}" }
                             if current == option {
-                                span { class: "picker-hint", "✓" }
+                                span { class: "picker-hint", Icon { kind: IconKind::Check, size: IconSize::Small } }
                             }
                         }
                     }
@@ -352,7 +352,7 @@ fn check_item(label: &'static str, on: bool, onclick: impl FnMut(MouseEvent) + '
         button { class: "picker-item", r#type: "button", role: "menuitemcheckbox", "aria-checked": "{on}", onclick,
             span { class: "picker-text", "{label}" }
             if on {
-                span { class: "picker-hint", "✓" }
+                span { class: "picker-hint", Icon { kind: IconKind::Check, size: IconSize::Small } }
             }
         }
     }
@@ -384,7 +384,7 @@ pub fn ViewMenu(id: LiveSessionId, prefs: ChangesViewPrefs, paths: Vec<String>, 
                         open_below(button_box, corner, open);
                     }
                 },
-                "⋮"
+                Icon { kind: IconKind::More }
             }
             if open() {
                 div { class: "picker-backdrop", onclick: move |_| open.set(false) }

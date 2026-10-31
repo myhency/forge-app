@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_features::{refocus_workspace, shortcut_sections, use_workspace};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 /// The list of keyboard shortcuts (⌘/): every key Forge binds, from the same table the key handler
 /// reads. Renders nothing while closed; Escape or the close button puts it away.
@@ -31,7 +31,7 @@ pub fn ShortcutsDialog() -> Element {
                         workspace.close_shortcuts();
                         refocus_workspace();
                     },
-                    "✕"
+                    Icon { kind: IconKind::Close }
                 }
                 h2 { {tr!("Keyboard shortcuts")} }
                 for section in sections {

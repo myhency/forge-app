@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use forge_features::{finished_messages, use_workspace, Active, RunState};
 use forge_shared::tr;
 
-// A click on `▷` in a code block, or on `>_` in a result box: the page sends "R\n<pane>\n<block text>" or
+// A click on the run button of a code block, or on the terminal button of a result box: the page sends "R\n<pane>\n<block text>" or
 // "T\n<pane>". The block text is read from the block's own `pre`, never from an attribute. One handler serves
 // every pane; it is replaced each time (`dioxus.send` belongs to the eval that created it).
 const WATCH_CODE_RUN: &str = "if (window.__forgeCodeRunHandler) { document.removeEventListener('click', window.__forgeCodeRunHandler); } window.__forgeCodeRunHandler = (event) => { const target = event.target && event.target.closest ? event.target : null; if (!target) return; const paneOf = (el) => { const p = el.closest('[data-pane]'); return p ? p.dataset.pane : '0'; }; const run = target.closest('.code-run'); if (run) { const wrap = run.closest('.code-wrap'); const pre = wrap ? wrap.querySelector('pre') : null; if (pre) dioxus.send('R\\n' + paneOf(run) + '\\n' + pre.innerText); return; } const open = target.closest('.run-open-terminal'); if (open) dioxus.send('T\\n' + paneOf(open)); }; document.addEventListener('click', window.__forgeCodeRunHandler);";
@@ -35,7 +35,7 @@ const APPLY_RUN_BOXES: &str = r#"window.__forgeApplyRunBoxes = (data) => {
           const open = document.createElement('button');
           open.className = 'run-open-terminal';
           open.type = 'button';
-          open.textContent = '>_';
+          open.innerHTML = `__TERMINAL_ICON__`;
           foot.append(cwd, meta, open);
           box.append(out, foot);
           wrap.after(box);
@@ -53,7 +53,8 @@ const APPLY_RUN_BOXES: &str = r#"window.__forgeApplyRunBoxes = (data) => {
         const open = box.querySelector('.run-open-terminal');
         open.title = data.labels.terminal;
         if (run.state === 'running') {
-          meta.textContent = '◌ ' + data.labels.running;
+          meta.innerHTML = `__PENDING_ICON__`;
+          meta.append(' ' + data.labels.running);
           meta.classList.add('running');
         } else if (run.state === 'ended') {
           meta.textContent = data.labels.ended;
@@ -100,7 +101,7 @@ pub fn CodeRunWatcher() -> Element {
         if workspace.code_run_available() {
             document::eval("document.documentElement.dataset.codeRun = 'on';");
         }
-        document::eval(APPLY_RUN_BOXES);
+        document::eval(&APPLY_RUN_BOXES.replace("__TERMINAL_ICON__", forge_shared::TERMINAL_ICON_SVG).replace("__PENDING_ICON__", forge_shared::PENDING_ICON_SVG));
         let mut clicks = document::eval(WATCH_CODE_RUN);
         let mut ticker = tokio::time::interval(Duration::from_millis(250));
         loop {
@@ -207,6 +208,8 @@ mod tests {
         let make = APPLY_RUN_BOXES.find("createElement").expect("makes one");
         assert!(find < make, "idempotent: look first, then create");
         assert!(APPLY_RUN_BOXES.contains("textContent"), "output is set as text, never as html");
-        assert!(!APPLY_RUN_BOXES.contains("innerHTML"), "no html from the output");
+        // Markup is only ever given the two fixed icons (placeholders swapped for our own constants), never output or words.
+        assert_eq!(APPLY_RUN_BOXES.matches("innerHTML").count(), 2);
+        assert!(APPLY_RUN_BOXES.contains("innerHTML = `__TERMINAL_ICON__`") && APPLY_RUN_BOXES.contains("innerHTML = `__PENDING_ICON__`"), "no html from the output");
     }
 }
