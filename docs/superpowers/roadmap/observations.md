@@ -1345,3 +1345,9 @@ Lessons from the build:
 - The status/usage/stats cards are not saved in the transcript and a sent message takes them away. The desktop app keeps them as part of the chat.
 
 Not run: dark mode, Windows. Two tests of `forge-adapter-claude-plugins` fail on this machine (`round_trip` and `a_command_that_times_out_takes_the_processes_it_started_with_it`); the crate was not touched in this work and everything else (2,590 tests) passes.
+
+### Round 36, build part 3 (2026-10-31): models, and `Ultracode` held back
+
+- **Models.** The desktop app's model menu (`Opus 5.5`, `Sonnet 5.5 기본값`, `Fable 5.1 사용 크레딧 필요`, `Haiku 5.5`, then `노력`, `더 많은 모델 ›`) matches the real SDK's `supportedModels()` exactly, and `더 많은 모델` holds the other eight. Checked with `node sidecar/scripts/list_models.mjs` and a `setModel` call on a fresh query (no message sent): `claude-sonnet-5-5` is accepted now. The comment in `model_catalog.rs` that said the SDK refused it (2026-10-03) was stale; Forge already defaulted to it in its config, so only the menu table was behind.
+- **A flyout inside a scrolling list is clipped.** The first version put the `더 많은 모델` flyout inside `.picker-list` (`overflow-y: auto`): it did not show at all. The fix is a non-scrolling wrapper that owns the position, with the scrolling list and the flyout as siblings. Found by looking at the window; the compile and the unit tests were green.
+- **`Ultracode` was pressed on the desktop app's new-session draft** (switch off again afterwards, the model draft restored to `Sonnet 5.5`; I also changed the draft model to `Haiku 5.5` by a misplaced click and set it back). Effect seen: `노력 중간` becomes `중간 · Ultracode`, and the chip shows `Sonnet 5.5 중간 · Ultracode` with `Ultracode` in blue. It is a per-session setting beside effort. Not seen: what it adds when a message is sent, and how it relates to the `동적 워크플로우` switch of Settings. Not built.
