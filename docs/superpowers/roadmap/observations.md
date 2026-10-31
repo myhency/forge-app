@@ -1116,3 +1116,20 @@ Backlog NEW-39.
 - Hovering the user bubble `먼저 실행해 보기` shows a row under it at the right: `✓✓ 13분 전 · ⧉ (copy) · ↺ (rewind) · fork icon`; the time is relative (`13분 전`), same as round 31.
 
 Backlog NEW-40.
+
+### Round 36, part 9: `/usage` card in the chat
+
+`/usage` (Return twice) answers with a card in the chat, no model turn and no user bubble. Structure, top to bottom (numbers left out; they are the user's account):
+
+1. Title `사용량` and a copy icon at the right.
+2. Two meters: `5시간 제한` (reset time, percent, a blue bar) and `주간 · 모든 모델` (reset day and time, percent, bar); then `클라우드 세션 크레딧` (`US$100 중 US$100 남음`, an empty bar) and `만료: <date> GMT+9`.
+3. Block `이 세션`: a 3-column grid, row 1 `비용 US$…`, `API <m>분 <s>초`, `활성 시간 …`; row 2 `줄 +488 −18` (green and red), `Sonnet 100%`, `캐시 히트 98%`.
+4. Table `세부 내역` with the model name at the right: `입력`, `출력`, `캐시 읽기`, `캐시 쓰기` (74, 4.1k, 2.9M, 63k).
+5. Block `무엇이 사용량 제한을 소모하고 있나요?` with two small selects, `24h ⌄` and `전체 ⌄`; a grey line `최근 24시간 · 근사치, 중복 측정 · 이 기기만 해당, claude.ai 제외`; three rows with a percent and a dotted-underlined label (`150k 컨텍스트 초과 실행`, `서브에이전트 집약적 세션에서 발생`, `always on context`); then rows of a name, a kind (`플러그인`, `Skill`, `서브에이전트`), a blue bar and a percent, five shown, link `10개 더 보기`.
+6. `도움말` with a sentence on long sessions and cache cost, and two buttons `이 세션 압축하기` and `새 세션`.
+
+Facts: the card is part of the chat transcript (it stays above the next-step card and scrolls with it); the bars are the only blue besides links. Forge has `crates/forge-entities` code for usage (round 35 says the usage box data is still there but unused on the new-session screen), but none of the items 3-6 were found by name. The usage-limit bar above the composer (round 31) was not visible in this session.
+
+Not checked: the two selects (`24h`, `전체`), `10개 더 보기`, `이 세션 압축하기` (it would compact the session), `새 세션`, what the dotted underline shows on hover.
+
+Backlog NEW-41.
