@@ -1237,3 +1237,9 @@ My third click in the `표시` menu missed and opened the session `Debug and ide
 - Not pressed: all five buttons (`삭제` is destructive; `보관` changes the user's list; `CLI 세션 가져오기` and `폴더 선택` open dialogs). Forge treats such a session as view-only (SES-09 is "won't" in the backlog); this screen shows what the desktop app offers in its place.
 
 Note for NEW-50: `환경` in the Details panel now carries a `저장` link and a `Remote Control` switch; Forge's environment card (Plan 53) has neither.
+
+### Round 36, part 19: `저장` in the Details panel saves the folder as an environment
+
+Pressing `저장` (the link at the right of `이 컴퓨터` in the Details panel's `환경` card, shown when the session's folder is not yet a saved environment) opened the `새 환경` dialog already filled in for the local kind (no tabs this time, title `새 환경`): `이름` holds the folder name selected (`claude-code-study`, text highlighted so typing replaces it), `폴더` lists that folder with a grey tag at the right (`Git 저장소가 아님`; for a git repo it would say the branch or `Git`), `환경 변수` (`이 환경에는 없음`), and a BLACK enabled button `환경 만들기`. Pressing `취소` closed it; no environment was created.
+
+So `저장` answers where saved environments come from: a folder first used in a session is a bare path, and this link promotes it to a named environment with one dialog (the same dialog as `새 환경`, prefilled). The environment card's rows in later sessions then show it by name. Forge's stage C (Plan 53) has `폴더 추가…`/`폴더 변경…`; it has no one-press `저장` for the current folder (to check). Backlog NEW-51.
