@@ -1,0 +1,27 @@
+[package]
+name = "forge-app"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio = { version = "1", features = ["sync"] }
+forge-adapter-browser = { path = "../forge-adapter-browser" }
+forge-adapter-claude-fs = { path = "../forge-adapter-claude-fs" }
+forge-adapter-claude-plugins = { path = "../forge-adapter-claude-plugins" }
+forge-adapter-config = { path = "../forge-adapter-config" }
+forge-adapter-dialog = { path = "../forge-adapter-dialog" }
+forge-adapter-files = { path = "../forge-adapter-files" }
+forge-adapter-git = { path = "../forge-adapter-git" }
+forge-adapter-notify = { path = "../forge-adapter-notify" }
+forge-adapter-sidecar = { path = "../forge-adapter-sidecar" }
+forge-adapter-terminal = { path = "../forge-adapter-terminal" }
+forge-adapter-webview = { path = "../forge-adapter-webview" }
+forge-application = { path = "../forge-application" }
+forge-domain = { path = "../forge-domain" }
+forge-features = { path = "../forge-features" }
+forge-pages = { path = "../forge-pages" }
+forge-shared = { path = "../forge-shared" }
+dioxus = { version = "=0.7.10", features = ["desktop"] }
+time = { version = "0.3.55", features = ["local-offset"] }
+forge-ports = { version = "0.1.0", path = "../forge-ports" }
+sys-locale = "0.3"

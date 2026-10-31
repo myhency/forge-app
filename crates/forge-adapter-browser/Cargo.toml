@@ -1,0 +1,8 @@
+[package]
+name = "forge-adapter-browser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+forge-domain = { path = "../forge-domain" }
+forge-ports = { path = "../forge-ports" }

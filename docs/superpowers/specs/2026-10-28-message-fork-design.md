@@ -1,0 +1,75 @@
+# Fork from a message (NEW-18, part 1)
+
+Plan 68A. Built on branch `plan-67`, after the Background tasks card work. Observation: round 32 (`docs/superpowers/roadmap/observations.md`).
+
+## What the desktop app does
+
+Hover a user message: `✓✓ time · copy ↺ fork`. The fork icon makes a new session at once, with no menu or confirmation:
+
+- Title `<old title> (fork)`, same folder.
+- The conversation holds everything **before** the clicked message. The clicked message's text sits in the composer. The original session is left whole.
+- A grey line at the top of the chat: `포크 원본 <old title, a link> <time>` (`지금`, `3분 전`). The link opens the original.
+- In the sidebar the fork nests under the original (`└`, and `▾` on the original). **Not part of this plan** (68B).
+
+## Scope
+
+Built: the fork icon on the message row, the composer text coming back, the `포크 원본` line.
+Left for 68B: the nested sidebar row and its fold.
+The existing whole-session fork (row menu, key F) is unchanged, but its copy carries `forkedFrom` too, so it gets the `포크 원본` line.
+
+## What already exists
+
+- `Registry::fork_before` / `SessionRepositoryPort::fork_session_before` cut a transcript before a message uuid and write the copy with `forkedFrom: {sessionId, messageUuid}` on every line (the immediate parent, also for a fork of a fork).
+- `Workspace::fork_session_before` wraps it and opens the copy; nothing calls it yet.
+- `LiveSessionHandle::replace_session(session, Some((text, attachments)))` shows a session and puts a message back in the box (what `↺` uses).
+
+## Design
+
+### 1. The icon
+
+`forge-entities/src/turn.rs`: next to `↺`, a second button `⑂` (title and aria-label `Fork from this message`, Korean `이 메시지에서 포크`) when the message has a `uuid`. A new prop `on_fork: Option<EventHandler<String>>` on `Turns` / `TurnItem`, like `on_rewind`. `chat_window.rs` passes `workspace.fork_from_message(id, uuid)`.
+
+### 2. The flow
+
+`Workspace::fork_from_message(id, message_uuid)`:
+
+1. Read the open session's project, Claude session id, title and the message (its text with cards, attachments). Nothing to fork when the id or message is missing, or when the message is the first user message (`can_fork_before`): a notice `This message cannot be forked yet.`
+2. `registry.fork_before(project, session, uuid, title)` makes the copy and returns its id. A failure is a notice; nothing opens.
+3. Reload the project's session list, open the copy (`open_past`), then load the copy's session and call `handle.replace_session(session, Some((text, attachments)))` on its handle so the message is in the box.
+4. The original stays as it is. A running turn does not matter: the cut only reads the transcript file.
+
+The unused `Workspace::fork_session_before` is replaced by this function (same steps, plus step 3).
+
+### 3. The `포크 원본` line
+
+- `forge-domain` `Session` gets `forked_from: Option<SessionId>`. The claude-fs reader (`sessions.rs`) sets it from `forkedFrom.sessionId` on the first line that has one. The fork's own title line carries `forkedFrom: {sessionId}` too, so a fork cut before the first message (no copied lines) is still known as a fork. Every place that builds a `Session` sets `None`.
+- New widget `ForkLine { id }` in `forge-widgets`, rendered in `chat_window.rs` after `StartLine`. It looks the origin up in the workspace's past session list (same project): the title and the project summary. Shown only when the origin is found in the listing and has a title. It reads `포크 원본 <title as a link> <time>`; the time is `Session.forked_at` (the `timestamp` of the fork's own title line) through `relative_time` (omitted when empty). A click calls `open_past_clicked(project, origin_id)`.
+- English text: `Forked from`. Korean: `포크 원본`.
+
+## Out of scope
+
+Sidebar nesting and fold; `✓✓`.
+
+## Tests
+
+- claude-fs: `forked_from` is read (none, one fork, a fork of a fork carries the immediate parent).
+- features: a pure helper picks the origin title and project from the past list (found, other project, missing).
+- application: unchanged (`fork_before` and `replace_session` are covered).
+- Real window (harness): fork a message of the second turn, check the new session shows the first turn only, the message text is in the box, the `포크 원본` line shows and its link opens the original; fork the first message (the copy is empty, the text is in the box).
+
+## As built
+
+Built as written (plan `docs/superpowers/plans/2026-10-28-message-fork.md`), with one change found in the real window: the `포크 원본` time comes from the `timestamp` of the fork's own title line (`Session.forked_at`), not from the session list's `created_at` (that is the time of the first copied line, which is the original's).
+
+Checked in the real window (harness, 2026-10-28, light mode): the `⑂` icon on the second message; the fork opened with the first turn only, the message text in the box, the line `포크 원본 Read the config 방금`; the link opened the original, whole and without the line; a fork of the first message opened empty with its text in the box and the line; the fork showed in the same sidebar group as a flat row. Not checked: a fork while a turn runs, a message with attachments or cards, dark mode, Windows, a fork made from the row menu (key F; covered by a unit test that `forked_from` is read).
+
+An origin without a title hides the line.
+
+
+**Found in the final review and fixed:** a fork before the FIRST user message holds no conversation, and the SDK cannot resume it (`No conversation found with session ID`: the bundled `claude` 2.1.295 answers that for a transcript holding only a title line, while a fork-shaped copy of a real session resumes and remembers the earlier turn; both were tried directly with the binary in a throwaway folder). The `⑂` icon is not shown on the first user message and `fork_from_message` refuses it (`forge_domain::can_fork_before`), the same rule `/rewind` uses for its conversation buttons. The first-message cases in the Tests section above and in the as-built notes no longer apply.
+
+## 68B: nested sidebar rows (as built, unit tests only)
+
+Design call (the user opted out of questions): follow round 32. A fork is drawn right under its source in the same list with `└` and an indent per level (stops at the third); the source has a `▾` button that folds the forks away (`▸`), kept in `SidebarPrefs.collapsed` as `fork:<session id>`, so it survives restarts like group folds. Sibling forks keep the sorted order. A fork whose source is in another group, another date bucket, or hidden by the status filter stays a plain row. A folded source still shows the open session on screen. Ctrl+Tab follows the drawn order.
+
+Checked in the real window (harness, 2026-10-28, light mode, `add_fork_samples.py`): two forks and a fork of a fork nest with `└` and growing indent under the source; `▾` on each row that has forks; with `FORGE_HARNESS_FOLD=1` the folded fork shows `▸` and its child is gone. The click on `▾` folded all three forks of the source (`▸`), and a second click opened them again (the first clicks of the session did not reach the window; a retry did). Not checked: dark mode, Windows. Titles are cut shorter by the `▾` button beside the full date.

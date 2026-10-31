@@ -1,0 +1,15 @@
+{
+  "name": "comparison_chart",
+  "title": "Plans compared, then charted",
+  "use_for": "A comparison: a table of options and a chart of one metric the person can switch.",
+  "page": {
+    "initialHeight": 420,
+    "placeholderMessages": [
+      "Comparing the options…"
+    ],
+    "css": ".seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}.seg button{border:0;background:none;padding:6px 12px;cursor:pointer;color:var(--muted);font-weight:600}.seg button.on{background:var(--accent);color:#fff}",
+    "html": "<div class=\"fx-stack\">\n  <div><h1 class=\"fx-title\">Which plan fits a team?</h1><p class=\"fx-sub\">Prices are illustrative. Switch the metric to compare.</p></div>\n  <table class=\"fx-table\">\n    <tr><th>Plan</th><th class=\"num\">Price / month</th><th class=\"num\">Seats</th><th class=\"num\">Per seat</th></tr>\n    <tr><td>Starter</td><td class=\"num\">$29</td><td class=\"num\">3</td><td class=\"num\">$9.67</td></tr>\n    <tr><td>Team</td><td class=\"num\">$99</td><td class=\"num\">15</td><td class=\"num\">$6.60</td></tr>\n    <tr><td>Business</td><td class=\"num\">$249</td><td class=\"num\">50</td><td class=\"num\">$4.98</td></tr>\n  </table>\n  <div class=\"fx-row fx-spread\"><span class=\"fx-label\">Chart</span><div class=\"seg\" id=\"seg\"></div></div>\n  <svg id=\"chart\" class=\"fx-chart\" viewBox=\"0 0 420 190\" role=\"img\" aria-label=\"Bar chart of the selected metric\"></svg>\n</div>",
+    "jsFunctions": "var PLANS=[{n:'Starter',price:29,seats:3},{n:'Team',price:99,seats:15},{n:'Business',price:249,seats:50}];\nvar METRICS={price:{label:'Price / month',f:function(p){return p.price},fmt:function(v){return '$'+v}},seats:{label:'Seats',f:function(p){return p.seats},fmt:function(v){return String(v)}},per:{label:'Per seat',f:function(p){return p.price/p.seats},fmt:function(v){return '$'+v.toFixed(2)}}};\nfunction draw(key){var m=METRICS[key],vals=PLANS.map(m.f),max=Math.max.apply(null,vals)||1,h='';PLANS.forEach(function(p,i){var bh=Math.round(vals[i]/max*130),x=45+i*125;h+='<rect x=\"'+x+'\" y=\"'+(160-bh)+'\" width=\"70\" height=\"'+bh+'\" rx=\"6\" fill=\"var(--c'+(i+1)+')\"/><text x=\"'+(x+35)+'\" y=\"'+(152-bh)+'\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"600\" fill=\"var(--fg)\">'+m.fmt(vals[i])+'</text><text x=\"'+(x+35)+'\" y=\"180\" text-anchor=\"middle\" font-size=\"12\" fill=\"var(--muted)\">'+p.n+'</text>'});document.getElementById('chart').innerHTML=h;document.querySelectorAll('#seg button').forEach(function(b){b.className=b.dataset.k===key?'on':''})}\nfunction build(){document.getElementById('seg').innerHTML=Object.keys(METRICS).map(function(k){return '<button data-k=\"'+k+'\">'+METRICS[k].label+'</button>'}).join('');document.getElementById('seg').addEventListener('click',function(e){var b=e.target.closest('button');if(b)draw(b.dataset.k)})}",
+    "jsExpressions": "build();draw('per')"
+  }
+}
