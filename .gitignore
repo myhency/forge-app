@@ -5,3 +5,4 @@ dist/
 .superpowers/
 __pycache__/
 crates/forge-app/runtime/
+.context/compound-engineering/
