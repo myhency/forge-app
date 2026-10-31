@@ -195,6 +195,8 @@ pub enum Shape {
     Rect { x: f32, y: f32, width: f32, height: f32, rx: f32 },
     /// A filled dot (the strokeless mark of the "more" menu).
     Dot { cx: f32, cy: f32 },
+    /// A path that is filled as well as stroked.
+    Solid(&'static str),
 }
 
 /// The pictures that stand in for a glyph or an emoji. One chevron points right; the open state turns it with CSS.
@@ -221,11 +223,26 @@ pub enum IconKind {
     More,
     Target,
     Chevron,
+    ChevronLeft,
     Check,
+    Copy,
+    Plug,
+    Package,
+    Expand,
+    Collapse,
+    Reload,
+    Gear,
+    Star,
+    StarFilled,
+    Rewind,
+    Fork,
+    MoreHorizontal,
+    Terminal,
+    Changes,
 }
 
 impl IconKind {
-    pub const ALL: [IconKind; 22] = [
+    pub const ALL: [IconKind; 37] = [
         IconKind::Close,
         IconKind::Search,
         IconKind::Sparkle,
@@ -247,7 +264,22 @@ impl IconKind {
         IconKind::More,
         IconKind::Target,
         IconKind::Chevron,
+        IconKind::ChevronLeft,
         IconKind::Check,
+        IconKind::Copy,
+        IconKind::Plug,
+        IconKind::Package,
+        IconKind::Expand,
+        IconKind::Collapse,
+        IconKind::Reload,
+        IconKind::Gear,
+        IconKind::Star,
+        IconKind::StarFilled,
+        IconKind::Rewind,
+        IconKind::Fork,
+        IconKind::MoreHorizontal,
+        IconKind::Terminal,
+        IconKind::Changes,
     ];
 
     pub fn shapes(self) -> &'static [Shape] {
@@ -274,7 +306,22 @@ impl IconKind {
             IconKind::More => &[Shape::Dot { cx: 8.0, cy: 3.5 }, Shape::Dot { cx: 8.0, cy: 8.0 }, Shape::Dot { cx: 8.0, cy: 12.5 }],
             IconKind::Target => &[Shape::Circle { cx: 8.0, cy: 8.0, r: 6.0 }, Shape::Circle { cx: 8.0, cy: 8.0, r: 2.0 }],
             IconKind::Chevron => &[Shape::Path("M6 3.5L10.5 8 6 12.5")],
+            IconKind::ChevronLeft => &[Shape::Path("M10 3.5L5.5 8 10 12.5")],
             IconKind::Check => &[Shape::Path("M3.5 8.5l3 3 6-7")],
+            IconKind::Copy => &[Shape::Rect { x: 5.5, y: 5.5, width: 8.0, height: 8.0, rx: 1.5 }, Shape::Path("M3 10.5V4a1 1 0 0 1 1-1h6.5")],
+            IconKind::Plug => &[Shape::Path("M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0zM8 11v3")],
+            IconKind::Package => &[Shape::Path("M8 2l5 2.5v5L8 12 3 9.5v-5zM3 4.5L8 7l5-2.5M8 7v5")],
+            IconKind::Expand => &[Shape::Path("M9.5 2.5h4v4M13.5 2.5L9 7M6.5 13.5h-4v-4M2.5 13.5L7 9")],
+            IconKind::Collapse => &[Shape::Path("M13 6h-3V3M10 6l3.5-3.5M3 10h3v3M6 10l-3.5 3.5")],
+            IconKind::Reload => &[Shape::Path("M13 8a5 5 0 1 1-1.5-3.5M13 2.5v3h-3")],
+            IconKind::Gear => &[Shape::Circle { cx: 8.0, cy: 8.0, r: 2.2 }, Shape::Path("M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4")],
+            IconKind::Star => &[Shape::Path("M8 2l1.8 3.8 4.2.6-3 3 .7 4.2L8 11.6l-3.7 2 .7-4.2-3-3 4.2-.6z")],
+            IconKind::StarFilled => &[Shape::Solid("M8 2l1.8 3.8 4.2.6-3 3 .7 4.2L8 11.6l-3.7 2 .7-4.2-3-3 4.2-.6z")],
+            IconKind::Rewind => &[Shape::Path("M3 8a5 5 0 1 1 1.5 3.5M3 13V9.5h3.5")],
+            IconKind::Fork => &[Shape::Circle { cx: 4.5, cy: 3.5, r: 1.5 }, Shape::Circle { cx: 4.5, cy: 12.5, r: 1.5 }, Shape::Circle { cx: 11.5, cy: 3.5, r: 1.5 }, Shape::Path("M4.5 5v6M11.5 5c0 3-7 2-7 5")],
+            IconKind::MoreHorizontal => &[Shape::Dot { cx: 3.5, cy: 8.0 }, Shape::Dot { cx: 8.0, cy: 8.0 }, Shape::Dot { cx: 12.5, cy: 8.0 }],
+            IconKind::Terminal => &[Shape::Path("M3 4.5l3.5 3.5L3 11.5M8 12h5")],
+            IconKind::Changes => &[Shape::Path("M8 2.5v6M5 5.5h6M5 12.5h6")],
         }
     }
 }
@@ -306,6 +353,7 @@ pub fn Icon(kind: IconKind, #[props(default)] size: IconSize, #[props(default)] 
                     Shape::Circle { cx, cy, r } => rsx! { circle { cx: "{cx}", cy: "{cy}", r: "{r}" } },
                     Shape::Rect { x, y, width, height, rx } => rsx! { rect { x: "{x}", y: "{y}", width: "{width}", height: "{height}", rx: "{rx}" } },
                     Shape::Dot { cx, cy } => rsx! { circle { cx: "{cx}", cy: "{cy}", r: "1", fill: "currentColor", stroke: "none" } },
+                    Shape::Solid(d) => rsx! { path { d, fill: "currentColor" } },
                 }
             }
         }
@@ -314,6 +362,12 @@ pub fn Icon(kind: IconKind, #[props(default)] size: IconSize, #[props(default)] 
 
 /// The run mark of a code block, as markup, for the chat's HTML. It sets its own size and colour because that page has no stylesheet of ours.
 pub const RUN_ICON_SVG: &str = r#"<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3.5l7 4.5-7 4.5z"/></svg>"#;
+
+/// The copy mark of a code block, as markup, for the chat's HTML.
+pub const COPY_ICON_SVG: &str = r#"<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M3 10.5V4a1 1 0 0 1 1-1h6.5"/></svg>"#;
+
+/// The terminal mark beside a result, as markup for the page of the code runner.
+pub const TERMINAL_ICON_SVG: &str = r#"<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5l3.5 3.5L3 11.5M8 12h5"/></svg>"#;
 
 /// The "running" mark shown next to a result while a block runs, as markup for the page of the code runner.
 pub const PENDING_ICON_SVG: &str = r#"<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke-dasharray="2.5 2.5"/></svg>"#;
@@ -324,7 +378,6 @@ mod icon_tests {
 
     #[test]
     fn every_icon_has_a_shape_and_every_path_is_drawn() {
-        assert_eq!(IconKind::ALL.len(), 22);
         for kind in IconKind::ALL {
             let shapes = kind.shapes();
             assert!(!shapes.is_empty(), "{kind:?} has no shape");
@@ -338,7 +391,7 @@ mod icon_tests {
 
     #[test]
     fn the_markup_icons_carry_their_own_size_stroke_and_colour() {
-        for svg in [RUN_ICON_SVG, PENDING_ICON_SVG] {
+        for svg in [RUN_ICON_SVG, PENDING_ICON_SVG, COPY_ICON_SVG, TERMINAL_ICON_SVG] {
             for attribute in ["width=\"12\"", "height=\"12\"", "stroke=\"currentColor\"", "stroke-width=\"1.5\"", "aria-hidden=\"true\""] {
                 assert!(svg.contains(attribute), "{attribute} missing from {svg}");
             }

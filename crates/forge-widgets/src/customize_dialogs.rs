@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::Marketplace;
 use forge_features::{connector_dialog_busy, use_customize, Busy, Dialog, Job, Loaded};
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind};
 
 use crate::customize_connector_dialogs::{AddConnector, ConfirmRemoveConnector, SignInConnector};
 
@@ -107,7 +107,7 @@ fn ManageMarketplaces() -> Element {
                         let name = market.name.clone();
                         move |_| menu.set(if menu() == Some(name.clone()) { None } else { Some(name.clone()) })
                     },
-                    "⋮"
+                    Icon { kind: IconKind::More }
                 }
                 if menu() == Some(market.name.clone()) {
                     div { class: "menu-backdrop", onclick: move |_| menu.set(None) }

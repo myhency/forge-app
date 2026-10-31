@@ -3,7 +3,7 @@ use forge_application::LiveSessionId;
 use forge_domain::{PermissionDecision, PermissionMode, PermissionRequest};
 use forge_entities::{card_takes_focus, diff_for_tool, permission_key, permission_view, workflow_permission_key, DiffView, PermissionKey};
 use forge_features::use_workspace;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 use crate::plan_card::PlanCard;
 
@@ -135,7 +135,7 @@ pub fn PermissionPanel(id: LiveSessionId, request: PermissionRequest) -> Element
                         "aria-label": tr!("More choices"),
                         "aria-expanded": "{menu_open()}",
                         onclick: move |_| menu_open.set(!menu_open()),
-                        "⌄"
+                        Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true }
                     }
                     if menu_open() {
                         div { class: "perm-menu",

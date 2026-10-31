@@ -24,7 +24,7 @@ pub fn SettingsOverlay() -> Element {
                 class: "settings-panel",
                 // A click inside the panel must not reach the backdrop and close it.
                 onclick: move |event| event.stop_propagation(),
-                button { class: "settings-close", title: tr!("Close (Esc)"), onclick: move |_| settings.close(), "✕" }
+                button { class: "settings-close", title: tr!("Close (Esc)"), onclick: move |_| settings.close(), Icon { kind: IconKind::Close } }
                 div { class: "settings-nav",
                     input {
                         class: "settings-search",

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, QueuedMessage};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 use crate::composer_state::use_composer_state;
 use crate::workspace::use_workspace;
@@ -45,7 +45,7 @@ pub fn QueuedCard(id: LiveSessionId, draft: Signal<String>) -> Element {
                                 handle.dequeue(index, true);
                             }
                         },
-                        "↑"
+                        Icon { kind: IconKind::ArrowUp }
                     }
                     button {
                         class: "queue-action",
@@ -63,7 +63,7 @@ pub fn QueuedCard(id: LiveSessionId, draft: Signal<String>) -> Element {
                                 draft.set(if rest.is_empty() { message.text.clone() } else { format!("{}\n{rest}", message.text) });
                             }
                         },
-                        "✎"
+                        Icon { kind: IconKind::Pencil }
                     }
                     button {
                         class: "queue-action",

@@ -8,7 +8,7 @@ use forge_entities::{card_key, clear_key, dot_class, elapsed_label, end_label, e
 use forge_features::{run_blocking, use_workspace, Panel};
 
 use crate::panel_frame::PanelFrame;
-use forge_shared::{tr, Icon, IconKind};
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// How much of a workflow's journal is read: the SDK's own file, with each agent's result in it.
 const JOURNAL_TAIL: usize = 4_000_000;
@@ -95,7 +95,7 @@ pub fn TasksPanel(id: LiveSessionId) -> Element {
                         "aria-expanded": "{state.finished_open}",
                         onclick: move |_| workspace.toggle_finished_tasks(id),
                         span { {tr!("Finished {count}", count = finished.len())} }
-                        span { class: "wf-step-chevron", if state.finished_open { "⌄" } else { "›" } }
+                        span { class: "wf-step-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: state.finished_open } }
                     }
                     if state.finished_open {
                         for card in finished {
@@ -322,7 +322,7 @@ fn PhaseView(step: Step, open: bool, stopped: bool, ontoggle: EventHandler<()>) 
                 if total > 0 {
                     span { class: "wf-step-count", "{done}/{total}" }
                 }
-                span { class: "wf-step-chevron", if open { "⌄" } else { "›" } }
+                span { class: "wf-step-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: open } }
             }
             div { class: "wf-dots",
                 for agent in step.agents.iter() {
@@ -335,7 +335,7 @@ fn PhaseView(step: Step, open: bool, stopped: bool, ontoggle: EventHandler<()>) 
                 }
                 for agent in step.agents.iter() {
                     div { class: "wf-agent", key: "{agent.id}",
-                        span { class: "wf-agent-mark", if agent.state == AgentState::Done { "✓" } else { "" } }
+                        span { class: "wf-agent-mark", if agent.state == AgentState::Done { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                         span { class: "wf-agent-label", "{agent.label}" }
                     }
                 }

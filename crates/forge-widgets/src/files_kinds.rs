@@ -5,7 +5,7 @@ use forge_ports::{DocumentView, FileContent, SheetBook, SlideDeck};
 
 use crate::files_office::{DocumentViewer, SlideViewer};
 use crate::files_sheet::{binary_offers_open, SheetView};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 /// What an open tab shows.
 #[derive(Debug, Clone, PartialEq)]
@@ -175,7 +175,7 @@ fn SvgView(data_url: String, path: String) -> Element {
                     onclick: move |_| scale.set(zoom_step(scale(), 1)),
                     "+"
                 }
-                button { class: "icon-button", r#type: "button", title: tr!("Fit"), "aria-label": tr!("Fit"), onclick: move |_| scale.set(1.0), "⤢" }
+                button { class: "icon-button", r#type: "button", title: tr!("Fit"), "aria-label": tr!("Fit"), onclick: move |_| scale.set(1.0), Icon { kind: IconKind::Expand } }
             }
         }
     }

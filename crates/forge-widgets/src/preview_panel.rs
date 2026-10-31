@@ -3,7 +3,7 @@ use forge_application::LiveSessionId;
 use forge_features::{preview_key_from_event, use_workspace, Panel, PreviewKey, Workspace};
 
 use crate::panel_frame::PanelFrame;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 /// Puts the keyboard in the address field, once the field is there (a new tab draws it a moment later).
 fn focus_address() {
@@ -135,7 +135,7 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                             workspace.preview_back(tab);
                         }
                     },
-                    "‹"
+                    Icon { kind: IconKind::ChevronLeft }
                 }
                 button {
                     class: "icon-button",
@@ -148,7 +148,7 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                             workspace.preview_forward(tab);
                         }
                     },
-                    "›"
+                    Icon { kind: IconKind::Chevron }
                 }
                 button {
                     class: "icon-button",
@@ -157,7 +157,7 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                     "aria-label": "Reload",
                     disabled: current.is_none(),
                     onclick: move |_| retry(),
-                    "⟳"
+                    Icon { kind: IconKind::Reload }
                 }
                 input {
                     class: "preview-url",

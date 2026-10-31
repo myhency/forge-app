@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 use forge_features::{
     current_index, filter_key, group_label, refocus_workspace, sort_label, status_label, use_workspace, FilterChoice, FilterMenu,
     FilterOutcome, FilterRow, FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
@@ -41,7 +41,7 @@ pub fn SidebarFilterMenu() -> Element {
                     menu.set(FilterMenu::default());
                     open.set(!open());
                 },
-                "⇅"
+                Icon { kind: IconKind::Sort }
             }
             if open() {
                 div {
@@ -102,19 +102,19 @@ pub fn SidebarFilterMenu() -> Element {
                             match row {
                                 FilterRow::Status => rsx! {
                                     span { {tr!("Status")} }
-                                    span { class: "value", "{status_label(prefs.status)} ›" }
+                                    span { class: "value", "{status_label(prefs.status)} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                                 },
                                 FilterRow::Sort => rsx! {
                                     span { {tr!("Sort by")} }
-                                    span { class: "value", "{sort_label(prefs.sort_by)} ›" }
+                                    span { class: "value", "{sort_label(prefs.sort_by)} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                                 },
                                 FilterRow::Group => rsx! {
                                     span { {tr!("Group by")} }
-                                    span { class: "value", "{group_label(prefs.group_by)} ›" }
+                                    span { class: "value", "{group_label(prefs.group_by)} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                                 },
                                 FilterRow::ShowEmpty => rsx! {
                                     span { {tr!("Show empty groups")} }
-                                    span { class: "value", if prefs.show_empty { "✓" } }
+                                    span { class: "value", if prefs.show_empty { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                                 },
                             }
                         }
@@ -131,7 +131,7 @@ pub fn SidebarFilterMenu() -> Element {
                                         refocus_workspace();
                                     },
                                     span { "{label}" }
-                                    span { class: "value", if current { "✓" } }
+                                    span { class: "value", if current { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                                 }
                             }
                         }

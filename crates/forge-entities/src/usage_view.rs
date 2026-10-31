@@ -157,7 +157,7 @@ impl UsageView {
 fn model_line(model: &str, tokens: &TokenUsage, prices: &PriceTable) -> ModelLine {
     ModelLine {
         model: model.to_string(),
-        tokens: format!("↑ {} ↓ {}", format_tokens(tokens.input), format_tokens(tokens.output)),
+        tokens: format!("↑ {} ↓ {}", format_tokens(tokens.input), format_tokens(tokens.output)), // icon-ok: arrows for in and out beside the numbers
         cost: prices
             .estimate_cost(model, tokens)
             .map(format_cost)

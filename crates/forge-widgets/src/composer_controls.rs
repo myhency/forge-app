@@ -6,7 +6,7 @@ use forge_features::{
     confirmation_still_valid, effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_settings, use_workspace, ModeChoice, PickerKind,
     effort_help, slider_faster, slider_smarter,
 };
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
 /// One row of a picker's list, whatever it picks.
 #[derive(Debug, Clone, PartialEq)]
@@ -53,7 +53,7 @@ pub(crate) fn Picker(
                 "aria-expanded": "{open()}",
                 onclick: move |_| open.set(!open()),
                 span { "{current}" }
-                span { class: "picker-chevron", "▾" }
+                span { class: "picker-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true } }
             }
             if open() {
                 div {
@@ -107,7 +107,7 @@ pub(crate) fn Picker(
                                     open.set(false);
                                     onpick.call(index);
                                 },
-                                span { class: "picker-check", if item.checked { "✓" } }
+                                span { class: "picker-check", if item.checked { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                                 span { class: "picker-text",
                                     span { class: "picker-label", "{item.label}" }
                                     if let Some(description) = item.description.as_ref() {
@@ -272,7 +272,7 @@ pub fn EffortPickerView(levels: Vec<EffortLevel>, current: Option<EffortLevel>, 
                 "aria-expanded": "{open()}",
                 onclick: move |_| open.set(!open()),
                 span { "{label}" }
-                span { class: "picker-chevron", "▾" }
+                span { class: "picker-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true } }
             }
             if open() {
                 div {

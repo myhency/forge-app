@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use dioxus::prelude::*;
 use forge_entities::{relative_time, SidebarItem};
 use forge_features::{menu_key_action, refocus_workspace, use_workspace, ArchiveAction, DeleteAction, EntryKey, MenuKeyAction, SidebarEntry};
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -189,7 +189,7 @@ pub fn SessionRow(
                                     event.stop_propagation();
                                     workspace.update_prefs(|prefs| prefs.toggle_collapsed(&fold_id));
                                 },
-                                if forks_folded { "▸" } else { "▾" }
+                                Icon { kind: IconKind::Chevron, size: IconSize::Small, open: !forks_folded }
                             }
                         }
                         if has_menu {
@@ -200,7 +200,7 @@ pub fn SessionRow(
                                     event.stop_propagation();
                                     mode.set(if menu_open { RowMode::Normal } else { RowMode::MenuOpen });
                                 },
-                                "⋯"
+                                Icon { kind: IconKind::MoreHorizontal }
                             }
                         }
                     }

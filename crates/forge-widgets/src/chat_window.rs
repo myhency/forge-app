@@ -16,7 +16,7 @@ use crate::fork_line::ForkLine;
 use crate::start_line::StartLine;
 use crate::tasks_panel::use_running_workflows;
 use crate::usage_ring::UsageRing;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 // Watches the message list: `data-away` on the pane tells the CSS whether the button shows.
 const WATCH_SCROLL: &str = "if (!window.__forgeScrollWatch) { window.__forgeScrollWatch = setInterval(() => { for (const list of document.querySelectorAll('.messages')) { if (list.dataset.watching) continue; list.dataset.watching = '1'; const pane = list.closest('.main-pane'); const update = () => { const away = list.scrollHeight - list.scrollTop - list.clientHeight > 80; pane?.setAttribute('data-away', away ? 'true' : 'false'); }; list.addEventListener('scroll', update); const resizes = new ResizeObserver(update); resizes.observe(list); const content = list.firstElementChild; if (content) resizes.observe(content); update(); } }, 400); }";
@@ -36,7 +36,7 @@ fn ScrollToEnd() -> Element {
             onclick: move |_| {
                 document::eval(&format!("const list = document.querySelector('[data-pane=\"{pane}\"] .messages'); list?.scrollTo({{ top: list.scrollHeight, behavior: 'smooth' }});"));
             },
-            "↓"
+            Icon { kind: IconKind::ArrowDown }
         }
     }
 }

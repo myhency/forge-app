@@ -141,9 +141,9 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                 },
                 if page() == Page::Variables {
                     div { class: "env-head",
-                        button { class: "env-back", r#type: "button", title: tr!("Back"), onclick: move |_| leave_variables(), "‹" }
+                        button { class: "env-back", r#type: "button", title: tr!("Back"), onclick: move |_| leave_variables(), Icon { kind: IconKind::ChevronLeft } }
                         h2 { {tr!("Variables")} }
-                        button { class: "settings-close", r#type: "button", title: tr!("Close (Esc)"), onclick: move |_| request_close(), "✕" }
+                        button { class: "settings-close", r#type: "button", title: tr!("Close (Esc)"), onclick: move |_| request_close(), Icon { kind: IconKind::Close } }
                     }
                     p { class: "hint", {tr!("Set for sessions started from this environment.")} }
                     textarea {
@@ -177,7 +177,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                 } else {
                     div { class: "env-head",
                         h2 { if editing { {tr!("Edit environment")} } else { {tr!("New environment")} } }
-                        button { class: "settings-close", r#type: "button", title: tr!("Close (Esc)"), onclick: move |_| request_close(), "✕" }
+                        button { class: "settings-close", r#type: "button", title: tr!("Close (Esc)"), onclick: move |_| request_close(), Icon { kind: IconKind::Close } }
                     }
                     label { class: "env-label", {tr!("Name")} }
                     input {
@@ -237,7 +237,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                         },
                         span { class: "env-label", {tr!("Variables")} }
                         span { class: "hint", { variables_summary(&draft.read().env_vars) } }
-                        span { class: "env-chevron", "›" }
+                        span { class: "env-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                     }
                     div { class: "env-buttons",
                         if editing && !in_session {

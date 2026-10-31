@@ -610,7 +610,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .row-menu-item .value { margin-left: auto; color: var(--fg-muted); font-size: var(--text-sm); }
 .menu-backdrop { position: fixed; inset: 0; z-index: 5; }
 .group-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-6); padding: 0; border: none; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.group-toggle .chevron { flex: none; width: 10px; font-size: var(--text-2xs); color: var(--fg-muted); }
+.group-toggle .chevron { flex: none; width: var(--icon-size-sm); color: var(--fg-muted); }
 .sidebar-resize { flex: none; width: 5px; margin-left: -3px; cursor: col-resize; background: transparent; z-index: 7; }
 .sidebar-resize:hover, .sidebar-resize.dragging { background: var(--accent-soft); }
 .sidebar-rail { flex: none; width: 36px; padding: var(--sp-12) var(--sp-4) 0; box-sizing: border-box; background: var(--bg-sidebar); border-right: 1px solid var(--border); }
@@ -790,7 +790,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .files-row, .files-hit { display: flex; align-items: baseline; gap: var(--sp-4); width: 100%; padding: var(--sp-3) var(--sp-6); border: none; border-radius: var(--r-6); background: transparent; color: var(--fg); font: inherit; font-size: var(--text-sm); text-align: left; cursor: pointer; }
 .files-row:hover, .files-hit:hover, .files-row.selected { background: var(--bg-hover); }
 .files-row { -webkit-user-select: none; user-select: none; }
-.files-mark { flex: none; width: 1em; color: var(--fg-muted); }
+.files-mark { flex: none; width: var(--icon-size-sm); color: var(--fg-muted); }
 .files-hit { flex-direction: row; align-items: baseline; gap: var(--sp-6); }
 .files-hit-path { color: var(--fg-muted); font-size: var(--text-xs); }
 .files-hit-text { font-family: var(--mono); min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
@@ -1494,3 +1494,10 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .icon.sm { width: var(--icon-size-sm); height: var(--icon-size-sm); }
 .icon.open { transform: rotate(90deg); }
 .archived-mark { display: inline-flex; flex: none; margin-right: var(--sp-4); color: var(--fg-muted); }
+
+/* An icon in a row sits in a box of its own, so a chevron, a check or a mark keeps the alignment the glyph had. */
+.picker-chevron, .picker-check, .cd-chevron, .chevron, .files-mark, .wf-step-chevron, .wf-agent-mark, .customize-check, .mention-tick, .env-chevron, .archived-mark { display: inline-flex; align-items: center; justify-content: center; }
+.picker-hint, .menu-key { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--sp-4); }
+.icon-button, .settings-close, .env-back, .env-icon, .queue-action, .cd-comment-ok, .send-icon, .rail-close { display: inline-flex; align-items: center; justify-content: center; }
+.customize-icon .icon { width: 18px; height: 18px; }
+.customize-icon.big .icon { width: 24px; height: 24px; }

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_features::{account_rows, use_settings, use_workspace, user_initial, user_name, AccountAction, AccountRow};
-use forge_shared::{i18n, tr};
+use forge_shared::{i18n, tr, Icon, IconKind, IconSize};
 
 #[component]
 fn Row(row: AccountRow, on_select: EventHandler<AccountAction>) -> Element {
@@ -14,7 +14,7 @@ fn Row(row: AccountRow, on_select: EventHandler<AccountAction>) -> Element {
                 role: "menuitem",
                 onclick: move |_| on_select.call(action),
                 if let Some(checked) = check {
-                    span { class: "picker-check", if checked { "✓" } }
+                    span { class: "picker-check", if checked { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                 }
                 span { class: "picker-text", "{i18n::text(label)}" }
                 if let Some(keys) = keys {
@@ -103,7 +103,7 @@ pub fn AccountMenu() -> Element {
                                         "aria-haspopup": "menu",
                                         onclick: move |_| open_sub.set(Some(index)),
                                         span { class: "picker-text", "{i18n::text(label)}" }
-                                        span { class: "picker-hint", "›" }
+                                        span { class: "picker-hint", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                                     }
                                     if open_sub() == Some(index) {
                                         div { class: "picker-menu context-submenu", role: "menu",

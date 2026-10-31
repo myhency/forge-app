@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
 use forge_entities::{clear_key, task_lists, Clock, connector_rows, context_card, icon_of, row_link, ContextItemView, ContextRowView, RowLink};
 use forge_features::{card_folders, use_workspace, DetailsCard, EnvironmentRequest, Panel};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 use crate::mcp_servers_dialog::{connector_state_text, McpServersDialog};
 use crate::files_icons::FileTypeIcon;
@@ -24,7 +24,7 @@ pub fn DetailsPanel(id: LiveSessionId) -> Element {
                 title: tr!("Close"),
                 "aria-label": tr!("Close"),
                 onclick: move |_| workspace.change_dock(id, |dock| dock.close(Panel::Details)),
-                "✕"
+                Icon { kind: IconKind::Close }
             }
             EnvironmentCard { id }
             ContextCard { id }

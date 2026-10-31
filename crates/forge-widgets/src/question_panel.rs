@@ -3,7 +3,7 @@ use forge_application::LiveSessionId;
 use forge_domain::{PermissionDecision, PermissionRequest};
 use forge_entities::{answers_map, questions_of, Picks};
 use forge_features::{menu_digit_row, use_workspace};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// A question from Claude above the message box: one question at a time, the options as rows
 /// (number keys pick on a single-select question), an "Other" field, and Back / Skip / Next.
@@ -110,7 +110,7 @@ pub fn QuestionPanel(id: LiveSessionId, request: PermissionRequest) -> Element {
                     title: if collapsed() { tr!("Expand") } else { tr!("Collapse") },
                     "aria-expanded": "{!collapsed()}",
                     onclick: move |_| collapsed.set(!collapsed()),
-                    if collapsed() { "›" } else { "⌄" }
+                    Icon { kind: IconKind::Chevron, size: IconSize::Small, open: !collapsed() }
                 }
                 button { class: "icon-button", r#type: "button", title: tr!("Skip"), onclick: move |_| skip_button(), "×" }
             }

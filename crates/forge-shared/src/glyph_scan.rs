@@ -13,7 +13,7 @@ const TRANSLATE: &str = concat!("tr", "!(");
 const MESSAGE: &str = concat!("msg", "!(");
 
 // The modifier keys of a shortcut, which are letters of a key name rather than pictures.
-const KEY_NAMES: [char; 4] = ['\u{2318}', '\u{21E7}', '\u{2325}', '\u{2303}'];
+const KEY_NAMES: [char; 6] = ['\u{2318}', '\u{21E7}', '\u{2325}', '\u{2303}', '\u{23CE}', '\u{21A9}'];
 const ARROWS: [char; 4] = ['\u{2190}', '\u{2191}', '\u{2192}', '\u{2193}'];
 
 fn is_pictograph(c: char) -> bool {
@@ -24,8 +24,12 @@ fn is_pictograph(c: char) -> bool {
         | 0x2190..=0x21FF   // arrows
         | 0x2300..=0x23FF   // technical
         | 0x25A0..=0x25FF   // geometric shapes
+        | 0x27F0..=0x27FF   // long arrows
+        | 0x2900..=0x29FF   // arrows and symbols
+        | 0x2440..=0x245F   // OCR
         | 0x2261            // identical to
-        | 0x22EE            // vertical ellipsis
+        | 0x22EE..=0x22EF   // vertical and midline ellipsis
+        | 0x2039..=0x203A   // single angle quotation marks, used as chevrons
         | 0xFE0F            // emoji presentation selector
     )
 }
@@ -194,5 +198,31 @@ mod tests {
     fn the_emoji_of_the_ui_are_icons_now() {
         let emoji: Vec<String> = in_files(&EMOJI_FILES).into_iter().filter(|found| found.chars().last().is_some_and(|c| (c as u32) >= 0x1F300)).collect();
         assert!(emoji.is_empty(), "an emoji is still drawn as text: {emoji:?}");
+    }
+
+    // Files that show text a terminal printed or a shortcut key, not pictures: parsed output, key names, terminal screens.
+    const TEXT_FILES: [&str; 7] = [
+        "forge-features/src/shortcut.rs",
+        "forge-shared/src/ko.rs",
+        "forge-features/src/sign_in.rs",
+        "forge-features/src/sign_in_run.rs",
+        "forge-adapter-claude-plugins/src/mcp.rs",
+        "forge-adapter-claude-plugins/src/parse.rs",
+        "forge-adapter-claude-plugins/src/run.rs",
+    ];
+
+    #[test]
+    fn the_exempt_files_exist() {
+        let sources = all_sources();
+        for file in TEXT_FILES {
+            assert!(sources.iter().any(|source| source == file), "{file} no longer exists; drop it from the exempt list");
+        }
+    }
+
+    #[test]
+    fn no_screen_code_draws_a_glyph_where_an_icon_belongs() {
+        let files: Vec<String> = all_sources().into_iter().filter(|file| !TEXT_FILES.contains(&file.as_str()) && !file.ends_with("glyph_scan.rs")).collect();
+        let found = in_files(&files.iter().map(String::as_str).collect::<Vec<_>>());
+        assert!(found.is_empty(), "a glyph is drawn as text (use an Icon, or mark a real text use with `icon-ok`):\n{}", found.join("\n"));
     }
 }
