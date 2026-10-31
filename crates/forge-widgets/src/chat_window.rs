@@ -48,7 +48,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
     let settings = use_settings();
     let workflows = use_running_workflows(id);
     let Some(view_signal) = workspace.live_view(id) else {
-        return rsx! { div { class: "empty-state", {tr!("This session is no longer open.")} } };
+        return rsx! { div { class: "state-empty empty-state", {tr!("This session is no longer open.")} } };
     };
     let view = view_signal.read();
     let mode = workspace.transcript_view(id, settings.default_transcript_view());

@@ -9,7 +9,7 @@ use forge_shared::{tr, Button, ButtonKind};
 pub fn PluginsTab() -> Element {
     let customize = use_customize();
     let view = match customize.view() {
-        Loaded::Loading => return rsx! { div { class: "hint", {tr!("Loading…")} } },
+        Loaded::Loading => return rsx! { div { class: "skeleton-list", role: "status", "aria-label": tr!("Loading…"), div { class: "skeleton" } div { class: "skeleton" } div { class: "skeleton" } } },
         Loaded::Failed(message) => {
             return rsx! {
                 div { class: "status-line error", "{message}" }

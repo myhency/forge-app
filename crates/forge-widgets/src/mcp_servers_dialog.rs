@@ -56,7 +56,7 @@ pub fn McpServersDialog(id: LiveSessionId, on_close: EventHandler<()>) -> Elemen
                         span { {tr!("Status")} }
                     }
                     if table.is_empty() {
-                        div { class: "mcp-empty", {tr!("No connectors")} }
+                        div { class: "state-empty", {tr!("No connectors")} }
                     }
                     for row in table.iter() {
                         div { class: "mcp-row", key: "{row.name}",

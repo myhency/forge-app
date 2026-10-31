@@ -315,7 +315,7 @@ pub fn SlideViewer(deck: SlideDeck, path: String, on_open: EventHandler<()>) -> 
                                     p { key: "{index}", style: "margin-left: {indent(item.level)}px", "{item.text}" }
                                 }
                                 if slide_is_empty(slide) {
-                                    p { class: "office-slide-empty", {tr!("This slide has no text.")} }
+                                    p { class: "state-empty office-slide-empty", {tr!("This slide has no text.")} }
                                 }
                             }
                         }

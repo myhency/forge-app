@@ -12,7 +12,7 @@ pub(crate) fn ToolDetail(tool_call: ToolCall) -> Element {
     rsx! {
         div { class: "tool-detail",
             if let Some((true, error)) = result.clone() {
-                div { class: "tool-error", "{error}" }
+                div { class: "state-error", "{error}" }
             }
             div { class: "input-lines",
                 for line in lines.iter() {

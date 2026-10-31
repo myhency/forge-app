@@ -20,7 +20,7 @@ pub fn SkillsTab() -> Element {
                 div { class: "status-line error", {tr!("The skills could not be read.")} }
                 Button { label: tr!("Try again"), onclick: move |_| customize.reload() }
             },
-            Loaded::Loading => rsx! { div { class: "hint", {tr!("Loading…")} } },
+            Loaded::Loading => rsx! { div { class: "skeleton-list", role: "status", "aria-label": tr!("Loading…"), div { class: "skeleton" } div { class: "skeleton" } div { class: "skeleton" } } },
         };
     };
     if let Some(id) = customize.detail() {

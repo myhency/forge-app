@@ -220,7 +220,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                         }
                     }
                     if draft.read().folders.is_empty() {
-                        div { class: "env-empty", {tr!("Choose a folder to start the session in.")} }
+                        div { class: "state-empty", {tr!("Choose a folder to start the session in.")} }
                     } else {
                         div { class: "env-folders",
                             for folder in draft.read().folders.clone() {

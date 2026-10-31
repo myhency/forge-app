@@ -327,7 +327,15 @@ button:not(:disabled):active { transform: scale(0.98); }
 .new-session .field label { width: 64px; color: var(--fg-muted); }
 .field-value { font-weight: var(--weight-semibold); }
 .hint { font-size: var(--text-sm); color: var(--fg-muted); }
-.empty-state { margin: auto; color: var(--fg-muted); }
+.empty-state { margin: auto; }
+/* Empty, error and loading look the same everywhere: a quiet line, a tinted notice, rows of the shape that will arrive. */
+.state-empty { padding: var(--sp-16); text-align: center; color: var(--fg-muted); font-size: var(--text-sm); }
+.state-error { padding: var(--sp-10) var(--sp-12); border-radius: var(--r-8); background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
+.state-error-title { color: var(--danger); font-size: var(--text-base); }
+.state-error pre { margin: var(--sp-4) 0 0; font: inherit; font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.skeleton-list { display: flex; flex-direction: column; gap: var(--sp-10); padding: var(--sp-8) 0; }
+.skeleton { height: 44px; border-radius: var(--r-10); background: linear-gradient(90deg, var(--bg-hover) 0%, color-mix(in srgb, var(--bg-hover) 70%, var(--bg-card)) 50%, var(--bg-hover) 100%); background-size: 200% 100%; animation: skeleton-shimmer 1.4s ease-in-out infinite; }
+@keyframes skeleton-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
 /* Settings overlay */
 .settings-backdrop { position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: var(--bg-overlay); backdrop-filter: blur(3px); }
@@ -623,7 +631,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .palette-project { margin-left: var(--sp-8); font-size: var(--text-sm); color: var(--fg-muted); }
 .palette-date { grid-row: 1; grid-column: 2; font-size: var(--text-xs); color: var(--fg-muted); white-space: nowrap; }
 .palette-snippet { grid-column: 1 / -1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--text-sm); color: var(--fg-muted); }
-.palette-empty { padding: var(--sp-16); text-align: center; color: var(--fg-muted); }
 
 /* Composer + menu, chips */
 .picker-submenu { left: calc(100% + 4px); bottom: 0; min-width: 220px; }
@@ -838,7 +845,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .input-key { flex: none; color: var(--fg-muted); font-family: var(--mono); font-size: var(--text-sm); }
 .input-value { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .input-path { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
-.tool-error { padding: var(--sp-8) var(--sp-12); color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .permission-panel { display: flex; flex-direction: column; gap: var(--sp-10); width: calc(100% - 56px); max-width: var(--chat-column); max-height: 60vh; box-sizing: border-box; margin: 0 auto var(--sp-8); padding: var(--sp-16); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); outline: none; }
 .perm-title { font-weight: var(--weight-bold); }
@@ -1023,7 +1029,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .office-slide-head { padding: var(--sp-4) var(--sp-12); border-bottom: 1px solid var(--border); color: var(--fg-muted); font-size: var(--text-xs); }
 .office-slide-body { padding: var(--sp-12) var(--sp-16); }
 .office-slide-title { margin: 0 0 var(--sp-8); font-size: var(--text-lg); font-weight: var(--weight-bold); }
-.office-slide-empty { margin: 0; color: var(--fg-muted); }
+.office-slide-empty { margin: 0; }
 .office-note { margin: var(--sp-8) 0 0; color: var(--fg-muted); font-size: var(--text-sm); }
 .files-svg { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--viewer-bg); }
 .files-svg-stage { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-12); }
@@ -1075,9 +1081,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .wf-step-name.failed { color: var(--danger); }
 .end-failed, .workflow-end.failed { color: var(--danger); }
 .task-total { margin-left: auto; color: var(--fg-muted); font-size: var(--text-base); }
-.task-error { padding: var(--sp-10) var(--sp-12); border-radius: var(--r-8); background: color-mix(in srgb, var(--danger) 12%, transparent); }
-.task-error-title { color: var(--danger); font-size: var(--text-base); }
-.task-error pre { margin: var(--sp-4) 0 0; font: inherit; font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
 .tasks-fold-head { appearance: none; display: flex; align-items: center; gap: var(--sp-6); padding: 0; border: none; background: none; color: var(--fg-muted); font: inherit; cursor: pointer; }
 .task-card-done .task-description, .workflow-card.ended .task-description { color: var(--fg-muted); }
 .task-command { padding: var(--sp-8) var(--sp-10); background: var(--code-bg); border-radius: var(--r-8); font-family: var(--mono); font-size: var(--text-sm); overflow-wrap: anywhere; white-space: pre-wrap; }
@@ -1326,7 +1329,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .env-label { display: block; margin: var(--sp-14) 0 var(--sp-6); font-weight: var(--weight-semibold); }
 .env-folders-head { position: relative; display: flex; align-items: center; justify-content: space-between; }
 .env-add { border: 1px solid var(--border); background: transparent; border-radius: var(--r-8); padding: var(--sp-4) var(--sp-10); cursor: pointer; color: inherit; }
-.env-empty { border: 1px dashed var(--border); border-radius: var(--r-10); padding: var(--sp-14); color: var(--fg-muted); }
 .env-folders { border: 1px solid var(--border); border-radius: var(--r-10); }
 .env-folder { display: flex; align-items: center; gap: var(--sp-10); padding: var(--sp-10) var(--sp-12); }
 .env-folder + .env-folder { border-top: 1px solid var(--border); }
@@ -1420,7 +1422,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .mcp-kind { color: var(--fg-muted); }
 .mcp-status.ok { color: var(--fg-muted); }
 .mcp-status.action { color: var(--warning); }
-.mcp-empty { padding: var(--sp-8) 0; font-size: var(--text-sm); color: var(--fg-muted); }
 
 .plan-list { margin: var(--sp-8) 0; padding: var(--sp-10) var(--sp-14); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); display: flex; flex-direction: column; gap: var(--sp-8); }
 .plan-step { display: flex; align-items: center; gap: var(--sp-10); font-size: var(--text-md); color: var(--fg); }

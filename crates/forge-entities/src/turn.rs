@@ -326,7 +326,7 @@ fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>
             if open {
                 if let Some(diff) = tool.has_diff.then(|| diff_for_tool_call(&tool.call)).flatten() {
                     if let Some(error) = tool.error.clone() {
-                        div { class: "tool-error", "{error}" }
+                        div { class: "state-error", "{error}" }
                     }
                     DiffView { diff }
                 } else {

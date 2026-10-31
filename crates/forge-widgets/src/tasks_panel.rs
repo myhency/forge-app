@@ -131,7 +131,7 @@ fn TaskCardView(id: LiveSessionId, card: TaskCard) -> Element {
                     }
                 }
                 if end.status == TaskStatus::Failed && !end.summary.is_empty() {
-                    div { class: "task-error", pre { "{error_text(&end.summary)}" } }
+                    div { class: "state-error", pre { "{error_text(&end.summary)}" } }
                 }
             }
         };
@@ -269,8 +269,8 @@ fn WorkflowCardView(id: LiveSessionId, card: TaskCard) -> Element {
             }
             if let Some(end) = end.clone() {
                 if end.status == TaskStatus::Failed && !end.summary.is_empty() {
-                    div { class: "task-error",
-                        div { class: "task-error-title", {tr!("Error")} }
+                    div { class: "state-error",
+                        div { class: "state-error-title", {tr!("Error")} }
                         pre { "{error_text(&end.summary)}" }
                     }
                 }

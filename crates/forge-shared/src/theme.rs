@@ -383,7 +383,7 @@ mod tests {
             ".answer-card",
             ".input-lines",
             ".input-path",
-            ".tool-error",
+            ".state-error",
             ".permission-panel",
             ".perm-title",
             ".perm-buttons",
@@ -460,7 +460,8 @@ mod tests {
             ".palette-input",
             ".palette-row",
             ".palette-snippet",
-            ".palette-empty",
+            ".state-empty",
+            ".skeleton",
         ] {
             assert!(THEME_CSS.contains(class), "theme.css is missing {class}");
         }
