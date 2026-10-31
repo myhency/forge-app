@@ -211,6 +211,52 @@ mod tests {
         }
     }
 
+    // The lines of the stylesheet that are rules, not variable declarations or comments.
+    fn rule_lines() -> impl Iterator<Item = (usize, &'static str)> {
+        THEME_CSS.lines().enumerate().filter(|(_, line)| {
+            let line = line.trim_start();
+            !line.starts_with("--") && !line.starts_with("/*")
+        })
+    }
+
+    #[test]
+    fn no_rule_carries_a_color_literal() {
+        let mut found = Vec::new();
+        for (number, line) in rule_lines() {
+            let hex = line.match_indices('#').any(|(at, _)| line[at + 1..].chars().take_while(char::is_ascii_hexdigit).count() >= 3);
+            if hex || ["rgb(", "rgba(", "hsl(", "hsla(", "oklch("].iter().any(|function| line.contains(function)) {
+                found.push(format!("line {}: {}", number + 1, line.chars().take(90).collect::<String>()));
+            }
+        }
+        assert!(found.is_empty(), "a color belongs in a variable, not in a rule:\n{}", found.join("\n"));
+    }
+
+    #[test]
+    fn rules_take_text_size_weight_spacing_and_radius_from_the_scales() {
+        let steps = ["1", "2", "3", "4", "5", "6", "7", "8", "10", "12", "14", "16", "18", "20", "24", "28"];
+        let radii = ["2", "3", "4", "5", "6", "8", "10", "12", "14"];
+        let mut found = Vec::new();
+        for (number, line) in rule_lines() {
+            for declaration in line.split(|c| c == '{' || c == ';') {
+                let Some((property, value)) = declaration.split_once(':') else { continue };
+                let (property, value) = (property.trim(), value.trim());
+                let literal = |number_list: &[&str]| value.split(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-')).any(|word| word.strip_suffix("px").is_some_and(|n| number_list.contains(&n)));
+                let off_scale = match property {
+                    "font-size" => value.ends_with("px"),
+                    "font-weight" => value.chars().all(|c| c.is_ascii_digit()),
+                    "gap" | "row-gap" | "column-gap" => literal(&steps),
+                    "border-radius" => literal(&radii) || value.contains("999px") || value == "50%",
+                    p if p.starts_with("padding") || p.starts_with("margin") => !value.contains("calc(") && literal(&steps),
+                    _ => false,
+                };
+                if off_scale {
+                    found.push(format!("line {}: {property}: {value}", number + 1));
+                }
+            }
+        }
+        assert!(found.is_empty(), "a scale step belongs in a variable:\n{}", found.join("\n"));
+    }
+
     #[test]
     fn the_stylesheet_has_a_rule_for_every_attribute_value() {
         for rule in [
