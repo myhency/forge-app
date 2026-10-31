@@ -1145,3 +1145,11 @@ Backlog NEW-41.
 So the model line says `보통` here while the box says `중간` for the same effort: the card and the picker word the level differently (picker `중간`, status `보통`). The card is the place where the CLI version and the account are visible. Forge's equivalents: no `/status`; the account and plan appear in the sidebar footer and Settings; the version is in the About/Developer pages. Not checked: the `관리` link target (probably Settings → 커넥터), the copy icon.
 
 Backlog NEW-42.
+
+### Round 36, part 11: `/stats` card and the feedback card
+
+- **`/stats`** shows a card titled `통계` (copy icon at the right). While loading it shows grey skeleton blocks (one wide block, a 2x3 grid of bars, a second wide block, a thin line) for about 8 seconds, then fills. Under the title two selects: `개요 ⌄` (menu: `개요` checked, `모델`) at the left and `전체 기간 ⌄` (menu: `전체 기간` checked, `최근 7일`, `최근 30일`) at the right. `개요` view: a GitHub-style activity heat map (columns are weeks, month names above, weekday letters `월 수 금` at the left, 7 rows, five blue shades with a legend `적음 ▪▪▪▪▪ 많음`); a 2-column grid of facts (`즐겨 사용한 모델`, `세션`, `활성 일수 29/174`, `총 토큰`, `최장 세션 37일 20시간`, `가장 활발했던 날`); a table `토큰` with `입력`, `출력`, `캐시 읽기`, `캐시 쓰기`, `총계` for the chosen period; and a grey fun line comparing the longest session with the time to listen to a famous album (`가장 긴 세션은 … 앨범을 듣는 시간보다 약 N배 깁니다`). The data covers all sessions of the account on this computer, not only this one. Not opened: the `모델` view.
+- **Feedback card** (NEW-23) appeared by itself under the last card once the session had been idle after a turn: a one-line card `이번 세션에서 Claude는 어떤가요?` with three plain text buttons `나쁨` `보통` `좋음` and a `×`, with the footer row of the last message (pin, `지금`) above it. It appeared after `/status` and `/stats`, not after the first turns. Not pressed (it would send a rating from the user's account).
+- With a slash card as the last item the reply footer shows a pin icon and `지금`, i.e. the card counts as a message.
+
+Backlog NEW-43; NEW-23 gets "seen again, shows after an idle moment" (below).
