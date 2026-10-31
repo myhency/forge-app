@@ -1064,3 +1064,13 @@ Same method. The session had reached step 4 (`todos.json`, `plugin-store`); a ne
 Compared with Forge by string search in `ko.rs` only (not run): none of `더 많은 모델`, `Ultracode`, `개발 서버 감지`, `iOS`, `사이드 채팅` were found; `Attach as context`, `Accept edits`, `Bypass permissions`, `Add folder`, `Absolute path` exist. Backlog NEW-29..33.
 
 Not checked: `Ultracode` switch, `권한 무시 활성화`, `사이드 채팅`, `백그라운드 작업` (panel), the plugin skill rows (do they insert `/skill`?), `…` of the Preview header and its layout icon, what ends the dev-server spinner.
+
+### Round 36, part 3: dev server detection and a run of the app
+
+- **`먼저 실행해 보기`** (second button of the next-step card) sent its label as a user bubble; the model ran `npm run tauri dev` in the background (activity line `Running Tauri dev app in backgr…` then `Waiting for Rust build … 46초`, reply `첫 Rust 빌드가 진행 중입니다(353개 크레이트). 끝날 때까지 기다립니다.`). A real Tauri window opened on screen (processes `vite`, `target/debug/todo-app`). The model then told me what to check (five numbered items) and said the server keeps running in the background.
+- **The next card's buttons change with the situation**: after the run the card asked `동작 확인 후 5단계(데스크톱 마무리)로 갈까요?` with `5단계 진행 ⌘⏎` and `문제 있음`. The model writes both labels.
+- **Preview `개발 서버 감지`** finished in about a minute: text `개발 서버가 감지되었습니다. 이 명령은 미리보기가 시작될 때 셸에서 실행됩니다.`, a card `Vite · 포트 1420` / `npm run dev` with a button `이것 사용`, a grey line `선택 사항이 이 프로젝트의 .claude/launch.json에 저장되었습니다.` and a link `← 탐색으로 돌아가기`. So the app reads `package.json`, proposes the server command and port, and keeps the choice in `.claude/launch.json` of the project. Pressing `이것 사용` here showed a red line `이 구성을 저장할 수 없습니다. 다시 시도하세요.` and no `.claude` folder was created in `/private/tmp/forge-observe` or `todo-app` (reason unknown; the folder is a `/private/tmp` path with no git repo). The preview did not start. Not checked: the success path, what the preview shows afterwards, the layout icon in the header.
+- **Narrow window**: with three columns open, the details panel (환경, 컨텍스트, 커넥터, 결과물) opens as a floating popover over the chat column under its header icon and scrolls inside; it did not show a `백그라운드 작업` card in that view.
+- Cleanup: the dev server and its window were stopped by killing the processes of `forge-observe/todo-app` from the shell (not through the app's stop button).
+
+Backlog NEW-34 (dev-server detection) and NEW-35 (card buttons written by the model, already how NEW-25 works).
