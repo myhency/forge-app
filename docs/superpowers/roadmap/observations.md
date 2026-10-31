@@ -1091,3 +1091,12 @@ Typing `/` in an empty box opens a list above the box, filter placeholder `입�
 - Arrow keys move the highlight and scroll the list; the list is about 13 rows tall; mouse wheel scrolling over it moved it by only a few pixels.
 - The command names that appear here and not in Forge's list were not compared row by row (only these strings were grepped: `ultrareview`, `subtask`, `auto-mode-setup`, `usage-credits`, `output-style`, `add-dir`; results in the backlog note). The user-defined commands and skills of the account are mixed in with the built-ins, with a right-hand label only for user commands.
 - Not checked: what each command does when run (`subtask`, `advisor`, `autocompact`, `sandbox`, `storage`, `stats`, `usage-credits`); the tooltip on the first rows other than the ones above.
+
+### Round 36, part 6: `/tasks` opens the background-task panel
+
+- Typing `/tasks` turns it into a blue token in the box (Return once picks it from the list, Return twice runs it; same as the other commands). No user bubble and no model turn: the command only opened a panel `백그라운드 작업` as a FIFTH column at the right edge. Header: title, a trash icon, expand, close. The column list is the same panel as the header `…` item `백그라운드 작업`.
+- Inside: a fold `완료 5` (open) with one row per background task of the session, each a grey card with a triangle, the task's description (the model's own words: `Run Tauri dev app in back…`, `Wait for Rust build to finish`, `Typecheck, build frontend, ca…`, `Check Rust side compiles`, `Install deps and inspect temp…`), and a red `실패` at the right of the one I killed. Pressing a row opens it in place: `$ <command>` in a grey code block with the colored console output (cargo's `Building [====>] 352/353`, `Finished`, `Running`) and a last line `[exited with code 144]`. Wide lines wrap with no horizontal scroll.
+- With five columns open the chat column shrinks to about 190 px and is clipped (no minimum width); the header of the chat column shows only a short title and `…`. Nothing in the layout hid a panel to make room.
+- Not pressed: the trash icon (clear finished tasks?), a running task's stop control (the earlier `백그라운드 작업` card in the Details panel had a stop square).
+
+Backlog NEW-39.
