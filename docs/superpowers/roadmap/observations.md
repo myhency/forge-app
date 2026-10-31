@@ -1210,3 +1210,18 @@ Backlog NEW-48 (Settings search grouped by page).
 Forge side (string search of `ko.rs`): `Environment variables` exists; `Remote Control`, `Network access`, `Setup script`, `Network secrets`, `SSH`, `Add cloud environment` do not. Forge's own `새 환경` (Plan 53) has the local kind with name, folders and variables; the other three tabs are cloud, remote and phone features that do not apply, except that the recent-folder list in `+ 추가` and the empty-state texts may be worth matching. Backlog NEW-49.
 
 Not checked: the file dialog behind `선택…`, `더 보기 1 ›`, the `네트워크 액세스` row dialog, `클라우드 환경 추가…`.
+
+### Round 36, part 17: sidebar after the app update, filter menu
+
+The desktop app is version 4.4212.0 (Settings → 시스템). The sidebar differs from rounds 3 and 32:
+
+- **Sidebar top** now reads `새로 만들기`, `검색`, `프로젝트`, `아티팩트`, `예약됨`, `Dispatch 베타`, `사용자 지정` in the Chat (left of the two top-left mode buttons) mode; the Code mode shows `새로 만들기`, `검색`, `아티팩트`, `예약됨`, `사용자 지정`, `더 보기` (a `…` row). The two top-left buttons are a mode switch: a chat-bubble-with-lens (Chat/Cowork home) and `</>` (Code); pressing the first opened a home page `Hyunseung님, 다시 돌아왔군요` with a big box `오늘 어떤 도움을 드릴까요?`, `프로젝트 또는 폴더 ⌄`, `Sonnet 5.5 중간`, `수동`, a `최근 아티팩트` row (three cards with a thumbnail, title and date; `모두 보기`) and company legal text at the bottom. The sidebar then shows `고정됨` and `최근 항목` groups. Pressing `</>` returned to Code mode.
+- **`더 보기`** (Code mode) opens a small popover to the right of the row: one item, `사이드바 편집…` (round 32: three checkboxes).
+- **Project group header filter menu** (hover the header: a filter icon and a `+` appear at its right; the header row gets a grey background): `그룹화 기준 환경 ›`, `정렬 기준 마지막 업데이트 ›`, `표시 ›`, a line, `새 섹션`, a line, `기본값으로 재설정`, `모두 보기`.
+  - `그룹화 기준` submenu: `날짜`, `상태`, `폴더`, `환경` (checked, blue), a line, `없음`. (`사용자 지정 그룹` of round 3 is gone; `새 섹션` replaces it, and `환경` is the new default.)
+  - `정렬 기준` submenu: `마지막 업데이트` (checked), `생성 날짜`, `이름`; a line; `내림차순` (checked), `오름차순`.
+  - `표시` submenu: `메타데이터` (checked), a line, `사이드 채팅`, `빈 그룹` (both unchecked). So side chats are listed in the sidebar only when this is on, and the old `PR 상태 표시` is now part of `메타데이터`.
+  - `새 섹션` adds a user-named group; `기본값으로 재설정` resets group, sort and show; `모두 보기` shows all items in the list (the list is cut to a count with `더 보기` otherwise).
+- Group headers show the environment name (`claude-code-study`, `features`, `forge-obs-r26`, a branch line `claude/create-file-b-txt-6eeb0c` under a session in a worktree), with a triangle `▾` at the right of the name.
+
+Compared with Forge by string search: only part of this was checked (see the backlog row). Backlog NEW-50.
