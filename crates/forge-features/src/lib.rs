@@ -47,6 +47,7 @@ mod preview_host;
 mod preview_tabs;
 mod suggestion;
 mod refocus;
+mod routine_templates;
 mod routines;
 mod routines_state;
 mod search;
@@ -128,6 +129,7 @@ pub use sidebar::{
 };
 pub use terminal_tabs::{TabId, TerminalTabs};
 pub use routines::{cards, history_rows, run_state_text, local_when_label, notices, offset_at, skip_text, start_failed_notice, waiting_notice, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};
+pub use routine_templates::{routine_templates, RoutineTemplate};
 pub use routines_state::{use_routines, use_routines_provider, RoutineDialog, RoutineScreen, Routines};
 pub use workspace::{preview_key_from_event, shortcut_from_event, use_workspace, use_workspace_provider, Active, PaneGeometry, Picture, RoutineServices, TrustRequest, Workspace, WorkspaceServices};
 pub use blocking::run_blocking;
