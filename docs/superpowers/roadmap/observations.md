@@ -1310,3 +1310,11 @@ Pressing the card `Iran war status update` (the user's own paused task) opens a 
 Not pressed: `지금 실행` (it would run the task and use the account), the pencil, the trash can, the status switch, a run row (probably opens that run's session).
 
 Backlog NEW-56 (detail page and history; compare with Plan 31's detail).
+
+### Round 36, part 26: edit form of a LOCAL scheduled task (pencil)
+
+The pencil on the detail page opens a modal `예약된 작업 편집` that is NOT the `새 예약된 작업` modal of part 23. It is the older, local-task form (the one Forge's Plan 31 copied): an info card (`로컬 예약된 작업은 컴퓨터가 절전 모드가 아니고 온라인 상태일 때만 실행됩니다.`), `이름 *` (focused), `설명 *` (one line, required), `지침` (the whole prompt in a grey box; at the box's bottom left a shield pill `수동` (permission mode), at the right `⌄ 기본값` (model); under it a strip with the folder chip `📁 ~/Developer/claude-code-study` and, at the right, a checkbox `워크트리`), `스케줄` (a pill group `수동` `매시간` `매일` `평일마다` `매주` `사용자 지정`; the saved task had `사용자 지정` selected) and `Cron 표현식` (a field with a placeholder `* * * * *`). Footer `취소` and a black `저장`. Not scrolled further (more fields may sit below the cron line). I pressed `취소`.
+
+So the desktop app has two forms: the cloud-capable `새 예약된 작업` (modal, part 23; page, part 24) and this local-task edit modal. The local one shows `설명` and a `워크트리` checkbox (Forge has both from Plan 31/47). `사용자 지정` + a cron field is how several schedules of the detail page (`1분마다, 1시간마다, 매일`) are stored: preset pills plus a cron.
+
+Nothing was saved.
