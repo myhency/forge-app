@@ -147,7 +147,7 @@ button:not(:disabled):active { scale: 0.98; }
 .group-add:hover { background: var(--bg-hover); color: var(--fg); }
 .sidebar-item { display: flex; align-items: center; gap: var(--sp-10); padding: var(--sp-6) var(--sp-8); border-radius: var(--r-8); cursor: pointer; }
 .sidebar-item:hover { background: var(--bg-hover); }
-.sidebar-item.active { background: var(--bg-hover); font-weight: var(--weight-semibold); }
+.sidebar-item.active { background: var(--bg-hover); }
 .sidebar-item .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-item .subtitle { flex: none; font-size: var(--text-xs); color: var(--fg-muted); }
 .fork-fold { flex: none; width: 22px; height: 22px; border: none; border-radius: var(--r-6); background: transparent; color: var(--fg-muted); font: inherit; line-height: 1; cursor: pointer; }
@@ -282,7 +282,7 @@ button:not(:disabled):active { scale: 0.98; }
 
 /* Composer: one rounded box */
 /* Composer: one rounded box (+, text, send) with a quiet line of pickers under it. The new session and an open session share it. */
-.composer-wrap { width: calc(100% - 56px); max-width: var(--chat-column); margin: 0 auto var(--sp-14); box-sizing: border-box; }
+.composer-wrap { position: relative; width: calc(100% - 56px); max-width: var(--chat-column); margin: 0 auto var(--sp-14); box-sizing: border-box; }
 .composer { position: relative; display: flex; flex-direction: column; gap: var(--sp-6); padding: var(--sp-8) var(--sp-8) var(--sp-8) var(--sp-8); box-sizing: border-box; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-composer); }
 .composer-input-row { display: flex; align-items: flex-end; gap: var(--sp-4); }
 .composer-lead, .composer-action { flex: none; display: flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; }
@@ -295,6 +295,8 @@ button:not(:disabled):active { scale: 0.98; }
 .composer-controls-end { margin-left: auto; justify-content: flex-end; }
 .composer-controls .picker-chevron { display: none; }
 .composer-controls .picker-button .icon { margin-right: var(--sp-2); }
+/* Menus open above the box, not over it: they hang from the whole wrap, not from their button in the line below. */
+.composer-controls .picker, .composer-controls .usage { position: static; }
 .composer-controls-end .picker-menu, .composer-controls-end .usage-popover { left: auto; right: 0; }
 .usage { position: relative; flex: none; }
 .usage-ring { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: var(--r-round); background: transparent; cursor: pointer; }
