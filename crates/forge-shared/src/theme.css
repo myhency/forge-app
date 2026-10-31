@@ -11,6 +11,7 @@
   --dur-fast: 0.12s; --dur-base: 0.18s; --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --focus-ring-width: 2px; --focus-ring-offset: 2px; --focus-ring-color: var(--accent);
   --field-focus-border: var(--accent); --field-focus-halo: 3px;
+  --icon-size: 16px; --icon-size-sm: 12px; --icon-stroke: 1.5;
   --blur-popover: 12px;
   --bg-elevated: var(--surface-3);
   --on-overlay: oklch(1 0 0);
@@ -1487,3 +1488,8 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 @media (forced-colors: active) {
   .text-input:focus-visible, .textarea:focus-visible, .settings-search:focus-visible, .customize-field:focus-visible, .customize-search:focus-visible, .env-search:focus-visible, .files-filter-input:focus-visible, .question-other:focus-visible, .preview-url:focus-visible, .env-variables:focus-visible, .plan-card-text:focus-visible, .cm-find-bar input:focus-visible, .cm-goto-bar input:focus-visible, .cd-menu-search:focus-visible, .rename-input:focus-visible, .composer:focus-within, .palette:focus-within, .cd-search:focus-within, .cm-comment-box:focus-within, .cd-comment:focus-within { outline: 2px solid Highlight; }
 }
+
+/* An icon is drawn in the colour of the text around it, in one of two sizes, with one stroke. A chevron points right; open turns it down. */
+.icon { width: var(--icon-size); height: var(--icon-size); stroke-width: var(--icon-stroke); flex: none; vertical-align: middle; }
+.icon.sm { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+.icon.open { transform: rotate(90deg); }
