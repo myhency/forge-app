@@ -144,7 +144,7 @@ pub fn CommitsSection(id: LiveSessionId, commits: Vec<CommitInfo>, view: ChangeV
             div { class: "cd-commits-title", onclick: move |_| open.set(!open()),
                 span { class: if open() { "cd-chevron open" } else { "cd-chevron" }, "›" }
                 span { {tr!("Commits")} }
-                span { style: "margin-left: auto;", "{commits.len()}" }
+                span { class: "ml-auto", "{commits.len()}" }
             }
             if open() {
                 button {

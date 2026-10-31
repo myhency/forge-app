@@ -108,6 +108,9 @@ body { font-family: var(--font); font-size: var(--text-md); line-height: 1.5; wo
 /* Interaction: one hover, press and focus language for every control; a rule below may replace any of it. */
 button, [role="button"], input, textarea, select, .sidebar-item { transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out); }
 button:not(:disabled):active { transform: scale(0.98); }
+.mt-12 { margin-top: var(--sp-12); }
+.mt-16 { margin-top: var(--sp-16); }
+.ml-auto { margin-left: auto; }
 :focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: var(--focus-ring-offset); }
 
 .panes { flex: 1; min-width: 0; position: relative; }
@@ -1473,3 +1476,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0s !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; scroll-behavior: auto !important; }
 }
+
+/* Numbers that line up in columns or tick over use figures of one width. */
+.wf-step-count, .task-total, .task-row-time, .cm-find-count, .ctx-folded-percent, .count-chips, .count-added, .count-removed, .usage-tile-value, .legend-tokens, .legend-share, .diff-counts, .footer-time, .sidebar-item .subtitle { font-variant-numeric: tabular-nums; }

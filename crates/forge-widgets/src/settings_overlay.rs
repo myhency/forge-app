@@ -58,8 +58,7 @@ pub fn SettingsOverlay() -> Element {
                         }
                     }
                     button {
-                        class: "settings-nav-item",
-                        style: "margin-top: 16px;",
+                        class: "settings-nav-item mt-16",
                         onclick: move |_| {
                             settings.close();
                             workspace.open_shortcuts();
@@ -317,7 +316,7 @@ fn CodeSection() -> Element {
                 Switch { on: settings.attention_bounce(), onchange: move |on| settings.set_attention_bounce(on) }
             }
         }
-        div { class: "hint", style: "margin-top: 12px;",
+        div { class: "hint mt-12",
             {tr!("Output style, prompt suggestions, the bypass switch, dynamic workflows and the task list apply to sessions that start after the change. The default view also applies to open sessions you have not changed.")}
         }
     }
@@ -345,10 +344,10 @@ fn ConnectionSection() -> Element {
             }
             Button { label: key_label, onclick: move |_| settings.toggle_key_visible() }
         }
-        div { class: "hint", style: "margin-top: 12px;",
+        div { class: "hint mt-12",
             {tr!("Sessions that are already open keep the old values until they are started again.")}
         }
-        div { style: "margin-top: 16px;",
+        div { class: "mt-16",
             Button {
                 label: tr!("Save"),
                 kind: ButtonKind::Primary,
@@ -391,7 +390,7 @@ fn ModelSection() -> Element {
                 },
             }
         }
-        div { class: "hint", style: "margin-top: 12px;",
+        div { class: "hint mt-12",
             {tr!("Sessions that are already open keep their model; a change applies to the next new session.")}
         }
     }
@@ -439,7 +438,7 @@ fn ExtensionSection(kind: ExtensionKind) -> Element {
             div { class: "hint", {tr!("Showing what is available for {project}.", project = settings.project_label())} }
         }
         {body}
-        div { class: "hint", style: "margin-top: 12px;",
+        div { class: "hint mt-12",
             {tr!("Sessions that are already open keep what they started with; a change applies to the next new session.")}
         }
         div { class: "hint",

@@ -304,6 +304,19 @@ mod tests {
     }
 
     #[test]
+    fn numbers_that_line_up_use_figures_of_one_width() {
+        for class in [".task-row-time", ".count-added", ".count-removed", ".usage-tile-value", ".legend-tokens", ".diff-counts", ".footer-time", ".ctx-tokens", ".usage-row .value", ".live-clock"] {
+            let tabular = THEME_CSS.lines().any(|line| line.contains('{') && line.split('{').next().unwrap().split(',').any(|selector| selector.trim() == class) && line.contains("font-variant-numeric: tabular-nums"));
+            assert!(tabular, "{class} shows numbers without tabular figures");
+        }
+    }
+
+    #[test]
+    fn spacing_a_screen_needs_once_is_a_class_not_an_inline_style() {
+        assert!(rule(".mt-12").contains("var(--sp-12)") && rule(".mt-16").contains("var(--sp-16)") && rule(".ml-auto").contains("auto"));
+    }
+
+    #[test]
     fn the_stylesheet_has_a_rule_for_every_attribute_value() {
         for rule in [
             "[data-text-size=\"small\"]",
