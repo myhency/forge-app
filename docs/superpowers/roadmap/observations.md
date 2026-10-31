@@ -1318,3 +1318,18 @@ The pencil on the detail page opens a modal `예약된 작업 편집` that is NO
 So the desktop app has two forms: the cloud-capable `새 예약된 작업` (modal, part 23; page, part 24) and this local-task edit modal. The local one shows `설명` and a `워크트리` checkbox (Forge has both from Plan 31/47). `사용자 지정` + a cron field is how several schedules of the detail page (`1분마다, 1시간마다, 매일`) are stored: preset pills plus a cron.
 
 Nothing was saved.
+
+## Round 36: what was built from it (2026-10-31, branch `myhency/develop`)
+
+The user asked to build what was observed, with care for the UI. Four things were built and each was looked at in the real Forge window (harness, light mode only):
+
+1. **`자동 모드 켜기` card** (NEW-27) under the environment card on the new-session screen. It is placed out of the flow so the environment card does not jump when it goes away (first try let the environment card move 44 px; caught in the window, fixed with `position: absolute`).
+2. **`/tasks` and `/diff`** (NEW-38 in part). Verified in the window: `/tasks` lists in the slash menu with its description, Enter twice opens the background-tasks panel and clears the box, nothing is sent. `/diff` is covered by the unit test and shares the code path; it could not be typed in the window because the harness types through the Korean input method (see the harness README), and a first attempt sent a stray `/dff` that failed in the fake session and left no file.
+3. **Sidebar filter menu**: sort direction and a reset (NEW-50 in part). Verified: pressing `오름차순` reverses the group (oldest first), `기본값으로 재설정` restores the newest-first order. A keyed-node warning of Dioxus found while building was fixed (`Fragment`).
+4. **Routine templates** (NEW-53 in part): `내 루틴 / 템플릿` tabs, five templates, a card opens the filled form; the discard dialog and the return to the templates tab were checked.
+
+Facts that changed the plan while building: NEW-26 already existed (`Allow and switch to Auto mode` in the permission card; the first string search was by the Korean text and missed it), and NEW-51 (`저장` for the folder) already existed in the Details panel and as `환경으로 저장` on the session's first line.
+
+Tests: `cargo test --workspace` passes except `forge-adapter-claude-plugins/tests/round_trip.rs` (it adds a marketplace with the real `claude` binary; the crate was not touched; the plugin tests were already known as flaky in the notes of Plan 32). Not run: dark mode, Windows.
+
+Not built, kept in the backlog: NEW-28/29/30/31/32/33 (the `/usage`, `/status`, `/stats` cards NEW-41/42/43, the side chat in the sidebar NEW-52, the Settings display block NEW-46, the Settings search NEW-48, the schedule form changes NEW-55/56, `/usage`-style cards). Those are larger or need a decision (see each row).
