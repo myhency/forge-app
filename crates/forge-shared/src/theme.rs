@@ -17,6 +17,44 @@ mod tests {
         assert_eq!(THEME_CSS.matches(":root:not([data-theme=\"light\"]) {").count(), media, "the media version must not apply when the person chose light");
     }
 
+    // The declarations of every variable block of one kind, in file order: the `@media` ones are indented one level deeper.
+    fn dark_blocks(forced: bool) -> Vec<Vec<String>> {
+        let (open, close) = if forced { (":root[data-theme=\"dark\"] {\n", "\n}") } else { ("@media (prefers-color-scheme: dark) {\n  :root:not([data-theme=\"light\"]) {\n", "\n  }\n}") };
+        THEME_CSS
+            .match_indices(open)
+            .map(|(at, _)| {
+                let body = &THEME_CSS[at + open.len()..];
+                let body = &body[..body.find(close).unwrap()];
+                body.lines().map(|line| line.trim().to_string()).collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_system_dark_block_and_the_forced_dark_block_hold_the_same_declarations() {
+        let system = dark_blocks(false);
+        let forced = dark_blocks(true);
+        assert_eq!(system.len(), forced.len());
+        assert!(system.len() >= 3);
+        for (system, forced) in system.iter().zip(&forced) {
+            assert_eq!(system, forced, "the two dark palettes have drifted apart");
+        }
+    }
+
+    #[test]
+    fn the_scale_tokens_are_defined_on_the_root() {
+        let root = &THEME_CSS[..THEME_CSS.find("\n}").unwrap()];
+        for token in [
+            "--sp-4:", "--sp-8:", "--sp-16:", "--text-sm:", "--text-base:", "--text-md:", "--leading-normal:", "--weight-semibold:", "--r-6:", "--r-pill:", "--dur-fast:", "--dur-base:", "--ease-out:", "--surface-0:", "--surface-1:",
+            "--surface-2:", "--surface-3:", "--shadow-1:", "--shadow-2:", "--shadow-3:",
+        ] {
+            assert!(root.contains(token), "the root block does not define {token}");
+        }
+        for old_name in ["--bg:", "--bg-sidebar:", "--bg-card:", "--radius:", "--radius-lg:", "--shadow:"] {
+            assert!(root.contains(&format!("{old_name} var(--")), "{old_name} must stay as an alias of a scale token");
+        }
+    }
+
     #[test]
     fn the_stylesheet_has_a_rule_for_every_attribute_value() {
         for rule in [
