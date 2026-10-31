@@ -39,6 +39,7 @@ pub(crate) fn Picker(
     onpick: EventHandler<usize>,
     #[props(default)] heading: Option<String>,
     #[props(default)] kind: Option<PickerKind>,
+    #[props(default)] icon: Option<IconKind>,
 ) -> Element {
     let mut open = use_signal(|| false);
     use_picker_request(kind, open);
@@ -52,6 +53,9 @@ pub(crate) fn Picker(
                 "aria-haspopup": "menu",
                 "aria-expanded": "{open()}",
                 onclick: move |_| open.set(!open()),
+                if let Some(icon) = icon {
+                    Icon { kind: icon }
+                }
                 span { "{current}" }
                 span { class: "picker-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true } }
             }

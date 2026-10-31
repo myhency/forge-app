@@ -38,6 +38,7 @@ pub fn FolderChip() -> Element {
         Picker {
             title: tr!("Folder"),
             heading: tr!("Recent"),
+            icon: IconKind::Folder,
             current: current_label,
             items,
             onpick: move |index: usize| {

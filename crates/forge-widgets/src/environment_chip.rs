@@ -69,6 +69,7 @@ pub fn EnvironmentChip() -> Element {
                 "aria-haspopup": "menu",
                 "aria-expanded": "{open()}",
                 onclick: move |_| open.set(!open()),
+                Icon { kind: IconKind::Laptop }
                 span { "{label}" }
                 span { class: "picker-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true } }
             }

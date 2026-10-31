@@ -91,7 +91,7 @@ pub fn PlusMenu(project: Option<PathBuf>, add_folder_enabled: bool) -> Element {
                         open.set(true);
                     }
                 },
-                "+"
+                Icon { kind: IconKind::Plus }
             }
             if open() {
                 div { class: "picker-backdrop", onclick: move |_| close() }
