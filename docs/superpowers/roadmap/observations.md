@@ -1333,3 +1333,15 @@ Facts that changed the plan while building: NEW-26 already existed (`Allow and s
 Tests: `cargo test --workspace` passes except `forge-adapter-claude-plugins/tests/round_trip.rs` (it adds a marketplace with the real `claude` binary; the crate was not touched; the plugin tests were already known as flaky in the notes of Plan 32). Not run: dark mode, Windows.
 
 Not built, kept in the backlog: NEW-28/29/30/31/32/33 (the `/usage`, `/status`, `/stats` cards NEW-41/42/43, the side chat in the sidebar NEW-52, the Settings display block NEW-46, the Settings search NEW-48, the schedule form changes NEW-55/56, `/usage`-style cards). Those are larger or need a decision (see each row).
+
+### Round 36, build part 2 (2026-10-31): the cards, the settings search
+
+Built after the first four: `/status`, `/usage` and `/stats` cards in the chat (a `LocalCard` of blocks: heading, rows, meter, note, tiles, calendar, loading), and the Settings search that lists matching rows under their page. Looked at in the real window (light mode): `/status`, `/usage` with a fixture session of two models, `/stats` with 20 fixture sessions over 4 months (`scripts/harness/add_usage_samples.py`), the range switch, a 760 pt window (tiles go to two columns), and the settings search with `테마`.
+
+Lessons from the build:
+- The Home dashboard's model for stats (`UsageStats`, `heat_level`, `overview_tiles`) and its adapter were still in the code but no screen drew them; `/stats` reuses them. Search the code for a thing's English key before planning to build it: five rows of the backlog (NEW-26, 28, 29, 30, 39, 46, 51, 56) were already built.
+- The project's own guards caught three mistakes at build time: the stylesheet test (spacing and radius must come from the scale variables), a Dioxus rule (a key must be a formatted string, and a keyed node must be the first in its block), and a unit test of the month labels (two names stood side by side on the left edge of the calendar).
+- The harness types through the Korean input method: a letter is sometimes lost (`/dff`, `/sttus`). Type a command in two short pieces and look at the box before pressing Enter. A command typed wrong and sent in the fake session fails there and leaves no file.
+- The status/usage/stats cards are not saved in the transcript and a sent message takes them away. The desktop app keeps them as part of the chat.
+
+Not run: dark mode, Windows. Two tests of `forge-adapter-claude-plugins` fail on this machine (`round_trip` and `a_command_that_times_out_takes_the_processes_it_started_with_it`); the crate was not touched in this work and everything else (2,590 tests) passes.
