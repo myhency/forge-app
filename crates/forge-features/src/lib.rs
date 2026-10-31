@@ -110,7 +110,7 @@ pub use filter_menu::{
     FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
 };
 pub use folder_choice::{choose_folder, FolderChoice};
-pub use folder_menu::{folder_menu_rows, FolderMenuRow, MAX_RECENT_FOLDERS};
+pub use folder_menu::{folder_menu_rows, recent_folder_card_rows, FolderMenuRow, MAX_RECENT_FOLDERS, RECENT_CARD_ROWS};
 pub use new_session::{send_ready, use_new_session_draft, ModelChoice, NewSessionComposer, NewSessionDraft};
 pub use refocus::{refocus_composer, refocus_workspace, watch_focus};
 pub use permission_mode::{menu_digit_row, confirmation_still_valid, mode_choice, mode_options, mode_rows, mode_value, parse_mode, ModeChoice, ModeRow};
