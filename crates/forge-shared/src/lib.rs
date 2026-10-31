@@ -8,7 +8,7 @@ mod ko;
 mod theme;
 mod xterm;
 
-pub use components::{Button, ButtonKind, Segmented, SettingRow, Select, StatusDot, Switch, TextArea, TextInput, Tone};
+pub use components::{Button, ButtonKind, LoadingRows, Segmented, SettingRow, Select, StatusDot, Switch, TextArea, TextInput, Tone};
 pub use editor::editor_head;
 pub use ime::ime_guard_head;
 pub use office::{office_head, pptx_library};

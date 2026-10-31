@@ -3,13 +3,13 @@ use forge_domain::PluginEntry;
 use forge_features::{
     explore_groups, group_title, mine_groups, use_customize, Busy, CustomizeMode, Dialog, Job, Loaded, PluginGroup,
 };
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, LoadingRows};
 
 #[component]
 pub fn PluginsTab() -> Element {
     let customize = use_customize();
     let view = match customize.view() {
-        Loaded::Loading => return rsx! { div { class: "skeleton-list", role: "status", "aria-label": tr!("Loading…"), div { class: "skeleton" } div { class: "skeleton" } div { class: "skeleton" } } },
+        Loaded::Loading => return rsx! { LoadingRows {} },
         Loaded::Failed(message) => {
             return rsx! {
                 div { class: "status-line error", "{message}" }

@@ -4,7 +4,7 @@ use forge_features::{
     connection_text, connector_groups, explore_connectors, find_connector, shows_sign_in, source_label, use_customize, Busy, ConnectionState, ConnectorRow,
     CustomizeMode, Dialog, Job, Loaded,
 };
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, LoadingRows};
 
 #[component]
 pub fn ConnectorsTab() -> Element {
@@ -19,7 +19,7 @@ pub fn ConnectorsTab() -> Element {
                 div { class: "status-line error", {tr!("The connectors could not be read.")} }
                 Button { label: tr!("Try again"), onclick: move |_| customize.reload() }
             },
-            Loaded::Loading => rsx! { div { class: "skeleton-list", role: "status", "aria-label": tr!("Loading…"), div { class: "skeleton" } div { class: "skeleton" } div { class: "skeleton" } } },
+            Loaded::Loading => rsx! { LoadingRows {} },
         };
     };
     if let Some(id) = customize.detail() {

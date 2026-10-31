@@ -1461,17 +1461,17 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
   background: color-mix(in srgb, var(--surface-3) 94%, transparent);
   border-color: var(--border-popover);
   box-shadow: var(--shadow-3);
+  animation: pop-in var(--dur-base) var(--ease-out);
   -webkit-backdrop-filter: blur(var(--blur-popover));
   backdrop-filter: blur(var(--blur-popover));
 }
 
 /* A menu, popover or dialog appears with one short rise; so do the live prompts above the composer. History and re-rendered cards do not move. */
 @keyframes pop-in { from { opacity: 0; transform: translateY(var(--sp-4)) scale(0.98); } }
-.row-menu, .usage-popover, .command-menu, .mention-menu, .picker-menu, .filter-submenu, .palette, .cd-search, .perm-menu, .customize-menu, .cm-ctx-menu, .cm-pick-bar, .plan-comment-box, .settings-panel, .shortcuts-panel, .customize-dialog, .env-dialog, .env-ask, .mcp-dialog, .permission-panel, .question-panel { animation: pop-in var(--dur-base) var(--ease-out); }
+.permission-panel, .question-panel { animation: pop-in var(--dur-base) var(--ease-out); }
 
 /* A field without its own outline shows focus on the box around it. */
-.composer:focus-within, .palette:focus-within, .cd-search:focus-within, .cm-comment-box:focus-within, .cd-comment:focus-within { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: calc(var(--focus-ring-offset) * -1); }
-.rename-input:focus-visible, .cd-menu-search:focus-visible, .plan-card-text:focus-visible, .cm-find-bar input:focus-visible, .cm-goto-bar input:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: calc(var(--focus-ring-offset) * -1); }
+.composer:focus-within, .palette:focus-within, .cd-search:focus-within, .cm-comment-box:focus-within, .cd-comment:focus-within, .rename-input:focus-visible, .cd-menu-search:focus-visible, .plan-card-text:focus-visible, .cm-find-bar input:focus-visible, .cm-goto-bar input:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: calc(var(--focus-ring-offset) * -1); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0s !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; scroll-behavior: auto !important; }

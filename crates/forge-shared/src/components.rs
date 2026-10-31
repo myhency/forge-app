@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use forge_domain::tr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ButtonKind {
@@ -178,4 +179,10 @@ pub fn Switch(on: bool, #[props(default)] disabled: bool, onchange: EventHandler
             span { class: "switch-knob" }
         }
     }
+}
+
+/// Rows of the shape of the list that is on its way, shown in place of the list while it loads.
+#[component]
+pub fn LoadingRows() -> Element {
+    rsx! { div { class: "skeleton-list", role: "status", "aria-label": tr!("Loading…"), div { class: "skeleton" } div { class: "skeleton" } div { class: "skeleton" } } }
 }

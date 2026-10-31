@@ -4,7 +4,7 @@ use forge_features::{
     body_after_front_matter, explore_skills, highlighted_code, file_depth, file_leaf, find_skill, is_markdown_file, origin_label, skill_groups,
     use_customize, use_workspace, Busy, CustomizeMode, Dialog, Job, Loaded, SkillPane, SkillRow, SkillText,
 };
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, LoadingRows};
 
 #[component]
 pub fn SkillsTab() -> Element {
@@ -20,7 +20,7 @@ pub fn SkillsTab() -> Element {
                 div { class: "status-line error", {tr!("The skills could not be read.")} }
                 Button { label: tr!("Try again"), onclick: move |_| customize.reload() }
             },
-            Loaded::Loading => rsx! { div { class: "skeleton-list", role: "status", "aria-label": tr!("Loading…"), div { class: "skeleton" } div { class: "skeleton" } div { class: "skeleton" } } },
+            Loaded::Loading => rsx! { LoadingRows {} },
         };
     };
     if let Some(id) = customize.detail() {
