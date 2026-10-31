@@ -387,6 +387,9 @@ button:not(:disabled):active { scale: 0.98; }
 .developer-detail { flex: 1; min-width: 0; }
 .developer-detail .label { margin-top: var(--sp-12); font-size: var(--text-sm); color: var(--fg-muted); }
 .settings-nav-item:hover { background: var(--bg-hover); }
+.settings-hit + .settings-hit { margin-top: var(--sp-6); }
+.settings-hit-row { padding-left: var(--sp-24); color: var(--fg-muted); font-size: var(--text-sm); }
+.settings-match { color: var(--accent); font-weight: var(--weight-semibold); }
 .settings-nav-item.active { background: var(--bg-hover); font-weight: var(--weight-semibold); }
 .settings-content { flex: 1; min-width: 0; overflow-y: auto; padding: var(--sp-28) 36px; }
 .settings-content h2 { margin: 0 0 var(--sp-8); font-size: var(--text-lg); }

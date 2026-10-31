@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::{ChatWidth, FontChoice, MotionPref, OutputStyle, TextSize, Theme, TranscriptView};
 use forge_entities::{model_from_value, model_options, model_value};
-use forge_features::{filter_pages, nav_groups, use_settings, use_workspace, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
+use forge_features::{nav_groups, search_hits, use_settings, use_workspace, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
 use crate::developer_section::DeveloperSection;
 use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, Segmented, Select, SettingRow, Switch, TextInput, IconSize};
 
@@ -34,22 +34,50 @@ pub fn SettingsOverlay() -> Element {
                         oninput: move |event| settings.set_search(event.value()),
                     }
                     {
-                        let matches = filter_pages(&settings.search());
-                        if matches.is_empty() {
-                            rsx! { div { class: "hint settings-empty", {tr!("No settings match.")} } }
-                        } else {
+                        let query = settings.search();
+                        let hits = search_hits(&query);
+                        if query.trim().is_empty() {
                             rsx! {
                                 for group in nav_groups() {
-                                    if group.pages.iter().any(|(page, _)| matches.contains(page)) {
-                                        div { key: "{group.title}", class: "settings-nav-heading", "{group.title}" }
-                                        for (page, name) in group.pages.clone() {
-                                            if matches.contains(&page) {
-                                                button {
-                                                    key: "{name}",
-                                                    class: if page == section { "settings-nav-item active" } else { "settings-nav-item" },
-                                                    onclick: move |_| settings.set_section(page),
-                                                    "{name}"
-                                                }
+                                    div { key: "{group.title}", class: "settings-nav-heading", "{group.title}" }
+                                    for (page, name) in group.pages.clone() {
+                                        button {
+                                            key: "{name}",
+                                            class: if page == section { "settings-nav-item active" } else { "settings-nav-item" },
+                                            onclick: move |_| settings.set_section(page),
+                                            "{name}"
+                                        }
+                                    }
+                                }
+                            }
+                        } else if hits.is_empty() {
+                            rsx! { div { class: "hint settings-empty", {tr!("No settings match.")} } }
+                        } else {
+                            // While a search is typed the list is the result: each page with the rows that matched indented
+                            // under it, the match in bold. Pressing either opens the page and ends the search.
+                            rsx! {
+                                for hit in hits {
+                                    div { key: "{hit.name}", class: "settings-hit",
+                                        button {
+                                            class: if hit.section == section { "settings-nav-item active" } else { "settings-nav-item" },
+                                            onclick: move |_| {
+                                                settings.set_section(hit.section);
+                                                settings.set_search(String::new());
+                                            },
+                                            match hit.name_match.clone() {
+                                                Some(cut) => rsx! { "{cut.before}" b { class: "settings-match", "{cut.matched}" } "{cut.after}" },
+                                                None => rsx! { "{hit.name}" },
+                                            }
+                                        }
+                                        for (at, row) in hit.rows.clone().into_iter().enumerate() {
+                                            button {
+                                                key: "{at}",
+                                                class: "settings-nav-item settings-hit-row",
+                                                onclick: move |_| {
+                                                    settings.set_section(hit.section);
+                                                    settings.set_search(String::new());
+                                                },
+                                                "{row.before}" b { class: "settings-match", "{row.matched}" } "{row.after}"
                                             }
                                         }
                                     }
