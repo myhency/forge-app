@@ -1,0 +1,11 @@
+[package]
+name = "forge-pages"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+forge-domain = { path = "../forge-domain" }
+forge-features = { path = "../forge-features" }
+forge-shared = { path = "../forge-shared" }
+forge-widgets = { path = "../forge-widgets" }
+dioxus = { version = "=0.7.10", default-features = false, features = ["lib"] }

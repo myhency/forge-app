@@ -1,0 +1,9 @@
+[package]
+name = "forge-adapter-dialog"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+forge-ports = { path = "../forge-ports" }
+async-trait = "0.1"
+rfd = "0.17"

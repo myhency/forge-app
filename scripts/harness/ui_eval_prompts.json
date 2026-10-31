@@ -1,0 +1,102 @@
+[
+  {
+    "id": "bill_split",
+    "prompt": "식당 청구서를 나눠 내는 계산기를 만들어줘. 총액, 팁, 인원수를 바꾸면 1인당 금액이 바로 계산돼야 해.",
+    "expect": "page"
+  },
+  {
+    "id": "loan_calc",
+    "prompt": "대출 원리금 계산기를 만들어줘. 금액, 금리, 기간을 바꾸면 월 상환액과 원금·이자 비율이 보이게.",
+    "expect": "page"
+  },
+  {
+    "id": "compound",
+    "prompt": "복리 계산기를 만들어줘. 연수에 따라 원금과 이자가 쌓이는 모습을 차트로 보여줘.",
+    "expect": "page"
+  },
+  {
+    "id": "plan_compare",
+    "prompt": "스타터/팀/비즈니스 요금제를 비교하는 표를 만들고 좌석당 비용을 차트로도 볼 수 있게 해줘.",
+    "expect": "page"
+  },
+  {
+    "id": "korea_trip",
+    "prompt": "서울, 경주, 부산, 제주 4일 여행 코스를 지도에서 번호 핀으로 보여줘. 핀이 순서대로 찍히는 재생 기능도 넣어줘.",
+    "expect": "page"
+  },
+  {
+    "id": "subway",
+    "prompt": "서울 지하철 2호선 주요 역 다섯 곳을 지도에 표시하고, 누르면 설명이 나오게 해줘.",
+    "expect": "page"
+  },
+  {
+    "id": "world_cities",
+    "prompt": "세계 6개 도시의 위치와 현재 시간대를 지도에서 보여줘.",
+    "expect": "page"
+  },
+  {
+    "id": "solar_system",
+    "prompt": "태양계를 3D로 보여줘. 행성을 클릭하면 크기와 공전 주기가 나오게.",
+    "expect": "page"
+  },
+  {
+    "id": "airplane_axes",
+    "prompt": "비행기의 pitch, roll, yaw를 3D로 설명해줘. 슬라이더로 각도를 바꿀 수 있게.",
+    "expect": "page"
+  },
+  {
+    "id": "seasons",
+    "prompt": "지구의 자전축 기울기에 따라 계절이 바뀌는 걸 인터랙티브하게 설명해줘.",
+    "expect": "page"
+  },
+  {
+    "id": "lift",
+    "prompt": "비행기 날개가 양력을 만드는 원리를 탭으로 나눠서 도해로 설명해줘.",
+    "expect": "page"
+  },
+  {
+    "id": "monty",
+    "prompt": "몬티 홀 문제를 직접 해볼 수 있게 시뮬레이터로 만들어줘.",
+    "expect": "page"
+  },
+  {
+    "id": "pomodoro",
+    "prompt": "포모도로 타이머를 만들어줘. 시작과 일시정지가 되고 남은 시간이 원형으로 줄어들게.",
+    "expect": "page"
+  },
+  {
+    "id": "meal_plan",
+    "prompt": "4인 가족 일요일 로스트 저녁 계획을 쇼핑 목록과 시간표 체크리스트로 만들어줘.",
+    "expect": "page"
+  },
+  {
+    "id": "quiz",
+    "prompt": "한국 역사 퀴즈를 세 문제로 만들어줘. 답을 고르면 바로 해설이 나오고 마지막에 점수가 나오게.",
+    "expect": "page"
+  },
+  {
+    "id": "temp_chart",
+    "prompt": "최근 5년간 서울 연평균 기온을 선 차트로 그려줘. 마우스를 올리면 값이 보이게.",
+    "expect": "page"
+  },
+  {
+    "id": "what_is_tcp",
+    "prompt": "TCP와 UDP의 차이를 한 문단으로 설명해줘.",
+    "expect": "text"
+  },
+  {
+    "id": "capital",
+    "prompt": "프랑스의 수도는 어디야?",
+    "expect": "text"
+  },
+  {
+    "id": "code_fix",
+    "prompt": "파이썬에서 리스트를 뒤집는 가장 간단한 방법이 뭐야?",
+    "expect": "text"
+  },
+  {
+    "id": "greeting",
+    "prompt": "안녕! 오늘 기분 어때?",
+    "expect": "text"
+  }
+]

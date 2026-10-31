@@ -1,0 +1,25 @@
+mod config_lock;
+mod connector_catalog;
+mod extensions;
+mod plugin_catalog;
+mod routines;
+mod scratch;
+mod skill_catalog;
+mod session_lifecycle;
+mod settings;
+mod sidecar_commands;
+mod toggles;
+mod worktrees;
+
+pub use config_lock::ConfigLock;
+pub use connector_catalog::{AddedConnector, ConnectorCatalogUseCase, ConnectorView, ConnectorsError};
+pub use extensions::{ExtensionsError, ExtensionsUseCase};
+pub use plugin_catalog::{CatalogView, PluginCatalogError, PluginCatalogUseCase};
+pub use routines::{BaselineMove, RoutineError, RoutinesUseCase};
+pub use scratch::{ScratchRelease, ScratchUseCase};
+pub use skill_catalog::{AddedSkill, SkillCatalogUseCase, SkillView, SkillsError};
+pub use session_lifecycle::{ResumeSessionError, ResumeSessionUseCase, StartSessionUseCase};
+pub use settings::SettingsUseCase;
+pub use sidecar_commands::{AnswerQuestionUseCase, ApprovePermissionUseCase, StopTaskUseCase, InterruptTurnUseCase, SendMessageUseCase};
+pub use toggles::{ToggleMcpServerUseCase, TogglePluginUseCase, ToggleSkillUseCase};
+pub use worktrees::{Kept, Release, WorktreeUseCaseError, WorktreesUseCase};

@@ -1,0 +1,8 @@
+[package]
+name = "forge-shared"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dioxus = { version = "=0.7.10", default-features = false, features = ["lib"] }
+forge-domain = { path = "../forge-domain" }

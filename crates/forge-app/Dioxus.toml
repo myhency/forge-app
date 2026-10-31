@@ -1,0 +1,9 @@
+[application]
+name = "Forge"
+
+[bundle]
+identifier = "internal.forge.app"
+publisher = "Forge"
+short_description = "Forge"
+# Node and the sidecar (`runtime/`) are not listed as resources: dx flattens a resource folder.
+# scripts/package/build.mjs puts `runtime/` in place after bundling.
