@@ -810,6 +810,8 @@ pub static KO: &[(&str, &str)] = &[
     ("This file is outside the session folder.", "작업 폴더 밖의 파일입니다"),
     ("This file is too large to show", "이 파일은 너무 커서 표시할 수 없습니다"),
     ("This file looks like binary data and cannot be previewed as text.", "이 파일은 바이너리 데이터로 보여 텍스트로 미리 볼 수 없습니다."),
+    ("This file no longer exists.", "이 파일은 더 이상 없습니다."),
+    ("This is a folder, not a file. Pick a file in the tree.", "파일이 아니라 폴더입니다. 트리에서 파일을 고르세요."),
     ("This message cannot be forked yet.", "이 메시지는 아직 포크할 수 없습니다."),
     ("This message cannot be rewound yet.", "이 메시지는 아직 되감을 수 없습니다."),
     ("This picture cannot be shown.", "이 사진을 표시할 수 없습니다."),

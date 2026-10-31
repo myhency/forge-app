@@ -193,6 +193,12 @@ pub struct FileList {
 pub enum FilesError {
     #[error("That path is outside the session folder")]
     Outside,
+    /// The file or folder is not there (any more).
+    #[error("No such file or folder")]
+    NotFound,
+    /// A folder was asked for where a file was needed (a link to `Todo.app`, which is a folder).
+    #[error("That path is a folder")]
+    IsDirectory,
     #[error("{0}")]
     Failed(String),
     #[error("{0}")]
