@@ -8,7 +8,9 @@ product_contract_source: ce-plan-bootstrap
 execution: code
 ---
 
-# 새 세션 화면의 최근 폴더 카드 - Plan
+# 새 세션 화면의 환경 바로가기 카드 - Plan
+
+> **정정 (같은 날):** 이 계획의 처음 판은 카드를 "최근 폴더 목록"으로 잘못 읽었다. 데스크톱 앱을 직접 눌러 보니 카드는 **저장된 환경**의 바로가기다(행: 노트북 아이콘 + 환경 이름, 누르면 그 환경이 선택되어 입력창 아래 줄이 환경 이름으로 바뀜, 푸터 `환경 선택`은 환경 전체 메뉴를 엶, 현재 선택과 같을 필요 없음). 아래 Product Contract와 유닛의 "폴더"는 모두 "저장된 환경"으로 읽는다. 구현은 `environment_card_rows`(forge-features), `EnvironmentCard`(forge-widgets), `PickerKind::Environment`다. 근거: `docs/superpowers/roadmap/observations.md` Round 35.
 
 ## Goal Capsule
 

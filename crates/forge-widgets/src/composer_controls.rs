@@ -19,7 +19,7 @@ pub(crate) struct PickerItem {
 }
 
 /// Opens the menu when a shortcut asked for the menu of `kind` (⇧⌘M, ⇧⌘I, ⇧⌘E).
-fn use_picker_request(kind: Option<PickerKind>, mut open: Signal<bool>) {
+pub(crate) fn use_picker_request(kind: Option<PickerKind>, mut open: Signal<bool>) {
     let workspace = use_workspace();
     use_effect(move || {
         if kind.is_some() && workspace.picker_request() == kind {

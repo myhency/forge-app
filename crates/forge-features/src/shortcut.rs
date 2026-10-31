@@ -47,6 +47,8 @@ pub enum PickerKind {
     Mode,
     Model,
     Effort,
+    /// The environment menu; the card above the new-session box opens it.
+    Environment,
 }
 
 /// What a key does in the Preview panel. `GoToTab` counts from 0.

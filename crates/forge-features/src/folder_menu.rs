@@ -7,9 +7,6 @@ use crate::attachments::folder_label;
 /// How many folders the new-session folder menu lists (the desktop app lists eight).
 pub const MAX_RECENT_FOLDERS: usize = 8;
 
-/// How many folders the card above the new-session box lists (the desktop app lists three).
-pub const RECENT_CARD_ROWS: usize = 3;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FolderMenuRow {
     pub label: String,
@@ -20,32 +17,13 @@ pub struct FolderMenuRow {
 /// The rows of the folder menu: the projects in the order given, the first `MAX_RECENT_FOLDERS`; the
 /// current folder takes the last place when it would not fit, so it is always listed and checked.
 pub fn folder_menu_rows(projects: &[ProjectSummary], current: Option<&Path>) -> Vec<FolderMenuRow> {
-    limited_rows(projects, current, MAX_RECENT_FOLDERS)
-}
-
-/// The rows of the card above the new-session box: the same choice as the menu, the first `RECENT_CARD_ROWS`.
-pub fn recent_folder_card_rows(projects: &[ProjectSummary], current: Option<&Path>) -> Vec<FolderMenuRow> {
-    let mut rows = limited_rows(projects, current, RECENT_CARD_ROWS);
-    // Two folders of one name (`a/app`, `b/app`) would read the same; the sidebar tells them apart by the parent.
-    let labels: Vec<String> = rows.iter().map(|row| row.label.clone()).collect();
-    for row in &mut rows {
-        if labels.iter().filter(|label| **label == row.label).count() > 1 {
-            if let Some(parent) = row.path.parent().and_then(Path::file_name) {
-                row.label = format!("{} ({})", row.label, parent.to_string_lossy());
-            }
-        }
-    }
-    rows
-}
-
-fn limited_rows(projects: &[ProjectSummary], current: Option<&Path>, limit: usize) -> Vec<FolderMenuRow> {
     let row = |project: &ProjectSummary| FolderMenuRow {
         label: folder_label(&project.path),
         path: project.path.clone(),
         checked: current == Some(project.path.as_path()),
     };
-    let mut rows: Vec<FolderMenuRow> = projects.iter().take(limit).map(row).collect();
-    if let Some(current_project) = projects.iter().skip(limit).find(|project| current == Some(project.path.as_path())) {
+    let mut rows: Vec<FolderMenuRow> = projects.iter().take(MAX_RECENT_FOLDERS).map(row).collect();
+    if let Some(current_project) = projects.iter().skip(MAX_RECENT_FOLDERS).find(|project| current == Some(project.path.as_path())) {
         rows.pop();
         rows.push(row(current_project));
     }
@@ -78,42 +56,6 @@ mod tests {
         let first = folder_menu_rows(&projects, Some(Path::new("/work/p0")));
         assert_eq!(first.len(), MAX_RECENT_FOLDERS);
         assert_eq!(first[0].path, PathBuf::from("/work/p0"));
-    }
-
-    #[test]
-    fn the_card_lists_the_first_three_in_order() {
-        let projects: Vec<_> = (0..5).map(|i| project(&format!("/work/p{i}"))).collect();
-        let rows = recent_folder_card_rows(&projects, Some(Path::new("/work/p1")));
-        let shown: Vec<_> = rows.iter().map(|r| (r.label.as_str(), r.checked)).collect();
-        assert_eq!(shown, vec![("p0", false), ("p1", true), ("p2", false)]);
-    }
-
-    #[test]
-    fn the_card_lists_fewer_when_there_are_fewer_projects() {
-        let projects = vec![project("/work/a"), project("/work/b")];
-        assert_eq!(recent_folder_card_rows(&projects, None).len(), 2);
-    }
-
-    #[test]
-    fn the_card_keeps_the_current_folder_when_it_is_past_the_third() {
-        let projects: Vec<_> = (0..6).map(|i| project(&format!("/work/p{i}"))).collect();
-        let rows = recent_folder_card_rows(&projects, Some(Path::new("/work/p4")));
-        assert_eq!(rows.len(), RECENT_CARD_ROWS);
-        let last = rows.last().unwrap();
-        assert!(last.checked && last.path == Path::new("/work/p4"));
-    }
-
-    #[test]
-    fn the_card_names_the_parent_when_two_folders_share_a_name() {
-        let projects = vec![project("/work/a/app"), project("/work/b/app"), project("/work/forge")];
-        let rows = recent_folder_card_rows(&projects, None);
-        let labels: Vec<_> = rows.iter().map(|r| r.label.as_str()).collect();
-        assert_eq!(labels, vec!["app (a)", "app (b)", "forge"]);
-    }
-
-    #[test]
-    fn no_projects_gives_no_card_rows() {
-        assert!(recent_folder_card_rows(&[], None).is_empty());
     }
 
     #[test]

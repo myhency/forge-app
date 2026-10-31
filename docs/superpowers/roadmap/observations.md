@@ -1007,10 +1007,18 @@ Method: the throwaway session `3단계 계획 및 진행 관리` in `forge-obser
 
 ## Round 35 (2026-10-31): new-session screen, desktop app vs Forge
 
-Method: `scripts/observe/claude_app.py` (shown scale 1.24) on the desktop app, `scripts/harness/` on Forge (shown scale 1.20). The desktop app was on a session whose folder is gone (no composer, a `폴더 선택` / `보관` bar); `새로 만들기` opened the new-session screen. Nothing was sent.
+Method: `scripts/observe/claude_app.py` (shown scale 1.24) on the desktop app, `scripts/harness/` on Forge (shown scale 1.20). The desktop app was on a session whose folder is gone; `새로 만들기` opened the new-session screen. Nothing was sent. The card's rows and footer were pressed (only the new-session draft changes).
 
-Desktop new-session screen: header `새 세션`; centered, above the box, a **recent-environments card** (rows with a laptop icon: `forge`, `forge-observe`, `mywork`, then a footer `환경 선택 ⌄`); under it a card `Claude Code CLI 세션 2개 가져오기`; the box has `+` at the left and a mic at the right; the line under it: `이 컴퓨터`, folder `task-r31` at the left, model `Sonnet 5.5 중간`, mode `자동` and a usage ring at the right. A small pixel mascot sits on the card's top edge.
+**The card in the middle of the desktop screen is a quick ENVIRONMENT picker, not a recent-folders list.**
 
-Forge new-session screen: greeting `james님, 다음 일정은 무엇인가요?` at the top left of the column, the box (`+`, send arrow), the line under it `이 컴퓨터`, folder, add-folder icon at the left, `기본 모델 · 기본값 · 수동` at the right. No list of recent folders: picking a folder is only through the folder control.
+- Placement: centred in the column above the box with a gap, a pixel mascot on its top edge. Under it a second card `Claude Code CLI 세션 2개 가져오기`.
+- Rows: a laptop icon and an environment name (`forge`, `forge-observe`, `mywork`); hover shows the path as a tooltip (`~/Developer/forge`). It need not equal what the box currently has: before pressing, the line under the box said `이 컴퓨터 · task-r31` and no row was checked.
+- Pressing a row checks it and the line under the box becomes the environment: `forge` plus a `워크트리` checkbox (the folder chip and `이 컴퓨터` are gone). The box takes focus.
+- Footer `환경 선택 ⌄` opens the full environment menu: a search field `환경 검색…`, group `로컬` (`이 컴퓨터`, `forge` checked, `forge-observe`, `더 보기 1 ›`), `클라우드 ›`, `+ 새 환경`. The card's three rows are the first saved environments of this list (`mywork` is the one under `더 보기`).
+- Box: `+` left, mic right; under it `이 컴퓨터`/folder at the left, `Sonnet 5.5 중간`, `자동`, a ring at the right.
 
-Gap for the backlog: NEW-26 recent-environments card on the new-session screen (one click starts in a recently used folder). Not applicable to Forge: CLI session import (Forge already reads `~/.claude`), the mic, the mascot.
+Forge already has the whole environment concept (`EnvironmentChip`: search, `이 컴퓨터`, saved environments, `더 보기`, `새 환경`). What it lacked is the shortcut card above the box.
+
+Mistake recorded: a first version (PR #6 before the fix) built the card from recent FOLDERS after one screenshot, without pressing it. The screenshot already contradicted that (box said `task-r31`, card did not list it; laptop icons; footer said `환경 선택`).
+
+Not ported: CLI session import (Forge reads `~/.claude`), mic, mascot. Not checked: the cloud group, where the desktop menu opens relative to the card.

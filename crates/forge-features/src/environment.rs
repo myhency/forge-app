@@ -126,6 +126,15 @@ fn split(environments: &[Environment]) -> (Vec<&Environment>, Vec<&Environment>)
     (visible, more)
 }
 
+/// How many saved environments the card above the new-session box lists (the desktop app lists three).
+pub const ENVIRONMENT_CARD_ROWS: usize = 3;
+
+/// The saved environments of the card above the new-session box: pinned first, then the newest used, at most three.
+/// This computer is not a row; the box is for the saved ones.
+pub fn environment_card_rows(environments: &[Environment]) -> Vec<&Environment> {
+    ordered(environments).into_iter().take(ENVIRONMENT_CARD_ROWS).collect()
+}
+
 fn row(environment: &Environment, number: Option<usize>) -> EnvRow {
     EnvRow { id: Some(environment.id.clone()), name: environment.name.clone(), number, pinned: environment.pinned }
 }
@@ -410,6 +419,18 @@ mod tests {
         let environment = Environment { env_vars: "not a variable line".into(), ..env("a", "app", false, 0) };
         let (vars, _) = reopen_setup(&environment, &[]);
         assert!(vars.0.is_empty());
+    }
+
+    #[test]
+    fn the_card_lists_pinned_first_then_the_newest_used_at_most_three_and_never_this_computer() {
+        let list = vec![env("a", "old", false, 1), env("b", "newest", false, 9), env("c", "pinned", true, 0), env("d", "mid", false, 5)];
+        let names: Vec<_> = environment_card_rows(&list).into_iter().map(|environment| environment.name.as_str()).collect();
+        assert_eq!(names, vec!["pinned", "newest", "mid"]);
+    }
+
+    #[test]
+    fn the_card_has_no_rows_without_saved_environments() {
+        assert!(environment_card_rows(&[]).is_empty());
     }
 
     fn with_picks(model: Option<&str>, effort: Option<EffortLevel>) -> Environment {

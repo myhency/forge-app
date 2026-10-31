@@ -35,7 +35,7 @@ mod permission_panel;
 mod plan_card;
 mod start_line;
 mod plus_menu;
-mod recent_folders_card;
+mod environment_card;
 mod preview_panel;
 mod question_panel;
 mod routines_detail;

@@ -122,6 +122,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Choose a folder", "폴더 선택"),
     ("Choose a folder to start the session in.", "세션을 시작할 폴더를 선택하세요."),
     ("Choose a type.", "유형을 선택하세요."),
+    ("Choose an environment", "환경 선택"),
     ("Choose folders before the first message", "첫 메시지를 보내기 전에 폴더를 선택하세요"),
     ("Choose folder…", "폴더 선택…"),
     ("Choose…", "선택…"),
