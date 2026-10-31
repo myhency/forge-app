@@ -138,15 +138,13 @@ pub fn NewModelPicker() -> Element {
         None => settings.model(),
     };
     rsx! {
-        div { class: "picker-end",
-            ModelPickerView {
-                current,
-                onchange: move |model| {
-                    // The new model may not take the level chosen for the old one.
-                    draft.effort.set(None);
-                    draft.model.set(Some(model));
-                },
-            }
+        ModelPickerView {
+            current,
+            onchange: move |model| {
+                // The new model may not take the level chosen for the old one.
+                draft.effort.set(None);
+                draft.model.set(Some(model));
+            },
         }
     }
 }
@@ -164,9 +162,5 @@ pub fn NewEffortPicker() -> Element {
     };
     let levels = effort_levels(&workspace.new_models(), model.as_deref());
     let current = *draft.effort.read();
-    rsx! {
-        div { class: "picker-end",
-            EffortPickerView { levels, current, onchange: move |level| draft.effort.set(level) }
-        }
-    }
+    rsx! { EffortPickerView { levels, current, onchange: move |level| draft.effort.set(level) } }
 }

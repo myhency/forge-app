@@ -672,7 +672,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-remove { border: none; background: transparent; color: var(--fg-muted); cursor: pointer; font: inherit; line-height: 1; }
 .chip-remove:hover { color: var(--fg); }
-.env-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-6); }
 
 /* The dock: columns right of the chat. */
 .dock-column { position: relative; flex: 0 1 auto; display: flex; flex-direction: column; min-width: 260px; max-width: 70vw; padding: var(--sp-8); box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
