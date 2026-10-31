@@ -1299,3 +1299,14 @@ Pressing the template row `브리핑` (templates tab) opened a FULL PAGE inside 
 The modal of part 23 and this page hold the same data with different layouts: the modal puts the settings behind a `고급 설정` fold with tabs `일반 / 커넥터 / 알림`; the page shows the tab group directly with `커넥터 / 동작 / 알림`. So the form exists in two versions (quick modal from `직접 설정`, full page from templates). The `알림` tab reveals the notification channels the modal cut off: push, email, Slack. I pressed `취소` after looking; nothing was created.
 
 Backlog NEW-55 gets an addendum below.
+
+### Round 36, part 25: scheduled task detail page
+
+Pressing the card `Iran war status update` (the user's own paused task) opens a page inside the main area; breadcrumb `예약된 작업 / Iran war status update`. Title bar right side: a pencil (edit), a trash can, and a black `▷ 지금 실행` (run now). Two columns:
+
+- Left: `설명` (one line), `상태` (a switch, off, and a pill `일시중지됨`), `폴더` (a chip `📁 ~/Developer/claude-code-study`, the path with `~`), `반복` (`1분마다, 1시간마다, 매일`: the three schedules joined by commas), `항상 허용됨` (grey text `실행 중에 부여한 승인이 여기에 표시됩니다.`: approvals granted during a run are listed here, empty).
+- Right: `지침` (the prompt, cut after 3 lines with a fade and a button `모두 보기 ⌄`; opened it reads `간략히 보기 ⌃`), and `기록` (run history): rows with a status icon, the time and a right-hand word: `○ 오늘 오후 6:02` + `건너뜀 ⓘ`, then two `✓ 3월 10일 오후 10:41에` / `10:40에` (done runs). Hovering the `ⓘ` after `건너뜀` gives a black tooltip `예약된 작업은 컴퓨터가 켜져 있고 온라인 상태일 때만 실행됩니다.` (skipped because the computer was off or asleep). The prompt and the list scroll with the page.
+
+Not pressed: `지금 실행` (it would run the task and use the account), the pencil, the trash can, the status switch, a run row (probably opens that run's session).
+
+Backlog NEW-56 (detail page and history; compare with Plan 31's detail).
