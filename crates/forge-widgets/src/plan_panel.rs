@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_entities::{copy_text, render_markdown};
 use forge_features::{use_workspace, Panel};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 use crate::panel_frame::PanelFrame;
 
@@ -45,7 +45,7 @@ pub fn PlanPanel(id: LiveSessionId) -> Element {
                             copy_text(text);
                         }
                     },
-                    "⧉"
+                    Icon { kind: IconKind::Copy, size: IconSize::Small }
                 }
             },
             match plan {
@@ -77,7 +77,7 @@ pub fn PlanPanel(id: LiveSessionId) -> Element {
                                                 title: tr!("Remove"),
                                                 "aria-label": tr!("Remove"),
                                                 onclick: move |_| workspace.remove_plan_comment(id, index),
-                                                "×"
+                                                Icon { kind: IconKind::Close, size: IconSize::Small }
                                             }
                                         }
                                     }

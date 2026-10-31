@@ -4,7 +4,7 @@ use forge_features::{
     connection_text, connector_groups, explore_connectors, find_connector, shows_sign_in, source_label, use_customize, Busy, ConnectionState, ConnectorRow,
     CustomizeMode, Dialog, Job, Loaded,
 };
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, LoadingRows, Icon, IconKind};
 
 #[component]
 pub fn ConnectorsTab() -> Element {
@@ -19,7 +19,7 @@ pub fn ConnectorsTab() -> Element {
                 div { class: "status-line error", {tr!("The connectors could not be read.")} }
                 Button { label: tr!("Try again"), onclick: move |_| customize.reload() }
             },
-            Loaded::Loading => rsx! { div { class: "hint", {tr!("Loading…")} } },
+            Loaded::Loading => rsx! { LoadingRows {} },
         };
     };
     if let Some(id) = customize.detail() {
@@ -121,7 +121,7 @@ fn ConnectorGroup(title: String, rows: Vec<ConnectorRow>) -> Element {
                             key: "{id}",
                             class: "customize-row",
                             onclick: move |_| customize.open_connector(id.clone()),
-                            div { class: "customize-icon", "⌁" }
+                            div { class: "customize-icon", Icon { kind: IconKind::Plug } }
                             div { class: "customize-main",
                                 div { class: "customize-name",
                                     "{row.entry.name}"
@@ -160,7 +160,7 @@ fn ConnectorCard(row: ConnectorRow) -> Element {
     let install = plugin_id.clone();
     rsx! {
         div { class: "customize-card", onclick: move |_| customize.open_connector(id.clone()),
-            div { class: "customize-icon", "⌁" }
+            div { class: "customize-icon", Icon { kind: IconKind::Plug } }
             div { class: "customize-main",
                 div { class: "customize-name", "{row.entry.name}" }
                 div { class: "customize-card-desc", "{row.entry.target}" }
@@ -197,7 +197,7 @@ fn ConnectorDetail(row: ConnectorRow) -> Element {
         div { class: "customize-detail",
             button { class: "customize-back", onclick: move |_| customize.close_detail(), {tr!("← Connectors")} }
             div { class: "customize-detail-head",
-                div { class: "customize-icon big", "⌁" }
+                div { class: "customize-icon big", Icon { kind: IconKind::Plug } }
                 div {
                     h2 { class: "customize-wrap", "{entry.name}" }
                     div { class: "hint", "{forge_shared::i18n::text(entry.kind.label())} · {source_label(&entry.source)}" }

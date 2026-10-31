@@ -1,6 +1,6 @@
 use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// One tab as the strip draws it.
 #[derive(Debug, Clone, PartialEq)]
@@ -89,7 +89,7 @@ pub fn FilesTabs(
                                         on_close.call(path.clone());
                                     }
                                 },
-                                "×"
+                                Icon { kind: IconKind::Close, size: IconSize::Small }
                             }
                         }
                     }

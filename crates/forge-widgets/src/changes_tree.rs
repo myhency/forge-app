@@ -6,7 +6,7 @@ use forge_domain::ChangesViewPrefs;
 use forge_entities::{icon_of, FileClass};
 use forge_features::{toggle_section, tree_rows, use_workspace, ChangeTreeRow, ChangeView, ROW_LIMIT};
 use forge_ports::{ChangeStatus, ChangedFile, CommitInfo};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
@@ -48,7 +48,7 @@ pub fn ChangesTree(
                                             })
                                         }
                                     },
-                                    span { class: if open { "cd-chevron open" } else { "cd-chevron" }, "›" }
+                                    span { class: if open { "cd-chevron open" } else { "cd-chevron" }, Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                                     span { class: "cd-name", "{name}" }
                                 }
                             }
@@ -59,7 +59,7 @@ pub fn ChangesTree(
                                     class: "cd-row",
                                     r#type: "button",
                                     onclick: move |_| workspace.update_changes_session(id, |session| toggle_section(session, kind)),
-                                    span { class: if open { "cd-chevron open" } else { "cd-chevron" }, "›" }
+                                    span { class: if open { "cd-chevron open" } else { "cd-chevron" }, Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                                     span { class: "cd-name", "{section_title(kind)}" }
                                     span { class: "cd-counts", "{count}" }
                                 }
@@ -142,9 +142,9 @@ pub fn CommitsSection(id: LiveSessionId, commits: Vec<CommitInfo>, view: ChangeV
     rsx! {
         div { class: "cd-commits",
             div { class: "cd-commits-title", onclick: move |_| open.set(!open()),
-                span { class: if open() { "cd-chevron open" } else { "cd-chevron" }, "›" }
+                span { class: if open() { "cd-chevron open" } else { "cd-chevron" }, Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                 span { {tr!("Commits")} }
-                span { style: "margin-left: auto;", "{commits.len()}" }
+                span { class: "ml-auto", "{commits.len()}" }
             }
             if open() {
                 button {

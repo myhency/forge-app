@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use forge_features::{menu_height, submenu_opens_left, FileAction, MenuEntry};
+use forge_shared::{Icon, IconKind, IconSize};
 
 const MENU_WIDTH: f64 = 230.0;
 
@@ -72,7 +73,7 @@ pub fn ContextMenu(entries: Vec<MenuEntry>, x: f64, y: f64, on_select: EventHand
                             onmouseenter: move |_| open_sub.set(Some(index)),
                             button { class: "picker-item", r#type: "button", role: "menuitem", "aria-haspopup": "menu",
                                 span { class: "picker-text", "{label}" }
-                                span { class: "picker-hint", "›" }
+                                span { class: "picker-hint", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                             }
                             if open_sub() == Some(index) {
                                 div { class: if flip { "picker-menu context-submenu left" } else { "picker-menu context-submenu" }, role: "menu",

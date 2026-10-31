@@ -11,7 +11,7 @@ use crate::changes_tree::{ChangesTree, CommitsSection};
 use crate::context_menu::ContextMenu;
 use crate::files_state::{absolute, copy_text_for, menu_root};
 use crate::panel_frame::PanelFrame;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 /// The Changes panel: every changed file as a stacked diff and a folder tree of the files at the
 /// right. It is a viewer; it reloads on Refresh, when a tool call of the session finishes, and when
@@ -248,7 +248,7 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             title: tr!("Search changed files"),
             "aria-label": tr!("Search changed files"),
             onclick: move |_| searching.set(true),
-            "⌕"
+            Icon { kind: IconKind::Search }
         }
         ViewMenu {
             id,

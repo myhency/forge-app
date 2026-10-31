@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_features::{refocus_workspace, use_workspace, variables_error_text, EnvironmentDraft, EnvironmentRequest};
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
@@ -141,9 +141,9 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                 },
                 if page() == Page::Variables {
                     div { class: "env-head",
-                        button { class: "env-back", r#type: "button", title: tr!("Back"), onclick: move |_| leave_variables(), "‹" }
+                        button { class: "env-back", r#type: "button", title: tr!("Back"), onclick: move |_| leave_variables(), Icon { kind: IconKind::ChevronLeft } }
                         h2 { {tr!("Variables")} }
-                        button { class: "settings-close", r#type: "button", title: tr!("Close (Esc)"), onclick: move |_| request_close(), "✕" }
+                        button { class: "settings-close", r#type: "button", title: tr!("Close (Esc)"), onclick: move |_| request_close(), Icon { kind: IconKind::Close } }
                     }
                     p { class: "hint", {tr!("Set for sessions started from this environment.")} }
                     textarea {
@@ -177,7 +177,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                 } else {
                     div { class: "env-head",
                         h2 { if editing { {tr!("Edit environment")} } else { {tr!("New environment")} } }
-                        button { class: "settings-close", r#type: "button", title: tr!("Close (Esc)"), onclick: move |_| request_close(), "✕" }
+                        button { class: "settings-close", r#type: "button", title: tr!("Close (Esc)"), onclick: move |_| request_close(), Icon { kind: IconKind::Close } }
                     }
                     label { class: "env-label", {tr!("Name")} }
                     input {
@@ -220,7 +220,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                         }
                     }
                     if draft.read().folders.is_empty() {
-                        div { class: "env-empty", {tr!("Choose a folder to start the session in.")} }
+                        div { class: "state-empty", {tr!("Choose a folder to start the session in.")} }
                     } else {
                         div { class: "env-folders",
                             for folder in draft.read().folders.clone() {
@@ -237,7 +237,7 @@ fn EnvironmentDialogBody(request: EnvironmentRequest) -> Element {
                         },
                         span { class: "env-label", {tr!("Variables")} }
                         span { class: "hint", { variables_summary(&draft.read().env_vars) } }
-                        span { class: "env-chevron", "›" }
+                        span { class: "env-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                     }
                     div { class: "env-buttons",
                         if editing && !in_session {
@@ -382,7 +382,7 @@ fn FolderRow(draft: Signal<EnvironmentDraft>, path: PathBuf) -> Element {
                         draft.write().remove_folder(index);
                     }
                 },
-                "×"
+                Icon { kind: IconKind::Close, size: IconSize::Small }
             }
         }
     }
@@ -452,7 +452,7 @@ fn FolderPopover(search: Signal<String>, taken: Vec<PathBuf>, onpick: EventHandl
                         }
                     });
                 },
-                span { class: "picker-check", "📁" }
+                span { class: "picker-check", Icon { kind: IconKind::Folder, size: IconSize::Small } }
                 span { class: "picker-text", span { class: "picker-label", {tr!("Choose…")} } }
             }
         }

@@ -3,7 +3,7 @@ use forge_domain::{ChatWidth, FontChoice, MotionPref, OutputStyle, TextSize, The
 use forge_entities::{model_from_value, model_options, model_value};
 use forge_features::{filter_pages, nav_groups, use_settings, use_workspace, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
 use crate::developer_section::DeveloperSection;
-use forge_shared::{tr, Button, ButtonKind, Segmented, Select, SettingRow, Switch, TextInput};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, Segmented, Select, SettingRow, Switch, TextInput, IconSize};
 
 /// The settings overlay (spec §16): a left navigation and rows on the right. Renders nothing while
 /// closed. Esc and ⌘, are handled by the page's key handler.
@@ -24,7 +24,7 @@ pub fn SettingsOverlay() -> Element {
                 class: "settings-panel",
                 // A click inside the panel must not reach the backdrop and close it.
                 onclick: move |event| event.stop_propagation(),
-                button { class: "settings-close", title: tr!("Close (Esc)"), onclick: move |_| settings.close(), "✕" }
+                button { class: "settings-close", title: tr!("Close (Esc)"), onclick: move |_| settings.close(), Icon { kind: IconKind::Close } }
                 div { class: "settings-nav",
                     input {
                         class: "settings-search",
@@ -58,8 +58,7 @@ pub fn SettingsOverlay() -> Element {
                         }
                     }
                     button {
-                        class: "settings-nav-item",
-                        style: "margin-top: 16px;",
+                        class: "settings-nav-item mt-16",
                         onclick: move |_| {
                             settings.close();
                             workspace.open_shortcuts();
@@ -198,7 +197,7 @@ fn TrustedFoldersDialog() -> Element {
                 }
                 for path in folders {
                     div { key: "{path.display()}", class: "trusted-row",
-                        span { "📁" }
+                        span { Icon { kind: IconKind::Folder } }
                         span { class: "trusted-path", title: "{path.display()}", "{path.display()}" }
                         button {
                             class: "chip-remove",
@@ -208,7 +207,7 @@ fn TrustedFoldersDialog() -> Element {
                                 let path = path.clone();
                                 move |_| settings.remove_trusted_folder(path.clone())
                             },
-                            "×"
+                            Icon { kind: IconKind::Close, size: IconSize::Small }
                         }
                     }
                 }
@@ -317,7 +316,7 @@ fn CodeSection() -> Element {
                 Switch { on: settings.attention_bounce(), onchange: move |on| settings.set_attention_bounce(on) }
             }
         }
-        div { class: "hint", style: "margin-top: 12px;",
+        div { class: "hint mt-12",
             {tr!("Output style, prompt suggestions, the bypass switch, dynamic workflows and the task list apply to sessions that start after the change. The default view also applies to open sessions you have not changed.")}
         }
     }
@@ -345,10 +344,10 @@ fn ConnectionSection() -> Element {
             }
             Button { label: key_label, onclick: move |_| settings.toggle_key_visible() }
         }
-        div { class: "hint", style: "margin-top: 12px;",
+        div { class: "hint mt-12",
             {tr!("Sessions that are already open keep the old values until they are started again.")}
         }
-        div { style: "margin-top: 16px;",
+        div { class: "mt-16",
             Button {
                 label: tr!("Save"),
                 kind: ButtonKind::Primary,
@@ -391,7 +390,7 @@ fn ModelSection() -> Element {
                 },
             }
         }
-        div { class: "hint", style: "margin-top: 12px;",
+        div { class: "hint mt-12",
             {tr!("Sessions that are already open keep their model; a change applies to the next new session.")}
         }
     }
@@ -439,7 +438,7 @@ fn ExtensionSection(kind: ExtensionKind) -> Element {
             div { class: "hint", {tr!("Showing what is available for {project}.", project = settings.project_label())} }
         }
         {body}
-        div { class: "hint", style: "margin-top: 12px;",
+        div { class: "hint mt-12",
             {tr!("Sessions that are already open keep what they started with; a change applies to the next new session.")}
         }
         div { class: "hint",

@@ -112,9 +112,9 @@ fn csp() -> String {
     )
 }
 
-/// The colours a page may use. They follow the app's theme: the parent tells the frame (`forgeTheme`), and the
+/// The colours a page may use. They are the app's palette (`theme.css`) as plain hex, since the frame cannot see the app's variables; they follow the app's theme: the parent tells the frame (`forgeTheme`), and the
 /// bridge script sets `data-forge-theme` on the root.
-const THEME_CSS: &str = ":root{color-scheme:light;--bg:#ffffff;--fg:#1f1e1c;--muted:#6f6b63;--line:#e4e1da;--accent:#c4552d;--surface:#faf9f6;--c1:#c4552d;--c2:#3e63dd;--c3:#30a46c;--c4:#e5a50a;--c5:#8e4ec6;--c6:#0b8da3}:root[data-forge-theme=dark]{color-scheme:dark;--bg:#1f1e1c;--fg:#ece9e2;--muted:#9d998f;--line:#3a3834;--accent:#d97757;--surface:#2a2926;--c1:#d97757;--c2:#7d96f2;--c3:#4cc38a;--c4:#f0b429;--c5:#b88be0;--c6:#35b9cc}";
+const THEME_CSS: &str = ":root{color-scheme:light;--bg:#ffffff;--fg:#1c1917;--muted:#69625a;--line:#e6e2dc;--accent:#bc3b00;--on-accent:#ffffff;--surface:#faf9f7;--c1:#bc3b00;--c2:#3e63dd;--c3:#30a46c;--c4:#e5a50a;--c5:#8e4ec6;--c6:#0b8da3}:root[data-forge-theme=dark]{color-scheme:dark;--bg:#1c1917;--fg:#f5f5f5;--muted:#a39c94;--line:#302b27;--accent:#fb923c;--on-accent:#1c1917;--surface:#25211e;--c1:#fb923c;--c2:#7d96f2;--c3:#4cc38a;--c4:#f0b429;--c5:#b88be0;--c6:#35b9cc}";
 
 /// The Forge UI kit (`fx-` classes): see `ui_kit.css` and `sidecar/src/ui_examples/kit.md`.
 pub const UI_KIT_CSS: &str = include_str!("ui_kit.css");
@@ -323,6 +323,38 @@ mod tests {
         assert!(script.contains("\"tok\\\"en\""), "{script}");
         assert!(script.contains("Object.freeze"));
         assert!(!script.contains("__NONCE__"));
+    }
+
+    // The contrast ratio of two `#rrggbb` colors.
+    fn contrast(a: &str, b: &str) -> f64 {
+        let luminance = |hex: &str| {
+            let channel = |at: usize| {
+                let c = u8::from_str_radix(&hex[at..at + 2], 16).unwrap() as f64 / 255.0;
+                if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+            };
+            0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
+        };
+        let (a, b) = (luminance(a), luminance(b));
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    // The value of `--name` inside the palette block that starts with `block`.
+    fn palette(block: &str, name: &str) -> String {
+        let start = THEME_CSS.find(block).unwrap();
+        let body = &THEME_CSS[start..start + THEME_CSS[start..].find('}').unwrap()];
+        let at = body.find(&format!("--{name}:")).unwrap_or_else(|| panic!("no --{name} in {block}")) + name.len() + 3;
+        body[at..at + 7].to_string()
+    }
+
+    #[test]
+    fn the_cards_own_text_reads_in_light_and_dark() {
+        for block in [":root{color-scheme:light", ":root[data-forge-theme=dark]"] {
+            let color = |name: &str| palette(block, name);
+            for (text, surface) in [("fg", "bg"), ("fg", "surface"), ("muted", "bg"), ("muted", "surface"), ("accent", "bg"), ("accent", "surface"), ("on-accent", "accent")] {
+                let ratio = contrast(&color(text), &color(surface));
+                assert!(ratio >= 4.5, "{block}: --{text} on --{surface} is {ratio:.2}:1");
+            }
+        }
     }
 
     #[test]

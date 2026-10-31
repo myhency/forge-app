@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use forge_domain::{keep_peek, pane_class, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
 use forge_features::{drag_ratio, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
 use forge_widgets::{ChatWindow, OutsideFileDialog, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, CodeRunWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// Makes the state the whole window shares (settings, customize, the workspace, routines, notices).
 /// Call it once, in the root component: the tasks these start run in the root scope, and a signal
@@ -153,7 +153,7 @@ pub fn WorkspacePage() -> Element {
                                 class: "icon-button",
                                 title: tr!("Show the sidebar"),
                                 onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = false),
-                                "›"
+                                Icon { kind: IconKind::Chevron, size: IconSize::Small }
                             }
                             NavButtons {}
                         }
@@ -176,7 +176,7 @@ pub fn WorkspacePage() -> Element {
                         "aria-label": "Toggle the sidebar",
                         "aria-expanded": "{peek()}",
                         onclick: move |_| peek.set(!peek()),
-                        "☰"
+                        Icon { kind: IconKind::Menu }
                     }
                     if peek() {
                         div { class: "sidebar-backdrop", onclick: move |_| peek.set(false) }

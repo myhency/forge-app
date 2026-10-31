@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::Environment;
 use forge_features::{environment_menu, numbered_ids, picker_choices, refocus_composer, use_new_session_draft, use_workspace, EnvRow, EnvironmentKey, EnvironmentRequest};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// The chip at the left of the new-session chips: the environment the session starts from, and a menu
 /// of this computer and the saved environments. ⌥⌘1…9 pick a row, ⌥⌘0 makes a new one.
@@ -70,7 +70,7 @@ pub fn EnvironmentChip() -> Element {
                 "aria-expanded": "{open()}",
                 onclick: move |_| open.set(!open()),
                 span { "{label}" }
-                span { class: "picker-chevron", "▾" }
+                span { class: "picker-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true } }
             }
             if open() {
                 div {
@@ -115,7 +115,7 @@ pub fn EnvironmentChip() -> Element {
                             onclick: move |_| more.set(!more()),
                             span { class: "picker-check" }
                             span { class: "picker-text", span { class: "picker-label", {tr!("More")} } }
-                            span { class: "menu-key", "{menu.more.len()} ›" }
+                            span { class: "menu-key", "{menu.more.len()} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                         }
                         if more() {
                             for row in menu.more.iter().cloned() {
@@ -164,7 +164,7 @@ fn EnvironmentRow(row: EnvRow, checked: bool, onpick: EventHandler<Option<String
                 role: "menuitemradio",
                 "aria-checked": "{checked}",
                 onclick: move |_| onpick.call(id.clone()),
-                span { class: "picker-check", if checked { "✓" } }
+                span { class: "picker-check", if checked { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                 span { class: "picker-text", span { class: "picker-label", "{row.name}" } }
                 if let Some(number) = row.number {
                     span { class: "menu-key", {number_label(number)} }
@@ -177,7 +177,7 @@ fn EnvironmentRow(row: EnvRow, checked: bool, onpick: EventHandler<Option<String
                         r#type: "button",
                         title: tr!("Edit environment"),
                         onclick: move |_| onedit.call(edit_id.clone()),
-                        "⚙"
+                        Icon { kind: IconKind::Gear, size: IconSize::Small }
                     }
                     button {
                         class: if pinned { "env-icon pinned" } else { "env-icon" },
@@ -188,7 +188,7 @@ fn EnvironmentRow(row: EnvRow, checked: bool, onpick: EventHandler<Option<String
                                 workspace.set_environment_pinned(star_id, !pinned);
                             }
                         },
-                        if pinned { "★" } else { "☆" }
+                        Icon { kind: if pinned { IconKind::StarFilled } else { IconKind::Star }, size: IconSize::Small }
                     }
                 }
             }

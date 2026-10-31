@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind, IconSize};
 use forge_domain::split_at_match;
 use forge_entities::relative_time;
 use forge_features::use_workspace;
@@ -80,7 +80,7 @@ fn PaletteBody() -> Element {
                         class: "palette-close",
                         title: tr!("Close"),
                         onclick: move |_| workspace.close_search(),
-                        "×"
+                        Icon { kind: IconKind::Close, size: IconSize::Small }
                     }
                 }
                 div { class: "palette-results",
@@ -117,7 +117,7 @@ fn PaletteBody() -> Element {
                         }
                     }
                     if rows.is_empty() {
-                        div { class: "palette-empty", {tr!("No sessions match")} }
+                        div { class: "state-empty", {tr!("No sessions match")} }
                     }
                 }
             }

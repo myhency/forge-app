@@ -10,6 +10,7 @@ use dioxus::prelude::*;
 use forge_domain::{Attachment, AttachmentKind};
 
 use crate::mention::{shorten_middle, type_tag};
+use forge_shared::{Icon, IconKind, IconSize};
 
 /// The characters a name may have on a card: three lines of about 24.
 const NAME_CHARS: usize = 72;
@@ -37,7 +38,7 @@ pub fn AttachmentCard(attachment: Attachment, thumbnail: Option<String>, on_remo
             span { class: "attach-name", "{name}" }
             span { class: "attach-tag", "{tag}" }
             if let Some(on_remove) = on_remove {
-                button { class: "attach-remove", r#type: "button", "aria-label": "Remove", onclick: move |_| on_remove.call(()), "×" }
+                button { class: "attach-remove", r#type: "button", "aria-label": "Remove", onclick: move |_| on_remove.call(()), Icon { kind: IconKind::Close, size: IconSize::Small } }
             }
         }
     }

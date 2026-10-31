@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 use forge_application::LiveSessionId;
 use forge_features::{use_workspace, Dir, Panel};
 
@@ -27,7 +27,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                     "aria-label": tr!("Environment"),
                     "aria-pressed": "{details_open}",
                     onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Details)),
-                    "☰"
+                    Icon { kind: IconKind::Menu }
                 }
             }
             if terminal {
@@ -38,7 +38,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                     "aria-label": tr!("Terminal"),
                     "aria-pressed": "{terminal_open}",
                     onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Terminal)),
-                    ">_"
+                    Icon { kind: IconKind::Terminal }
                 }
             }
             if terminal {
@@ -49,7 +49,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                     "aria-label": tr!("Changes"),
                     "aria-pressed": "{changes_open}",
                     onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Changes)),
-                    "±"
+                    Icon { kind: IconKind::Changes }
                 }
             }
             if terminal {
@@ -60,7 +60,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                     "aria-label": tr!("Preview"),
                     "aria-pressed": "{preview_open}",
                     onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Preview)),
-                    "◎"
+                    Icon { kind: IconKind::Target }
                 }
             }
             div { class: "picker",
@@ -72,7 +72,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                     "aria-haspopup": "menu",
                     "aria-expanded": "{open()}",
                     onclick: move |_| open.set(!open()),
-                    "⋮"
+                    Icon { kind: IconKind::More }
                 }
                 if open() {
                     div { class: "picker-backdrop", onclick: move |_| open.set(false) }

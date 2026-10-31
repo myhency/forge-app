@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_features::{cards, use_routines, RoutineDialog, RoutineFilter, RoutineScreen, RoutineSort};
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
 use crate::routines_detail::RoutineDetail;
 use crate::routines_form::RoutineForm;
@@ -60,7 +60,7 @@ fn RoutineList() -> Element {
                                     routines.set_filter(value);
                                     status_menu.set(false);
                                 },
-                                if routines.filter() == value { "✓ {label}" } else { "{label}" }
+                                if routines.filter() == value { Icon { kind: IconKind::Check, size: IconSize::Small } " {label}" } else { "{label}" }
                             }
                         }
                     }
@@ -78,7 +78,7 @@ fn RoutineList() -> Element {
                                     routines.set_sort(value);
                                     sort_menu.set(false);
                                 },
-                                if routines.sort() == value { "✓ {label}" } else { "{label}" }
+                                if routines.sort() == value { Icon { kind: IconKind::Check, size: IconSize::Small } " {label}" } else { "{label}" }
                             }
                         }
                     }

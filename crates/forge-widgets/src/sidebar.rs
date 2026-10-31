@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_features::{use_workspace, Active, EntryKey, Heading};
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
 use crate::account_menu::AccountMenu;
 use crate::filter_menu::SidebarFilterMenu;
@@ -100,7 +100,7 @@ pub fn NavButtons() -> Element {
             "aria-label": "Back",
             disabled: !workspace.can_go_back(),
             onclick: move |_| workspace.go_back(),
-            "←"
+            Icon { kind: IconKind::ArrowLeft }
         }
         button {
             class: "icon-button nav-button",
@@ -109,7 +109,7 @@ pub fn NavButtons() -> Element {
             "aria-label": "Forward",
             disabled: !workspace.can_go_forward(),
             onclick: move |_| workspace.go_forward(),
-            "→"
+            Icon { kind: IconKind::ArrowRight }
         }
     }
 }
@@ -143,7 +143,7 @@ pub fn Sidebar() -> Element {
                     class: "sidebar-search",
                     title: tr!("Search sessions ({key})", key = forge_domain::KEY_SEARCH),
                     onclick: move |_| workspace.open_search(),
-                    span { "⌕" }
+                    span { Icon { kind: IconKind::Search } }
                     span { {tr!("Search")} }
                     span { class: "keys", "{forge_domain::KEY_SEARCH}" }
                 }
@@ -151,7 +151,7 @@ pub fn Sidebar() -> Element {
                     class: "icon-button sidebar-hide",
                     title: tr!("Hide the sidebar"),
                     onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = true),
-                    "‹"
+                    Icon { kind: IconKind::ChevronLeft }
                 }
             }
             div { class: "sidebar-new",
@@ -165,13 +165,13 @@ pub fn Sidebar() -> Element {
             button {
                 class: if active == Active::Customize { "sidebar-link active" } else { "sidebar-link" },
                 onclick: move |_| workspace.show_customize(),
-                span { "✦" }
+                span { Icon { kind: IconKind::Sparkle } }
                 span { {tr!("Customize")} }
             }
             button {
                 class: if active == Active::Routines { "sidebar-link active" } else { "sidebar-link" },
                 onclick: move |_| workspace.show_routines(),
-                span { "◷" }
+                span { Icon { kind: IconKind::Clock } }
                 span { {tr!("Routines")} }
             }
             div { class: "sidebar-scroll",
@@ -289,7 +289,7 @@ fn group_toggle(
             class: "group-toggle",
             title: if collapsed { tr!("Expand") } else { tr!("Collapse") },
             onclick: move |_| workspace.update_prefs(|prefs| prefs.toggle_collapsed(&id)),
-            span { class: "chevron", if collapsed { "▸" } else { "▾" } }
+            span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: !collapsed } }
             span {
                 class: if missing { "sidebar-group-title missing" } else { "sidebar-group-title" },
                 title: "{tooltip}",

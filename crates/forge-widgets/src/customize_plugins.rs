@@ -3,13 +3,13 @@ use forge_domain::PluginEntry;
 use forge_features::{
     explore_groups, group_title, mine_groups, use_customize, Busy, CustomizeMode, Dialog, Job, Loaded, PluginGroup,
 };
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, LoadingRows, Icon, IconKind, IconSize};
 
 #[component]
 pub fn PluginsTab() -> Element {
     let customize = use_customize();
     let view = match customize.view() {
-        Loaded::Loading => return rsx! { div { class: "hint", {tr!("Loading…")} } },
+        Loaded::Loading => return rsx! { LoadingRows {} },
         Loaded::Failed(message) => {
             return rsx! {
                 div { class: "status-line error", "{message}" }
@@ -72,7 +72,7 @@ fn MineList(groups: Vec<PluginGroup>) -> Element {
                                     let id = id.clone();
                                     move |_| customize.open_detail(id.clone())
                                 },
-                                div { class: "customize-icon", "⌬" }
+                                div { class: "customize-icon", Icon { kind: IconKind::Package } }
                                 div { class: "customize-main",
                                     div { class: "customize-name",
                                         "{row.entry.name}"
@@ -95,7 +95,7 @@ fn MineList(groups: Vec<PluginGroup>) -> Element {
                                             menu.set(if menu() == Some(id.clone()) { None } else { Some(id.clone()) });
                                         }
                                     },
-                                    "⋮"
+                                    Icon { kind: IconKind::More }
                                 }
                                 if menu() == Some(id.clone()) {
                                     div { class: "menu-backdrop", onclick: move |event| { event.stop_propagation(); menu.set(None) } }
@@ -158,7 +158,7 @@ fn ExploreGrid(groups: Vec<PluginGroup>) -> Element {
                                         let id = id.clone();
                                         move |_| customize.open_detail(id.clone())
                                     },
-                                    div { class: "customize-icon", "⌬" }
+                                    div { class: "customize-icon", Icon { kind: IconKind::Package } }
                                     div { class: "customize-main",
                                         div { class: "customize-name", "{row.entry.name}" }
                                         div { class: "customize-card-desc", "{row.entry.description}" }
@@ -167,7 +167,7 @@ fn ExploreGrid(groups: Vec<PluginGroup>) -> Element {
                                     if busy != Busy::No {
                                         span { class: "spinner", title: if busy == Busy::Waiting { tr!("Waiting…") } else { tr!("Working…") } }
                                     } else if installed {
-                                        span { class: "customize-check", title: tr!("Installed"), "✓" }
+                                        span { class: "customize-check", title: tr!("Installed"), Icon { kind: IconKind::Check, size: IconSize::Small } }
                                     } else {
                                         button {
                                             class: "customize-plus",
@@ -201,7 +201,7 @@ fn PluginDetail(plugin: PluginEntry) -> Element {
         div { class: "customize-detail",
             button { class: "customize-back", onclick: move |_| customize.close_detail(), {tr!("← Plugins")} }
             div { class: "customize-detail-head",
-                div { class: "customize-icon big", "⌬" }
+                div { class: "customize-icon big", Icon { kind: IconKind::Package } }
                 div {
                     h2 { "{plugin.name}" }
                     div { class: "hint",
