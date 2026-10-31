@@ -340,6 +340,15 @@ mod tests {
     }
 
     #[test]
+    fn a_field_inside_a_box_that_shows_focus_does_not_draw_a_second_outline() {
+        // The composer box carries the focus change; the text area inside it must stay quiet or the field shows two outlines.
+        let quiet = rule_lines().find(|(_, line)| line.starts_with(".composer .textarea:focus-visible")).expect("a quiet rule for the composer's text area").1;
+        assert!(quiet.contains("box-shadow: none"), "{quiet}");
+        let field = THEME_CSS.find(".text-input:focus-visible").unwrap();
+        assert!(THEME_CSS.find(".composer .textarea:focus-visible").unwrap() > field, "the quiet rule has to come after the field rule to win");
+    }
+
+    #[test]
     fn the_field_focus_border_stands_out_from_every_surface_in_both_themes() {
         for dark in [false, true] {
             let map = palette::theme(dark);

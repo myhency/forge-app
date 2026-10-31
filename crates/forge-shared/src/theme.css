@@ -1482,6 +1482,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 
 /* A text field shows focus with a thin accent border and a faint halo; the ring above is for every other control. A field with no box of its own lets the box around it carry the change. */
 .text-input:focus-visible, .textarea:focus-visible, .settings-search:focus-visible, .customize-field:focus-visible, .customize-search:focus-visible, .env-search:focus-visible, .files-filter-input:focus-visible, .question-other:focus-visible, .preview-url:focus-visible, .env-variables:focus-visible, .plan-card-text:focus-visible, .cm-find-bar input:focus-visible, .cm-goto-bar input:focus-visible, .composer:focus-within, .palette:focus-within, .cd-search:focus-within, .cm-comment-box:focus-within, .cd-comment:focus-within { outline: none; border-color: var(--field-focus-border); box-shadow: 0 0 0 var(--field-focus-halo) var(--accent-soft); }
+.composer .textarea:focus-visible { box-shadow: none; }
 .cd-menu-search:focus-visible { outline: none; border-bottom-color: var(--field-focus-border); box-shadow: 0 1px 0 var(--field-focus-border); }
 .rename-input:focus-visible { outline: none; box-shadow: 0 0 0 var(--field-focus-halo) var(--accent-soft); }
 .cm-find-bar input.invalid:focus-visible { border-color: var(--danger); box-shadow: 0 0 0 var(--field-focus-halo) color-mix(in srgb, var(--danger) 30%, transparent); }
