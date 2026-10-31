@@ -106,7 +106,7 @@ pub use composer_cards::ComposerCards;
 pub use composer_shell::{composer_action, ComposerAction, ComposerShell};
 pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, MentionView, Outgoing};
 pub use filter_menu::{
-    current_index, filter_key, group_label, sort_label, status_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
+    current_index, direction_label, filter_key, group_label, sort_label, status_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
     FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
 };
 pub use folder_choice::{choose_folder, FolderChoice};

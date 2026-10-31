@@ -1,11 +1,12 @@
 use dioxus::prelude::*;
 use forge_shared::{tr, Icon, IconKind, IconSize};
 use forge_features::{
-    current_index, filter_key, group_label, refocus_workspace, sort_label, status_label, use_workspace, FilterChoice, FilterMenu,
-    FilterOutcome, FilterRow, FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
+    current_index, direction_label, filter_key, group_label, refocus_workspace, sort_label, status_label, use_workspace, FilterChoice,
+    FilterMenu, FilterOutcome, FilterRow, FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
 };
 
-/// The icon beside "+ New session" and the menu it opens: status, sort by, group by, show empty groups.
+/// The icon beside "+ New session" and the menu it opens: status, sort by (the key and the direction), group by,
+/// show empty groups, and a reset to the defaults.
 /// The menu takes focus when it opens; arrows move, Right opens a submenu, Left or Escape closes
 /// it, Enter chooses (the keys are the physical ones, so a Korean input method does not matter).
 #[component]
@@ -16,6 +17,8 @@ pub fn SidebarFilterMenu() -> Element {
     let prefs = workspace.prefs();
     let state = menu();
 
+    // The sort submenu draws a divider between the keys and the direction rows.
+    let divider_before = if FILTER_ROWS[state.top] == FilterRow::Sort { SORT_ITEMS.len() } else { usize::MAX };
     let sub_items: Vec<(String, bool, FilterChoice)> = match FILTER_ROWS[state.top] {
         FilterRow::Status => STATUS_ITEMS
             .iter()
@@ -24,12 +27,13 @@ pub fn SidebarFilterMenu() -> Element {
         FilterRow::Sort => SORT_ITEMS
             .iter()
             .map(|item| (sort_label(*item).to_string(), prefs.sort_by == *item, FilterChoice::Sort(*item)))
+            .chain([false, true].map(|reversed| (direction_label(reversed).to_string(), prefs.reversed == reversed, FilterChoice::Reverse(reversed))))
             .collect(),
         FilterRow::Group => GROUP_ITEMS
             .iter()
             .map(|item| (group_label(*item).to_string(), prefs.group_by == *item, FilterChoice::Group(*item)))
             .collect(),
-        FilterRow::ShowEmpty => Vec::new(),
+        FilterRow::ShowEmpty | FilterRow::Reset => Vec::new(),
     };
 
     rsx! {
@@ -84,14 +88,19 @@ pub fn SidebarFilterMenu() -> Element {
                         }
                     },
                     for (index, row) in FILTER_ROWS.iter().enumerate() {
+                        // The reset is a button, not a setting: a divider sets it apart.
+                        if *row == FilterRow::Reset {
+                            div { class: "row-menu-divider", role: "separator" }
+                        }
                         button {
                             key: "{index}",
                             class: if state.top == index { "row-menu-item highlight" } else { "row-menu-item" },
                             onclick: {
                                 let row = *row;
                                 move |_| {
-                                    if row == FilterRow::ShowEmpty {
-                                        workspace.update_prefs(|prefs| FilterChoice::ToggleShowEmpty.apply(prefs));
+                                    if matches!(row, FilterRow::ShowEmpty | FilterRow::Reset) {
+                                        let choice = if row == FilterRow::Reset { FilterChoice::Reset } else { FilterChoice::ToggleShowEmpty };
+                                        workspace.update_prefs(|prefs| choice.apply(prefs));
                                         open.set(false);
                                         refocus_workspace();
                                     } else {
@@ -116,12 +125,16 @@ pub fn SidebarFilterMenu() -> Element {
                                     span { {tr!("Show empty groups")} }
                                     span { class: "value", if prefs.show_empty { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                                 },
+                                FilterRow::Reset => rsx! { span { {tr!("Reset to defaults")} } },
                             }
                         }
                     }
                     if let Some(highlighted) = state.sub {
                         div { class: "filter-submenu",
                             for (index, (label, current, choice)) in sub_items.into_iter().enumerate() {
+                                if index == divider_before {
+                                    div { class: "row-menu-divider", role: "separator" }
+                                }
                                 button {
                                     key: "{index}",
                                     class: if highlighted == index { "row-menu-item highlight" } else { "row-menu-item" },
