@@ -1194,3 +1194,19 @@ Backlog NEW-46 (display settings that may apply to Forge: transcript text size, 
 - **Page-level facts**: the Settings left list highlight after a search jump is not updated (it kept `일반` while the content was `시스템`).
 
 Backlog NEW-48 (Settings search grouped by page).
+
+### Round 36, part 16: `자동 모드 켜기` answered, the environment menu and `새 환경` dialog
+
+- **`자동 모드 켜기`** (the row under the environment card, NEW-27) pressed: the mode label under the box changed from `수동` to `자동` and the row disappeared at once; the card kept one row `Claude Code CLI 세션 3개 가져오기`. No dialog, nothing sent. So the row is a one-press shortcut for the same mode setting as the mode menu, and it exists only while the mode is not auto. The default mode did follow the folder earlier (round 36 part 1: `수동` for a folder that is not a git repo; here a new session in the same environment started as `수동` again).
+- **`⌘N`** opens the new-session screen with the LAST used environment checked (`forge-observe`) and the mode back to `수동`: the mode is not remembered across new sessions.
+- **Full environment menu** (`환경 선택 ⌄`): search field `환경 검색…`; group `로컬`: `이 컴퓨터`, `forge-observe` (checked, blue), `forge`, `더 보기 | 1 ›`; a line; `클라우드 ›` and a line; `+ 새 환경`. `클라우드 ›` opens a side menu: `기본값` (cloud icon) and `클라우드 환경 추가…`.
+- **`새 환경` dialog** (a modal over a dimmed window, `×`): four tabs at the top, `로컬` (default), `클라우드`, `SSH`, `Remote Control`; footer `취소` and a primary button (disabled until valid).
+  - `로컬`: `이름` (placeholder `내 앱`), `폴더 (선택 사항)` with a `+ 추가` button and a dashed empty box `세션을 시작할 폴더를 선택하세요.`, a row `환경 변수` (`이 환경에는 없음`, `›`); button `환경 만들기`. `+ 추가` opens a list of recent folders by name (`forge-observe`, `develop`, `forge`, `task-r31`, …; no paths) and a last row `📁 선택…` (the file dialog).
+  - `클라우드`: `이름`, then four rows with `›`: `네트워크 액세스` (`제한됨 · 도메인 없음 · 패키지 관리자 켜짐`), `네트워크 시크릿` (`없음`), `설정 스크립트` (`설정되지 않음`), `환경 변수`; button `환경 추가`.
+  - `SSH`: `이름`, `호스트` (select `호스트를 선택하세요`, from ssh config presumably), `폴더` with `+ 추가` disabled and `먼저 호스트를 선택하세요.`, `환경 변수`; button `환경 만들기`.
+  - `Remote Control`: a card `remote control 설정`: `여기서 코딩하려면 내 컴퓨터에서 claude rc를 실행하세요.` and `이 컴퓨터에서 Remote Control 기능이 꺼져 있으므로 …` with a link `Remote Control 설정 열기` and a button `더 알아보기 ↗`; only `취소` in the footer.
+  - I pressed `취소` at the end; nothing was created.
+
+Forge side (string search of `ko.rs`): `Environment variables` exists; `Remote Control`, `Network access`, `Setup script`, `Network secrets`, `SSH`, `Add cloud environment` do not. Forge's own `새 환경` (Plan 53) has the local kind with name, folders and variables; the other three tabs are cloud, remote and phone features that do not apply, except that the recent-folder list in `+ 추가` and the empty-state texts may be worth matching. Backlog NEW-49.
+
+Not checked: the file dialog behind `선택…`, `더 보기 1 ›`, the `네트워크 액세스` row dialog, `클라우드 환경 추가…`.
