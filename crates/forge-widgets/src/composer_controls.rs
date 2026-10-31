@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{EffortLevel, PermissionMode};
-use forge_entities::model_menu_rows;
+use forge_entities::{model_menu_rows, more_model_rows};
 use forge_features::{
     confirmation_still_valid, effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_settings, use_workspace, ModeChoice, PickerKind,
     effort_help, slider_faster, slider_smarter,
@@ -9,13 +9,15 @@ use forge_features::{
 use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
 /// One row of a picker's list, whatever it picks.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct PickerItem {
     pub(crate) label: String,
     pub(crate) description: Option<String>,
     pub(crate) key: Option<usize>,
     pub(crate) checked: bool,
     pub(crate) divider_before: bool,
+    /// A small tag after the label ("Default", "Credits needed").
+    pub(crate) badge: Option<String>,
 }
 
 /// Opens the menu when a shortcut asked for the menu of `kind` (⇧⌘M, ⇧⌘I, ⇧⌘E).
@@ -40,8 +42,14 @@ pub(crate) fn Picker(
     #[props(default)] heading: Option<String>,
     #[props(default)] kind: Option<PickerKind>,
     #[props(default)] icon: Option<IconKind>,
+    /// Rows for a flyout that opens beside the list under the row `more_label` ("More models"); `onpick_more` gets the index
+    /// in this list. The flyout is not drawn when the list is empty.
+    #[props(default)] more: Vec<PickerItem>,
+    #[props(default)] more_label: Option<String>,
+    #[props(default)] onpick_more: Option<EventHandler<usize>>,
 ) -> Element {
     let mut open = use_signal(|| false);
+    let mut more_open = use_signal(|| false);
     use_picker_request(kind, open);
     let keyed = items.clone();
     rsx! {
@@ -67,8 +75,9 @@ pub(crate) fn Picker(
                         refocus_composer();
                     },
                 }
+                div { class: "picker-menu picker-menu-wrap",
                 div {
-                    class: "picker-menu picker-list",
+                    class: "picker-list",
                     role: "menu",
                     tabindex: "0",
                     // The list takes focus when it opens so its number keys work at once.
@@ -113,13 +122,63 @@ pub(crate) fn Picker(
                                 },
                                 span { class: "picker-check", if item.checked { Icon { kind: IconKind::Check, size: IconSize::Small } } }
                                 span { class: "picker-text",
-                                    span { class: "picker-label", "{item.label}" }
+                                    span { class: "picker-label",
+                                        "{item.label}"
+                                        if let Some(badge) = item.badge.as_ref() {
+                                            span { class: "picker-badge", "{badge}" }
+                                        }
+                                    }
                                     if let Some(description) = item.description.as_ref() {
                                         span { class: "picker-description", "{description}" }
                                     }
                                 }
                                 if let Some(key) = item.key {
                                     span { class: "menu-key", "{key}" }
+                                }
+                            }
+                        }
+                    }
+                }
+                    if let (Some(label), false) = (more_label.clone(), more.is_empty()) {
+                        div { class: "picker-more",
+                            div { class: "picker-divider" }
+                            button {
+                                class: if more_open() { "picker-item picker-more-row open" } else { "picker-item picker-more-row" },
+                                r#type: "button",
+                                role: "menuitem",
+                                "aria-haspopup": "menu",
+                                "aria-expanded": "{more_open()}",
+                                onclick: move |_| more_open.set(!more_open()),
+                                span { class: "picker-text", span { class: "picker-label", "{label}" } }
+                                span { class: "picker-more-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
+                            }
+                            if more_open() {
+                                div { class: "picker-flyout", role: "menu",
+                                    for (index, item) in more.iter().enumerate() {
+                                        button {
+                                            key: "{index}",
+                                            class: if item.checked { "picker-item checked" } else { "picker-item" },
+                                            r#type: "button",
+                                            role: "menuitemradio",
+                                            "aria-checked": "{item.checked}",
+                                            onclick: move |_| {
+                                                open.set(false);
+                                                more_open.set(false);
+                                                if let Some(pick) = onpick_more {
+                                                    pick.call(index);
+                                                }
+                                            },
+                                            span { class: "picker-check", if item.checked { Icon { kind: IconKind::Check, size: IconSize::Small } } }
+                                            span { class: "picker-text",
+                                                span { class: "picker-label",
+                                                    "{item.label}"
+                                                    if let Some(badge) = item.badge.as_ref() {
+                                                        span { class: "picker-badge", "{badge}" }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -146,6 +205,7 @@ pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<Per
             key: row.key,
             checked: row.mode == current,
             divider_before: row.divider_before,
+            ..Default::default()
         })
         .collect();
     let label = rows.iter().find(|row| row.mode == current).map_or(tr!("Mode"), |row| row.label).to_string();
@@ -205,18 +265,25 @@ pub fn ModePicker(id: LiveSessionId) -> Element {
 #[component]
 pub(crate) fn ModelPickerView(current: Option<String>, onchange: EventHandler<Option<String>>) -> Element {
     let rows = model_menu_rows(current.as_deref());
-    let items: Vec<PickerItem> = rows
+    let item_of = |row: &forge_entities::ModelRow, current: &Option<String>| PickerItem {
+        label: row.label.clone(),
+        description: None,
+        key: row.key,
+        checked: row.value == *current,
+        divider_before: row.divider_before,
+        badge: row.badge.map(|badge| forge_shared::i18n::text(badge).to_string()),
+    };
+    let items: Vec<PickerItem> = rows.iter().map(|row| item_of(row, &current)).collect();
+    let more_rows = more_model_rows();
+    let more: Vec<PickerItem> = more_rows.iter().map(|row| item_of(row, &current)).collect();
+    // The button names the model in force, wherever it is listed.
+    let label = rows
         .iter()
-        .map(|row| PickerItem {
-            label: row.label.clone(),
-            description: None,
-            key: row.key,
-            checked: row.value == current,
-            divider_before: row.divider_before,
-        })
-        .collect();
-    let label = rows.iter().find(|row| row.value == current).map_or_else(|| tr!("Model").to_string(), |row| row.label.clone());
+        .chain(more_rows.iter())
+        .find(|row| row.value == current)
+        .map_or_else(|| tr!("Model").to_string(), |row| row.label.clone());
     let values: Vec<Option<String>> = rows.iter().map(|row| row.value.clone()).collect();
+    let more_values: Vec<Option<String>> = more_rows.iter().map(|row| row.value.clone()).collect();
     rsx! {
         Picker {
             title: tr!("Model"),
@@ -225,6 +292,12 @@ pub(crate) fn ModelPickerView(current: Option<String>, onchange: EventHandler<Op
             items,
             onpick: move |index: usize| {
                 onchange.call(values[index].clone());
+                refocus_composer();
+            },
+            more,
+            more_label: tr!("More models").to_string(),
+            onpick_more: move |index: usize| {
+                onchange.call(more_values[index].clone());
                 refocus_composer();
             },
         }

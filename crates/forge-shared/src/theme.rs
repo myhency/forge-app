@@ -285,7 +285,7 @@ mod tests {
     fn keyboard_focus_shows_everywhere_a_rule_does_not_hide_it_on_purpose() {
         assert!(THEME_CSS.contains("\n:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color);"), "one focus ring for every focusable element");
         // Containers that take focus from code, not from the keyboard.
-        const CONTAINERS: [&str; 7] = [".workspace", ".row-menu", ".picker-menu", ".trust-card", ".permission-panel", ".question-panel", ".lightbox-backdrop"];
+        const CONTAINERS: [&str; 8] = [".workspace", ".row-menu", ".picker-menu", ".picker-menu-wrap > .picker-list", ".trust-card", ".permission-panel", ".question-panel", ".lightbox-backdrop"];
         let mut hidden = Vec::new();
         for (_, line) in rule_lines().filter(|(_, line)| line.contains("outline: none")) {
             for selector in line.split('{').next().unwrap().split(',').map(str::trim) {

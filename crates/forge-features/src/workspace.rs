@@ -132,6 +132,16 @@ pub struct TrustRequest {
 
 /// The UI-side session store: the sidebar's past sessions, the open sessions and the active one.
 /// It is `Copy` (every field is a signal), so event handlers can capture it freely.
+/// What the `/stats` card of one session holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatsCardState {
+    /// `None` while it is being read.
+    pub stats: Option<forge_domain::UsageStats>,
+    pub range: forge_domain::StatsRange,
+    /// The read failed.
+    pub failed: bool,
+}
+
 #[derive(Clone, Copy)]
 pub struct Workspace {
     services: Signal<WorkspaceServices>,
@@ -189,6 +199,11 @@ pub struct Workspace {
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
     /// What became of each session's end cards (by the `wrap_up` call's id): closed, or already sent.
     end_card_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::CardMark>>>,
+    /// The `/status` and `/usage` cards of each session, oldest first; a send takes them away.
+    local_cards: Signal<HashMap<LiveSessionId, Vec<forge_entities::LocalCard>>>,
+    /// The `/stats` card of each session: what was read from every session and the range chosen on the card. It is drawn
+    /// from this each time, so the range select only redraws it.
+    stats_cards: Signal<HashMap<LiveSessionId, StatsCardState>>,
     code_runs: Signal<HashMap<LiveSessionId, crate::code_runs::CodeRuns>>,
     /// The person's comments on the plan of each session, sent along with a request for changes.
     plan_comments: Signal<HashMap<LiveSessionId, Vec<forge_entities::PlanComment>>>,
@@ -289,6 +304,8 @@ pub fn use_workspace_provider() -> Workspace {
             queued_files: root_signal(HashMap::new()),
             rewind_requests: root_signal(HashMap::new()),
             end_card_marks: root_signal(HashMap::new()),
+            local_cards: root_signal(HashMap::new()),
+            stats_cards: root_signal(HashMap::new()),
             code_runs: root_signal(HashMap::new()),
             plan_comments: root_signal(HashMap::new()),
             auto_details: root_signal(std::collections::HashSet::new()),
@@ -2761,6 +2778,119 @@ impl Workspace {
             }
         }
         self.show_new_session();
+    }
+
+    /// A local command (`/tasks`, `/diff`, `/status`, `/usage`): answered here and never sent. The two panel commands
+    /// show a panel (`/tasks` only opens it, `/diff` shows or hides the changes, as the desktop app does); the
+    /// other two put a card in the chat.
+    pub fn run_local_command(&self, id: LiveSessionId, command: forge_entities::LocalCommand) {
+        use forge_entities::LocalCommand;
+        match command {
+            LocalCommand::Tasks => self.change_dock(id, |dock| dock.open(Panel::Tasks)),
+            LocalCommand::Diff => self.change_dock(id, |dock| dock.toggle(Panel::Changes)),
+            LocalCommand::Status => {
+                if let Some(card) = self.status_card(id) {
+                    self.add_local_card(id, card);
+                }
+            }
+            LocalCommand::Usage => {
+                if let Some(card) = self.usage_card(id) {
+                    self.add_local_card(id, card);
+                }
+            }
+            LocalCommand::Stats => self.open_stats_card(id),
+        }
+    }
+
+    /// `/stats`: the card appears at once with a loading line while every session's use is read (the first read may
+    /// take a while), then it is drawn from what was read. A second `/stats` reads again, so the numbers are fresh.
+    fn open_stats_card(&self, id: LiveSessionId) {
+        let mut cards = self.stats_cards;
+        let range = cards.peek().get(&id).map_or(forge_domain::StatsRange::All, |state| state.range);
+        cards.write().insert(id, StatsCardState { stats: None, range, failed: false });
+        let port = self.usage_stats_port();
+        let workspace = *self;
+        spawn(async move {
+            let offset = crate::arrange::local_offset().whole_seconds();
+            let result = port.load(offset).await;
+            let mut cards = workspace.stats_cards;
+            let mut all = cards.write();
+            if let Some(state) = all.get_mut(&id) {
+                match result {
+                    Ok(stats) => state.stats = Some(stats),
+                    Err(_) => state.failed = true,
+                }
+            }
+        });
+    }
+
+    /// Changes the range of the `/stats` card; the tiles and the table follow, the calendar does not.
+    pub fn set_stats_range(&self, id: LiveSessionId, range: forge_domain::StatsRange) {
+        let mut cards = self.stats_cards;
+        let mut all = cards.write();
+        if let Some(state) = all.get_mut(&id) {
+            state.range = range;
+        }
+    }
+
+    /// The `/stats` card of this session as it is drawn now, with its range: `None` when none was asked for.
+    pub fn stats_card_view(&self, id: LiveSessionId) -> Option<(forge_entities::LocalCard, forge_domain::StatsRange)> {
+        let cards = self.stats_cards.read();
+        let state = cards.get(&id)?;
+        let card = match (&state.stats, state.failed) {
+            (Some(stats), _) => {
+                let now = crate::arrange::now_local();
+                let today = forge_domain::Day::new(now.year(), u8::from(now.month()), now.day());
+                forge_entities::stats_card(stats, state.range, today)
+            }
+            (None, true) => forge_entities::LocalCard { title: tr!("Stats").to_string(), blocks: vec![forge_entities::CardBlock::Note(tr!("The stats could not be read.").to_string())] },
+            (None, false) => forge_entities::stats_loading_card(),
+        };
+        Some((card, state.range))
+    }
+
+    fn status_card(&self, id: LiveSessionId) -> Option<forge_entities::LocalCard> {
+        let view = self.live_view(id)?;
+        let view = view.read();
+        let mode = crate::permission_mode::mode_rows(true).into_iter().find(|row| row.mode == view.session.permission_mode).map_or("", |row| row.label);
+        Some(forge_entities::status_card(&forge_entities::StatusInfo {
+            forge_version: env!("CARGO_PKG_VERSION").to_string(),
+            model: forge_entities::model_label(view.model.as_deref()),
+            effort: view.effort.map(|level| forge_shared::i18n::text(level.label()).to_string()),
+            mode: mode.to_string(),
+            messages: view.session.messages.len(),
+            session_id: view.claude_session_id.as_ref().map(|session| session.0.clone()),
+            folder: self.origin_of(&view.project_path).display().to_string(),
+            connectors: view.mcp_servers.clone(),
+        }))
+    }
+
+    fn usage_card(&self, id: LiveSessionId) -> Option<forge_entities::LocalCard> {
+        let view = self.live_view(id)?;
+        let view = view.read();
+        Some(forge_entities::usage_card(&view.session.usage, view.context, view.rate_limit.as_ref(), &forge_domain::PriceTable::list_prices()))
+    }
+
+    fn add_local_card(&self, id: LiveSessionId, card: forge_entities::LocalCard) {
+        let mut cards = self.local_cards;
+        cards.write().entry(id).or_default().push(card);
+    }
+
+    /// The cards `/status` and `/usage` put in this session's chat.
+    pub fn local_cards(&self, id: LiveSessionId) -> Vec<forge_entities::LocalCard> {
+        self.local_cards.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    /// Takes the cards away: a message was sent, so they no longer belong to the end of the chat.
+    pub fn clear_local_cards(&self, id: LiveSessionId) {
+        if self.local_cards.peek().get(&id).is_some_and(|cards| !cards.is_empty()) {
+            let mut cards = self.local_cards;
+            cards.write().remove(&id);
+        }
+        if self.stats_cards.peek().contains_key(&id) {
+            let mut stats = self.stats_cards;
+            stats.write().remove(&id);
+        }
     }
 
     /// Opens or closes `panel` in the active session's dock; nothing on the other pages.

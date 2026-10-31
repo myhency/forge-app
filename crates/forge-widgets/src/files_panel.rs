@@ -31,7 +31,7 @@ async fn load_dir(files: Arc<dyn FilesPort>, root: PathBuf, dir: String, mut tre
         Some(Ok(entries)) => tree.write().set_children(&key, entries),
         // Only the root failing leaves nothing to show. A folder that cannot be read (a link out
         // of the session folder, no permission) just shows as empty.
-        Some(Err(error)) if key.is_empty() => problem.set(Some(error.to_string())),
+        Some(Err(error)) if key.is_empty() => problem.set(Some(crate::files_kinds::files_error_text(&error))),
         Some(Err(_)) => tree.write().set_children(&key, Vec::new()),
         None => {}
     }

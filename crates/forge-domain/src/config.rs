@@ -74,6 +74,9 @@ pub struct SidebarPrefs {
     pub status: StatusFilter,
     /// Whether a project with no sessions still gets a heading.
     pub show_empty: bool,
+    /// Sorts the other way round: oldest first for the times, Z to A for the names. Off is the order the
+    /// sidebar always had (newest first, A to Z).
+    pub reversed: bool,
     /// Ids of the collapsed groups (`arrange` makes them: `folder:<path>`, `date:<bucket>`).
     pub collapsed: Vec<String>,
     pub width: u32,
@@ -87,6 +90,7 @@ impl Default for SidebarPrefs {
             group_by: GroupBy::default(),
             status: StatusFilter::default(),
             show_empty: false,
+            reversed: false,
             collapsed: Vec::new(),
             width: DEFAULT_SIDEBAR_WIDTH,
             hidden: false,
@@ -587,6 +591,7 @@ mod tests {
         assert_eq!(config.sidebar.sort_by, SortBy::Activity);
         assert_eq!(config.sidebar.group_by, GroupBy::Folder);
         assert!(!config.sidebar.show_empty);
+        assert!(!config.sidebar.reversed);
         assert!(!config.sidebar.hidden);
         assert_eq!(config.sidebar.width, DEFAULT_SIDEBAR_WIDTH);
     }
@@ -605,6 +610,7 @@ mod tests {
             group_by: GroupBy::Date,
             status: StatusFilter::All,
             show_empty: true,
+            reversed: true,
             collapsed: vec!["folder:/work/a".to_string()],
             width: 300,
             hidden: true,

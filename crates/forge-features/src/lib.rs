@@ -47,6 +47,7 @@ mod preview_host;
 mod preview_tabs;
 mod suggestion;
 mod refocus;
+mod routine_templates;
 mod routines;
 mod routines_state;
 mod search;
@@ -106,14 +107,14 @@ pub use composer_cards::ComposerCards;
 pub use composer_shell::{composer_action, ComposerAction, ComposerShell};
 pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, MentionView, Outgoing};
 pub use filter_menu::{
-    current_index, filter_key, group_label, sort_label, status_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
+    current_index, direction_label, filter_key, group_label, sort_label, status_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
     FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
 };
 pub use folder_choice::{choose_folder, FolderChoice};
 pub use folder_menu::{folder_menu_rows, FolderMenuRow, MAX_RECENT_FOLDERS};
 pub use new_session::{send_ready, use_new_session_draft, use_new_session_draft_provider, ModelChoice, NewSessionComposer, NewSessionDraft};
 pub use refocus::{refocus_composer, refocus_workspace, watch_focus};
-pub use permission_mode::{menu_digit_row, confirmation_still_valid, mode_choice, mode_options, mode_rows, mode_value, parse_mode, ModeChoice, ModeRow};
+pub use permission_mode::{auto_mode_offered, menu_digit_row, confirmation_still_valid, mode_choice, mode_options, mode_rows, mode_value, parse_mode, ModeChoice, ModeRow};
 pub use search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
 pub use send_message::SendMessageBox;
 pub use worktree_view::{folder_choices, NewWorktree, RepoInfo, WorktreeTag};
@@ -128,6 +129,7 @@ pub use sidebar::{
 };
 pub use terminal_tabs::{TabId, TerminalTabs};
 pub use routines::{cards, history_rows, run_state_text, local_when_label, notices, offset_at, skip_text, start_failed_notice, waiting_notice, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};
+pub use routine_templates::{routine_templates, RoutineTemplate};
 pub use routines_state::{use_routines, use_routines_provider, RoutineDialog, RoutineScreen, Routines};
 pub use workspace::{preview_key_from_event, shortcut_from_event, use_workspace, use_workspace_provider, Active, PaneGeometry, Picture, RoutineServices, TrustRequest, Workspace, WorkspaceServices};
 pub use blocking::run_blocking;
@@ -137,7 +139,7 @@ pub use preview_host::PreviewHost;
 pub use preview_tabs::{normalize_url, PreviewTabId, PreviewTabs};
 pub use suggestion::{composer_placeholder, suggestion_to_accept};
 pub use tool_activity::finished_tool_calls;
-pub use settings_pages::{filter_pages, nav_groups, NavGroup};
+pub use settings_pages::{filter_pages, highlight, nav_groups, search_hits, Highlighted, NavGroup, SearchHit};
 pub use session_notices::{notice_between, should_send, use_session_notices, Notice, NoticeTarget, Snapshot};
 pub use appearance::{apply_appearance, apply_appearance_script};
 pub use window_height::use_window_height;

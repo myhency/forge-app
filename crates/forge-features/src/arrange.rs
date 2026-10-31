@@ -189,11 +189,15 @@ fn created_of(entry: &SidebarEntry) -> Option<OffsetDateTime> {
 }
 
 // A stable sort: sessions that tie keep the order the adapter gave them (newest first, then id).
-fn sort_entries(entries: &mut [ArrangedEntry], sort_by: SortBy) {
+fn sort_entries(entries: &mut [ArrangedEntry], sort_by: SortBy, reversed: bool) {
     match sort_by {
         SortBy::Name => entries.sort_by_key(|item| item.entry.title.to_lowercase()),
         SortBy::Created => entries.sort_by_key(|item| newest_first(created_of(&item.entry))),
         SortBy::Activity => entries.sort_by_key(|item| newest_first(activity_of(&item.entry))),
+    }
+    // The other way round keeps the order of sessions that tie, so it reverses the groups of equals.
+    if reversed {
+        entries.reverse();
     }
 }
 
@@ -338,7 +342,7 @@ fn arrange_filtered(
                 .into_iter()
                 .filter(|(_, _, entries)| prefs.show_empty || !entries.is_empty())
                 .map(|(home, heading, mut entries)| {
-                    sort_entries(&mut entries, prefs.sort_by);
+                    sort_entries(&mut entries, prefs.sort_by, prefs.reversed);
                     let entries = nest_forks(entries, prefs, active);
                     finish(folder_group_id(&home), Heading::Project(heading), entries, prefs, active)
                 })
@@ -346,7 +350,7 @@ fn arrange_filtered(
         }
         GroupBy::Date => {
             let mut items = all_entries(groups);
-            sort_entries(&mut items, prefs.sort_by);
+            sort_entries(&mut items, prefs.sort_by, prefs.reversed);
             let mut buckets: Vec<(DateBucket, Vec<ArrangedEntry>)> = Vec::new();
             for item in items {
                 let at = match prefs.sort_by {
@@ -361,6 +365,9 @@ fn arrange_filtered(
             }
             // Sorting by name meets the buckets in any order; they are drawn newest first.
             buckets.sort_by_key(|(bucket, _)| *bucket);
+            if prefs.reversed && prefs.sort_by != SortBy::Name {
+                buckets.reverse();
+            }
             buckets
                 .into_iter()
                 .map(|(bucket, list)| {
@@ -374,7 +381,7 @@ fn arrange_filtered(
             if items.is_empty() {
                 return Vec::new();
             }
-            sort_entries(&mut items, prefs.sort_by);
+            sort_entries(&mut items, prefs.sort_by, prefs.reversed);
             vec![ArrangedGroup { id: "flat".to_string(), heading: Heading::None, collapsed: false, entries: nest_forks(items, prefs, active) }]
         }
     }
@@ -488,6 +495,48 @@ mod tests {
         let arranged = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Folder), now(), None);
 
         assert_eq!(titles(&arranged[0]), ["unsaved", "new", "old"]);
+    }
+
+    #[test]
+    fn reversed_puts_the_oldest_first_and_a_session_not_on_disk_last() {
+        let groups = vec![group(
+            "/a",
+            vec![
+                entry("old", None, Some("2026-10-01T00:00:00Z")),
+                entry("new", None, Some("2026-10-03T10:00:00Z")),
+                entry("unsaved", None, None),
+            ],
+        )];
+        let reversed = SidebarPrefs { reversed: true, ..prefs(SortBy::Activity, GroupBy::Folder) };
+
+        let arranged = arrange(&groups, &reversed, now(), None);
+
+        assert_eq!(titles(&arranged[0]), ["old", "new", "unsaved"]);
+    }
+
+    #[test]
+    fn reversed_name_sort_runs_from_z_to_a() {
+        let groups = vec![group("/a", vec![entry("banana", None, None), entry("Apple", None, None), entry("cherry", None, None)])];
+        let reversed = SidebarPrefs { reversed: true, ..prefs(SortBy::Name, GroupBy::Folder) };
+
+        let arranged = arrange(&groups, &reversed, now(), None);
+
+        assert_eq!(titles(&arranged[0]), ["cherry", "banana", "Apple"]);
+    }
+
+    #[test]
+    fn reversed_date_groups_start_with_the_oldest_bucket() {
+        let groups = vec![group(
+            "/a",
+            vec![entry("today", None, Some("2026-10-03T10:00:00Z")), entry("last month", None, Some("2026-09-10T10:00:00Z"))],
+        )];
+        let forward = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Date), now(), None);
+        let reversed = arrange(&groups, &SidebarPrefs { reversed: true, ..prefs(SortBy::Activity, GroupBy::Date) }, now(), None);
+
+        let mut backwards = headings(&forward);
+        backwards.reverse();
+        assert_eq!(headings(&reversed), backwards);
+        assert_eq!(headings(&forward).len(), 2);
     }
 
     #[test]

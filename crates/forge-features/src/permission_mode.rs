@@ -64,6 +64,13 @@ pub fn mode_rows(include_bypass: bool) -> Vec<ModeRow> {
     rows
 }
 
+/// Whether the new-session screen offers a one-press "Turn on Auto mode": only while the session would
+/// ask before edits. Plan, accept-edits and bypass are choices the person made on purpose, and Auto
+/// needs no offer.
+pub fn auto_mode_offered(mode: PermissionMode) -> bool {
+    mode == PermissionMode::Default
+}
+
 /// A confirmation that was asked for stays valid only while the picker still has the row (the
 /// Settings switch may have been turned off in between).
 pub fn confirmation_still_valid(rows: &[ModeRow], mode: PermissionMode) -> bool {
@@ -121,6 +128,14 @@ mod tests {
         assert_eq!(keys, vec![Some(1), Some(2), Some(3), Some(4), None]);
         assert!(rows[4].divider_before && rows[..4].iter().all(|row| !row.divider_before));
         assert!(rows.iter().all(|row| !row.description.is_empty()));
+    }
+
+    #[test]
+    fn auto_mode_is_offered_only_while_the_session_asks_before_edits() {
+        assert!(auto_mode_offered(PermissionMode::Default));
+        for mode in [PermissionMode::Auto, PermissionMode::AcceptEdits, PermissionMode::Plan, PermissionMode::BypassPermissions] {
+            assert!(!auto_mode_offered(mode), "{mode:?}");
+        }
     }
 
     #[test]

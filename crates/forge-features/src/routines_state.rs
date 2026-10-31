@@ -175,6 +175,15 @@ impl Routines {
         screen.set(RoutineScreen::Form(id));
     }
 
+    /// Opens the new-routine form filled in from a template. The form counts as changed from the start, so leaving it asks
+    /// before the template's texts are thrown away.
+    pub fn open_form_from_template(&self, template: &crate::RoutineTemplate) {
+        let (mut form, mut form_start, mut screen) = (self.form, self.form_start, self.screen);
+        form.set(template.to_form());
+        form_start.set(FormDraft::new());
+        screen.set(RoutineScreen::Form(None));
+    }
+
     /// Leaves the form; a changed form asks first.
     pub fn leave_form(&self) {
         if self.form_is_dirty() {

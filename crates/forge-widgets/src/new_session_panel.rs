@@ -4,6 +4,7 @@ use forge_features::{use_new_session_draft_provider, use_workspace, user_name, N
 use crate::environment_chip::EnvironmentChip;
 use crate::new_session_controls::{AddFolderButton, BranchChip, FolderChip, NewEffortPicker, NewModePicker, NewModelPicker};
 use crate::plus_menu::PlusMenu;
+use crate::auto_mode_card::AutoModeCard;
 use crate::environment_card::EnvironmentCard;
 use forge_shared::tr;
 
@@ -17,7 +18,9 @@ pub fn NewSessionPanel() -> Element {
             div { class: "home-top",
                 h1 { class: "greeting", {tr!("{name}, what's next?", name = name)} }
             }
-            div { class: "env-shortcut-slot", EnvironmentCard {} }
+            div { class: "env-shortcut-slot",
+                div { class: "env-shortcut-stack", EnvironmentCard {} AutoModeCard {} }
+            }
             NewSessionComposer {
                 leading: rsx! { PlusMenu { project: workspace.chosen_new_folder(), add_folder_enabled: true } },
                 start: rsx! {

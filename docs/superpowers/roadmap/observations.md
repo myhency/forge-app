@@ -1024,3 +1024,351 @@ Mistake recorded: a first version (PR #6 before the fix) built the card from rec
 Not ported: CLI session import (Forge reads `~/.claude`), mic, mascot. Not checked: the cloud group, where the desktop menu opens relative to the card.
 
 Follow-up (same day): the user asked for Forge's card to sit in the middle of the screen like the desktop app's, and the usage box on the new-session screen to go. Both done: the card is centred between the greeting and the box, and the usage box (`UsageCard` widget) is removed from that screen (its `.usage-*` styles and the data code in `forge-entities` are left, now unused by this screen).
+
+## Round 36 (2026-10-31): a todo-app project built in the desktop app
+
+Method: `scripts/observe/claude_app.py` (shown scale 1.24). The user allowed real sends and every feature, but no Opus. A new session in the saved environment `forge-observe` (folder `/private/tmp/forge-observe`), model Sonnet 5.5, asked for a desktop todo app in `todo-app/`: first a technology proposal and plan, then "go ahead with Tauri, steps 1-3, show progress as a task list". Session title (auto): `데스크톱 Todo 앱 기술 선택`. The app was built (Tauri 2 + React-TS, `useTodos.ts`, `App.tsx`, `TodoItem.tsx`, `App.css`); it was not run in a window.
+
+What I pressed, and what it did:
+
+- **Choosing the environment `forge-observe` on the new-session screen** changed three things at once: the `워크트리` checkbox disappeared (the folder is not a git repo); the mode under the box went from `자동` to amber `수동`; the card under the environment card gained a row `자동 모드 켜기` (bolt icon) next to `Claude Code CLI 세션 N개 가져오기`. So the default mode follows the folder, and the card offers a shortcut to Auto.
+- **Permission card** (manual mode): header `Claude가 이 명령을 실행하도록 허용하시겠습니까?`, a grey line with the tool's own description (`Check installed dev toolchains`), a second grey line with the reason when the check cannot be done (`A variable in this command can't be checked before it runs`), the command in a code box, then `거부` and a black `한 번만 허용 ⌘⏎`. Above the card a pill `입력이 필요합니다` with an orange ring; the sidebar row has an orange dot. For the second command (`npm create ...`) the black button grew a split `⌄`. Its menu: `항상 허용` (`⇧⌘⏎`, "로컬 프로젝트 설정에 저장됩니다") and `허용하고 Auto 모드로 전환` ("이 세션의 나머지 작업을 자동으로 검토합니다"). Pressing the second one allowed the command, switched the mode label to `자동`, and no further card appeared for the rest of the work (npm install, file writes, cargo check).
+- **Task list**: while a turn runs, a white card with the plan rows (done check, spinner, dashed circle) sits above the activity line, at the bottom of the chat, not in the middle of the text. After `영속화 진행` the list was replaced by the new step's rows.
+- **Activity line**: `Installing deps and inspecting template 1분 6초 ▸` with orange dots at its left (the dots animate); `생성 중 9초 ▸` while the model writes. Composer placeholder while running: `⏎ 키로 보내기, ⌘⏎ 키로 대기열에 추가하여 나중에 보내기` (empty box) and `⌘⏎ 키를 눌러 대기열에 추가...` (when narrow).
+- **Right column**, the default Details panel (환경, 컨텍스트, 커넥터): `컨텍스트` expands to a table by kind (Messages, System tools, MCP tools, System prompt, Skills, MCP server instructions, `마지막 업데이트 이후` (new since the last count), Autocompact buffer, Free space) with colored squares, tokens and percent; below it `MCP tools (def…` and `System tools (de…` with `—` and `MCP 도구 248`. New cards appear when there is something to show: `백그라운드 작업` (the install command, seconds, a stop square) and `결과물` (`App.css` with a code icon).
+- **Next-step card** (`wrap_up`): recap, question, `영속화 진행 ⌘⏎` and `먼저 실행해 보기`, and a `×`. Pressing the first sends its label as a user bubble; the card stays in the chat greyed out with the chosen label under the question.
+- **Shell block** under the reply: `▷` and copy at its right; the path in it is a plain code line.
+- **Reply footer** after the last reply: copy, share, pin, read aloud, `지금`.
+- **Changes panel in a folder that is not a git repo**: header `변경 사항`, centre text `변경 사항을 보려면 Git 저장소가 필요합니다` and grey `이 세션에서 찾은 항목이 없거나 세션 폴더에 접근할 수 없습니다.`
+- **Files panel** opened under Changes: panels stack top to bottom in the right column, each with its own header (title, `...`, expand, close). The Files header has a search icon; the tree sits at the right of the panel, the open-file area at the left (`열린 파일이 여기에 표시됩니다`, `트리에서 파일을 선택하거나, 대화 내의 파일 경로를 클릭하세요.`); filter field `필터링하거나 ?를 입력해 파일 …`. The tree's root showed the children of `/private/tmp/forge-observe` (`todo-app` among them), not of `todo-app`.
+- With a panel open the chat header's icons shrink to tasks, changes, globe, folder, `...`; the `>_` terminal icon is not there.
+
+Not checked: `항상 허용` (it writes the user's local project settings), `▷` on this block, `먼저 실행해 보기`, running `tauri dev`, the Preview panel, the `?` filter in Files, the `자동 모드 켜기` row (not pressed), the `결과물` card (only its first row was seen).
+
+Compared with Forge by string search only (not run): `항상 허용` exists; `허용하고 Auto 모드로 전환`, the `자동 모드 켜기` row, the `마지막 업데이트 이후` context row and the non-git sentence of the Changes panel are not in `ko.rs`. Backlog rows NEW-26..28.
+
+### Round 36, part 2 (same session, after step 4): menus and panels
+
+Same method. The session had reached step 4 (`todos.json`, `plugin-store`); a next-step card `5단계 진행 ⌘⏎ / 먼저 실행해 보기` stood at the end.
+
+- **Folder tab in Files**: pressing a folder row in the tree opens an italic (preview) tab named after the folder, showing the folder's `README.md` rendered, under a header `todo-app` with four icons: paperclip, `>_`, a folder, `…`. `…` menu: `컨텍스트로 첨부`, `복사 ›` (`절대 경로`, `상대 경로`, `파일 이름`), `다음에서 열기 ›` (only `VS Code`), `Finder에서 보기`, `터미널에서 열기`. Pressing `컨텍스트로 첨부` puts a blue mention token `todo-app` at the start of the composer (like an `@` mention) and the next-step card's `⌘⏎` hint disappears while the box has text. (I cut the text again with ⌘A ⌘X; nothing was sent.)
+- **Composer `+` menu**: `파일 또는 사진 추가 ⌘U`, `폴더 추가`, `슬래시 명령어`, `커넥터 ›`, `플러그인 ›`. The connector submenu: `커넥터 둘러보기`, `커넥터 관리`, then one row per connector with an on/off switch (here Google Drive, Claude in Chrome, Filesystem, puppeteer, all on): a per-session switch. The plugin submenu: one row per plugin (`M365 connect ›`, `Claude hud ›`, `Compound engineering ›`), `플러그인 관리`, `플러그인 탐색`. A plugin row opens a tall list of that plugin's skills, each with its name and the full description (scrolls).
+- **Mode menu** (press `자동`): title `모드`; `자동` (`Claude가 권한 결정을 처리합니다`, key 1, checked), `수동` (`변경하기 전에 항상 확인`, 2), `편집 자동 수락` (`모든 파일 편집을 자동으로 수락`, 3), `계획` (`변경하기 전에 계획 세우기`, 4), and `권한 무시` with a text button `활성화` (not pressed).
+- **Model menu** (press `Sonnet 5.5 중간`): `Opus 5.5` (1), `Sonnet 5.5` with a `기본값` pill (checked), `Fable 5.1` with a pill `ⓘ 사용 크레딧 필요` (3), `Haiku 5.5` (4); then `노력 중간 ›` and `더 많은 모델 ›`. `더 많은 모델`: `Haiku 4.5`, `Sonnet 5`, `Opus 5`, `Fable 5` (credit pill), `Opus 4.8`, `Opus 4.7`, `Opus 4.6`, `Sonnet 4.6`. `노력` submenu: a grey sentence on top (`더 높은 노력은 더 철저한 응답을 의미하지만, 시간이 더 오래 걸리고 한도를 더 빨리 사용합니다.`), `낮음`, `중간` (`추천`, checked), `높음`, `엑스트라`, `최대 ⓘ`, a line, and a switch `Ultracode`. I did not choose any model (the user said no Opus).
+- **Chat header**: the title chevron menu is the session menu already in SES (`다음에서 열기 ›`, `이름 변경 R`, `포크 F`, `트랜스크립트 보기 ›`, `출력 스타일 ›`, `보관 A`, red `삭제 D`). The `…` menu at the right of the header lists panels: `터미널 ⌘J`, `사이드 채팅 ⌘;`, `백그라운드 작업`, `iOS 시뮬레이터`, and a switch row `컴퓨터 절전 모드 방지` / `이 세션에서만`.
+- **iOS simulator panel** (mac only): a third column with tabs `편집 ⌄`, `기기 ⌄`, a header `시뮬레이터 선택 ⌄`, a phone frame saying `Claude가 앱을 볼 수 있도록 시뮬레이터를 연결하세요` (`Claude가 이 시뮬레이터를 제어하고 전체 화면의 스크린샷을 촬영합니다. 종료된 기기는 자동으로 부팅됩니다.`), a check row `Xcode 및 시뮬레이터 설치됨`, a black button `시뮬레이터 연결 ⌄`, and a bottom bar (home, reload, camera, video, pencil, terminal). Not connected. Once opened, its phone icon stays in the header row.
+- **Terminal panel** (⌘J): a third column headed `터미널` with the session folder's shell as a tab named after the environment (`forge-observe`), a `+` for another tab, `…`, expand, close. The shell started in the session folder and showed the user's own shell greeting (not recorded here).
+- **Preview panel** (globe): header `새 탭` + `+`, a layout icon, `…`, expand, close; address row with back, reload, `URL 입력`. Empty text: `Claude로 브라우징하기` / `URL을 입력하거나 Claude에게 사이트를 열어달라고 요청하세요. Claude는 읽기, 클릭, 입력이 가능합니다.` and a line `앱을 미리 볼까요? 개발 서버 감지`. Pressing `개발 서버 감지` showed a spinner `프로젝트 파일을 읽는 중입니다. 잠시 시간이 걸릴 수 있습니다.` and it was still spinning after 20 seconds (no dev server was running; the result was not seen).
+- **Layout**: with three panels open the chat column shrinks to about a quarter of the window and the header icons shrink to the tasks icon, one panel icon and `…`; the code block wraps and the next-step card buttons stack.
+
+Compared with Forge by string search in `ko.rs` only (not run): none of `더 많은 모델`, `Ultracode`, `개발 서버 감지`, `iOS`, `사이드 채팅` were found; `Attach as context`, `Accept edits`, `Bypass permissions`, `Add folder`, `Absolute path` exist. Backlog NEW-29..33.
+
+Not checked: `Ultracode` switch, `권한 무시 활성화`, `사이드 채팅`, `백그라운드 작업` (panel), the plugin skill rows (do they insert `/skill`?), `…` of the Preview header and its layout icon, what ends the dev-server spinner.
+
+### Round 36, part 3: dev server detection and a run of the app
+
+- **`먼저 실행해 보기`** (second button of the next-step card) sent its label as a user bubble; the model ran `npm run tauri dev` in the background (activity line `Running Tauri dev app in backgr…` then `Waiting for Rust build … 46초`, reply `첫 Rust 빌드가 진행 중입니다(353개 크레이트). 끝날 때까지 기다립니다.`). A real Tauri window opened on screen (processes `vite`, `target/debug/todo-app`). The model then told me what to check (five numbered items) and said the server keeps running in the background.
+- **The next card's buttons change with the situation**: after the run the card asked `동작 확인 후 5단계(데스크톱 마무리)로 갈까요?` with `5단계 진행 ⌘⏎` and `문제 있음`. The model writes both labels.
+- **Preview `개발 서버 감지`** finished in about a minute: text `개발 서버가 감지되었습니다. 이 명령은 미리보기가 시작될 때 셸에서 실행됩니다.`, a card `Vite · 포트 1420` / `npm run dev` with a button `이것 사용`, a grey line `선택 사항이 이 프로젝트의 .claude/launch.json에 저장되었습니다.` and a link `← 탐색으로 돌아가기`. So the app reads `package.json`, proposes the server command and port, and keeps the choice in `.claude/launch.json` of the project. Pressing `이것 사용` here showed a red line `이 구성을 저장할 수 없습니다. 다시 시도하세요.` and no `.claude` folder was created in `/private/tmp/forge-observe` or `todo-app` (reason unknown; the folder is a `/private/tmp` path with no git repo). The preview did not start. Not checked: the success path, what the preview shows afterwards, the layout icon in the header.
+- **Narrow window**: with three columns open, the details panel (환경, 컨텍스트, 커넥터, 결과물) opens as a floating popover over the chat column under its header icon and scrolls inside; it did not show a `백그라운드 작업` card in that view.
+- Cleanup: the dev server and its window were stopped by killing the processes of `forge-observe/todo-app` from the shell (not through the app's stop button).
+
+Backlog NEW-34 (dev-server detection) and NEW-35 (card buttons written by the model, already how NEW-25 works).
+
+### Round 36, part 4: side chat, bypass-permissions switch, step 5
+
+- **Side chat (⌘;)** opened a panel at the bottom of the right column (below Files), tab title `사이드 채팅`, a `+` for another tab, expand and close. Empty text `아직 메시지가 없습니다`; box `간단한 질문하기` with a return icon. I asked `todo 데이터는 어느 파일에 저장돼? 한 줄로만 답해줘.` and the reply came in about 15 seconds; the tab title became the first words of the question (`todo 데이터는 어느 파일…`); the box placeholder changed to `이 세션에서 답장하기...`. Nothing from the side chat appeared in the main chat. The answer used the session's context: it named the macOS app-data path and said it came from plugin-store's default behaviour, "not checked by code" (so the side chat answers from what the session knows and does not run tools). Not checked: whether the side chat shows in the sidebar or in the transcript file, closing it, the `+` tab.
+- **Mode menu `권한 무시` → `활성화`** does NOT switch the mode. It opens the Settings window on the `Claude Code` page, scrolled to a highlighted (amber) row `권한 우회 모드 허용` with a switch (off): `모든 권한 확인을 우회하고 Claude가 중단 없이 작업하도록 합니다. 이는 린트 오류 수정이나 보일러플레이트 코드 생성과 같은 워크플로에 적합합니다. Claude가 임의의 명령을 실행하도록 허용하는 것은 위험하며 데이터 손실, 시스템 손상 또는 데이터 유출(예: 프롬프트 인젝션 공격)을 초래할 수 있습니다.` and a link `안전한 사용을 위한 모범 사례 보기`. So the mode only appears after the setting is on. I did not turn it on. The same page lists, under `세션`: `동적 워크플로우` (on), `알림에 주의 끌기` (off, Dock icon bounce), `Claude가 작업하는 동안 컴퓨터 절전 모드 방지` (on) with a sub-row `배터리 전원 사용 시 절전 모드 방지` (on), and above them a Remote Control block (switch, `Remote Control 사용을 위해 이 컴퓨터를 절전 모드로 전환하지 않음` with a `추천` pill) and `폴더 (23개)` with `폴더 추가...` and `23개 중 3개 표시됨 · 폴더 표시`. Settings left pages: 일반, 계정, 개인정보보호, 결제, 사용량, 기능, 메모리, 디자인 시스템, Claude Code, Claude in Chrome; 이 컴퓨터: 시스템, 확장 프로그램, 개발자; 사용자 지정: Skills, 커넥터, 플러그인. A search field sits on top.
+- **Step 5 (`5단계 진행`)**: the button sent its label as a user bubble; a `↓` round button appeared above the box while the new turn was off screen (scroll to bottom). The model made the changes (app name, shortcuts ⌘/Ctrl+N and ⌘/Ctrl+1~3, new icon set), ran typecheck, build and `cargo check`, and wrote a spent grey card plus a new one for step 6 (`6단계 진행` / `먼저 실행해 보기`). The model says plainly what it could not check ("단축키와 아이콘이 실제 창에 어떻게 보이는지는 확인하지 못했습니다").
+
+Backlog NEW-36 (side chat), NEW-37 (bypass switch lives in Settings).
+
+### Round 36, part 5: the `/` command list
+
+Typing `/` in an empty box opens a list above the box, filter placeholder `입력하여 필터링` (return icon at the right of the box). Order, top to bottom: `btw`, `ultrareview`, `rewind`, `fork`, `subtask`, `mcp`, `plugin`, `feedback`, `model`, `effort`, `fast`, `plan`, `permissions`, `skills`, `output-style`, `rename`, `add-dir`, `cd`, `diff`, `tasks`, `workflows`, `status`, `usage`, `stats`, `usage-credits`, `autocompact`, `config`, `storage`, `sandbox`, `theme`, `auto-mode-setup`, `resume`, `advisor`, `login`, `help`, `copy`; then a second group with `__remote-workflow`, `advisor` (right label `사용자 지정 명령`), `agents`, `algorithmic-art`, and one row per skill (`anthropic-skills:built-in-browser`, `:chrome-browser`, `:computer-use`, `:deep-research`, …). Names are shown without the slash, in English.
+
+- The highlighted row (mouse hover or arrow keys) shows a black tooltip to its right with the description: `btw` = `세션에 추가하지 않고 간단한 질문하기`; `plugin` = `Claude Code 플러그인 관리`; `workflows` = `워크플로 기록 탐색 (실행 중 및 완료됨)`; `auto-mode-setup` = `자동 모드에 환경 정보를 알려주고, 선택적으로 규칙을 조정하세요.`; a skill row shows the skill's full description in English, cut after about 10 lines with `…`.
+- Arrow keys move the highlight and scroll the list; the list is about 13 rows tall; mouse wheel scrolling over it moved it by only a few pixels.
+- The command names that appear here and not in Forge's list were not compared row by row (only these strings were grepped: `ultrareview`, `subtask`, `auto-mode-setup`, `usage-credits`, `output-style`, `add-dir`; results in the backlog note). The user-defined commands and skills of the account are mixed in with the built-ins, with a right-hand label only for user commands.
+- Not checked: what each command does when run (`subtask`, `advisor`, `autocompact`, `sandbox`, `storage`, `stats`, `usage-credits`); the tooltip on the first rows other than the ones above.
+
+### Round 36, part 6: `/tasks` opens the background-task panel
+
+- Typing `/tasks` turns it into a blue token in the box (Return once picks it from the list, Return twice runs it; same as the other commands). No user bubble and no model turn: the command only opened a panel `백그라운드 작업` as a FIFTH column at the right edge. Header: title, a trash icon, expand, close. The column list is the same panel as the header `…` item `백그라운드 작업`.
+- Inside: a fold `완료 5` (open) with one row per background task of the session, each a grey card with a triangle, the task's description (the model's own words: `Run Tauri dev app in back…`, `Wait for Rust build to finish`, `Typecheck, build frontend, ca…`, `Check Rust side compiles`, `Install deps and inspect temp…`), and a red `실패` at the right of the one I killed. Pressing a row opens it in place: `$ <command>` in a grey code block with the colored console output (cargo's `Building [====>] 352/353`, `Finished`, `Running`) and a last line `[exited with code 144]`. Wide lines wrap with no horizontal scroll.
+- With five columns open the chat column shrinks to about 190 px and is clipped (no minimum width); the header of the chat column shows only a short title and `…`. Nothing in the layout hid a panel to make room.
+- Not pressed: the trash icon (clear finished tasks?), a running task's stop control (the earlier `백그라운드 작업` card in the Details panel had a stop square).
+
+Backlog NEW-39.
+
+### Round 36, part 7: panel reflow, fold detail, wide chat
+
+- **Panels re-flow when one is closed.** With Changes, Files and Preview stacked in the right column and a side chat under Preview, closing Preview made the side chat take the full height of that column; its tab then showed the whole exchange (the question as a grey bubble at the right, the answer below). Closing the side chat later brought back the earlier two-column layout and the chat column grew to about 600 px (all seven header icons returned: tasks, terminal, changes, globe, phone, folder, `…`).
+- **Fold line `실행된 명령 4개 (1개 실패)`** (same wording family as NEW-20) opens to one grey row per command; each row's TITLE is the description the model wrote for the call, in English (`Generated app icon set from drawn source`, `Removed unused mobile icon folders`, `Typecheck, build, cargo check`, `Ran cargo check with absolute path`); a failed one carries a red `실패` after its title. Opening a row shows `$ <command>` in a grey code block (long lines wrap), then a red line `종료 코드 1`, then the output (`✓ built in 96ms`, `(eval):cd:1: no such file or directory: src-tauri`). Rows open independently. The fold line's `실패` count counts only the rows that failed.
+- **A `↓` button** (round, white, shadow) floats in the chat at the bottom centre whenever the view is above the last message.
+- **Reply footer** shows `4분 전` (relative time) after copy, share, pin and read-aloud icons; it said `지금` for the newest reply.
+- The scroll helper moves the chat by only a few lines per call; six calls of 60 lines moved about one screen.
+
+### Round 36, part 8: a background task's exit starts a model turn by itself
+
+- When I killed the dev server's processes from my shell (the `npm run tauri dev` background command of the session ended with code 144), the app put a notification into the session and the model answered WITHOUT any user message: `백그라운드 작업이 코드 144로 끝났다고 알림이 왔는데, 앱은 꺼지지 않았습니다. 방금 확인해 보니 todo-app 프로세스와 Vite 개발 서버가 둘 다 계속 실행 중입니다. 알림은 이 명령을 실행한 셸 래퍼가 종료됐다는 뜻으로 보이고…` and later `이 알림은 자동 이벤트라서 앱 동작을 확인했다는 뜻이 아닙니다.` So a finished background command is delivered to the model like a new message and starts a turn (the model even ran a check, `ps`, in that turn). The chat shows no user bubble for it; the reply starts under a fold line `완료함 백그라운드 명령어 1개, 실행됨 명령 1개 (1개 실패) ▸` (same wording family as NEW-20). Not seen: whether the notification can be read in the chat (the fold is the only trace) and whether it fires when the app has another session open.
+- The model's own tool-call titles are English even in a Korean chat (`Waited for Rust build to finish`, `Running Tauri dev app in backgr…`); the fold lines and the buttons are Korean.
+- Hovering the user bubble `먼저 실행해 보기` shows a row under it at the right: `✓✓ 13분 전 · ⧉ (copy) · ↺ (rewind) · fork icon`; the time is relative (`13분 전`), same as round 31.
+
+Backlog NEW-40.
+
+### Round 36, part 9: `/usage` card in the chat
+
+`/usage` (Return twice) answers with a card in the chat, no model turn and no user bubble. Structure, top to bottom (numbers left out; they are the user's account):
+
+1. Title `사용량` and a copy icon at the right.
+2. Two meters: `5시간 제한` (reset time, percent, a blue bar) and `주간 · 모든 모델` (reset day and time, percent, bar); then `클라우드 세션 크레딧` (`US$100 중 US$100 남음`, an empty bar) and `만료: <date> GMT+9`.
+3. Block `이 세션`: a 3-column grid, row 1 `비용 US$…`, `API <m>분 <s>초`, `활성 시간 …`; row 2 `줄 +488 −18` (green and red), `Sonnet 100%`, `캐시 히트 98%`.
+4. Table `세부 내역` with the model name at the right: `입력`, `출력`, `캐시 읽기`, `캐시 쓰기` (74, 4.1k, 2.9M, 63k).
+5. Block `무엇이 사용량 제한을 소모하고 있나요?` with two small selects, `24h ⌄` and `전체 ⌄`; a grey line `최근 24시간 · 근사치, 중복 측정 · 이 기기만 해당, claude.ai 제외`; three rows with a percent and a dotted-underlined label (`150k 컨텍스트 초과 실행`, `서브에이전트 집약적 세션에서 발생`, `always on context`); then rows of a name, a kind (`플러그인`, `Skill`, `서브에이전트`), a blue bar and a percent, five shown, link `10개 더 보기`.
+6. `도움말` with a sentence on long sessions and cache cost, and two buttons `이 세션 압축하기` and `새 세션`.
+
+Facts: the card is part of the chat transcript (it stays above the next-step card and scrolls with it); the bars are the only blue besides links. Forge has `crates/forge-entities` code for usage (round 35 says the usage box data is still there but unused on the new-session screen), but none of the items 3-6 were found by name. The usage-limit bar above the composer (round 31) was not visible in this session.
+
+Not checked: the two selects (`24h`, `전체`), `10개 더 보기`, `이 세션 압축하기` (it would compact the session), `새 세션`, what the dotted underline shows on hover.
+
+Backlog NEW-41.
+
+### Round 36, part 10: `/status` card in the chat
+
+`/status` answers with a card in the chat (no model turn). Groups, each a small grey heading with label and value rows (value right-aligned):
+
+- `세션`: `Claude Code` (CLI version), `데스크톱 앱` (app version · OS version and arch), `모델` (`Sonnet 5.5 · 보통`), `권한` (`자동`), `시작` (`나 · 26분 전`: who started it and how long ago), `세션 ID` (first 8 characters + `…` and a copy icon).
+- `환경`: `폴더` (full path), `MCP 서버` (`4개 연결됨 (figma, playwright, puppeteer, Google Drive) · 1개 실패 (m365)` with a link `관리` after the failure count), `샌드박스` (`꺼짐`).
+- `계정`: `로그인 계정` (email and plan), `조직`.
+
+So the model line says `보통` here while the box says `중간` for the same effort: the card and the picker word the level differently (picker `중간`, status `보통`). The card is the place where the CLI version and the account are visible. Forge's equivalents: no `/status`; the account and plan appear in the sidebar footer and Settings; the version is in the About/Developer pages. Not checked: the `관리` link target (probably Settings → 커넥터), the copy icon.
+
+Backlog NEW-42.
+
+### Round 36, part 11: `/stats` card and the feedback card
+
+- **`/stats`** shows a card titled `통계` (copy icon at the right). While loading it shows grey skeleton blocks (one wide block, a 2x3 grid of bars, a second wide block, a thin line) for about 8 seconds, then fills. Under the title two selects: `개요 ⌄` (menu: `개요` checked, `모델`) at the left and `전체 기간 ⌄` (menu: `전체 기간` checked, `최근 7일`, `최근 30일`) at the right. `개요` view: a GitHub-style activity heat map (columns are weeks, month names above, weekday letters `월 수 금` at the left, 7 rows, five blue shades with a legend `적음 ▪▪▪▪▪ 많음`); a 2-column grid of facts (`즐겨 사용한 모델`, `세션`, `활성 일수 29/174`, `총 토큰`, `최장 세션 37일 20시간`, `가장 활발했던 날`); a table `토큰` with `입력`, `출력`, `캐시 읽기`, `캐시 쓰기`, `총계` for the chosen period; and a grey fun line comparing the longest session with the time to listen to a famous album (`가장 긴 세션은 … 앨범을 듣는 시간보다 약 N배 깁니다`). The data covers all sessions of the account on this computer, not only this one. Not opened: the `모델` view.
+- **Feedback card** (NEW-23) appeared by itself under the last card once the session had been idle after a turn: a one-line card `이번 세션에서 Claude는 어떤가요?` with three plain text buttons `나쁨` `보통` `좋음` and a `×`, with the footer row of the last message (pin, `지금`) above it. It appeared after `/status` and `/stats`, not after the first turns. Not pressed (it would send a rating from the user's account).
+- With a slash card as the last item the reply footer shows a pin icon and `지금`, i.e. the card counts as a message.
+
+Backlog NEW-43; NEW-23 gets "seen again, shows after an idle moment" (below).
+
+### Round 36, part 12: `/diff` is a panel toggle
+
+`/diff` (Return twice) adds no card and no bubble to the chat: it shows or hides the `변경 사항` panel. First run: the panel was open and closed (the Files panel took its place and filled the whole right column, tree at the right); second run: the panel opened again at the top of the column. In a folder that is not a git repo the panel only says `변경 사항을 보려면 Git 저장소가 필요합니다`. So of the slash commands tried, `/tasks`, `/diff` open or toggle panels; `/usage`, `/status`, `/stats` add cards to the chat; `/btw` opens the side chat; none of the six sent a message to the model. Backlog NEW-38 (slash list) should record these three kinds of result.
+
+### Round 36, part 13: steps 6 and 7, the ending, path links
+
+- **Step 6 (tests)** sent by typing a message: the task list card appeared right under my bubble at once (four rows: `Vitest·Testing Library 설치 및 설정`, `useTodos 훅 테스트 작성`, `TodoItem 컴포넌트 테스트 작성`, `테스트 실행 및 결과 확인`; first row with a ring spinner, the others dashed circles) and the activity line below it (`Installing test dependencies and view configs 13초`). The composer placeholder while running: `⌘↵ 키를 눌러 대기열에 추가하세요` with a black stop square at the right. No permission card appeared in `자동` mode for any of installs, file writes or test runs. The model hit a type error in its own test (`Array.prototype.at` with the ES2020 lib), fixed it and said so under `수정한 점`, and listed `테스트하지 않은 부분`. End card: `7단계 진행 ⌘⏎` and `나중에`.
+- **Step 7 (release build)**: task list of two rows, activity line `Building release app bundle 4분 30초`; the whole step took about 7 minutes. The reply has headings (`배포 전에 알아둘 점`, `전체 진행 상황`) and bullets. End card: `앱 실행 확인 ⌘⏎` and `이대로 끝`; the footer under it shows copy, fork, pin, read-aloud and `지금`; the one-line feedback card sits below.
+- **`이대로 끝`** sent the label as a user bubble and the model gave a closing summary: where the project is, the two output files as path links, what is still unchecked (three bullets), a hand-over note. No end-of-session screen, no automatic archive; the session stays active.
+- **Path links in the summary**: a path with an extension (`…/Todo_0.1.0_aarch64.dmg`) is a blue underlined link; the `.app` path was a link too. Pressing the `.app` link did nothing visible (no panel opened, no error) and the link turned into plain code style afterwards, so a link is checked against the disk on press and falls back to plain text when it is a folder or missing. The `.dmg` link was not pressed (a binary).
+- Files panel facts: the folder `todo-app` stays open in the tree after the build, and `target`/`dist` are listed like any folder; no change counters (not a git repo).
+
+Backlog NEW-44 (links that fall back to code style), NEW-45 (no permission cards in auto mode: Forge already has auto, check parity of what auto allows).
+
+### Round 36, part 14: account menu and the Settings window pages
+
+Method as before. Account menu (press the name at the bottom left): the email at the top (grey), `설정 ⌘,`, `사용량`, `언어`, `도움 받기`; a line; `플랜 업그레이드`, `앱 및 확장 프로그램 다운로드`, `게스트 패스 공유`, `변경 로그 보기`, `더 알아보기 ›`; a line; `API 키 받기` (external-link icon), `로그아웃`. `더 알아보기 ›` opens a submenu: `Anthropic에 대하여 ↗`, `Claude Academy`, `사용 정책 ↗`, `개인정보 처리방침 ↗`, `이용약관 ↗`, `글꼴 라이선스 ↗`, `개인정보 보호 선택`, a line, `단축키 ⌘/`. `사용량` in that menu opens the Settings window on the `사용량` page (not a popover). `⌘,` is not reachable with the driver's key list (no `comma`).
+
+Settings window: a modal over the app (about 83% of the window wide), title `설정` and `×` at the top, a search field `검색`, a left list in three groups: `환경설정` (일반, 계정, 개인정보보호, 결제, 사용량, 기능, 메모리, 디자인 시스템, Claude Code, Claude in Chrome), `이 컴퓨터` (시스템, 확장 프로그램, 개발자), `사용자 지정` (Skills, 커넥터, 플러그인). Pages seen now (Claude Code, 커넥터, 플러그인, Skills, 개발자 were seen in rounds 32-33, 38):
+
+- **일반**: `화면 모드`: `테마` (three icon buttons: system, sun, moon), `인터페이스 글꼴` (select, `기본값 · 시스템`), `응답 글꼴` (`인터페이스와 맞추기`), `트랜스크립트 텍스트 크기` (`보통`), `트랜스크립트 너비` (`좁게`), `모션` (`시스템`). `작업`: `신뢰할 수 있는 폴더` + `관리` (text says trusting a folder does not add it to new sessions; re-add it here when a prompt asks), `기본 브라우저` (`내장 브라우저`). `음성`: `언어` (`한국어`), `스타일` (`선택`), `속도` (`보통`). `알림`: switches `응답 완료`, `예약된 작업`, `Code 알림`, `Code 권한 요청` (push when a command needs approval), `Claude Code 클라우드 세션 이메일`.
+- **사용량** (`Pro` pill): a bold warning line (`이 속도라면 수요일 초기화 전에 화요일 오전에 사용량이 모두 소진됩니다`), buttons `플랜 업그레이드` (black) and `사용 크레딧 구매`; meters `현재 세션` (reset time, amber bar at 83%, `83% 사용됨`; the bar is AMBER at high use, blue otherwise) and `이번 주` (blue, `52% 사용됨`); `제한 초기화` (`현재 초기화 없음`); `클라우드 세션 크레딧` with `?`; `포함된 크레딧` bar; `사용 크레딧 US$0` with a switch to keep going past the plan limit.
+- **기능**: `일반` (`도구 액세스 모드` select `필요할 때 도구 로드`, switches `커넥터 검색`, `메시지가 플래그 지정되면 모델 전환`), `비주얼` (`아티팩트` forced on with the note `코드 실행 및 파일 생성에 필요`, `AI 기반 아티팩트`, `채팅 내 시각화`), `코드 실행 및 파일 생성` (`클라우드에서 코드 실행`), more below.
+- **메모리**: switches `채팅 검색 및 참조`, `채팅에서 메모리 생성`, `민감한 주제를 메모리에 포함`; `다른 AI 제공업체에서 메모리 가져오기` + `가져오기 시작`; `메모리 내보내기` + `내보내기` (zip of Markdown files); then the memory itself as lists `나` / `주제` (name, one-line description, `<date> 업데이트됨`), and a box at the bottom `Claude에게 변경할 내용을 알려 주세요` with a send arrow: memory is edited by talking to Claude.
+- **디자인 시스템**: title, a sentence, `+ 새 디자인 시스템 ⌄`, a search `이름으로 검색`, table headers `이름` / `사용 가능 대상 ⓘ` / `게시일`, empty text `아직 디자인 시스템이 없습니다…`.
+- **Claude in Chrome**: switch `Claude in Chrome 사용 설정`; `사이트 권한` (`이 권한은 Claude in Chrome과 Claude 데스크톱 앱의 내장 브라우저에 적용됩니다`), `모든 사이트 기본값` select `기본 정책 선택`.
+- **시스템**: `데스크톱 앱 버전`, `시작 시 실행`, `빠른 액세스 바로가기` (select `사용자 설정…` plus a key field showing `⇧⌘ Space` with a clear `×`), `음성 단축키`, `음성 입력 단축키` (`Command+D`), `메뉴 바`, `컴퓨터 절전 모드 방지` (long text, display may still sleep, closing the lid still sleeps), `저장 공간` + `관리`, `저장 폴더` (path link, button `권장 폴더 사용` with a warning icon, button `변경`), `Dispatch` `베타` (phone sends tasks to this computer).
+- **확장 프로그램**: `확장 프로그램 찾아보기`; `컴퓨터에 설치됨` list (one row: icon, name, `구성`, `…`); `고급 설정` button; a hint `.MCPB 또는 .DXT 파일을 여기에 드래그해서 설치하세요`.
+
+String search of Forge's `ko.rs` (English keys) found none of: `Transcript width`, `Transcript text size`, `Response font`, `Interface font`, `Motion`, `Menu bar`, `Quick access`, `Dispatch`, `Default browser`, `Tool access mode`, `Connector search`, `Memory`, `Design system`; only `Trusted folders` exists. Many of these are the account/Claude.ai side and have no Forge meaning (billing, memory, design systems, Dispatch, Chrome).
+
+Backlog NEW-46 (display settings that may apply to Forge: transcript text size, transcript width, fonts, motion), NEW-47 (memory page).
+
+### Round 36, part 15: Settings search, privacy page, close
+
+- **Settings search**: typing `단축키` in the left search field opens a result list under the field, grouped by page: a page row with its icon (`시스템`, highlighted) and indented setting rows under it (`음성 단축키`, `음성 입력 단축키`) with the matched letters in blue. The page behind did not change while typing. Pressing a setting row opened the page (`시스템`) and showed it from the top (no scroll to the row and no highlight that I could see; the left list stayed on `일반` — the left highlight did not follow). The search field cleared. `Esc` closed the whole Settings window (the focus then sat on the account row at the bottom left with a blue ring).
+- **개인정보보호** page: a paragraph with links, two rows with `›` (`데이터를 보호하는 방법`, `데이터 사용 방법`), `환경설정`: `위치 메타데이터` (switch on) and `Help improve our AI models` (English, switch off); `내 데이터`: rows with a button each: `데이터 내보내기`, `공유된 채팅`, `공유된 아티팩트`, `업로드한 파일`, `내 피드백`. Account-side, not for Forge.
+- **Page-level facts**: the Settings left list highlight after a search jump is not updated (it kept `일반` while the content was `시스템`).
+
+Backlog NEW-48 (Settings search grouped by page).
+
+### Round 36, part 16: `자동 모드 켜기` answered, the environment menu and `새 환경` dialog
+
+- **`자동 모드 켜기`** (the row under the environment card, NEW-27) pressed: the mode label under the box changed from `수동` to `자동` and the row disappeared at once; the card kept one row `Claude Code CLI 세션 3개 가져오기`. No dialog, nothing sent. So the row is a one-press shortcut for the same mode setting as the mode menu, and it exists only while the mode is not auto. The default mode did follow the folder earlier (round 36 part 1: `수동` for a folder that is not a git repo; here a new session in the same environment started as `수동` again).
+- **`⌘N`** opens the new-session screen with the LAST used environment checked (`forge-observe`) and the mode back to `수동`: the mode is not remembered across new sessions.
+- **Full environment menu** (`환경 선택 ⌄`): search field `환경 검색…`; group `로컬`: `이 컴퓨터`, `forge-observe` (checked, blue), `forge`, `더 보기 | 1 ›`; a line; `클라우드 ›` and a line; `+ 새 환경`. `클라우드 ›` opens a side menu: `기본값` (cloud icon) and `클라우드 환경 추가…`.
+- **`새 환경` dialog** (a modal over a dimmed window, `×`): four tabs at the top, `로컬` (default), `클라우드`, `SSH`, `Remote Control`; footer `취소` and a primary button (disabled until valid).
+  - `로컬`: `이름` (placeholder `내 앱`), `폴더 (선택 사항)` with a `+ 추가` button and a dashed empty box `세션을 시작할 폴더를 선택하세요.`, a row `환경 변수` (`이 환경에는 없음`, `›`); button `환경 만들기`. `+ 추가` opens a list of recent folders by name (`forge-observe`, `develop`, `forge`, `task-r31`, …; no paths) and a last row `📁 선택…` (the file dialog).
+  - `클라우드`: `이름`, then four rows with `›`: `네트워크 액세스` (`제한됨 · 도메인 없음 · 패키지 관리자 켜짐`), `네트워크 시크릿` (`없음`), `설정 스크립트` (`설정되지 않음`), `환경 변수`; button `환경 추가`.
+  - `SSH`: `이름`, `호스트` (select `호스트를 선택하세요`, from ssh config presumably), `폴더` with `+ 추가` disabled and `먼저 호스트를 선택하세요.`, `환경 변수`; button `환경 만들기`.
+  - `Remote Control`: a card `remote control 설정`: `여기서 코딩하려면 내 컴퓨터에서 claude rc를 실행하세요.` and `이 컴퓨터에서 Remote Control 기능이 꺼져 있으므로 …` with a link `Remote Control 설정 열기` and a button `더 알아보기 ↗`; only `취소` in the footer.
+  - I pressed `취소` at the end; nothing was created.
+
+Forge side (string search of `ko.rs`): `Environment variables` exists; `Remote Control`, `Network access`, `Setup script`, `Network secrets`, `SSH`, `Add cloud environment` do not. Forge's own `새 환경` (Plan 53) has the local kind with name, folders and variables; the other three tabs are cloud, remote and phone features that do not apply, except that the recent-folder list in `+ 추가` and the empty-state texts may be worth matching. Backlog NEW-49.
+
+Not checked: the file dialog behind `선택…`, `더 보기 1 ›`, the `네트워크 액세스` row dialog, `클라우드 환경 추가…`.
+
+### Round 36, part 17: sidebar after the app update, filter menu
+
+The desktop app is version 4.4212.0 (Settings → 시스템). The sidebar differs from rounds 3 and 32:
+
+- **Sidebar top** now reads `새로 만들기`, `검색`, `프로젝트`, `아티팩트`, `예약됨`, `Dispatch 베타`, `사용자 지정` in the Chat (left of the two top-left mode buttons) mode; the Code mode shows `새로 만들기`, `검색`, `아티팩트`, `예약됨`, `사용자 지정`, `더 보기` (a `…` row). The two top-left buttons are a mode switch: a chat-bubble-with-lens (Chat/Cowork home) and `</>` (Code); pressing the first opened a home page `<이름>님, 다시 돌아왔군요` with a big box `오늘 어떤 도움을 드릴까요?`, `프로젝트 또는 폴더 ⌄`, `Sonnet 5.5 중간`, `수동`, a `최근 아티팩트` row (three cards with a thumbnail, title and date; `모두 보기`) and company legal text at the bottom. The sidebar then shows `고정됨` and `최근 항목` groups. Pressing `</>` returned to Code mode.
+- **`더 보기`** (Code mode) opens a small popover to the right of the row: one item, `사이드바 편집…` (round 32: three checkboxes).
+- **Project group header filter menu** (hover the header: a filter icon and a `+` appear at its right; the header row gets a grey background): `그룹화 기준 환경 ›`, `정렬 기준 마지막 업데이트 ›`, `표시 ›`, a line, `새 섹션`, a line, `기본값으로 재설정`, `모두 보기`.
+  - `그룹화 기준` submenu: `날짜`, `상태`, `폴더`, `환경` (checked, blue), a line, `없음`. (`사용자 지정 그룹` of round 3 is gone; `새 섹션` replaces it, and `환경` is the new default.)
+  - `정렬 기준` submenu: `마지막 업데이트` (checked), `생성 날짜`, `이름`; a line; `내림차순` (checked), `오름차순`.
+  - `표시` submenu: `메타데이터` (checked), a line, `사이드 채팅`, `빈 그룹` (both unchecked). So side chats are listed in the sidebar only when this is on, and the old `PR 상태 표시` is now part of `메타데이터`.
+  - `새 섹션` adds a user-named group; `기본값으로 재설정` resets group, sort and show; `모두 보기` shows all items in the list (the list is cut to a count with `더 보기` otherwise).
+- Group headers show the environment name (`claude-code-study`, `features`, `forge-obs-r26`, a branch line `claude/create-file-b-txt-6eeb0c` under a session in a worktree), with a triangle `▾` at the right of the name.
+
+Compared with Forge by string search: only part of this was checked (see the backlog row). Backlog NEW-50.
+
+### Round 36, part 18: recovery screen of a session whose folder and transcript are gone (SES-09)
+
+My third click in the `표시` menu missed and opened the session `Debug and identify error cause` (an old session in `claude-code-study`; the `사이드 채팅` toggle was NOT confirmed, so its effect on the sidebar is still unseen). The page shows what SES-09 describes:
+
+- Middle: `디스크에서 세션을 찾을 수 없음` (bold) and a grey line `이 디렉터리에서 새로 시작하려면 메시지를 보내세요.`, then three text buttons: `CLI 세션 가져오기` (grey fill), `보관`, `삭제`.
+- Where the box should be, a grey bar instead: `작업 폴더가 더 이상 존재하지 않습니다. 계속하려면 다른 폴더를 선택하세요.` with buttons `폴더 선택` and `보관`. There is no composer, no model or mode row.
+- The Details panel opened by itself at the right (the header's first icon highlighted) with the new layout of `환경`: a row `이 컴퓨터` with a link `저장` (save this environment?) at the right, a row with the folder icon `claude-code-study · ~/Developer` (path cut), and a row `Remote Control` with a switch (off); `컨텍스트` says `컨텍스트 사용량을 확인하려면 메시지를 보내세요.`; `커넥터` shows a grey loading bar.
+- The chat header shows only title and the same panel icons (details, terminal, changes, globe, folder, `…`).
+- Not pressed: all five buttons (`삭제` is destructive; `보관` changes the user's list; `CLI 세션 가져오기` and `폴더 선택` open dialogs). Forge treats such a session as view-only (SES-09 is "won't" in the backlog); this screen shows what the desktop app offers in its place.
+
+Note for NEW-50: `환경` in the Details panel now carries a `저장` link and a `Remote Control` switch; Forge's environment card (Plan 53) has neither.
+
+### Round 36, part 19: `저장` in the Details panel saves the folder as an environment
+
+Pressing `저장` (the link at the right of `이 컴퓨터` in the Details panel's `환경` card, shown when the session's folder is not yet a saved environment) opened the `새 환경` dialog already filled in for the local kind (no tabs this time, title `새 환경`): `이름` holds the folder name selected (`claude-code-study`, text highlighted so typing replaces it), `폴더` lists that folder with a grey tag at the right (`Git 저장소가 아님`; for a git repo it would say the branch or `Git`), `환경 변수` (`이 환경에는 없음`), and a BLACK enabled button `환경 만들기`. Pressing `취소` closed it; no environment was created.
+
+So `저장` answers where saved environments come from: a folder first used in a session is a bare path, and this link promotes it to a named environment with one dialog (the same dialog as `새 환경`, prefilled). The environment card's rows in later sessions then show it by name. Forge's stage C (Plan 53) has `폴더 추가…`/`폴더 변경…`; it has no one-press `저장` for the current folder (to check). Backlog NEW-51.
+
+### Round 36, part 20: `폴더 선택` did nothing visible
+
+On the recovery screen of part 18 I pressed `폴더 선택` in the grey bar once. Nothing changed in the window (no menu, no dialog), and `CGWindowList` showed no extra window (only the 1239x893 app window), so no system file dialog opened. I did not press it again. Either the button needs the app to be focused first (the click that brought focus may have been the whole effect), or it does nothing when the old folder is missing in this build. Not resolved; do not copy a behaviour from this.
+
+### Round 36, part 21: side chats as sidebar rows (`표시 › 사이드 채팅`)
+
+- **Toggle**: `표시 › 사이드 채팅` is a check item; pressing it checks it and the menu STAYS open (Esc twice closes the submenu and the menu). It is a global view option (turned on from the header of one group, it applied to another group at once). I turned it on to look and set it back afterwards.
+- **Group header**: pressing the group name folds the group; a folded group still shows the SESSION THAT IS OPEN (the selected row) under its header; pressing the name again unfolds. The row `…` and the filter and `+` icons appear only while the pointer is over the header.
+- **Side chat row** (with the option on): under its parent `데스크톱 Todo 앱 기술 선택 ▾` a nested row with an `└` connector: `btw: todo 데이터는 어느 파일에 저장돼? 한 줄로만 답해줘.` (title = `btw: ` + the question, cut at the row end; the parent row got a `▾` at its right that folds the children). It is the side chat I asked in part 4.
+- **Opening it** gives a normal full session view, not the small side panel: the header title is the same `btw: …` with the chevron menu; the chat is the PARENT'S whole conversation up to the question (the last card, the closing summary, the `5단계…` next-step card with its buttons greyed) and then my question as a bubble and the answer; a normal composer `/ 입력 시 명령어` is at the bottom, so it can be continued like any session. The model line under the box reads `Sonnet 5.5 낮음` (effort LOW, not the parent's `중간`) and `자동`; the ring at the right is red. So a side chat is a fork of the parent with effort forced to low and a `btw:` title, one cheap answer, and it can grow into a full session.
+- **Details panel** for that session: `환경` card: `forge-observe` with a gear icon at the right (a saved environment: the `저장` link of NEW-51 is replaced by a settings icon) and a folder row `forge-observe · /private/tmp`, `Remote Control` switch; `컨텍스트` card: `10% 사용됨`, `102.8k / 1M` and a colored bar, rows Messages 45.1k 4.5%, System tools 16.9k 1.7%, MCP tools 16.9k 1.7%, System prompt 10.3k 1.0%, Skills 9.9k 1.0%, MCP server instructions 3.7k 0.4%, Autocompact buffer 33k 3.3%, Free space 864.2k 86.4%, then `MCP tools (def…` 125.8k and `System tools (de…` 23.4k with `—`, and `› MCP 도구 248`; `커넥터` card: M365 (`다시 연결` in amber), Figma, Playwright and `더 보기`; `결과물` card: `storage.ts`, `lib.rs`. The context window shows 1M (not 200k) for Sonnet 5.5.
+
+Differences to Forge (Plan 61 `/btw`): Forge's side panel is a separate small chat that leaves no sidebar row. Backlog NEW-52.
+
+Part 21 follow-up: turning `사이드 채팅` off again removed the `btw:` row from the list at once while the session stayed open in the window (the header still showed `btw: …`; no row was highlighted). The option was left as I found it (off). The parent row lost its `▾` too, so that arrow only shows while there are visible children.
+
+### Round 36, part 22: `사용자 지정`, `아티팩트`, `예약됨` pages (app 4.4212.0)
+
+Sidebar rows (Code mode) pressed one by one; nothing was added or installed. All three open as full pages in the main area (sidebar stays).
+
+- **사용자 지정** (page title, left aligned, large): tabs `Skills` `커넥터` `플러그인` (selected: grey pill), then a divider and a second group `내 항목` / `탐색` (white pill = selected; `탐색` was selected). At the right: search icon, filter icon, sort icon (up/down arrows) and a black `+ 추가 ⌄`. Content of `Skills › 탐색`: a hero card with a flat colour (green-grey) and an illustration: `From Anthropic`, `Data` (serif title), a one-line text and a black `추가` button; `새 Skills` (with `모두 보기 →`) as a 2-column grid of cards: a square icon, name, 2-line description cut with `…`, a source line (`Anthropic Directory` or `제작: Anthropic`) and a `+` button at the top right; then `가장 많이 설치된 Skills` (`모두 보기 →`), same cards.
+- **아티팩트**: title; tabs `전체` (selected) `내 항목` `공유받음`; at the right a search icon, a filter icon and a list/grid icon; a row `새로운 무언가 만들기` with four big coloured tiles with an icon and a pencil-texture: `문서` (blue, pill `신규`), `슬라이드` (orange, `신규`), `디자인` (purple, `신규`), `대시보드` (pink, `베타`); below, a 3-column grid of artifact cards: a preview image on top, under it a small icon, the title and `어제 열람` or `2025년 10월 20일에 편집됨`. The sidebar row `아티팩트` shows a `+` at its right while selected (new artifact).
+- **예약됨**: title `예약된 작업`; tabs `내 항목` (selected) and `템플릿`; at the right search, filter, sort icons and a black `새 작업 ⌄` whose menu is `Claude로 만들기` (a chat-bubble icon) and `직접 설정` (a gear). An info bar `로컬 예약된 작업은 컴퓨터가 절전 모드가 아니고 온라인 상태일 때만 실행됩니다.` A task card: title `Iran war status update` with an amber triangle warning, the prompt line (`1분마다 최신 이란 전쟁/분쟁 상황을 검색하여 요약 보고`) and a grey status line `일시중지됨 · 1분마다, 1시간마다, 매일` (the task is paused; three schedules at once). `템플릿` tab: a 2-column list (no cards, no borders): a small icon, a bold name, a grey description and a clock line: `브리핑` (캘린더, 이메일, 메시지를 요약, `평일 오후 9:18`), `이메일 분류` (`평일 오후 11:52`), `시스템 상태 점검` (`매일 오후 8:47`), `이슈 분류` (`시간 오전 12:23, 화요일에서 토요일까지`), `PR 리뷰 요약`, `종속성 업데이트 확인` (`매주 화요일 오전 3:16`), `릴리스 노트 초안 작성기` (trigger line `pull request closed에 의해 트리거됨`, a PR icon), `불안정한 테스트 추적기`. Times of the templates are odd minutes (9:18, 11:52, 8:47 …), likely random so users do not all fire at the same moment.
+
+Compared with Forge by string search of `ko.rs`: see the backlog row. Not pressed: a template row (it probably opens the create flow), `Claude로 만들기`, `직접 설정`, `추가`, the three icons.
+
+### Round 36, part 23: the `새 예약된 작업` form (`새 작업 ⌄` › `직접 설정`)
+
+A modal (about 50% of the window wide, `×` at the top right, footer `취소` and a black `만들기`). Nothing was created: I pressed `취소` at the end.
+
+- **Top**: a name field (placeholder `일일 브리핑`; the label `이름` scrolls away) and a big prompt box `이 작업이 어떻게 진행되길 원하는지 지침을 입력하세요`. Under the prompt, inside the same box, two selects: a permission-mode pill at the left (`⏭ 자동 ⌄`) and `기본 모델 ⌄` at the right.
+- **Permission menu** (title `권한`): `수동` (hand icon; `Claude는 새 도구를 사용하거나 새 사이트를 열기 전에 확인을 요청합니다.`), `자동` (checked; `묻지 않고 실행합니다.`), `모든 승인 건너뛰기` (red triangle; `Claude가 안전하지 않은 작업에도 멈추지 않고 진행합니다.`). This is a THREE-item list with descriptions, a different wording from the composer's mode menu (자동, 수동, 편집 자동 수락, 계획, 권한 무시).
+- **Warning card** under the box: `이 작업에서 Claude는 승인을 위해 멈추지 않고 작업을 수행하며 커넥터를 사용합니다. 안전한 사용 팁 보기` (the link is underlined).
+- **트리거** row: a label, a select `🕐 스케줄 ⌄` (its menu: `스케줄` `반복 일정으로 실행`, `GitHub 이벤트` `GitHub 웹훅 이벤트 발생 시 실행`, `API` `직접 작성한 코드에서 호출할 때 실행`), a frequency select `매일 ⌄`, a time field `오전 09:22` (the default time is the current time) and a `+` at the right (add another trigger: the paused task of part 22 had three: every minute, every hour, daily).
+- **고급 설정** (a fold, `⌃` when open) with three tabs `일반` `커넥터` `알림`:
+  - `일반`: switches `이 컴퓨터에서만` (`컴퓨터가 켜 있을 때만 실행됩니다. 클라우드 환경 대신 이 컴퓨터의 폴더에 대해 실행하려면 사용하세요.`), `이 컴퓨터 필요` (`작업에 이 컴퓨터의 폴더나 Claude in Chrome이 필요한 경우가 아니라면 꺼 두세요. 켜면 컴퓨터가 절전 모드가 아닌 동안에만 작업이 실행됩니다.`), a row `로컬 폴더` with a select `📁 없음 ⌄` (`이 컴퓨터가 켜져 있고 절전 모드가 아닌 동안 Claude가 이 폴더에서 작업할 수 있습니다.`), `리포지토리` select `없음 ⌄` (`리포지토리를 선택하면 이 작업은 Claude Code 작업이 됩니다.`), `프로젝트` select `없음 ⌄` (`클라우드 프로젝트`). All selects default to `없음`, both switches default off.
+  - `커넥터`: `권한 메뉴에서 설정한 대로 Claude가 이 커넥터들을 확인 없이 사용합니다.` and one row per connector of the account (here `Google Drive` with its logo).
+  - `알림`: a switch `이 작업이 완료되면 알림 받기` (ON by default; `각 실행이 완료되면 Claude가 한 줄 요약을 보내 드립니다. 조건을 감시하는 작업의 경우 알려 드릴 내용이 있을 때만 보냅니다.`), then more rows that I did not scroll to (three small items cut at the fold, probably channels).
+- **Fold behaviour**: opening `고급 설정` scrolls the form body (the label and title scroll up) and the footer stays pinned.
+
+Forge's Routines form (Plan 31) was built to match the desktop app's files at the time (cron string, folder, model, mode). Compare for: the trigger select with three kinds (only `스케줄` applies), several triggers on one task, the `이 컴퓨터에서만` / `이 컴퓨터 필요` pair, the notification switch default on, the three-item permission list with descriptions. Backlog NEW-55.
+
+### Round 36, part 24: a template opens a full-page form, not the modal
+
+Pressing the template row `브리핑` (templates tab) opened a FULL PAGE inside the main area, not the `직접 설정` modal of part 23. Breadcrumb in the title bar: `예약된 작업 / 새 예약된 작업`. The page is a centred column about 1100 px wide:
+
+- `이름 *` (required, red star) filled with the template name, focus in it (blue ring).
+- `지침` filled with the template's whole prompt (an intro line, a numbered list of four items, a closing rule: `섹션에 눈에 띄는 내용이 없으면 "보고할 내용 없음"이라고 쓰지 말고 해당 섹션을 건너뛰세요.`). A grey box at the bottom of the prompt holds, at the right, a mic with a chevron, and a model select `기본값 · Sonnet 5.5 ⌄`; and a lower strip with `▭ 저장소 선택` at the left and `☁ 기본값` at the right (the cloud environment).
+- `트리거 선택`: a chip `🕐 평일 오후 9:18 GMT+9에 실행됩니다` with an `×`, and a link `+ 트리거 더 추가`. The time zone is written out.
+- Three tabs in a pill group: `커넥터` (selected first: `각 실행 중 Claude가 사용할 수 있는 커넥터입니다.` and a dashed button `⊞ 커넥터 추가`), `동작` (one switch `풀 리퀘스트 자동 수정`: `이 예약된 작업이 생성하는 PR의 CI 및 리뷰 댓글을 모니터링하고 Claude가 수정 사항을 푸시하도록 허용합니다.`, off), `알림` (a switch `이 예약된 작업이 완료되면 알림 받기` ON, then three check rows: `푸시 알림` (checked; `Claude 모바일 및 데스크톱 앱으로 전송됩니다.`), `이메일` (`계정에 등록된 이메일 주소로 전송됩니다.`), `Slack` (`Slack 워크스페이스의 Claude 앱이 계정 이메일과 일치하는 Slack 사용자에게 다이렉트 메시지로 전송합니다. 다음에 예약된 작업이 실행될 때부터 적용됩니다.`)).
+- Footer at the bottom of the page: `취소` and a black `만들기`; the page scrolls.
+
+The modal of part 23 and this page hold the same data with different layouts: the modal puts the settings behind a `고급 설정` fold with tabs `일반 / 커넥터 / 알림`; the page shows the tab group directly with `커넥터 / 동작 / 알림`. So the form exists in two versions (quick modal from `직접 설정`, full page from templates). The `알림` tab reveals the notification channels the modal cut off: push, email, Slack. I pressed `취소` after looking; nothing was created.
+
+Backlog NEW-55 gets an addendum below.
+
+### Round 36, part 25: scheduled task detail page
+
+Pressing the card `Iran war status update` (the user's own paused task) opens a page inside the main area; breadcrumb `예약된 작업 / Iran war status update`. Title bar right side: a pencil (edit), a trash can, and a black `▷ 지금 실행` (run now). Two columns:
+
+- Left: `설명` (one line), `상태` (a switch, off, and a pill `일시중지됨`), `폴더` (a chip `📁 ~/Developer/claude-code-study`, the path with `~`), `반복` (`1분마다, 1시간마다, 매일`: the three schedules joined by commas), `항상 허용됨` (grey text `실행 중에 부여한 승인이 여기에 표시됩니다.`: approvals granted during a run are listed here, empty).
+- Right: `지침` (the prompt, cut after 3 lines with a fade and a button `모두 보기 ⌄`; opened it reads `간략히 보기 ⌃`), and `기록` (run history): rows with a status icon, the time and a right-hand word: `○ 오늘 오후 6:02` + `건너뜀 ⓘ`, then two `✓ 3월 10일 오후 10:41에` / `10:40에` (done runs). Hovering the `ⓘ` after `건너뜀` gives a black tooltip `예약된 작업은 컴퓨터가 켜져 있고 온라인 상태일 때만 실행됩니다.` (skipped because the computer was off or asleep). The prompt and the list scroll with the page.
+
+Not pressed: `지금 실행` (it would run the task and use the account), the pencil, the trash can, the status switch, a run row (probably opens that run's session).
+
+Backlog NEW-56 (detail page and history; compare with Plan 31's detail).
+
+### Round 36, part 26: edit form of a LOCAL scheduled task (pencil)
+
+The pencil on the detail page opens a modal `예약된 작업 편집` that is NOT the `새 예약된 작업` modal of part 23. It is the older, local-task form (the one Forge's Plan 31 copied): an info card (`로컬 예약된 작업은 컴퓨터가 절전 모드가 아니고 온라인 상태일 때만 실행됩니다.`), `이름 *` (focused), `설명 *` (one line, required), `지침` (the whole prompt in a grey box; at the box's bottom left a shield pill `수동` (permission mode), at the right `⌄ 기본값` (model); under it a strip with the folder chip `📁 ~/Developer/claude-code-study` and, at the right, a checkbox `워크트리`), `스케줄` (a pill group `수동` `매시간` `매일` `평일마다` `매주` `사용자 지정`; the saved task had `사용자 지정` selected) and `Cron 표현식` (a field with a placeholder `* * * * *`). Footer `취소` and a black `저장`. Not scrolled further (more fields may sit below the cron line). I pressed `취소`.
+
+So the desktop app has two forms: the cloud-capable `새 예약된 작업` (modal, part 23; page, part 24) and this local-task edit modal. The local one shows `설명` and a `워크트리` checkbox (Forge has both from Plan 31/47). `사용자 지정` + a cron field is how several schedules of the detail page (`1분마다, 1시간마다, 매일`) are stored: preset pills plus a cron.
+
+Nothing was saved.
+
+## Round 36: what was built from it (2026-10-31, branch `myhency/develop`)
+
+The user asked to build what was observed, with care for the UI. Four things were built and each was looked at in the real Forge window (harness, light mode only):
+
+1. **`자동 모드 켜기` card** (NEW-27) under the environment card on the new-session screen. It is placed out of the flow so the environment card does not jump when it goes away (first try let the environment card move 44 px; caught in the window, fixed with `position: absolute`).
+2. **`/tasks` and `/diff`** (NEW-38 in part). Verified in the window: `/tasks` lists in the slash menu with its description, Enter twice opens the background-tasks panel and clears the box, nothing is sent. `/diff` is covered by the unit test and shares the code path; it could not be typed in the window because the harness types through the Korean input method (see the harness README), and a first attempt sent a stray `/dff` that failed in the fake session and left no file.
+3. **Sidebar filter menu**: sort direction and a reset (NEW-50 in part). Verified: pressing `오름차순` reverses the group (oldest first), `기본값으로 재설정` restores the newest-first order. A keyed-node warning of Dioxus found while building was fixed (`Fragment`).
+4. **Routine templates** (NEW-53 in part): `내 루틴 / 템플릿` tabs, five templates, a card opens the filled form; the discard dialog and the return to the templates tab were checked.
+
+Facts that changed the plan while building: NEW-26 already existed (`Allow and switch to Auto mode` in the permission card; the first string search was by the Korean text and missed it), and NEW-51 (`저장` for the folder) already existed in the Details panel and as `환경으로 저장` on the session's first line.
+
+Tests: `cargo test --workspace` passes except `forge-adapter-claude-plugins/tests/round_trip.rs` (it adds a marketplace with the real `claude` binary; the crate was not touched; the plugin tests were already known as flaky in the notes of Plan 32). Not run: dark mode, Windows.
+
+Not built, kept in the backlog: NEW-28/29/30/31/32/33 (the `/usage`, `/status`, `/stats` cards NEW-41/42/43, the side chat in the sidebar NEW-52, the Settings display block NEW-46, the Settings search NEW-48, the schedule form changes NEW-55/56, `/usage`-style cards). Those are larger or need a decision (see each row).
+
+### Round 36, build part 2 (2026-10-31): the cards, the settings search
+
+Built after the first four: `/status`, `/usage` and `/stats` cards in the chat (a `LocalCard` of blocks: heading, rows, meter, note, tiles, calendar, loading), and the Settings search that lists matching rows under their page. Looked at in the real window (light mode): `/status`, `/usage` with a fixture session of two models, `/stats` with 20 fixture sessions over 4 months (`scripts/harness/add_usage_samples.py`), the range switch, a 760 pt window (tiles go to two columns), and the settings search with `테마`.
+
+Lessons from the build:
+- The Home dashboard's model for stats (`UsageStats`, `heat_level`, `overview_tiles`) and its adapter were still in the code but no screen drew them; `/stats` reuses them. Search the code for a thing's English key before planning to build it: five rows of the backlog (NEW-26, 28, 29, 30, 39, 46, 51, 56) were already built.
+- The project's own guards caught three mistakes at build time: the stylesheet test (spacing and radius must come from the scale variables), a Dioxus rule (a key must be a formatted string, and a keyed node must be the first in its block), and a unit test of the month labels (two names stood side by side on the left edge of the calendar).
+- The harness types through the Korean input method: a letter is sometimes lost (`/dff`, `/sttus`). Type a command in two short pieces and look at the box before pressing Enter. A command typed wrong and sent in the fake session fails there and leaves no file.
+- The status/usage/stats cards are not saved in the transcript and a sent message takes them away. The desktop app keeps them as part of the chat.
+
+Not run: dark mode, Windows. Two tests of `forge-adapter-claude-plugins` fail on this machine (`round_trip` and `a_command_that_times_out_takes_the_processes_it_started_with_it`); the crate was not touched in this work and everything else (2,590 tests) passes.
+
+### Round 36, build part 3 (2026-10-31): models, and `Ultracode` held back
+
+- **Models.** The desktop app's model menu (`Opus 5.5`, `Sonnet 5.5 기본값`, `Fable 5.1 사용 크레딧 필요`, `Haiku 5.5`, then `노력`, `더 많은 모델 ›`) matches the real SDK's `supportedModels()` exactly, and `더 많은 모델` holds the other eight. Checked with `node sidecar/scripts/list_models.mjs` and a `setModel` call on a fresh query (no message sent): `claude-sonnet-5-5` is accepted now. The comment in `model_catalog.rs` that said the SDK refused it (2026-10-03) was stale; Forge already defaulted to it in its config, so only the menu table was behind.
+- **A flyout inside a scrolling list is clipped.** The first version put the `더 많은 모델` flyout inside `.picker-list` (`overflow-y: auto`): it did not show at all. The fix is a non-scrolling wrapper that owns the position, with the scrolling list and the flyout as siblings. Found by looking at the window; the compile and the unit tests were green.
+- **`Ultracode` was pressed on the desktop app's new-session draft** (switch off again afterwards, the model draft restored to `Sonnet 5.5`; I also changed the draft model to `Haiku 5.5` by a misplaced click and set it back). Effect seen: `노력 중간` becomes `중간 · Ultracode`, and the chip shows `Sonnet 5.5 중간 · Ultracode` with `Ultracode` in blue. It is a per-session setting beside effort. Not seen: what it adds when a message is sent, and how it relates to the `동적 워크플로우` switch of Settings. Not built.
+
+### Round 36, part 27: what `Ultracode` does (read from the transcript)
+
+The user allowed real sends in the desktop app (no Opus). A new session in `/private/tmp/forge-observe`, model `Sonnet 5.5` (checked on the chip before sending), `Ultracode` on, one message `한 단어로만 답해줘: 안녕`; the answer was `안녕`. The session `인사말 한 단어` stays in the desktop app (one turn, about 35k cache-write tokens, mostly the pasted skill text).
+
+Read from the session file (`~/.claude/projects/-private-tmp-forge-observe/<id>.jsonl`), compared with five other desktop-app sessions without the switch:
+- A line of type `attachment` with `attachment.type: "ultra_effort_enter"`, `reminderType: "full"`, rendered as a `<system-reminder>`: `Ultracode is on: optimize for the most exhaustive, correct answer — not the fastest or cheapest. Use the Workflow tool on every substantive task; token cost is not a constraint. See the **Ultracode** section and quality patterns in the workflow authoring reference. Solo only on conversational/trivial turns.`
+- A user line with `isMeta: true` and `<command-name>workflow-authoring</command-name>`, followed by a user line holding the whole skill text (17,175 characters, headed `# Workflow authoring reference`, with a section called **Ultracode**).
+- The API request (`type: api-request`): `model: claude-sonnet-5-5`, `output_config: {effort: "medium"}`, `thinking: {type: "adaptive", display: "updates"}`, `max_tokens: 128000`: no change from a normal turn. The tool list is not recorded in that line.
+- The five sessions without the switch have no `ultra_effort_enter` and no workflow skill message.
+- For a trivial message the model answered alone (no Workflow call), as the reminder allows.
+
+Conclusion: Ultracode is a PROMPT, not a model or effort setting: a standing instruction to use the Workflow tool on every substantive task, plus the workflow-authoring document. Forge already has the Workflow tool behind Settings → Dynamic workflows. What is not known: whether the desktop app also turns `enableWorkflows` on for that session by itself (Settings → `동적 워크플로우` was already on in this app), what the reminder looks like on later turns (`reminderType: full` suggests a shorter one exists), and whether the switch persists for the next session (it was off again after I turned it off; the new-session draft started with it off).
+
+Not done: the switch was left on only for this one message; it is off in the draft now (the next new session starts off).
+
+### Round 36, build part 4 (2026-10-31): dark mode and path links
+
+- **Dark mode was looked at for what this round built** (`FORGE_HARNESS_THEME=dark`): the `자동 모드 켜기` card, the `/stats` card (tiles, calendar in five shades from dark navy to light blue, range switch, legend), the model menu with its `기본값` / `사용 크레딧 필요` tags and the `더 많은 모델` flyout, the Routines templates tab, and the sidebar filter menu with the sort direction rows. All readable; no change was needed. The tags' border is faint in dark (`--border`), but the text carries them. The menus are 94 % opaque with a blur by a project-wide rule, so page text shows faintly behind a submenu in dark; that rule is not part of this round.
+- **Path links**: see NEW-44. A reply that names a folder with an extension (`Todo.app`) or a file that is gone makes a link, and pressing it showed `Is a directory (os error 21)` / `No such file or directory (os error 2)` in English; now one sentence each in the language on screen.
+- **NEW-40** (an ended background task starting a turn): in Forge the SDK delivers the task notification into the open query and Forge shows the result (`TaskFinished` removes the task and the fold line counts it); Forge does not itself start a turn. Not compared with a live run, which would send a real message; kept as a code reading.
