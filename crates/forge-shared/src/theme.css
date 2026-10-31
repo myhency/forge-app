@@ -1493,3 +1493,4 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .icon { width: var(--icon-size); height: var(--icon-size); stroke-width: var(--icon-stroke); flex: none; vertical-align: middle; }
 .icon.sm { width: var(--icon-size-sm); height: var(--icon-size-sm); }
 .icon.open { transform: rotate(90deg); }
+.archived-mark { display: inline-flex; flex: none; margin-right: var(--sp-4); color: var(--fg-muted); }

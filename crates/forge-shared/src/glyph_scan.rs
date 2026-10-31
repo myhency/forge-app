@@ -177,4 +177,22 @@ mod tests {
     fn an_emoji_in_a_translated_sentence_is_still_found() {
         assert_eq!(pictographs(&format!("{TRANSLATE}\"\u{1F4C1} Folder\")")), vec![(1, '\u{1F4C1}')]);
     }
+
+    // Files whose emoji became icons, checked as each step of the change lands.
+    const EMOJI_FILES: [&str; 8] = [
+        "forge-features/src/composer_state.rs",
+        "forge-widgets/src/new_session_controls.rs",
+        "forge-widgets/src/settings_overlay.rs",
+        "forge-widgets/src/environment_dialog.rs",
+        "forge-widgets/src/files_panel.rs",
+        "forge-widgets/src/tasks_panel.rs",
+        "forge-widgets/src/session_row.rs",
+        "forge-entities/src/sidebar_item.rs",
+    ];
+
+    #[test]
+    fn the_emoji_of_the_ui_are_icons_now() {
+        let emoji: Vec<String> = in_files(&EMOJI_FILES).into_iter().filter(|found| found.chars().last().is_some_and(|c| (c as u32) >= 0x1F300)).collect();
+        assert!(emoji.is_empty(), "an emoji is still drawn as text: {emoji:?}");
+    }
 }

@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use forge_features::{effort_levels, folder_menu_rows, refocus_composer, use_new_session_draft, use_settings, use_workspace};
 
 use crate::composer_controls::{EffortPickerView, ModePickerView, ModelPickerView, Picker, PickerItem};
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 /// The folder chip: the folder's name, and a menu of the recent folders with "Open folder…" below.
 #[component]
@@ -114,7 +114,7 @@ pub fn AddFolderButton() -> Element {
             title: tr!("Open folder"),
             disabled: workspace.picking_folder(),
             onclick: move |_| workspace.open_folder(),
-            "📁+"
+            Icon { kind: IconKind::FolderPlus }
         }
     }
 }

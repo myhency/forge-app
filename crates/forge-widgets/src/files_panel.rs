@@ -19,7 +19,7 @@ use crate::files_sheet::failed_offers_open;
 use crate::files_state::FilesCtx;
 use crate::files_tabs::{FilesTabs, TabView};
 use crate::panel_frame::PanelFrame;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 // Typing waits this long before the files are searched.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -238,7 +238,7 @@ pub fn FilesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
                     let (ctx, path) = (ctx.clone(), selected.clone().unwrap_or_default());
                     move |_| ctx.toggle_source(&path)
                 },
-                if source_on { "👁" } else { "</>" }
+                Icon { kind: if source_on { IconKind::Eye } else { IconKind::Code } }
             }
         }
         FilesMenu {}

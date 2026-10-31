@@ -158,7 +158,7 @@ pub fn SessionRow(
                 EntryKey::Live(id) => workspace.plan_ready_hint(id).unwrap_or_default(),
                 _ => String::new(),
             };
-            let shown_title = if entry.archived { format!("🗄 {}", entry.title) } else { entry.title.clone() };
+            let shown_title = entry.title.clone();
             let shown_title = if depth > 0 { format!("└ {shown_title}") } else { shown_title };
             let fold_id = session_id.as_ref().map(forge_features::fork_fold_id);
             rsx! {
@@ -168,6 +168,7 @@ pub fn SessionRow(
                     title: "{plan_hint}",
                     SidebarItem {
                         title: shown_title,
+                        archived: entry.archived,
                         subtitle: row_subtitle(
                             project_name.as_deref(),
                             entry.updated_at.as_deref().map(|updated_at| relative_time(updated_at, now)),

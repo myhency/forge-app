@@ -8,7 +8,7 @@ use forge_entities::{card_key, clear_key, dot_class, elapsed_label, end_label, e
 use forge_features::{run_blocking, use_workspace, Panel};
 
 use crate::panel_frame::PanelFrame;
-use forge_shared::tr;
+use forge_shared::{tr, Icon, IconKind};
 
 /// How much of a workflow's journal is read: the SDK's own file, with each agent's result in it.
 const JOURNAL_TAIL: usize = 4_000_000;
@@ -75,7 +75,7 @@ pub fn TasksPanel(id: LiveSessionId) -> Element {
                     title: tr!("Clear finished tasks"),
                     "aria-label": tr!("Clear finished tasks"),
                     onclick: move |_| workspace.clear_finished_tasks(id, shown_ids.clone()),
-                    "🗑"
+                    Icon { kind: IconKind::Trash }
                 }
             },
             div { class: "tasks-body",

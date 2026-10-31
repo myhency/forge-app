@@ -11,7 +11,7 @@ use crate::mention_popup::{absolute_in, attached_in, byte_to_utf16, key_decision
 use crate::thumbnail::ComposerAttachment;
 use crate::trust::{answer_card, apply_pick, classify_added_folder, resolved, FolderAdd, TrustChoice};
 use crate::workspace::{use_workspace, Workspace, WorkspaceServices};
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
 /// What a send takes out of the composer, decided without any UI.
 #[derive(Debug, Clone, PartialEq)]
@@ -467,7 +467,7 @@ pub fn ComposerChips() -> Element {
             }
             for (index, folder) in folders.iter().enumerate() {
                 span { key: "f{index}", class: "chip", title: "{folder.display()}",
-                    span { class: "chip-kind", "📁" }
+                    span { class: "chip-kind", Icon { kind: IconKind::Folder, size: IconSize::Small } }
                     span { class: "chip-name", "{folder_label(folder)}" }
                     button {
                         class: "chip-remove",

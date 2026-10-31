@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_features::{refocus_workspace, use_workspace, variables_error_text, EnvironmentDraft, EnvironmentRequest};
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
@@ -452,7 +452,7 @@ fn FolderPopover(search: Signal<String>, taken: Vec<PathBuf>, onpick: EventHandl
                         }
                     });
                 },
-                span { class: "picker-check", "📁" }
+                span { class: "picker-check", Icon { kind: IconKind::Folder, size: IconSize::Small } }
                 span { class: "picker-text", span { class: "picker-label", {tr!("Choose…")} } }
             }
         }
