@@ -288,16 +288,18 @@ mod tests {
         const CONTAINERS: [&str; 7] = [".workspace", ".row-menu", ".picker-menu", ".trust-card", ".permission-panel", ".question-panel", ".lightbox-backdrop"];
         let mut hidden = Vec::new();
         for (_, line) in rule_lines().filter(|(_, line)| line.contains("outline: none")) {
-            let selector = line.split('{').next().unwrap().trim();
-            if CONTAINERS.contains(&selector) {
-                continue;
-            }
-            // The rule itself, its first class (`.composer .textarea` sits in `.composer`) or the box it is the input of (`.palette-input` in `.palette`).
-            let first = selector.split(' ').next().unwrap();
-            let names = [selector, first, first.trim_end_matches("-input")];
-            let shown = THEME_CSS.lines().any(|css| css.contains('{') && names.iter().any(|name| css.contains(&format!("{name}:focus-within")) || css.contains(&format!("{name}:focus-visible"))));
-            if !shown {
-                hidden.push(selector.to_string());
+            for selector in line.split('{').next().unwrap().split(',').map(str::trim) {
+                // A selector that already names the focus state is the focus rule itself.
+                if CONTAINERS.contains(&selector) || selector.contains(":focus") {
+                    continue;
+                }
+                // The rule itself, its first class (`.composer .textarea` sits in `.composer`) or the box it is the input of (`.palette-input` in `.palette`).
+                let first = selector.split(' ').next().unwrap();
+                let names = [selector, first, first.trim_end_matches("-input")];
+                let shown = THEME_CSS.lines().any(|css| css.contains('{') && names.iter().any(|name| css.contains(&format!("{name}:focus-within")) || css.contains(&format!("{name}:focus-visible"))));
+                if !shown {
+                    hidden.push(selector.to_string());
+                }
             }
         }
         assert!(hidden.is_empty(), "these hide the outline and show no focus another way: {hidden:?}");
@@ -314,6 +316,63 @@ mod tests {
     #[test]
     fn spacing_a_screen_needs_once_is_a_class_not_an_inline_style() {
         assert!(rule(".mt-12").contains("var(--sp-12)") && rule(".mt-16").contains("var(--sp-16)") && rule(".ml-auto").contains("auto"));
+    }
+
+    // The rule that gives text fields their calm focus: the line that holds `.text-input:focus-visible`.
+    fn field_focus_rule() -> &'static str {
+        THEME_CSS.lines().find(|line| line.starts_with(".text-input:focus-visible")).expect("a rule for text-field focus")
+    }
+
+    #[test]
+    fn a_text_field_shows_focus_with_a_thin_border_and_a_halo_not_the_ring() {
+        let rule = field_focus_rule();
+        for declaration in ["outline: none", "border-color: var(--field-focus-border)", "box-shadow: 0 0 0 var(--field-focus-halo) var(--accent-soft)"] {
+            assert!(rule.contains(declaration), "{declaration} missing from: {rule}");
+        }
+        assert!(!rule.contains("--focus-ring-width"), "a field must not take the ring: {rule}");
+        // Every kind of text field is on the list; buttons and drop-downs are not.
+        for field in [".text-input", ".textarea", ".settings-search", ".customize-field", ".customize-search", ".env-search", ".files-filter-input", ".question-other", ".preview-url", ".env-variables", ".plan-card-text", ".cm-find-bar input", ".cm-goto-bar input", ".composer:focus-within", ".palette:focus-within", ".cd-search:focus-within", ".cm-comment-box:focus-within", ".cd-comment:focus-within"] {
+            assert!(rule.contains(field), "{field} is not on the field focus rule");
+        }
+        for other in [".select", ".rename-input", ".button", ".sidebar-item", ".icon-button"] {
+            assert!(!rule.contains(&format!("{other}:")) && !rule.contains(&format!("{other},")), "{other} must not take the field focus style");
+        }
+    }
+
+    #[test]
+    fn the_field_focus_border_stands_out_from_every_surface_in_both_themes() {
+        for dark in [false, true] {
+            let map = palette::theme(dark);
+            assert_eq!(map["--field-focus-halo"], "3px");
+            for surface in ["surface-0", "surface-1", "surface-2", "surface-3"] {
+                let ratio = palette::contrast(palette::color(&map, "field-focus-border"), palette::color(&map, surface));
+                assert!(ratio >= 3.0, "{} field focus border on --{surface}: {ratio:.2}", if dark { "dark" } else { "light" });
+            }
+        }
+    }
+
+    #[test]
+    fn a_drop_down_keeps_the_ring_and_the_rename_field_keeps_its_accent_border() {
+        assert!(THEME_CSS.contains(".select:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color);"));
+        let rename = rule_lines().find(|(_, line)| line.starts_with(".rename-input:focus-visible")).expect("a focus rule for the rename field").1;
+        assert!(rename.contains("outline: none") && !rename.contains("border-color"), "{rename}");
+    }
+
+    #[test]
+    fn a_wrong_search_keeps_its_red_border_while_the_find_field_has_focus() {
+        let field = THEME_CSS.find(".text-input:focus-visible").unwrap();
+        let invalid = THEME_CSS.find(".cm-find-bar input.invalid:focus-visible").expect("an invalid-and-focused rule");
+        assert!(invalid > field, "the invalid rule must come after the field rule to win");
+        let line = THEME_CSS[invalid..].lines().next().unwrap();
+        assert!(line.contains("border-color: var(--danger)"), "{line}");
+    }
+
+    #[test]
+    fn in_forced_colors_mode_the_fields_get_an_outline_back() {
+        let at = THEME_CSS.find("@media (forced-colors: active) {").expect("a forced-colors block");
+        let block = &THEME_CSS[at..at + THEME_CSS[at..].find("\n}").unwrap()];
+        assert!(block.contains(".text-input:focus-visible") && block.contains(".composer:focus-within") && block.contains(".cd-menu-search:focus-visible"), "{block}");
+        assert!(block.contains("outline: 2px solid Highlight"), "{block}");
     }
 
     #[test]
