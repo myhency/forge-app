@@ -1108,3 +1108,11 @@ Backlog NEW-39.
 - **A `↓` button** (round, white, shadow) floats in the chat at the bottom centre whenever the view is above the last message.
 - **Reply footer** shows `4분 전` (relative time) after copy, share, pin and read-aloud icons; it said `지금` for the newest reply.
 - The scroll helper moves the chat by only a few lines per call; six calls of 60 lines moved about one screen.
+
+### Round 36, part 8: a background task's exit starts a model turn by itself
+
+- When I killed the dev server's processes from my shell (the `npm run tauri dev` background command of the session ended with code 144), the app put a notification into the session and the model answered WITHOUT any user message: `백그라운드 작업이 코드 144로 끝났다고 알림이 왔는데, 앱은 꺼지지 않았습니다. 방금 확인해 보니 todo-app 프로세스와 Vite 개발 서버가 둘 다 계속 실행 중입니다. 알림은 이 명령을 실행한 셸 래퍼가 종료됐다는 뜻으로 보이고…` and later `이 알림은 자동 이벤트라서 앱 동작을 확인했다는 뜻이 아닙니다.` So a finished background command is delivered to the model like a new message and starts a turn (the model even ran a check, `ps`, in that turn). The chat shows no user bubble for it; the reply starts under a fold line `완료함 백그라운드 명령어 1개, 실행됨 명령 1개 (1개 실패) ▸` (same wording family as NEW-20). Not seen: whether the notification can be read in the chat (the fold is the only trace) and whether it fires when the app has another session open.
+- The model's own tool-call titles are English even in a Korean chat (`Waited for Rust build to finish`, `Running Tauri dev app in backgr…`); the fold lines and the buttons are Korean.
+- Hovering the user bubble `먼저 실행해 보기` shows a row under it at the right: `✓✓ 13분 전 · ⧉ (copy) · ↺ (rewind) · fork icon`; the time is relative (`13분 전`), same as round 31.
+
+Backlog NEW-40.
