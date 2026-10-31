@@ -1,8 +1,10 @@
-use forge_domain::{local_moment, ContextUsage, McpServerState, McpStatus, PriceTable, RateLevel, RateLimit, RateWindow, SessionUsage};
+use forge_domain::{local_moment, ContextUsage, Day, McpServerState, McpStatus, PriceTable, RateLevel, RateLimit, RateWindow, SessionUsage, StatsRange, UsageStats};
 use forge_shared::tr;
 
 use crate::rate_limit_view::reset_text;
-use crate::usage_view::{ring_level, RingLevel, UsageView};
+use crate::relative_time::month_short;
+use crate::usage_card::{dashboard_model_label, heat_level, overview_tiles};
+use crate::usage_view::{format_tokens, ring_level, RingLevel, UsageView};
 
 /// A command Forge answers on the spot: it shows a panel or a card and is never sent to the model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,6 +17,8 @@ pub enum LocalCommand {
     Status,
     /// `/usage`: a card with what this session used and the account's limit.
     Usage,
+    /// `/stats`: a card with the use of every session on this computer.
+    Stats,
 }
 
 /// The local command the message is, if it is just that command.
@@ -24,6 +28,7 @@ pub fn local_command(input: &str) -> Option<LocalCommand> {
         "/diff" => Some(LocalCommand::Diff),
         "/status" => Some(LocalCommand::Status),
         "/usage" => Some(LocalCommand::Usage),
+        "/stats" => Some(LocalCommand::Stats),
         _ => None,
     }
 }
@@ -37,6 +42,13 @@ pub enum CardBlock {
     /// A bar filled to `percent`, with the label above and `note` under it.
     Meter { label: String, percent: u8, level: RingLevel, note: String },
     Note(String),
+    /// Figures in a grid of tiles: a small label over a value.
+    Tiles(Vec<(String, String)>),
+    /// A calendar of use: seven rows (Sunday first) of weeks, the newest at the right. A cell is a heat level 0 to 4,
+    /// or `None` for a day that has not come yet.
+    Heatmap { rows: Vec<Vec<Option<u8>>>, months: Vec<Option<String>> },
+    /// The card is still being made (the stats are read from every session on first use).
+    Loading,
 }
 
 /// What `/status` and `/usage` put in the chat. It belongs to the moment it was asked: the next message the
@@ -188,10 +200,72 @@ pub fn usage_card(usage: &SessionUsage, context: Option<ContextUsage>, limit: Op
     LocalCard { title: tr!("Usage").to_string(), blocks }
 }
 
+/// The ranges the `/stats` card offers, in its order.
+pub const STATS_RANGES: [StatsRange; 3] = [StatsRange::All, StatsRange::Last30Days, StatsRange::Last7Days];
+
+pub fn stats_range_label(range: StatsRange) -> &'static str {
+    match range {
+        StatsRange::All => tr!("All time"),
+        StatsRange::Last30Days => tr!("Last 30 days"),
+        StatsRange::Last7Days => tr!("Last 7 days"),
+    }
+}
+
+/// The heat levels of `UsageStats::heatmap`: each day's share of the busiest day.
+fn heat_levels(tokens: Vec<Vec<Option<u64>>>) -> Vec<Vec<Option<u8>>> {
+    let max = tokens.iter().flatten().flatten().copied().max().unwrap_or(0);
+    tokens.into_iter().map(|row| row.into_iter().map(|cell| cell.map(|day| heat_level(day, max))).collect()).collect()
+}
+
+/// The month name over each week column of the calendar, set on the first column of a month (and the first column of all)
+/// and `None` elsewhere. The columns end with the week of `today`, as `UsageStats::heatmap` makes them.
+pub fn month_labels(today: Day) -> Vec<Option<String>> {
+    let last_week_start = today.plus_days(-i64::from(today.weekday()));
+    let mut previous: Option<u8> = None;
+    let mut labels: Vec<Option<String>> = (0..forge_domain::HEATMAP_WEEKS)
+        .map(|column| {
+            let first_day = last_week_start.plus_days(-7 * (forge_domain::HEATMAP_WEEKS - 1 - column) as i64);
+            let label = (previous != Some(first_day.month)).then(|| month_short(first_day.month).to_string());
+            previous = Some(first_day.month);
+            label
+        })
+        .collect();
+    // A name is wider than a column: when the second column starts a month too, the first column's month is only a few
+    // days of the calendar and goes without a name, so two names never stand side by side.
+    if labels.get(1).is_some_and(Option::is_some) {
+        labels[0] = None;
+    }
+    labels
+}
+
+/// `/stats`: the tiles of the range, the calendar of the last weeks (every session counts, whatever the range), and a
+/// table of tokens by model.
+pub fn stats_card(stats: &UsageStats, range: StatsRange, today: Day) -> LocalCard {
+    let found = stats.in_range(range, today);
+    let mut blocks = vec![CardBlock::Tiles(overview_tiles(&found).into_iter().map(|tile| (tile.label.to_string(), tile.value)).collect())];
+    if !stats.is_empty() {
+        blocks.push(CardBlock::Heatmap { rows: heat_levels(stats.heatmap(today)), months: month_labels(today) });
+    }
+    if found.models.is_empty() {
+        blocks.push(CardBlock::Note(tr!("Nothing has been used in this range.").to_string()));
+    } else {
+        blocks.push(CardBlock::Heading(tr!("Tokens by model").to_string()));
+        blocks.push(CardBlock::Rows(
+            found.models.iter().map(|line| (dashboard_model_label(&line.model), format!("↑ {} ↓ {} · {}", format_tokens(line.input), format_tokens(line.output), format_tokens(line.total)))).collect(), // icon-ok: arrows for in and out beside the numbers
+        ));
+    }
+    LocalCard { title: tr!("Stats").to_string(), blocks }
+}
+
+/// The card shown while the stats are being read.
+pub fn stats_loading_card() -> LocalCard {
+    LocalCard { title: tr!("Stats").to_string(), blocks: vec![CardBlock::Loading] }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_domain::{Rates, TokenUsage};
+    use forge_domain::{Rates, SessionId, SessionStats, StatsRow, TokenUsage};
 
     fn server(name: &str, status: McpStatus) -> McpServerState {
         McpServerState { name: name.to_string(), status, scope: None, source: None, remote: None, tool_count: 0, error: None }
@@ -207,8 +281,75 @@ mod tests {
         usage
     }
 
+    fn day(year: i32, month: u8, d: u8) -> Day {
+        Day::new(year, month, d)
+    }
+
+    fn stats_of(rows: Vec<StatsRow>) -> UsageStats {
+        UsageStats { sessions: vec![SessionStats { session: SessionId("s".to_string()), rows }] }
+    }
+
+    fn row(day: Day, model: &str, messages: u64, input: u64, output: u64) -> StatsRow {
+        StatsRow { day, hour: 10, model: model.to_string(), messages, tokens: TokenUsage { input, output, ..TokenUsage::default() } }
+    }
+
+    #[test]
+    fn the_stats_card_has_tiles_a_calendar_and_a_table_by_model() {
+        // A Sunday: the rest of its week has not come yet, so those cells are empty.
+        let today = day(2026, 10, 25);
+        assert_eq!(today.weekday(), 0);
+        let stats = stats_of(vec![row(today, "claude-sonnet-4-6", 2, 1_000, 2_000), row(today.plus_days(-3), "claude-haiku-4-5", 1, 10, 20)]);
+        let card = stats_card(&stats, StatsRange::All, today);
+        assert_eq!(card.title, "Stats");
+        let CardBlock::Tiles(tiles) = &card.blocks[0] else { panic!("tiles first") };
+        assert_eq!(tiles.iter().map(|(label, _)| label.as_str()).collect::<Vec<_>>(), ["Sessions", "Messages", "Total tokens", "Active days", "Peak hour", "Favorite model"]);
+        assert_eq!(tiles[1].1, "3");
+        let CardBlock::Heatmap { rows, .. } = &card.blocks[1] else { panic!("a calendar second") };
+        assert_eq!(rows.len(), 7);
+        assert!(rows.iter().all(|row| row.len() == forge_domain::HEATMAP_WEEKS));
+        // The busiest day is the darkest level; a day after today is empty (no cell).
+        assert_eq!(rows.iter().flatten().flatten().copied().max(), Some(4));
+        assert!(rows.iter().flatten().any(Option::is_none));
+        assert!(card.blocks.iter().any(|block| matches!(block, CardBlock::Rows(rows) if rows.len() == 2)));
+    }
+
+    #[test]
+    fn a_month_name_stands_over_the_first_week_of_each_month() {
+        let months = month_labels(day(2026, 10, 25));
+        assert_eq!(months.len(), forge_domain::HEATMAP_WEEKS);
+        // A name appears only where the month changes; the partial month at the left edge has none when the next
+        // week starts a month.
+        assert!(months[0].is_none() && months[1].is_some());
+        let named: Vec<&String> = months.iter().flatten().collect();
+        assert!(named.len() >= 6 && named.len() <= 8, "about half a year: {named:?}");
+        assert_eq!(months.last().unwrap().as_deref(), None, "the last column is a week of the same month as the one before");
+        // No two neighbouring columns are named.
+        assert!(months.windows(2).all(|pair| pair[0].is_none() || pair[1].is_none()));
+    }
+
+    #[test]
+    fn the_range_changes_the_tiles_but_not_the_calendar() {
+        let today = day(2026, 10, 31);
+        let stats = stats_of(vec![row(today, "claude-sonnet-4-6", 1, 5, 5), row(today.plus_days(-40), "claude-sonnet-4-6", 1, 5, 5)]);
+        let all = stats_card(&stats, StatsRange::All, today);
+        let week = stats_card(&stats, StatsRange::Last7Days, today);
+        let sessions = |card: &LocalCard| if let CardBlock::Tiles(tiles) = &card.blocks[0] { tiles[2].1.clone() } else { String::new() };
+        assert_eq!((sessions(&all).as_str(), sessions(&week).as_str()), ("20", "10"));
+        assert_eq!(all.blocks[1], week.blocks[1], "the calendar always shows the last weeks of every session");
+    }
+
+    #[test]
+    fn with_no_use_at_all_the_card_has_the_tiles_and_a_note_and_no_calendar() {
+        let card = stats_card(&UsageStats::default(), StatsRange::All, day(2026, 10, 31));
+        assert!(matches!(card.blocks[0], CardBlock::Tiles(_)));
+        assert!(!card.blocks.iter().any(|block| matches!(block, CardBlock::Heatmap { .. })));
+        assert_eq!(card.blocks.last(), Some(&CardBlock::Note("Nothing has been used in this range.".to_string())));
+        assert_eq!(stats_loading_card().blocks, vec![CardBlock::Loading]);
+    }
+
     #[test]
     fn the_four_local_commands_are_the_whole_message_and_nothing_else() {
+        assert_eq!(local_command("/stats"), Some(LocalCommand::Stats));
         assert_eq!(local_command("/tasks"), Some(LocalCommand::Tasks));
         assert_eq!(local_command("  /diff \n"), Some(LocalCommand::Diff));
         assert_eq!(local_command("/status"), Some(LocalCommand::Status));

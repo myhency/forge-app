@@ -343,6 +343,27 @@ button:not(:disabled):active { scale: 0.98; }
 .meter-fill { height: 100%; border-radius: var(--r-pill); background: var(--accent); }
 .meter-fill.warn { background: var(--warning); }
 .meter-fill.danger { background: var(--danger); }
+/* The /stats card: a range switch in the header, tiles, and a calendar of the last weeks. */
+.local-card-range { display: inline-flex; margin: 0 auto 0 var(--sp-12); padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-10); }
+.range-option { padding: var(--sp-2) var(--sp-8); border: none; border-radius: var(--r-8); background: transparent; color: var(--fg-muted); font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.range-option.selected { background: var(--bg); color: var(--fg); box-shadow: var(--shadow); }
+.stat-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-8); margin-bottom: var(--sp-12); }
+.stat-tile { padding: var(--sp-8) var(--sp-10); border-radius: var(--r-10); background: var(--bg-hover); min-width: 0; }
+.stat-tile-label { font-size: var(--text-xs); color: var(--fg-muted); }
+.stat-tile-value { margin-top: var(--sp-2); font-size: var(--text-base); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-heat { display: flex; flex-direction: column; gap: var(--sp-3); margin-bottom: var(--sp-12); }
+.stat-heat-months { display: flex; gap: var(--sp-3); font-size: var(--text-xs); color: var(--fg-muted); }
+.stat-heat-month { flex: 1 1 0; min-width: 0; overflow: visible; white-space: nowrap; }
+.stat-heat-row { display: flex; gap: var(--sp-3); }
+.stat-heat-cell { flex: 1 1 0; min-width: 0; aspect-ratio: 1; max-height: 14px; border-radius: var(--r-3); background: var(--heat-0); }
+.stat-heat-cell.level-1 { background: var(--heat-1); }
+.stat-heat-cell.level-2 { background: var(--heat-2); }
+.stat-heat-cell.level-3 { background: var(--heat-3); }
+.stat-heat-cell.level-4 { background: var(--heat-4); }
+.stat-heat-cell.none { background: transparent; }
+.stat-heat-legend { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-3); margin-top: var(--sp-4); font-size: var(--text-xs); color: var(--fg-muted); }
+.stat-heat-legend .stat-heat-cell { flex: none; width: 12px; height: 12px; }
+.chat-narrow .stat-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .textarea { width: 100%; box-sizing: border-box; min-height: 64px; padding: var(--sp-8); resize: vertical; font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
 .select { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-8); padding: var(--sp-4) var(--sp-8); max-width: 100%; }
 .text-input { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-8); padding: var(--sp-6) var(--sp-10); min-width: 280px; box-sizing: border-box; }

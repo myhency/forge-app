@@ -43,7 +43,7 @@ pub use attachment_card::{card_label, AttachmentCard, SentAttachment, ThumbnailL
 pub use clipboard::copy_text;
 pub use card_view::{modal_title, CardView};
 pub use background::{background_ref, card_key, clear_key, end_label, error_text, task_cards, task_lists, TaskEnd, TaskLists, valid_output_path, BackgroundRef, TaskCard, WorkflowCard, TASK_OUTPUT_TAIL};
-pub use local_card::{cache_hit_percent, connectors_text, local_command, status_card, usage_card, CardBlock, LocalCard, LocalCommand, StatusInfo};
+pub use local_card::{cache_hit_percent, connectors_text, local_command, month_labels, stats_card, stats_loading_card, stats_range_label, status_card, usage_card, CardBlock, LocalCard, LocalCommand, StatusInfo, STATS_RANGES};
 pub use rate_limit_view::rate_limit_text;
 pub use rewind_view::{preview_text, rewind_rows, RewindRow};
 pub use command_menu::{arrange_commands, btw_question, is_bare_btw, is_rewind, command_query, filter_commands, insert_text, menu_action, menu_rows, move_selection, typed_after_change, MenuAction, MenuKey};

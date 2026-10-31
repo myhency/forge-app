@@ -28,6 +28,7 @@ fn local_commands() -> Vec<SlashCommand> {
         SlashCommand { name: "tasks".to_string(), description: Some(tr!("Show the background tasks").to_string()), argument_hint: None },
         SlashCommand { name: "diff".to_string(), description: Some(tr!("Show or hide the changes").to_string()), argument_hint: None },
         SlashCommand { name: "status".to_string(), description: Some(tr!("Show this session's model, folder and connectors").to_string()), argument_hint: None },
+        SlashCommand { name: "stats".to_string(), description: Some(tr!("Show your use of Claude across all sessions").to_string()), argument_hint: None },
         SlashCommand { name: "usage".to_string(), description: Some(tr!("Show what this session used and the usage limit").to_string()), argument_hint: None },
     ]
 }
