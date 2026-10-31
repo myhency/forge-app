@@ -241,10 +241,11 @@ pub enum IconKind {
     Changes,
     Plus,
     Laptop,
+    FastForward,
 }
 
 impl IconKind {
-    pub const ALL: [IconKind; 39] = [
+    pub const ALL: [IconKind; 40] = [
         IconKind::Close,
         IconKind::Search,
         IconKind::Sparkle,
@@ -284,6 +285,7 @@ impl IconKind {
         IconKind::Changes,
         IconKind::Plus,
         IconKind::Laptop,
+        IconKind::FastForward,
     ];
 
     pub fn shapes(self) -> &'static [Shape] {
@@ -328,6 +330,7 @@ impl IconKind {
             IconKind::Changes => &[Shape::Path("M8 2.5v6M5 5.5h6M5 12.5h6")],
             IconKind::Plus => &[Shape::Path("M8 3v10M3 8h10")],
             IconKind::Laptop => &[Shape::Rect { x: 3.0, y: 3.5, width: 10.0, height: 7.0, rx: 1.0 }, Shape::Path("M1.5 13h13")],
+            IconKind::FastForward => &[Shape::Path("M2.5 3.5l5 4.5-5 4.5zM8.5 3.5l5 4.5-5 4.5z")],
         }
     }
 }

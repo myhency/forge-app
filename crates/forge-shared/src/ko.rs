@@ -792,6 +792,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Tuesday", "화요일"),
     ("Turn off", "끄기"),
     ("Turn on", "켜기"),
+    ("Turn on Auto mode", "자동 모드 켜기"),
     ("Turned on and off with its plugin", "플러그인과 함께 켜지고 꺼집니다"),
     ("Turns off animation of streaming replies and other interface elements.", "스트리밍 응답과 다른 인터페이스 요소의 애니메이션을 끕니다."),
     ("Type", "유형"),
