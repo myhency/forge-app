@@ -1133,3 +1133,15 @@ Facts: the card is part of the chat transcript (it stays above the next-step car
 Not checked: the two selects (`24h`, `전체`), `10개 더 보기`, `이 세션 압축하기` (it would compact the session), `새 세션`, what the dotted underline shows on hover.
 
 Backlog NEW-41.
+
+### Round 36, part 10: `/status` card in the chat
+
+`/status` answers with a card in the chat (no model turn). Groups, each a small grey heading with label and value rows (value right-aligned):
+
+- `세션`: `Claude Code` (CLI version), `데스크톱 앱` (app version · OS version and arch), `모델` (`Sonnet 5.5 · 보통`), `권한` (`자동`), `시작` (`나 · 26분 전`: who started it and how long ago), `세션 ID` (first 8 characters + `…` and a copy icon).
+- `환경`: `폴더` (full path), `MCP 서버` (`4개 연결됨 (figma, playwright, puppeteer, Google Drive) · 1개 실패 (m365)` with a link `관리` after the failure count), `샌드박스` (`꺼짐`).
+- `계정`: `로그인 계정` (email and plan), `조직`.
+
+So the model line says `보통` here while the box says `중간` for the same effort: the card and the picker word the level differently (picker `중간`, status `보통`). The card is the place where the CLI version and the account are visible. Forge's equivalents: no `/status`; the account and plan appear in the sidebar footer and Settings; the version is in the About/Developer pages. Not checked: the `관리` link target (probably Settings → 커넥터), the copy icon.
+
+Backlog NEW-42.
