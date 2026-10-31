@@ -105,6 +105,11 @@
 html, body, #main { height: 100%; margin: 0; }
 body { font-family: var(--font); font-size: var(--text-md); line-height: 1.5; word-break: keep-all; background: var(--bg); color: var(--fg); }
 
+/* Interaction: one hover, press and focus language for every control; a rule below may replace any of it. */
+button, [role="button"], input, textarea, select, .sidebar-item { transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out); }
+button:not(:disabled):active { transform: scale(0.98); }
+:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: var(--focus-ring-offset); }
+
 .panes { flex: 1; min-width: 0; position: relative; }
 .pane { position: absolute; min-width: 0; display: flex; }
 .pane.split.focused { box-shadow: inset 0 0 0 1px var(--accent-soft); }
@@ -212,7 +217,7 @@ body { font-family: var(--font); font-size: var(--text-md); line-height: 1.5; wo
 .turn-user { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-6); margin-top: var(--sp-18); }
 .usage-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-8); margin: 0 var(--sp-16) var(--sp-6); padding: var(--sp-6) var(--sp-12); border-radius: var(--r-10); background: var(--bg-hover); color: var(--fg-muted); font-size: var(--text-sm); }
 .message-actions .footer-time { color: var(--fg-muted); font-size: var(--text-sm); margin-right: var(--sp-4); align-self: center; }
-.message-actions { display: flex; gap: var(--sp-2); opacity: 0; transition: opacity 0.12s; margin-top: -2px; }
+.message-actions { display: flex; gap: var(--sp-2); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); margin-top: -2px; }
 .turn-user:hover .message-actions, .message-actions:focus-within { opacity: 1; }
 .user-bubble { max-width: 100%; box-sizing: border-box; padding: 9px var(--sp-14); background: var(--bg-hover); border-radius: var(--r-14); white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn-text { overflow-wrap: anywhere; }
@@ -307,7 +312,7 @@ body { font-family: var(--font); font-size: var(--text-md); line-height: 1.5; wo
 .textarea { width: 100%; box-sizing: border-box; min-height: 64px; padding: var(--sp-8); resize: vertical; font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
 .select { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-8); padding: var(--sp-4) var(--sp-8); max-width: 100%; }
 .text-input { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-8); padding: var(--sp-6) var(--sp-10); min-width: 280px; box-sizing: border-box; }
-.text-input:focus, .textarea:focus, .select:focus { outline: 2px solid var(--accent-soft); outline-offset: 0; }
+.text-input:focus-visible, .textarea:focus-visible, .select:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: 0; }
 
 .button { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-8); padding: var(--sp-5) var(--sp-14); cursor: pointer; }
 .button:hover:not(:disabled) { background: var(--bg-hover); }
@@ -508,9 +513,9 @@ body { font-family: var(--font); font-size: var(--text-md); line-height: 1.5; wo
 .markdown thead th { background: var(--bg-hover); border-top: none; font-weight: var(--weight-semibold); }
 .markdown hr { border: none; border-top: 1px solid var(--border); margin: var(--sp-16) 0; }
 .code-wrap { position: relative; width: fit-content; max-width: 100%; margin: 0 0 var(--sp-10); }
-.code-copy { appearance: none; position: absolute; top: 6px; right: 6px; border: none; background: var(--bg-card); color: var(--fg-muted); border-radius: var(--r-6); padding: var(--sp-2) var(--sp-6); cursor: pointer; opacity: 0; transition: opacity 0.12s; }
+.code-copy { appearance: none; position: absolute; top: 6px; right: 6px; border: none; background: var(--bg-card); color: var(--fg-muted); border-radius: var(--r-6); padding: var(--sp-2) var(--sp-6); cursor: pointer; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
 .code-wrap:hover .code-copy { opacity: 1; }
-.code-run { display: none; appearance: none; position: absolute; top: 6px; right: 34px; border: none; background: var(--bg-card); color: var(--fg-muted); border-radius: var(--r-6); padding: var(--sp-2) var(--sp-6); cursor: pointer; opacity: 0; transition: opacity 0.12s; }
+.code-run { display: none; appearance: none; position: absolute; top: 6px; right: 34px; border: none; background: var(--bg-card); color: var(--fg-muted); border-radius: var(--r-6); padding: var(--sp-2) var(--sp-6); cursor: pointer; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
 html[data-code-run="on"] .messages .code-run { display: inline-block; }
 .code-wrap:hover .code-run { opacity: 1; }
 /* Room for the two buttons, so a short line of a narrow block does not run under them. */
@@ -716,7 +721,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .cd-row:hover { background: var(--bg-hover); }
 .cd-row { -webkit-user-select: none; user-select: none; }
 .cd-row .cd-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cd-chevron { flex: none; width: 1.2em; text-align: center; color: var(--fg-muted); user-select: none; transition: transform 0.12s; }
+.cd-chevron { flex: none; width: 1.2em; text-align: center; color: var(--fg-muted); user-select: none; transition: transform var(--dur-fast) var(--ease-out); }
 .cd-chevron.open { transform: rotate(90deg); }
 .cd-add { color: var(--hl-string); }
 .cd-del { color: var(--danger); }
@@ -1232,7 +1237,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .customize-plus:hover { background: var(--bg-hover); }
 .customize-check { flex: none; width: 28px; text-align: center; color: var(--fg-muted); }
 .switch { flex: none; position: relative; width: 36px; height: 20px; padding: 0; border: none; border-radius: var(--r-pill); background: var(--border); cursor: pointer; }
-.switch .knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: var(--r-round); background: var(--bg-card); box-shadow: var(--shadow); transition: left 0.12s; }
+.switch .knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: var(--r-round); background: var(--bg-card); box-shadow: var(--shadow); transition: left var(--dur-fast) var(--ease-out); }
 .switch.on { background: var(--fg); }
 .switch.on .knob { left: 18px; }
 .switch:disabled { cursor: not-allowed; opacity: 0.55; }
@@ -1454,4 +1459,16 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
   box-shadow: var(--shadow-3);
   -webkit-backdrop-filter: blur(var(--blur-popover));
   backdrop-filter: blur(var(--blur-popover));
+}
+
+/* A menu, popover or dialog appears with one short rise; so do the live prompts above the composer. History and re-rendered cards do not move. */
+@keyframes pop-in { from { opacity: 0; transform: translateY(var(--sp-4)) scale(0.98); } }
+.row-menu, .usage-popover, .command-menu, .mention-menu, .picker-menu, .filter-submenu, .palette, .cd-search, .perm-menu, .customize-menu, .cm-ctx-menu, .cm-pick-bar, .plan-comment-box, .settings-panel, .shortcuts-panel, .customize-dialog, .env-dialog, .env-ask, .mcp-dialog, .permission-panel, .question-panel { animation: pop-in var(--dur-base) var(--ease-out); }
+
+/* A field without its own outline shows focus on the box around it. */
+.composer:focus-within, .palette:focus-within, .cd-search:focus-within, .cm-comment-box:focus-within, .cd-comment:focus-within { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: calc(var(--focus-ring-offset) * -1); }
+.rename-input:focus-visible, .cd-menu-search:focus-visible, .plan-card-text:focus-visible, .cm-find-bar input:focus-visible, .cm-goto-bar input:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: calc(var(--focus-ring-offset) * -1); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0s !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; scroll-behavior: auto !important; }
 }

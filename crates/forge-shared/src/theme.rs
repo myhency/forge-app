@@ -258,6 +258,52 @@ mod tests {
     }
 
     #[test]
+    fn people_who_asked_for_less_motion_get_none_of_it_from_the_system_or_the_setting() {
+        let off = ["animation-duration: 0s !important", "transition-duration: 0s !important"];
+        let setting = rule_lines().find(|(_, line)| line.starts_with(":root[data-motion=\"reduced\"] *")).expect("the motion setting rule").1;
+        assert!(off.iter().all(|declaration| setting.contains(declaration)));
+        let at = THEME_CSS.rfind("@media (prefers-reduced-motion: reduce) {\n  *, *::before, *::after {").expect("a system-wide rule for the system setting");
+        let system = &THEME_CSS[at..at + THEME_CSS[at..].find("\n}").unwrap()];
+        assert!(off.iter().all(|declaration| system.contains(declaration)), "{system}");
+    }
+
+    #[test]
+    fn transitions_take_their_time_and_curve_from_the_motion_tokens() {
+        let mut found = Vec::new();
+        for (number, line) in rule_lines() {
+            for declaration in line.split(|c| c == '{' || c == ';').filter(|declaration| declaration.trim_start().starts_with("transition:")) {
+                let literal = declaration.split(|c: char| !(c.is_ascii_digit() || c == '.' || c == 's')).any(|word| word.len() > 1 && word.ends_with('s') && word[..word.len() - 1].parse::<f64>().is_ok());
+                if literal {
+                    found.push(format!("line {}: {}", number + 1, declaration.trim()));
+                }
+            }
+        }
+        assert!(found.is_empty(), "a transition time belongs in --dur-*:\n{}", found.join("\n"));
+    }
+
+    #[test]
+    fn keyboard_focus_shows_everywhere_a_rule_does_not_hide_it_on_purpose() {
+        assert!(THEME_CSS.contains("\n:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring-color);"), "one focus ring for every focusable element");
+        // Containers that take focus from code, not from the keyboard.
+        const CONTAINERS: [&str; 7] = [".workspace", ".row-menu", ".picker-menu", ".trust-card", ".permission-panel", ".question-panel", ".lightbox-backdrop"];
+        let mut hidden = Vec::new();
+        for (_, line) in rule_lines().filter(|(_, line)| line.contains("outline: none")) {
+            let selector = line.split('{').next().unwrap().trim();
+            if CONTAINERS.contains(&selector) {
+                continue;
+            }
+            // The rule itself, its first class (`.composer .textarea` sits in `.composer`) or the box it is the input of (`.palette-input` in `.palette`).
+            let first = selector.split(' ').next().unwrap();
+            let names = [selector, first, first.trim_end_matches("-input")];
+            let shown = THEME_CSS.lines().any(|css| css.contains('{') && names.iter().any(|name| css.contains(&format!("{name}:focus-within")) || css.contains(&format!("{name}:focus-visible"))));
+            if !shown {
+                hidden.push(selector.to_string());
+            }
+        }
+        assert!(hidden.is_empty(), "these hide the outline and show no focus another way: {hidden:?}");
+    }
+
+    #[test]
     fn the_stylesheet_has_a_rule_for_every_attribute_value() {
         for rule in [
             "[data-text-size=\"small\"]",
