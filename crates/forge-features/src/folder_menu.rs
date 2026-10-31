@@ -25,7 +25,17 @@ pub fn folder_menu_rows(projects: &[ProjectSummary], current: Option<&Path>) -> 
 
 /// The rows of the card above the new-session box: the same choice as the menu, the first `RECENT_CARD_ROWS`.
 pub fn recent_folder_card_rows(projects: &[ProjectSummary], current: Option<&Path>) -> Vec<FolderMenuRow> {
-    limited_rows(projects, current, RECENT_CARD_ROWS)
+    let mut rows = limited_rows(projects, current, RECENT_CARD_ROWS);
+    // Two folders of one name (`a/app`, `b/app`) would read the same; the sidebar tells them apart by the parent.
+    let labels: Vec<String> = rows.iter().map(|row| row.label.clone()).collect();
+    for row in &mut rows {
+        if labels.iter().filter(|label| **label == row.label).count() > 1 {
+            if let Some(parent) = row.path.parent().and_then(Path::file_name) {
+                row.label = format!("{} ({})", row.label, parent.to_string_lossy());
+            }
+        }
+    }
+    rows
 }
 
 fn limited_rows(projects: &[ProjectSummary], current: Option<&Path>, limit: usize) -> Vec<FolderMenuRow> {
@@ -91,6 +101,14 @@ mod tests {
         assert_eq!(rows.len(), RECENT_CARD_ROWS);
         let last = rows.last().unwrap();
         assert!(last.checked && last.path == Path::new("/work/p4"));
+    }
+
+    #[test]
+    fn the_card_names_the_parent_when_two_folders_share_a_name() {
+        let projects = vec![project("/work/a/app"), project("/work/b/app"), project("/work/forge")];
+        let rows = recent_folder_card_rows(&projects, None);
+        let labels: Vec<_> = rows.iter().map(|r| r.label.as_str()).collect();
+        assert_eq!(labels, vec!["app (a)", "app (b)", "forge"]);
     }
 
     #[test]

@@ -4,6 +4,7 @@ use forge_features::{use_workspace, user_name, NewSessionComposer};
 use crate::environment_chip::EnvironmentChip;
 use crate::new_session_controls::{AddFolderButton, BranchChip, FolderChip, NewEffortPicker, NewModePicker, NewModelPicker};
 use crate::plus_menu::PlusMenu;
+use crate::recent_folders_card::RecentFoldersCard;
 use crate::usage_card::UsageCard;
 use forge_shared::tr;
 
@@ -18,6 +19,7 @@ pub fn NewSessionPanel() -> Element {
                 UsageCard {}
             }
             NewSessionComposer {
+                above: rsx! { RecentFoldersCard {} },
                 leading: rsx! { PlusMenu { project: workspace.chosen_new_folder(), add_folder_enabled: true } },
                 start: rsx! {
                     EnvironmentChip {}
