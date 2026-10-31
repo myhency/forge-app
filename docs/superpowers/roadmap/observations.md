@@ -1186,3 +1186,11 @@ Settings window: a modal over the app (about 83% of the window wide), title `설
 String search of Forge's `ko.rs` (English keys) found none of: `Transcript width`, `Transcript text size`, `Response font`, `Interface font`, `Motion`, `Menu bar`, `Quick access`, `Dispatch`, `Default browser`, `Tool access mode`, `Connector search`, `Memory`, `Design system`; only `Trusted folders` exists. Many of these are the account/Claude.ai side and have no Forge meaning (billing, memory, design systems, Dispatch, Chrome).
 
 Backlog NEW-46 (display settings that may apply to Forge: transcript text size, transcript width, fonts, motion), NEW-47 (memory page).
+
+### Round 36, part 15: Settings search, privacy page, close
+
+- **Settings search**: typing `단축키` in the left search field opens a result list under the field, grouped by page: a page row with its icon (`시스템`, highlighted) and indented setting rows under it (`음성 단축키`, `음성 입력 단축키`) with the matched letters in blue. The page behind did not change while typing. Pressing a setting row opened the page (`시스템`) and showed it from the top (no scroll to the row and no highlight that I could see; the left list stayed on `일반` — the left highlight did not follow). The search field cleared. `Esc` closed the whole Settings window (the focus then sat on the account row at the bottom left with a blue ring).
+- **개인정보보호** page: a paragraph with links, two rows with `›` (`데이터를 보호하는 방법`, `데이터 사용 방법`), `환경설정`: `위치 메타데이터` (switch on) and `Help improve our AI models` (English, switch off); `내 데이터`: rows with a button each: `데이터 내보내기`, `공유된 채팅`, `공유된 아티팩트`, `업로드한 파일`, `내 피드백`. Account-side, not for Forge.
+- **Page-level facts**: the Settings left list highlight after a search jump is not updated (it kept `일반` while the content was `시스템`).
+
+Backlog NEW-48 (Settings search grouped by page).
