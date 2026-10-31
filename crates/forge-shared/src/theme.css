@@ -7,7 +7,7 @@
   --leading-tight: 1.25; --leading-normal: 1.5;
   --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600; --weight-bold: 700;
   --r-2: 2px; --r-3: 3px; --r-4: 4px; --r-5: 5px; --r-6: 6px; --r-8: 8px; --r-10: 10px; --r-12: 12px; --r-14: 14px;
-  --r-pill: 999px; --r-round: 50%;
+  --r-pill: 999px; --r-round: 50%; --r-composer: 26px;
   --dur-fast: 0.12s; --dur-base: 0.18s; --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --focus-ring-width: 2px; --focus-ring-offset: 2px; --focus-ring-color: var(--accent);
   --field-focus-border: var(--accent); --field-focus-halo: 3px;
@@ -135,7 +135,10 @@ button:not(:disabled):active { scale: 0.98; }
 .sidebar { position: relative; z-index: 6; width: 264px; flex: none; display: flex; flex-direction: column; background: var(--bg-sidebar); border-right: 1px solid var(--border); padding: var(--sp-12) var(--sp-8) 0; box-sizing: border-box; }
 .sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 .sidebar-new { margin: 0 var(--sp-4) var(--sp-12); }
-.sidebar-new .button { width: 100%; }
+.sidebar-new { display: flex; align-items: center; gap: var(--sp-4); }
+/* A plain row like Customize and Routines: the Claude desktop app has no filled button here. */
+.sidebar-new .button, .sidebar-new .button.primary { flex: 1; min-width: 0; padding: var(--sp-6) var(--sp-8); border: none; background: transparent; color: var(--fg); text-align: left; }
+.sidebar-new .button:hover:not(:disabled), .sidebar-new .button.primary:hover:not(:disabled) { background: var(--bg-hover); filter: none; }
 .sidebar-group-header { display: flex; align-items: center; padding: var(--sp-12) var(--sp-8) var(--sp-4); }
 .sidebar-group-title { flex: 1; min-width: 0; font-size: var(--text-sm); color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-group-title.missing { text-decoration: line-through; }
@@ -144,7 +147,7 @@ button:not(:disabled):active { scale: 0.98; }
 .group-add:hover { background: var(--bg-hover); color: var(--fg); }
 .sidebar-item { display: flex; align-items: center; gap: var(--sp-10); padding: var(--sp-6) var(--sp-8); border-radius: var(--r-8); cursor: pointer; }
 .sidebar-item:hover { background: var(--bg-hover); }
-.sidebar-item.active { background: var(--bg-hover); font-weight: var(--weight-semibold); }
+.sidebar-item.active { background: var(--bg-hover); }
 .sidebar-item .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-item .subtitle { flex: none; font-size: var(--text-xs); color: var(--fg-muted); }
 .fork-fold { flex: none; width: 22px; height: 22px; border: none; border-radius: var(--r-6); background: transparent; color: var(--fg-muted); font: inherit; line-height: 1; cursor: pointer; }
@@ -278,10 +281,23 @@ button:not(:disabled):active { scale: 0.98; }
 .archived-bar-button:hover { background: var(--bg-hover); }
 
 /* Composer: one rounded box */
-.composer { position: relative; display: flex; flex-direction: column; gap: var(--sp-8); width: calc(100% - 56px); max-width: var(--chat-column); margin: 0 auto var(--sp-20); padding: var(--sp-10) var(--sp-12); box-sizing: border-box; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
-.composer .textarea { border: none; background: transparent; padding: var(--sp-2); min-height: 48px; outline: none; }
-.composer-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4) var(--sp-8); }
-.composer-row .spacer { flex: 1; }
+/* Composer: one rounded box (+, text, send) with a quiet line of pickers under it. The new session and an open session share it. */
+.composer-wrap { position: relative; width: calc(100% - 56px); max-width: var(--chat-column); margin: 0 auto var(--sp-14); box-sizing: border-box; }
+.composer { position: relative; display: flex; flex-direction: column; gap: var(--sp-6); padding: var(--sp-8) var(--sp-8) var(--sp-8) var(--sp-8); box-sizing: border-box; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-composer); }
+.composer-input-row { display: flex; align-items: flex-end; gap: var(--sp-4); }
+.composer-lead, .composer-action { flex: none; display: flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; }
+.composer-lead .picker-button { width: 32px; height: 32px; padding: 0; justify-content: center; border-radius: var(--r-round); }
+.composer-field { flex: 1; min-width: 0; display: flex; align-items: center; min-height: 32px; }
+.composer-field .command-box { flex: 1; min-width: 0; position: static; }
+.composer .textarea { display: block; border: none; background: transparent; padding: var(--sp-6) var(--sp-4); min-height: 32px; max-height: 200px; line-height: 20px; resize: none; outline: none; box-sizing: border-box; }
+.composer-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-8); margin: var(--sp-4) var(--sp-12) 0; min-height: 28px; }
+.composer-controls-start, .composer-controls-end { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+.composer-controls-end { margin-left: auto; justify-content: flex-end; }
+.composer-controls .picker-chevron { display: none; }
+.composer-controls .picker-button .icon { margin-right: var(--sp-2); }
+/* Menus open above the box, not over it: they hang from the whole wrap, not from their button in the line below. */
+.composer-controls .picker, .composer-controls .usage { position: static; }
+.composer-controls-end .picker-menu, .composer-controls-end .usage-popover { left: auto; right: 0; }
 .usage { position: relative; flex: none; }
 .usage-ring { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: var(--r-round); background: transparent; cursor: pointer; }
 .usage-ring:hover { background: var(--bg-hover); }
@@ -327,7 +343,7 @@ button:not(:disabled):active { scale: 0.98; }
 .button.danger { color: var(--danger); border-color: var(--danger); }
 
 /* New-session panel */
-.new-session { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: var(--sp-14); padding: var(--sp-24) 40px; max-width: 850px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+.new-session { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: var(--sp-14); padding: var(--sp-24) 0 0; max-width: none; margin: 0 auto; width: 100%; box-sizing: border-box; }
 .new-session .field { display: flex; align-items: center; gap: var(--sp-12); }
 .new-session .field label { width: 64px; color: var(--fg-muted); }
 .field-value { font-weight: var(--weight-semibold); }
@@ -421,7 +437,7 @@ button:not(:disabled):active { scale: 0.98; }
   --heat-3: oklch(0.560 0.151 268.1);
   --heat-4: oklch(0.700 0.128 268.5);
 }
-.home-top { flex: none; width: 100%; max-width: 850px; margin: 0 auto; padding: 32px 40px 0; box-sizing: border-box; }
+.home-top { flex: none; width: 100%; max-width: calc(var(--chat-column) + 56px); margin: 0 auto; padding: 32px var(--sp-28) 0; box-sizing: border-box; }
 .greeting { margin: 0 0 var(--sp-20); font-size: var(--text-4xl); font-weight: var(--weight-semibold); }
 .usage-card { width: 100%; max-width: 480px; box-sizing: border-box; padding: var(--sp-14); border-radius: var(--radius-lg); background: var(--bg-sidebar); }
 .usage-note { padding: var(--sp-24) var(--sp-8); color: var(--fg-muted); font-size: var(--text-base); }
@@ -658,7 +674,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-remove { border: none; background: transparent; color: var(--fg-muted); cursor: pointer; font: inherit; line-height: 1; }
 .chip-remove:hover { color: var(--fg); }
-.env-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-6); }
 
 /* The dock: columns right of the chat. */
 .dock-column { position: relative; flex: 0 1 auto; display: flex; flex-direction: column; min-width: 260px; max-width: 70vw; padding: var(--sp-8); box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
@@ -707,7 +722,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .chat-narrow .perm-buttons .perm-button { justify-content: center; }
 .chat-narrow .perm-primary { display: flex; }
 .chat-narrow .perm-primary .perm-button:first-child { flex: 1; }
-.chat-narrow .composer, .chat-narrow .permission-panel, .chat-narrow .question-panel, .chat-narrow .banner { width: calc(100% - 32px); }
+.chat-narrow .composer-wrap, .chat-narrow .permission-panel, .chat-narrow .question-panel, .chat-narrow .banner { width: calc(100% - 32px); }
 .icon-button.active { background: var(--bg-hover); color: var(--accent); }
 /* The `⋮` menu in the header opens downwards, below its button. */
 .picker-menu.down { top: 100%; bottom: auto; left: auto; right: 0; margin-top: var(--sp-6); }
@@ -810,22 +825,17 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .preview-failed-url { word-break: break-all; font-size: var(--text-sm); }
 .dock-note .error { color: var(--danger); }
 
-/* New-session composer: chips above the box, the send icon inside it. */
+/* New-session screen: the box sits at the bottom of the pane. */
 .new-session { justify-content: flex-start; }
 /* The pane scrolls, not `.new-session`: an overflow box would cut off the folder and branch menus that open upward from the chips. */
 .new-session-pane { min-height: 0; overflow-y: auto; }
 /* With room the content sits at the bottom; in a pane too short for it the top stays reachable and the panel scrolls. */
 .new-session > :first-child { margin-top: auto; }
-.env-chips .chip { padding: var(--sp-4) var(--sp-10); font-size: var(--text-base); }
-.env-chips .picker-button { padding: var(--sp-4) var(--sp-10); border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--bg-hover); color: var(--fg); font-size: var(--text-base); }
-.chip-button { appearance: none; padding: var(--sp-4) var(--sp-8); border: 1px solid var(--border); border-radius: var(--r-8); background: transparent; color: var(--fg-muted); font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.chip-button { appearance: none; padding: var(--sp-4) var(--sp-8); border: none; border-radius: var(--r-8); background: transparent; color: var(--fg-muted); font: inherit; font-size: var(--text-sm); cursor: pointer; }
 .chip-button:hover { background: var(--bg-hover); color: var(--fg); }
-.composer-box { position: relative; }
-.composer-box textarea { padding-right: 44px; }
-.send-icon { position: absolute; right: 10px; bottom: 10px; width: 28px; height: 28px; border: none; border-radius: var(--r-round); background: transparent; color: var(--fg-muted); font-size: var(--text-lg); cursor: default; }
-.send-icon.ready { color: var(--fg); cursor: pointer; }
+.send-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: none; border-radius: var(--r-round); background: transparent; color: var(--fg-muted); opacity: 0.5; cursor: default; }
+.send-icon.ready { color: var(--fg); opacity: 1; cursor: pointer; }
 .send-icon.ready:hover { background: var(--bg-hover); }
-.picker-end .picker-menu { left: auto; right: 0; }
 .picker-heading { padding: var(--sp-6) var(--sp-8) var(--sp-4); font-size: var(--text-xs); color: var(--fg-muted); }
 
 .live-line { display: flex; align-items: center; gap: var(--sp-8); color: var(--fg-muted); min-height: 24px; }

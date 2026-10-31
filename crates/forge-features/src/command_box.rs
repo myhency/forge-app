@@ -10,6 +10,9 @@ use crate::mention_popup::{key_decision, KeyDecision};
 const READ_CURSOR: &str = "const a = document.activeElement; \
     return (a && a.tagName === 'TEXTAREA') ? [a.value, a.selectionStart === a.selectionEnd ? a.selectionStart : null] : null;";
 
+// Fits the box to its text, one line up to the height the stylesheet allows.
+const GROW_TEXTAREA: &str = "document.querySelectorAll('.composer .textarea').forEach((t) => { t.style.height = '0'; t.style.height = t.scrollHeight + 'px'; });";
+
 // Scrolls the highlighted command into view.
 const SCROLL_SELECTED: &str = "const row = document.querySelector('.command-item.selected'); if (row) row.scrollIntoView({ block: 'nearest' });";
 
@@ -93,6 +96,14 @@ pub fn CommandTextArea(
     // The stored selection can be out of range after the list shrinks; the row shown and the row
     // picked are always this one.
     let current = move_selection(selected(), count, 0);
+
+    // The box grows with the text, and shrinks again when the text is sent or cleared.
+    use_effect(use_reactive!(|value| {
+        let _ = &value;
+        spawn(async move {
+            let _ = document::eval(GROW_TEXTAREA).await;
+        });
+    }));
 
     // Keeps the selected row in view when the list scrolls.
     use_effect(use_reactive!(|current, count| {

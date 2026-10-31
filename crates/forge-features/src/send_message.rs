@@ -2,14 +2,16 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{split_cards, SlashCommand};
 use forge_entities::{arrange_commands, btw_question, is_rewind};
-use forge_shared::{tr, Button, ButtonKind};
+use forge_shared::tr;
 
 use crate::cards::line_count;
 use crate::composer_cards::ComposerCards;
+use crate::composer_shell::{composer_action, ComposerShell};
 use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCard};
 use crate::suggestion::{composer_placeholder, end_card_reply, suggestion_to_accept};
 
 use crate::command_box::CommandTextArea;
+use crate::new_session::send_ready;
 use crate::queued_card::QueuedCard;
 use crate::rewind_dialog::RewindDialog;
 use crate::workspace::use_workspace;
@@ -29,7 +31,7 @@ fn local_commands() -> Vec<SlashCommand> {
 /// The message box of an open session: Enter sends, Shift+Enter adds a line, and while a turn is
 /// running a Stop button interrupts it.
 #[component]
-pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children: Element) -> Element {
+pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay: Element, leading: Element, end: Element) -> Element {
     let workspace = use_workspace();
     let draft = use_signal(String::new);
     let composer = use_composer_state_provider(draft);
@@ -125,9 +127,9 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
         }
     };
 
+    let ready = send_ready(&draft.read(), composer.attachments().len());
     rsx! {
-        div {
-            class: "composer",
+        ComposerShell {
             // ⌘U adds a file or photo. The physical key: the character depends on the input method.
             onkeydown: move |event: KeyboardEvent| {
                 let draft_empty = draft.peek().is_empty();
@@ -141,62 +143,52 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, children
                     composer.add_files();
                 }
             },
-            if let Some(message) = composer.error() {
-                div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
-            }
-            ComposerCards { id }
-            RewindDialog { id, open: rewinding }
-            QueuedCard { id, draft }
-            ComposerChips {}
-            TrustCard {}
-            CommandTextArea {
-                value: draft(),
-                commands: arrange_commands(&view.map(|view| view.read().commands.clone()).unwrap_or_default(), local_commands()),
-                placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, if running { tr!("⏎ to send, ⌘⏎ to queue and send later") } else { tr!("Message Claude…") }),
-                disabled: !can_send,
-                open_token: composer.popup_token(),
-                oninput: move |text| draft.set(text),
-                onsubmit: move |_| submit(),
-                onqueue: {
-                    let end_card = end_card.clone();
-                    move |_| {
-                        // ⌘⏎ on an empty box with a live card presses the card's first button.
-                        if let Some(message) = end_card_reply(end_card.as_ref(), draft.peek().is_empty(), running) {
-                            if !workspace.session_is_moving(id) {
-                                if let Some(handle) = workspace.handle(id) {
-                                    if let Some(card) = end_card.as_ref() {
-                                        workspace.mark_end_card(id, card.id.clone(), forge_entities::CardMark::Sent);
-                                    }
-                                    handle.send_with(message, Vec::new());
-                                }
-                            }
-                            return;
-                        }
-                        queue()
-                    }
-                },
-            }
-            div { class: "composer-row",
-                {children}
-                span { class: "spacer" }
-                if running {
-                    button {
-                        class: "stop-button",
-                        r#type: "button",
-                        title: tr!("Stop"),
-                        "aria-label": "Stop",
-                        onclick: stop,
-                        span { class: "stop-dot" }
-                    }
-                } else {
-                    Button {
-                        label: tr!("Send"),
-                        kind: ButtonKind::Primary,
-                        disabled: !can_send,
-                        onclick: move |_| submit(),
-                    }
+            top: rsx! {
+                if let Some(message) = composer.error() {
+                    div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
                 }
-            }
+                ComposerCards { id }
+                RewindDialog { id, open: rewinding }
+                QueuedCard { id, draft }
+                ComposerChips {}
+                TrustCard {}
+            },
+            overlay,
+            leading,
+            input: rsx! {
+                CommandTextArea {
+                    value: draft(),
+                    commands: arrange_commands(&view.map(|view| view.read().commands.clone()).unwrap_or_default(), local_commands()),
+                    placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, if running { tr!("⏎ to send, ⌘⏎ to queue and send later") } else { tr!("Message Claude…") }),
+                    disabled: !can_send,
+                    open_token: composer.popup_token(),
+                    oninput: move |text| draft.set(text),
+                    onsubmit: move |_| submit(),
+                    onqueue: {
+                        let end_card = end_card.clone();
+                        move |_| {
+                            // ⌘⏎ on an empty box with a live card presses the card's first button.
+                            if let Some(message) = end_card_reply(end_card.as_ref(), draft.peek().is_empty(), running) {
+                                if !workspace.session_is_moving(id) {
+                                    if let Some(handle) = workspace.handle(id) {
+                                        if let Some(card) = end_card.as_ref() {
+                                            workspace.mark_end_card(id, card.id.clone(), forge_entities::CardMark::Sent);
+                                        }
+                                        handle.send_with(message, Vec::new());
+                                    }
+                                }
+                                return;
+                            }
+                            queue()
+                        }
+                    },
+                }
+            },
+            action: composer_action(running, ready, !can_send),
+            onsend: move |_| submit(),
+            onstop: stop,
+            start: rsx! {},
+            end,
         }
     }
 }

@@ -169,13 +169,18 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     }
                 }
             } else if view.can_send {
-                SendMessageBox { id, running: view.phase == Phase::Running, can_send: !workspace.session_is_moving(id),
-                    MentionList {}
-                    PlusMenu { project: Some(view.project_path.clone()), add_folder_enabled: true }
-                    ModePicker { id }
-                    ModelPicker { id }
-                    EffortPicker { id }
-                    UsageRing { id }
+                SendMessageBox {
+                    id,
+                    running: view.phase == Phase::Running,
+                    can_send: !workspace.session_is_moving(id),
+                    overlay: rsx! { MentionList {} },
+                    leading: rsx! { PlusMenu { project: Some(view.project_path.clone()), add_folder_enabled: true } },
+                    end: rsx! {
+                        ModelPicker { id }
+                        EffortPicker { id }
+                        ModePicker { id }
+                        UsageRing { id }
+                    },
                 }
             } else {
                 div { class: "banner info",

@@ -5,10 +5,11 @@ use forge_domain::{EffortLevel, PermissionMode, ProjectSummary};
 
 use crate::command_box::CommandTextArea;
 use crate::environment::{folder_missing, start_plan, StartError};
+use crate::composer_shell::{composer_action, ComposerShell};
 use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCard};
 use crate::workspace::use_workspace;
 use crate::worktree_view::{NewWorktree, RepoInfo};
-use forge_shared::{tr, Icon, IconKind};
+use forge_shared::tr;
 
 /// What was chosen for the new session before it exists: `None` follows the saved default model,
 /// `Some(None)` is the SDK's default, `Some(Some(id))` is that model.
@@ -47,10 +48,11 @@ pub fn worktree_request(on: bool, branch: Option<String>, repo: Option<RepoInfo>
     (on && repo.is_some_and(|info| info.folder == folder)).then_some(NewWorktree { base: branch })
 }
 
-/// The new-session panel: the folder and other chips (`chips`), the first message, and a row of controls
-/// (`children`). The session is only created when that message is sent.
+/// The new-session panel: the first message in the same box an open session uses. `leading` is the `+`, `start` the
+/// environment and folder pickers at the left of the line under the box, `end` the pickers at its right. The session is
+/// only created when that message is sent.
 #[component]
-pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
+pub fn NewSessionComposer(leading: Element, start: Element, end: Element) -> Element {
     let workspace = use_workspace();
     let draft = use_context_provider(|| NewSessionDraft { mode: Signal::new(PermissionMode::Default), model: Signal::new(None), effort: Signal::new(None), worktree: Signal::new(true), branch: Signal::new(None), environment: Signal::new(None) });
     let text = use_signal(String::new);
@@ -175,32 +177,33 @@ pub fn NewSessionComposer(chips: Element, children: Element) -> Element {
             if !has_folder {
                 div { class: "banner info", {tr!("No existing project folder was found in your Claude Code history. Use “Open folder…” to choose one.")} }
             }
-            div { class: "env-chips", {chips} }
-            if let Some(message) = composer.error() {
-                div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
+            ComposerShell {
+                top: rsx! {
+                    if let Some(message) = composer.error() {
+                        div { class: "banner error", onclick: move |_| composer.dismiss_error(), "{message}" }
+                    }
+                    ComposerChips {}
+                    TrustCard {}
+                },
+                overlay: rsx! {},
+                leading,
+                input: rsx! {
+                    CommandTextArea {
+                        value: text(),
+                        open_token: composer.popup_token(),
+                        commands: workspace.new_commands(),
+                        placeholder: tr!("Describe a task or ask a question"),
+                        disabled: !has_folder,
+                        oninput: move |value| text.set(value),
+                        onsubmit: move |_| submit(),
+                    }
+                },
+                action: composer_action(false, ready, !has_folder || !ready),
+                onsend: move |_| submit(),
+                onstop: move |_| {},
+                start,
+                end,
             }
-            ComposerChips {}
-            TrustCard {}
-            div { class: "composer-box",
-                CommandTextArea {
-                    value: text(),
-                    open_token: composer.popup_token(),
-                    commands: workspace.new_commands(),
-                    placeholder: tr!("Describe a task or ask a question"),
-                    disabled: !has_folder,
-                    oninput: move |value| text.set(value),
-                    onsubmit: move |_| submit(),
-                }
-                button {
-                    class: if ready { "send-icon ready" } else { "send-icon" },
-                    r#type: "button",
-                    title: tr!("Send"),
-                    disabled: !has_folder || !ready,
-                    onclick: move |_| submit(),
-                    Icon { kind: IconKind::Send }
-                }
-            }
-            div { class: "composer-row", {children} }
         }
     }
 }

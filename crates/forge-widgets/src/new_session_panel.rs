@@ -18,17 +18,18 @@ pub fn NewSessionPanel() -> Element {
                 UsageCard {}
             }
             NewSessionComposer {
-                chips: rsx! {
+                leading: rsx! { PlusMenu { project: workspace.chosen_new_folder(), add_folder_enabled: true } },
+                start: rsx! {
                     EnvironmentChip {}
                     FolderChip {}
                     BranchChip {}
                     AddFolderButton {}
                 },
-                PlusMenu { project: workspace.chosen_new_folder(), add_folder_enabled: true }
-                NewModePicker {}
-                span { class: "spacer" }
-                NewModelPicker {}
-                NewEffortPicker {}
+                end: rsx! {
+                    NewModelPicker {}
+                    NewEffortPicker {}
+                    NewModePicker {}
+                },
             }
         }
     }

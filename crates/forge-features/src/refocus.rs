@@ -32,7 +32,7 @@ pub fn refocus_composer() {
 }
 
 // The message box of an open session, and the one on the new-session screen.
-const COMPOSER_TEXTAREA: &str = ".pane.focused .composer textarea, .pane.focused .new-session .composer-box textarea";
+const COMPOSER_TEXTAREA: &str = ".pane.focused .composer textarea";
 
 #[cfg(test)]
 mod tests {
@@ -45,14 +45,12 @@ mod tests {
     }
 
     #[test]
-    fn the_composer_selector_reaches_the_box_of_a_session_and_the_box_of_the_new_session_screen() {
+    fn the_composer_selector_reaches_the_one_box_both_the_session_and_the_new_session_screen_use() {
         assert!(COMPOSER_TEXTAREA.contains(".composer textarea"));
-        assert!(COMPOSER_TEXTAREA.contains(".new-session .composer-box textarea"));
     }
 
     #[test]
     fn the_composer_selector_is_limited_to_the_focused_pane() {
         assert!(COMPOSER_TEXTAREA.starts_with(".pane.focused .composer textarea"));
-        assert!(COMPOSER_TEXTAREA.contains(".pane.focused .new-session .composer-box textarea"));
     }
 }

@@ -27,6 +27,7 @@ mod editor_tabs;
 mod effort;
 mod environment;
 mod composer_cards;
+mod composer_shell;
 mod composer_state;
 mod file_lists;
 mod mention_popup;
@@ -102,6 +103,7 @@ pub use dock::{Column, DockState, DockStates, Panel, DEFAULT_COLUMN_WIDTH, MAX_C
 pub use environment::{card_folders, folder_menu, FolderMenu, environment_menu, numbered_ids, picker_choices, start_plan, variables_error_text, EnvRow, EnvironmentDraft, EnvironmentKey, EnvironmentMenu, EnvironmentRequest, EnvironmentStart, StartError};
 pub use effort::{effort_button_label, effort_levels, slider_position, effort_help, slider_faster, slider_smarter};
 pub use composer_cards::ComposerCards;
+pub use composer_shell::{composer_action, ComposerAction, ComposerShell};
 pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, MentionView, Outgoing};
 pub use filter_menu::{
     current_index, filter_key, group_label, sort_label, status_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
