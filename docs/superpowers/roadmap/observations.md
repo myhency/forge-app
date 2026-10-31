@@ -1153,3 +1153,7 @@ Backlog NEW-42.
 - With a slash card as the last item the reply footer shows a pin icon and `지금`, i.e. the card counts as a message.
 
 Backlog NEW-43; NEW-23 gets "seen again, shows after an idle moment" (below).
+
+### Round 36, part 12: `/diff` is a panel toggle
+
+`/diff` (Return twice) adds no card and no bubble to the chat: it shows or hides the `변경 사항` panel. First run: the panel was open and closed (the Files panel took its place and filled the whole right column, tree at the right); second run: the panel opened again at the top of the column. In a folder that is not a git repo the panel only says `변경 사항을 보려면 Git 저장소가 필요합니다`. So of the slash commands tried, `/tasks`, `/diff` open or toggle panels; `/usage`, `/status`, `/stats` add cards to the chat; `/btw` opens the side chat; none of the six sent a message to the model. Backlog NEW-38 (slash list) should record these three kinds of result.
