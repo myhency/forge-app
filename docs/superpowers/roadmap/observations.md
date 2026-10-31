@@ -1082,3 +1082,12 @@ Backlog NEW-34 (dev-server detection) and NEW-35 (card buttons written by the mo
 - **Step 5 (`5단계 진행`)**: the button sent its label as a user bubble; a `↓` round button appeared above the box while the new turn was off screen (scroll to bottom). The model made the changes (app name, shortcuts ⌘/Ctrl+N and ⌘/Ctrl+1~3, new icon set), ran typecheck, build and `cargo check`, and wrote a spent grey card plus a new one for step 6 (`6단계 진행` / `먼저 실행해 보기`). The model says plainly what it could not check ("단축키와 아이콘이 실제 창에 어떻게 보이는지는 확인하지 못했습니다").
 
 Backlog NEW-36 (side chat), NEW-37 (bypass switch lives in Settings).
+
+### Round 36, part 5: the `/` command list
+
+Typing `/` in an empty box opens a list above the box, filter placeholder `입력하여 필터링` (return icon at the right of the box). Order, top to bottom: `btw`, `ultrareview`, `rewind`, `fork`, `subtask`, `mcp`, `plugin`, `feedback`, `model`, `effort`, `fast`, `plan`, `permissions`, `skills`, `output-style`, `rename`, `add-dir`, `cd`, `diff`, `tasks`, `workflows`, `status`, `usage`, `stats`, `usage-credits`, `autocompact`, `config`, `storage`, `sandbox`, `theme`, `auto-mode-setup`, `resume`, `advisor`, `login`, `help`, `copy`; then a second group with `__remote-workflow`, `advisor` (right label `사용자 지정 명령`), `agents`, `algorithmic-art`, and one row per skill (`anthropic-skills:built-in-browser`, `:chrome-browser`, `:computer-use`, `:deep-research`, …). Names are shown without the slash, in English.
+
+- The highlighted row (mouse hover or arrow keys) shows a black tooltip to its right with the description: `btw` = `세션에 추가하지 않고 간단한 질문하기`; `plugin` = `Claude Code 플러그인 관리`; `workflows` = `워크플로 기록 탐색 (실행 중 및 완료됨)`; `auto-mode-setup` = `자동 모드에 환경 정보를 알려주고, 선택적으로 규칙을 조정하세요.`; a skill row shows the skill's full description in English, cut after about 10 lines with `…`.
+- Arrow keys move the highlight and scroll the list; the list is about 13 rows tall; mouse wheel scrolling over it moved it by only a few pixels.
+- The command names that appear here and not in Forge's list were not compared row by row (only these strings were grepped: `ultrareview`, `subtask`, `auto-mode-setup`, `usage-credits`, `output-style`, `add-dir`; results in the backlog note). The user-defined commands and skills of the account are mixed in with the built-ins, with a right-hand label only for user commands.
+- Not checked: what each command does when run (`subtask`, `advisor`, `autocompact`, `sandbox`, `storage`, `stats`, `usage-credits`); the tooltip on the first rows other than the ones above.
