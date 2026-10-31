@@ -10,6 +10,8 @@
   --r-pill: 999px; --r-round: 50%;
   --dur-fast: 0.12s; --dur-base: 0.18s; --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --focus-ring-width: 2px; --focus-ring-offset: 2px; --focus-ring-color: var(--accent);
+  --blur-popover: 12px;
+  --bg-elevated: var(--surface-3);
   --on-overlay: oklch(1 0 0);
   --page-bg: oklch(1 0 0);
   --viewer-bg: oklch(0.260 0 0);
@@ -44,9 +46,11 @@
   --warning-fg: oklch(1.000 0 0);
   --danger: oklch(0.505 0.190 27.5);
   --success: oklch(0.600 0.150 150.0);
+  --border-popover: var(--border);
+  --inset-highlight: inset 0 1px 0 oklch(1 0 0 / 0.8);
   --shadow-1: 0 1px 2px rgba(28, 25, 23, 0.06);
-  --shadow-2: 0 1px 2px rgba(28, 25, 23, 0.06), 0 4px 16px rgba(28, 25, 23, 0.06);
-  --shadow-3: 0 2px 4px rgba(28, 25, 23, 0.08), 0 12px 32px rgba(28, 25, 23, 0.12);
+  --shadow-2: 0 1px 2px rgba(28, 25, 23, 0.06), 0 4px 16px rgba(28, 25, 23, 0.06), var(--inset-highlight);
+  --shadow-3: 0 2px 4px rgba(28, 25, 23, 0.08), 0 12px 32px rgba(28, 25, 23, 0.12), var(--inset-highlight);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -54,8 +58,8 @@
     --surface-0: oklch(0.216 0.006 56.0);
     --surface-1: oklch(0.194 0.006 56.0);
     --surface-2: oklch(0.251 0.008 59.3);
-    --surface-3: oklch(0.251 0.008 59.3);
-    --bg-hover: oklch(0.272 0.009 67.4);
+    --surface-3: oklch(0.285 0.009 62.0);
+    --bg-hover: oklch(0.315 0.010 67.0);
     --bg-overlay: oklch(0.000 0.000 0.0 / 0.55);
     --fg: oklch(0.970 0 0);
     --fg-muted: oklch(0.696 0.014 71.3);
@@ -67,17 +71,19 @@
     --warning-fg: oklch(0.216 0.006 56.0);
     --danger: oklch(0.711 0.166 22.2);
     --success: oklch(0.760 0.160 150.0);
+    --border-popover: oklch(0.360 0.010 62.0);
+    --inset-highlight: inset 0 1px 0 oklch(1 0 0 / 0.06);
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.4);
-    --shadow-3: 0 2px 4px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.55);
+    --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.4), var(--inset-highlight);
+    --shadow-3: 0 2px 4px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.55), var(--inset-highlight);
   }
 }
 :root[data-theme="dark"] {
   --surface-0: oklch(0.216 0.006 56.0);
   --surface-1: oklch(0.194 0.006 56.0);
   --surface-2: oklch(0.251 0.008 59.3);
-  --surface-3: oklch(0.251 0.008 59.3);
-  --bg-hover: oklch(0.272 0.009 67.4);
+  --surface-3: oklch(0.285 0.009 62.0);
+  --bg-hover: oklch(0.315 0.010 67.0);
   --bg-overlay: oklch(0.000 0.000 0.0 / 0.55);
   --fg: oklch(0.970 0 0);
   --fg-muted: oklch(0.696 0.014 71.3);
@@ -89,9 +95,11 @@
   --warning-fg: oklch(0.216 0.006 56.0);
   --danger: oklch(0.711 0.166 22.2);
   --success: oklch(0.760 0.160 150.0);
+  --border-popover: oklch(0.360 0.010 62.0);
+  --inset-highlight: inset 0 1px 0 oklch(1 0 0 / 0.06);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.4);
-  --shadow-3: 0 2px 4px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.55);
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.4), var(--inset-highlight);
+  --shadow-3: 0 2px 4px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.55), var(--inset-highlight);
 }
 
 html, body, #main { height: 100%; margin: 0; }
@@ -1438,3 +1446,12 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .end-card.spent { width: 70%; min-width: 260px; }
 .end-card.spent .end-card-ask { color: var(--fg-muted); font-weight: var(--weight-regular); }
 .end-card-chosen { color: var(--fg-muted); font-size: var(--text-base); }
+
+/* Floating surfaces: a menu, a popover or a dialog sits one step above a card, with the strongest shadow and a soft blur of what is behind it. */
+.row-menu, .usage-popover, .command-menu, .mention-menu, .picker-menu, .filter-submenu, .palette, .cd-search, .perm-menu, .customize-menu, .cm-ctx-menu, .cm-pick-bar, .plan-comment-box, .settings-panel, .shortcuts-panel, .customize-dialog, .env-dialog, .env-ask, .mcp-dialog {
+  background: color-mix(in srgb, var(--surface-3) 94%, transparent);
+  border-color: var(--border-popover);
+  box-shadow: var(--shadow-3);
+  -webkit-backdrop-filter: blur(var(--blur-popover));
+  backdrop-filter: blur(var(--blur-popover));
+}
