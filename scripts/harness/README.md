@@ -31,3 +31,5 @@ real `~/.claude/projects/` (here `-private-tmp-forge-harness-my-app/`), not to t
 changes what Forge reads. Sending a message therefore costs a real turn and leaves a real file to delete by hand.
 Typing: `osascript keystroke` drops letters when a Korean input method is on, and ⌘A / ⌘V did not reach the page;
 `key code N` works for single keys. IME and dark mode are not covered. A blank first capture is retried once.
+
+`FORGE_HARNESS_THEME=dark FORGE_HARNESS_EXTRA=scripts/harness/add_all_samples.py scripts/harness/launch.sh` starts the app in dark mode (`light` and `system` too) with the usage samples (20 sessions over four months, two models: `/usage` and `/stats`), the path-link session (a folder `Todo.app`, a missing file, an empty file, a real one) and the four environments. `add_dark_theme.py` alone only sets the theme in the harness config. A command typed with `osascript keystroke` can lose a letter under the Korean input method: type it in two short pieces and look at the box before pressing Enter; two Enters run a slash command (the first picks it from the list).
