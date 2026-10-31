@@ -1269,3 +1269,19 @@ Sidebar rows (Code mode) pressed one by one; nothing was added or installed. All
 - **예약됨**: title `예약된 작업`; tabs `내 항목` (selected) and `템플릿`; at the right search, filter, sort icons and a black `새 작업 ⌄` whose menu is `Claude로 만들기` (a chat-bubble icon) and `직접 설정` (a gear). An info bar `로컬 예약된 작업은 컴퓨터가 절전 모드가 아니고 온라인 상태일 때만 실행됩니다.` A task card: title `Iran war status update` with an amber triangle warning, the prompt line (`1분마다 최신 이란 전쟁/분쟁 상황을 검색하여 요약 보고`) and a grey status line `일시중지됨 · 1분마다, 1시간마다, 매일` (the task is paused; three schedules at once). `템플릿` tab: a 2-column list (no cards, no borders): a small icon, a bold name, a grey description and a clock line: `브리핑` (캘린더, 이메일, 메시지를 요약, `평일 오후 9:18`), `이메일 분류` (`평일 오후 11:52`), `시스템 상태 점검` (`매일 오후 8:47`), `이슈 분류` (`시간 오전 12:23, 화요일에서 토요일까지`), `PR 리뷰 요약`, `종속성 업데이트 확인` (`매주 화요일 오전 3:16`), `릴리스 노트 초안 작성기` (trigger line `pull request closed에 의해 트리거됨`, a PR icon), `불안정한 테스트 추적기`. Times of the templates are odd minutes (9:18, 11:52, 8:47 …), likely random so users do not all fire at the same moment.
 
 Compared with Forge by string search of `ko.rs`: see the backlog row. Not pressed: a template row (it probably opens the create flow), `Claude로 만들기`, `직접 설정`, `추가`, the three icons.
+
+### Round 36, part 23: the `새 예약된 작업` form (`새 작업 ⌄` › `직접 설정`)
+
+A modal (about 50% of the window wide, `×` at the top right, footer `취소` and a black `만들기`). Nothing was created: I pressed `취소` at the end.
+
+- **Top**: a name field (placeholder `일일 브리핑`; the label `이름` scrolls away) and a big prompt box `이 작업이 어떻게 진행되길 원하는지 지침을 입력하세요`. Under the prompt, inside the same box, two selects: a permission-mode pill at the left (`⏭ 자동 ⌄`) and `기본 모델 ⌄` at the right.
+- **Permission menu** (title `권한`): `수동` (hand icon; `Claude는 새 도구를 사용하거나 새 사이트를 열기 전에 확인을 요청합니다.`), `자동` (checked; `묻지 않고 실행합니다.`), `모든 승인 건너뛰기` (red triangle; `Claude가 안전하지 않은 작업에도 멈추지 않고 진행합니다.`). This is a THREE-item list with descriptions, a different wording from the composer's mode menu (자동, 수동, 편집 자동 수락, 계획, 권한 무시).
+- **Warning card** under the box: `이 작업에서 Claude는 승인을 위해 멈추지 않고 작업을 수행하며 커넥터를 사용합니다. 안전한 사용 팁 보기` (the link is underlined).
+- **트리거** row: a label, a select `🕐 스케줄 ⌄` (its menu: `스케줄` `반복 일정으로 실행`, `GitHub 이벤트` `GitHub 웹훅 이벤트 발생 시 실행`, `API` `직접 작성한 코드에서 호출할 때 실행`), a frequency select `매일 ⌄`, a time field `오전 09:22` (the default time is the current time) and a `+` at the right (add another trigger: the paused task of part 22 had three: every minute, every hour, daily).
+- **고급 설정** (a fold, `⌃` when open) with three tabs `일반` `커넥터` `알림`:
+  - `일반`: switches `이 컴퓨터에서만` (`컴퓨터가 켜 있을 때만 실행됩니다. 클라우드 환경 대신 이 컴퓨터의 폴더에 대해 실행하려면 사용하세요.`), `이 컴퓨터 필요` (`작업에 이 컴퓨터의 폴더나 Claude in Chrome이 필요한 경우가 아니라면 꺼 두세요. 켜면 컴퓨터가 절전 모드가 아닌 동안에만 작업이 실행됩니다.`), a row `로컬 폴더` with a select `📁 없음 ⌄` (`이 컴퓨터가 켜져 있고 절전 모드가 아닌 동안 Claude가 이 폴더에서 작업할 수 있습니다.`), `리포지토리` select `없음 ⌄` (`리포지토리를 선택하면 이 작업은 Claude Code 작업이 됩니다.`), `프로젝트` select `없음 ⌄` (`클라우드 프로젝트`). All selects default to `없음`, both switches default off.
+  - `커넥터`: `권한 메뉴에서 설정한 대로 Claude가 이 커넥터들을 확인 없이 사용합니다.` and one row per connector of the account (here `Google Drive` with its logo).
+  - `알림`: a switch `이 작업이 완료되면 알림 받기` (ON by default; `각 실행이 완료되면 Claude가 한 줄 요약을 보내 드립니다. 조건을 감시하는 작업의 경우 알려 드릴 내용이 있을 때만 보냅니다.`), then more rows that I did not scroll to (three small items cut at the fold, probably channels).
+- **Fold behaviour**: opening `고급 설정` scrolls the form body (the label and title scroll up) and the footer stays pinned.
+
+Forge's Routines form (Plan 31) was built to match the desktop app's files at the time (cron string, folder, model, mode). Compare for: the trigger select with three kinds (only `스케줄` applies), several triggers on one task, the `이 컴퓨터에서만` / `이 컴퓨터 필요` pair, the notification switch default on, the three-item permission list with descriptions. Backlog NEW-55.
