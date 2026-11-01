@@ -313,7 +313,7 @@ impl FilesCtx {
                 kinds.write().insert(path, kind);
             }
             Err(error) => {
-                kinds.write().insert(path, TabKind::Failed(error.to_string()));
+                kinds.write().insert(path, TabKind::Failed(crate::files_kinds::files_error_text(&error)));
             }
         }
     }
@@ -356,7 +356,7 @@ impl FilesCtx {
                     kinds.write().insert(path, kind_of(other));
                 }
                 Err(error) => {
-                    kinds.write().insert(path, TabKind::Failed(error.to_string()));
+                    kinds.write().insert(path, TabKind::Failed(crate::files_kinds::files_error_text(&error)));
                 }
             }
         });

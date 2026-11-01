@@ -16,17 +16,17 @@ pub fn FolderChip() -> Element {
     let no_folder = workspace.effective_no_folder();
     let mut items: Vec<PickerItem> = Vec::new();
     if scratch {
-        items.push(PickerItem { label: tr!("No folder").to_string(), description: None, key: None, checked: no_folder, divider_before: false });
+        items.push(PickerItem { label: tr!("No folder").to_string(), description: None, key: None, checked: no_folder, divider_before: false, ..Default::default() });
     }
-    items.extend(rows.iter().map(|row| PickerItem { label: row.label.clone(), description: None, key: None, checked: row.checked, divider_before: false }));
+    items.extend(rows.iter().map(|row| PickerItem { label: row.label.clone(), description: None, key: None, checked: row.checked, divider_before: false, ..Default::default() }));
     let mut draft = use_new_session_draft();
     if draft.environment.read().is_some() {
         return rsx! {};
     }
     let repo = workspace.new_repo();
-    items.push(PickerItem { label: tr!("Open folder…").to_string(), description: None, key: None, checked: false, divider_before: true });
+    items.push(PickerItem { label: tr!("Open folder…").to_string(), description: None, key: None, checked: false, divider_before: true, ..Default::default() });
     if repo.is_some() {
-        items.push(PickerItem { label: tr!("Worktree").to_string(), description: None, key: None, checked: *draft.worktree.read(), divider_before: true });
+        items.push(PickerItem { label: tr!("Worktree").to_string(), description: None, key: None, checked: *draft.worktree.read(), divider_before: true, ..Default::default() });
     }
     let current_label = if scratch && no_folder {
         tr!("No folder").to_string()
@@ -80,7 +80,7 @@ pub fn BranchChip() -> Element {
         .branches
         .local
         .iter()
-        .map(|name| PickerItem { label: name.clone(), description: None, key: None, checked: chosen.as_deref() == Some(name.as_str()), divider_before: false })
+        .map(|name| PickerItem { label: name.clone(), description: None, key: None, checked: chosen.as_deref() == Some(name.as_str()), divider_before: false, ..Default::default() })
         .collect();
     let names = info.branches.local.clone();
     let label = chosen.unwrap_or_else(|| tr!("Detached HEAD").to_string());

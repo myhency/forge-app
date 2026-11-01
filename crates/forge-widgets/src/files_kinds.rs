@@ -1,7 +1,7 @@
 use base64::Engine;
 use dioxus::prelude::*;
 use forge_entities::{parse_csv, preview_kind, render_markdown, CsvTable, PreviewKind, CSV_ROW_LIMIT};
-use forge_ports::{DocumentView, FileContent, SheetBook, SlideDeck};
+use forge_ports::{DocumentView, FileContent, FilesError, SheetBook, SlideDeck};
 
 use crate::files_office::{DocumentViewer, SlideViewer};
 use crate::files_sheet::{binary_offers_open, SheetView};
@@ -222,11 +222,30 @@ pub fn FileKindView(kind: TabKind, path: String, on_anyway: EventHandler<()>, on
     }
 }
 
+/// What a tab says when its file could not be read: the cases a person meets (a link to a file that is gone, or to a
+/// folder such as `Todo.app`) in their own words; anything else keeps the text it came with.
+pub(crate) fn files_error_text(error: &FilesError) -> String {
+    match error {
+        FilesError::NotFound => tr!("This file no longer exists.").to_string(),
+        FilesError::IsDirectory => tr!("This is a folder, not a file. Pick a file in the tree.").to_string(),
+        FilesError::Outside => tr!("This file is outside the session folder.").to_string(),
+        other => other.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use forge_ports::FileVersion;
 
     use super::*;
+
+    #[test]
+    fn a_missing_file_and_a_folder_get_a_sentence_each_and_nothing_shows_an_os_error() {
+        assert_eq!(files_error_text(&FilesError::NotFound), "This file no longer exists.");
+        assert_eq!(files_error_text(&FilesError::IsDirectory), "This is a folder, not a file. Pick a file in the tree.");
+        assert_eq!(files_error_text(&FilesError::Outside), "This file is outside the session folder.");
+        assert_eq!(files_error_text(&FilesError::Failed("disk is full".to_string())), "disk is full");
+    }
 
     #[test]
     fn kind_of_gives_a_document_tab_and_a_slides_tab() {

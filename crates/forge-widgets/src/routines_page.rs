@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_features::{cards, use_routines, RoutineDialog, RoutineFilter, RoutineScreen, RoutineSort};
+use forge_features::{cards, routine_templates, use_routines, RoutineDialog, RoutineFilter, RoutineScreen, RoutineSort};
 use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
 use crate::routines_detail::RoutineDetail;
@@ -12,6 +12,8 @@ pub fn RoutinesPage() -> Element {
     let routines = use_routines();
     use_hook(move || routines.open_page());
     let screen = routines.screen();
+    // Which tab of the list is open; the page stays mounted while a form is open, so the tab is still there on return.
+    let templates_tab = use_signal(|| false);
     rsx! {
         div { class: "customize routines",
             if let Some(message) = routines.error() {
@@ -21,7 +23,7 @@ pub fn RoutinesPage() -> Element {
                 }
             }
             match screen {
-                RoutineScreen::List => rsx! { RoutineList {} },
+                RoutineScreen::List => rsx! { RoutineList { templates_tab } },
                 RoutineScreen::Detail(id) => rsx! { RoutineDetail { id } },
                 RoutineScreen::Form(id) => rsx! { RoutineForm { id } },
             }
@@ -31,7 +33,8 @@ pub fn RoutinesPage() -> Element {
 }
 
 #[component]
-fn RoutineList() -> Element {
+fn RoutineList(templates_tab: Signal<bool>) -> Element {
+    let mut templates_tab = templates_tab;
     let routines = use_routines();
     let all = routines.routines();
     let empty = all.is_empty();
@@ -40,6 +43,41 @@ fn RoutineList() -> Element {
     let mut sort_menu = use_signal(|| false);
     rsx! {
         h1 { class: "customize-title", {tr!("Routines")} }
+        div { class: "routines-tabs", role: "tablist",
+            div { class: "customize-switch",
+                for (is_templates, label) in [(false, tr!("My routines")), (true, tr!("Templates"))] {
+                    button {
+                        key: "{label}",
+                        role: "tab",
+                        "aria-selected": "{templates_tab() == is_templates}",
+                        class: if templates_tab() == is_templates { "active" } else { "" },
+                        onclick: move |_| templates_tab.set(is_templates),
+                        "{label}"
+                    }
+                }
+            }
+        }
+        if templates_tab() {
+            p { class: "routines-notice", {tr!("Routines run only while Forge is open and the computer is awake.")} }
+            div { class: "routine-cards",
+                for template in routine_templates() {
+                    button {
+                        key: "{template.name}",
+                        class: "routine-card",
+                        onclick: {
+                            let template = template.clone();
+                            move |_| routines.open_form_from_template(&template)
+                        },
+                        div { class: "routine-card-title", span { "{template.name}" } }
+                        div { class: "routine-card-desc", "{template.description}" }
+                        div { class: "routine-card-meta",
+                            Icon { kind: IconKind::Clock, size: IconSize::Small }
+                            " {template.schedule.label()}"
+                        }
+                    }
+                }
+            }
+        } else {
         div { class: "customize-bar",
             input {
                 class: "customize-search",
@@ -113,6 +151,7 @@ fn RoutineList() -> Element {
                     div { class: "routine-card-meta", "{card.meta()}" }
                 }
             }
+        }
         }
     }
 }

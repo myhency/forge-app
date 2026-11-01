@@ -43,9 +43,105 @@ pub fn filter_pages(query: &str) -> Vec<SettingsSection> {
         .collect()
 }
 
+/// A row title cut around the letters a search matched, so the match can be drawn in bold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Highlighted {
+    pub before: String,
+    pub matched: String,
+    pub after: String,
+}
+
+/// Cuts `text` around the first case-insensitive match of `needle`; `None` when it does not contain it. The cut
+/// is made on characters, so a Korean or accented title is never split inside a letter.
+pub fn highlight(text: &str, needle: &str) -> Option<Highlighted> {
+    let needle: Vec<char> = needle.trim().to_lowercase().chars().collect();
+    if needle.is_empty() {
+        return None;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let lowered: Vec<char> = chars.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+    let start = (0..=lowered.len().checked_sub(needle.len())?).find(|at| lowered[*at..*at + needle.len()] == needle[..])?;
+    let end = start + needle.len();
+    Some(Highlighted { before: chars[..start].iter().collect(), matched: chars[start..end].iter().collect(), after: chars[end..].iter().collect() })
+}
+
+/// One page of the search result with the rows under it that matched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchHit {
+    pub section: SettingsSection,
+    pub name: &'static str,
+    /// The page name, cut around the match, when the name itself matched.
+    pub name_match: Option<Highlighted>,
+    /// The titles of the rows that matched, each cut around the match. A page whose name matched lists no rows
+    /// unless they match too.
+    pub rows: Vec<Highlighted>,
+}
+
+/// The pages and rows a search finds, in list order. A blank query returns nothing: the list shows every page.
+pub fn search_hits(query: &str) -> Vec<SearchHit> {
+    let needle = query.trim();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    nav_groups()
+        .into_iter()
+        .flat_map(|group| group.pages)
+        .filter_map(|(section, name)| {
+            let name_match = highlight(name, needle);
+            let rows: Vec<Highlighted> = row_titles(section).into_iter().filter_map(|title| highlight(title, needle)).collect();
+            (name_match.is_some() || !rows.is_empty()).then_some(SearchHit { section, name, name_match, rows })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_match_is_cut_around_the_letters_ignoring_case() {
+        let cut = highlight("Reduce motion", "MOT").unwrap();
+        assert_eq!((cut.before.as_str(), cut.matched.as_str(), cut.after.as_str()), ("Reduce ", "mot", "ion"));
+        assert_eq!(highlight("Reduce motion", "zzz"), None);
+        assert_eq!(highlight("Reduce motion", "  "), None);
+        // A needle longer than the text does not match and does not panic.
+        assert_eq!(highlight("ab", "abc"), None);
+    }
+
+    #[test]
+    fn a_korean_match_is_cut_on_whole_letters() {
+        let cut = highlight("테마 설정", "설정").unwrap();
+        assert_eq!((cut.before.as_str(), cut.matched.as_str(), cut.after.as_str()), ("테마 ", "설정", ""));
+    }
+
+    #[test]
+    fn a_blank_search_has_no_hits_and_a_row_match_names_its_page() {
+        assert!(search_hits("   ").is_empty());
+        let hits = search_hits("trusted");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].section, SettingsSection::General);
+        assert_eq!(hits[0].name_match, None);
+        assert_eq!(hits[0].rows[0].matched, "Trusted");
+    }
+
+    #[test]
+    fn a_page_whose_name_matches_comes_first_with_the_name_cut() {
+        let hits = search_hits("model");
+        let model = hits.iter().find(|hit| hit.section == SettingsSection::Model).unwrap();
+        assert_eq!(model.name_match.as_ref().map(|cut| cut.matched.as_str()), Some("Model"));
+        // The pages stay in the order of the list.
+        let order: Vec<SettingsSection> = hits.iter().map(|hit| hit.section).collect();
+        let list: Vec<SettingsSection> = nav_groups().into_iter().flat_map(|group| group.pages).map(|(section, _)| section).filter(|section| order.contains(section)).collect();
+        assert_eq!(order, list);
+    }
+
+    #[test]
+    fn the_hits_cover_the_same_pages_as_the_page_filter() {
+        for query in ["model", "dock", "theme", "notif", "logs", "zzzz", "trusted"] {
+            let from_hits: Vec<SettingsSection> = search_hits(query).iter().map(|hit| hit.section).collect();
+            assert_eq!(from_hits, filter_pages(query), "{query}");
+        }
+    }
 
     #[test]
     fn a_search_finds_the_trusted_folders_row_on_the_general_page() {

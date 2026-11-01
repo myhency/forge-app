@@ -28,6 +28,12 @@ pub struct NewSessionDraft {
     pub environment: Signal<Option<String>>,
 }
 
+/// The draft of the session about to start. The new-session screen makes it once, above the card of saved
+/// environments and the box, which both read it through `use_new_session_draft`.
+pub fn use_new_session_draft_provider() -> NewSessionDraft {
+    use_context_provider(|| NewSessionDraft { mode: Signal::new(PermissionMode::Default), model: Signal::new(None), effort: Signal::new(None), worktree: Signal::new(true), branch: Signal::new(None), environment: Signal::new(None) })
+}
+
 pub fn use_new_session_draft() -> NewSessionDraft {
     use_context::<NewSessionDraft>()
 }
@@ -54,7 +60,7 @@ pub fn worktree_request(on: bool, branch: Option<String>, repo: Option<RepoInfo>
 #[component]
 pub fn NewSessionComposer(leading: Element, start: Element, end: Element) -> Element {
     let workspace = use_workspace();
-    let draft = use_context_provider(|| NewSessionDraft { mode: Signal::new(PermissionMode::Default), model: Signal::new(None), effort: Signal::new(None), worktree: Signal::new(true), branch: Signal::new(None), environment: Signal::new(None) });
+    let draft = use_new_session_draft();
     let text = use_signal(String::new);
     let composer = use_composer_state_provider(text);
     let mut text = text;

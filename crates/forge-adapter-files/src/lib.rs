@@ -53,13 +53,22 @@ fn failed(error: impl std::fmt::Display) -> FilesError {
     FilesError::Failed(error.to_string())
 }
 
+/// An `std::io` error as the port's error: a missing file is its own kind, so the screen can say so in its own words
+/// (the operating system's text is English and differs between systems).
+fn io_failed(error: std::io::Error) -> FilesError {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => FilesError::NotFound,
+        _ => failed(error),
+    }
+}
+
 fn resolve(root: &Path, relative: &str) -> Result<PathBuf, FilesError> {
-    let root = dunce::canonicalize(root).map_err(failed)?;
+    let root = dunce::canonicalize(root).map_err(io_failed)?;
     let relative = Path::new(relative);
     if relative.is_absolute() || relative.components().any(|part| matches!(part, Component::ParentDir)) {
         return Err(FilesError::Outside);
     }
-    let resolved = dunce::canonicalize(root.join(relative)).map_err(failed)?;
+    let resolved = dunce::canonicalize(root.join(relative)).map_err(io_failed)?;
     if resolved.starts_with(&root) {
         Ok(resolved)
     } else {
@@ -263,11 +272,14 @@ impl FilesPort for LocalFiles {
 
     fn read(&self, root: &Path, path: &str) -> Result<FileContent, FilesError> {
         let file = resolve(root, path)?;
-        let meta = fs::metadata(&file).map_err(failed)?;
+        let meta = fs::metadata(&file).map_err(io_failed)?;
+        if meta.is_dir() {
+            return Err(FilesError::IsDirectory);
+        }
         if meta.len() > READ_LIMIT as u64 {
             return Ok(FileContent::TooLarge);
         }
-        let bytes = fs::read(&file).map_err(failed)?;
+        let bytes = fs::read(&file).map_err(io_failed)?;
         if has_extension(&file, "pdf") {
             return Ok(FileContent::Pdf { bytes });
         }
@@ -300,23 +312,27 @@ impl FilesPort for LocalFiles {
 
     fn read_text_anyway(&self, root: &Path, path: &str) -> Result<FileContent, FilesError> {
         let file = resolve(root, path)?;
-        let meta = fs::metadata(&file).map_err(failed)?;
+        let meta = fs::metadata(&file).map_err(io_failed)?;
+        if meta.is_dir() {
+            return Err(FilesError::IsDirectory);
+        }
         if meta.len() > READ_LIMIT as u64 {
             return Ok(FileContent::TooLarge);
         }
-        let bytes = fs::read(&file).map_err(failed)?;
+        let bytes = fs::read(&file).map_err(io_failed)?;
         Ok(FileContent::Text { text: String::from_utf8_lossy(&bytes).into_owned(), version: version_of(&meta), lossy: true })
     }
 
     fn stat(&self, root: &Path, path: &str) -> Result<FileVersion, FilesError> {
         let file = resolve(root, path)?;
-        Ok(version_of(&fs::metadata(&file).map_err(failed)?))
+        Ok(version_of(&fs::metadata(&file).map_err(io_failed)?))
     }
 
     fn write(&self, root: &Path, path: &str, text: &str, expected: Option<FileVersion>) -> Result<FileVersion, WriteError> {
         let file = resolve(root, path).map_err(|error| match error {
             FilesError::Outside => WriteError::Outside,
             FilesError::Failed(message) | FilesError::InvalidPattern(message) => WriteError::Failed(message),
+            other @ (FilesError::NotFound | FilesError::IsDirectory) => WriteError::Failed(other.to_string()),
         })?;
         let failed_write = |error: std::io::Error| WriteError::Failed(error.to_string());
         let meta = fs::metadata(&file).map_err(failed_write)?;
@@ -783,10 +799,27 @@ mod tests {
     }
 
     #[test]
+    fn a_folder_is_not_read_as_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("dist/Todo.app/Contents")).unwrap();
+        let files = LocalFiles::new();
+        assert_eq!(files.read(dir.path(), "dist/Todo.app"), Err(FilesError::IsDirectory));
+        assert_eq!(files.read_text_anyway(dir.path(), "dist"), Err(FilesError::IsDirectory));
+    }
+
+    #[test]
+    fn a_file_that_is_gone_is_not_found_whichever_way_it_is_asked() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = LocalFiles::new();
+        assert_eq!(files.stat(dir.path(), "gone.txt"), Err(FilesError::NotFound));
+        assert_eq!(files.read_text_anyway(dir.path(), "a/b/gone.txt"), Err(FilesError::NotFound));
+    }
+
+    #[test]
     fn a_missing_file_is_a_message_not_a_panic() {
         let dir = tree();
-        assert!(matches!(LocalFiles::new().read(dir.path(), "nope.txt"), Err(FilesError::Failed(_))));
-        assert!(matches!(LocalFiles::new().list(&dir.path().join("gone"), ""), Err(FilesError::Failed(_))));
+        assert_eq!(LocalFiles::new().read(dir.path(), "nope.txt"), Err(FilesError::NotFound));
+        assert_eq!(LocalFiles::new().list(&dir.path().join("gone"), ""), Err(FilesError::NotFound));
     }
 
     #[test]
