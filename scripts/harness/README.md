@@ -31,3 +31,21 @@ real `~/.claude/projects/` (here `-private-tmp-forge-harness-my-app/`), not to t
 changes what Forge reads. Sending a message therefore costs a real turn and leaves a real file to delete by hand.
 Typing: `osascript keystroke` drops letters when a Korean input method is on, and ⌘A / ⌘V did not reach the page;
 `key code N` works for single keys. IME and dark mode are not covered. A blank first capture is retried once.
+
+## Reading and pressing through the accessibility tree (agent-desktop)
+
+    npm install -g agent-desktop         # once; macOS asks for Accessibility (agent-desktop permissions --guide)
+    scripts/harness/ad.sh snapshot       # JSON tree of buttons, fields, links with refs (@sXXXX:eN) and Korean labels
+    scripts/harness/ad.sh click @sXXXX:eN  # headless press: no cursor, no focus change, works with the window off-screen
+    scripts/harness/ad.sh type --headed @sXXXX:eN "한글 text"   # typing needs --headed (see below); other commands are passed through
+
+`ad.sh` only addresses the window of the app `launch.sh` started. Refs belong to the snapshot that made them: snapshot again after every action
+(`STALE_REF` means the page changed). Use it to find and press elements by name instead of by pixel; keep `capture.py` for
+looking at layout, colour and dark mode, which the tree cannot show. Snapshots can hold private text, so do not paste them into public logs.
+
+Typing: without `--headed`, `type` and `set-value` report `ACTION_FAILED` and the field stays empty (the webview ignores accessibility value writes).
+`type --headed` sends real Unicode key events to the app and the Korean text arrived complete, with a Korean input method active in the terminal's session
+(checked with "안녕하세요 한글 입력 테스트" in the composer; nothing is sent until Enter). It may move focus, so snapshot again afterwards.
+
+Keys: `ad.sh press return` (also `escape`, `cmd+k`, ...) goes to the harness window by `--window-id` (checked: ⌘K search palette, typed "login", `press return` opened "Fix the login bug").
+Do not press Enter in the composer unless you want a real turn: it starts the real Claude (see above).
