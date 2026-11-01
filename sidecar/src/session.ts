@@ -413,11 +413,17 @@ export class SidecarSession {
   }
 
   private async run(command: Extract<SidecarCommand, { type: "start_session" }>): Promise<void> {
+    const turnTools = command.turn_tools === true;
+    const generativeUi = command.generative_ui === true;
+    // Forge's own tools never ask. They are approved here, not in `allowedTools`, because the SDK warns
+    // that a bare `allowedTools` entry shadows `canUseTool`.
+    const ownTools = new Set([...(turnTools ? [UPDATE_PLAN_TOOL, WRAP_UP_TOOL] : []), ...(generativeUi ? [UI_GUIDE_TOOL, GENERATE_UI_TOOL] : [])]);
     const canUseTool = async (
       toolName: string,
       input: Record<string, unknown>,
       options: { requestId: string; signal: AbortSignal; suggestions?: unknown[]; [key: string]: unknown },
     ): Promise<PermissionResult> => {
+      if (ownTools.has(toolName)) return { behavior: "allow", updatedInput: input };
       const permissionRequestId = options.requestId;
       this.emit({
         type: "permission_request",
@@ -458,9 +464,7 @@ export class SidecarSession {
       ...(skillsPlugin ? [{ type: "local" as const, path: skillsPlugin.path }] : []),
     ];
 
-    // The task list and next-step tools: an in-process server, allowed up front so no question appears.
-    const turnTools = command.turn_tools === true;
-    const generativeUi = command.generative_ui === true;
+    // The task list and next-step tools: an in-process server, approved in canUseTool so no question appears.
     // Not allowed up front: every call of the desktop tool raises the usual permission question.
     const desktopControl = command.desktop_control === true;
     let query: QueryHandle;
@@ -499,7 +503,7 @@ export class SidecarSession {
             : {}),
           mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer() } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}), ...(desktopControl ? { [DESKTOP_SERVER_NAME]: createDesktopServer() } : {}) },
           additionalDirectories: command.additional_directories ?? [],
-          allowedTools: [...(command.allowed_tools ?? []), ...(turnTools ? [UPDATE_PLAN_TOOL, WRAP_UP_TOOL] : []), ...(generativeUi ? [UI_GUIDE_TOOL, GENERATE_UI_TOOL] : [])],
+          allowedTools: command.allowed_tools ?? [],
           // Variables of the environment the session starts from, over Forge's own (the SDK would
           // replace the whole environment with what it is given).
           ...(command.env && Object.keys(command.env).length > 0 ? { env: { ...process.env, ...command.env } } : {}),

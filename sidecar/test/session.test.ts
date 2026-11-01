@@ -59,10 +59,14 @@ describe("SidecarSession", () => {
       allowed_tools: ["Read"],
     });
     expect(Object.keys(captured!.mcpServers).sort()).toEqual(["ccd_turn", "files"]);
-    expect(captured!.allowedTools).toEqual(["Read", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
+    expect(captured!.allowedTools).toEqual(["Read"]);
+    const signal = new AbortController().signal;
+    for (const tool of ["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]) {
+      await expect(captured!.canUseTool(tool, { a: 1 }, { requestId: "r", signal })).resolves.toEqual({ behavior: "allow", updatedInput: { a: 1 } });
+    }
   });
 
-  it("adds the forge_ui server and allows its tool when generative_ui is on", async () => {
+  it("adds the forge_ui server and approves its tools without a question when generative_ui is on", async () => {
     let captured: Record<string, any> | undefined;
     const queryFn: QueryFn = ({ options }) => {
       captured = options;
@@ -70,7 +74,11 @@ describe("SidecarSession", () => {
     };
     await new SidecarSession(queryFn, () => {}).handle({ ...startCommand, generative_ui: true, allowed_tools: ["Read"] });
     expect(Object.keys(captured!.mcpServers)).toEqual(["forge_ui"]);
-    expect(captured!.allowedTools).toEqual(["Read", "mcp__forge_ui__ui_guide", "mcp__forge_ui__generate_sandboxed_ui"]);
+    expect(captured!.allowedTools).toEqual(["Read"]);
+    const signal = new AbortController().signal;
+    for (const tool of ["mcp__forge_ui__ui_guide", "mcp__forge_ui__generate_sandboxed_ui"]) {
+      await expect(captured!.canUseTool(tool, {}, { requestId: "r", signal })).resolves.toEqual({ behavior: "allow", updatedInput: {} });
+    }
   });
 
   it("adds the forge_desktop server but does not allow its tool up front, so each call asks", async () => {
