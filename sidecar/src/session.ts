@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { buildContent, type ContentBlock } from "./content.js";
 import { buildSkillsPlugin } from "./skills_plugin.js";
 import { turnUsage } from "./usage.js";
+import { createDesktopServer, DESKTOP_SERVER_NAME } from "./agent_desktop.js";
 import { createGenerativeUiServer, GENERATE_UI_TOOL, UI_GUIDE_TOOL, UI_SERVER_NAME } from "./generative_ui.js";
 import { createTurnToolsServer, TURN_SERVER_NAME, UPDATE_PLAN_TOOL, WRAP_UP_TOOL } from "./turn_tools.js";
 import type { SidecarCommand, SidecarEvent, WireAvailableModel, WireEffort, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
@@ -460,6 +461,8 @@ export class SidecarSession {
     // The task list and next-step tools: an in-process server, allowed up front so no question appears.
     const turnTools = command.turn_tools === true;
     const generativeUi = command.generative_ui === true;
+    // Not allowed up front: every call of the desktop tool raises the usual permission question.
+    const desktopControl = command.desktop_control === true;
     let query: QueryHandle;
     try {
       query = this.queryFn({
@@ -494,7 +497,7 @@ export class SidecarSession {
                 },
               }
             : {}),
-          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer() } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}) },
+          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer() } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}), ...(desktopControl ? { [DESKTOP_SERVER_NAME]: createDesktopServer() } : {}) },
           additionalDirectories: command.additional_directories ?? [],
           allowedTools: [...(command.allowed_tools ?? []), ...(turnTools ? [UPDATE_PLAN_TOOL, WRAP_UP_TOOL] : []), ...(generativeUi ? [UI_GUIDE_TOOL, GENERATE_UI_TOOL] : [])],
           // Variables of the environment the session starts from, over Forge's own (the SDK would

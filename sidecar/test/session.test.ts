@@ -73,6 +73,17 @@ describe("SidecarSession", () => {
     expect(captured!.allowedTools).toEqual(["Read", "mcp__forge_ui__ui_guide", "mcp__forge_ui__generate_sandboxed_ui"]);
   });
 
+  it("adds the forge_desktop server but does not allow its tool up front, so each call asks", async () => {
+    let captured: Record<string, any> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+    await new SidecarSession(queryFn, () => {}).handle({ ...startCommand, desktop_control: true, allowed_tools: ["Read"] });
+    expect(Object.keys(captured!.mcpServers)).toEqual(["forge_desktop"]);
+    expect(captured!.allowedTools).toEqual(["Read"]);
+  });
+
   it("adds nothing when turn_tools is off or missing (an older parent)", async () => {
     const seen: Array<Record<string, any>> = [];
     const queryFn: QueryFn = ({ options }) => {

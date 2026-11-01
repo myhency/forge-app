@@ -339,6 +339,10 @@ pub struct AppConfig {
     /// Whether Claude gets the `generate_sandboxed_ui` tool: an interactive page drawn in the chat.
     #[serde(default = "default_generative_ui")]
     pub generative_ui: bool,
+    /// Whether Claude gets the `agent_desktop` tool (read and press other apps through the accessibility
+    /// tree). Off until the person turns it on; every call still asks first.
+    #[serde(default)]
+    pub desktop_control: bool,
     #[serde(default)]
     pub appearance: Appearance,
     #[serde(default)]
@@ -426,6 +430,7 @@ impl Default for AppConfig {
             dynamic_workflows: false,
             turn_tools: true,
             generative_ui: default_generative_ui(),
+            desktop_control: false,
             appearance: Appearance::default(),
             notifications: NotificationPrefs::default(),
             attention_bounce: false,
@@ -835,6 +840,14 @@ mod tests {
     }
 
     #[test]
+    fn desktop_control_is_off_for_a_config_written_before_the_switch_existed() {
+        let config: AppConfig = serde_json::from_str("{}").unwrap();
+        assert!(!config.desktop_control);
+        let on: AppConfig = serde_json::from_str(r#"{"desktop_control": true}"#).unwrap();
+        assert!(on.desktop_control);
+    }
+
+    #[test]
     fn generative_ui_is_on_for_a_config_written_before_the_switch_existed() {
         let config: AppConfig = serde_json::from_str("{}").unwrap();
         assert_eq!(config.generative_ui, cfg!(not(windows)));
@@ -860,6 +873,7 @@ mod tests {
             allow_bypass_mode: true,
             dynamic_workflows: true,
             turn_tools: true,
+            desktop_control: true,
             ..AppConfig::default()
         };
         let back: AppConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();

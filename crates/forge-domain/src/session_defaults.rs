@@ -13,17 +13,19 @@ pub struct SessionDefaults {
     pub turn_tools: bool,
     /// Whether the session gets the tool that draws an interactive page in the chat.
     pub generative_ui: bool,
+    /// Whether the session gets the tool that reads and presses other apps (each call asks first).
+    pub desktop_control: bool,
 }
 
 impl Default for SessionDefaults {
     fn default() -> Self {
-        Self { output_style: None, prompt_suggestions: true, allow_bypass: false, dynamic_workflows: false, turn_tools: true, generative_ui: true }
+        Self { output_style: None, prompt_suggestions: true, allow_bypass: false, dynamic_workflows: false, turn_tools: true, generative_ui: true, desktop_control: false }
     }
 }
 
 impl SessionDefaults {
     pub fn from_config(config: &AppConfig) -> Self {
-        Self { output_style: config.output_style, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, turn_tools: config.turn_tools, generative_ui: config.generative_ui }
+        Self { output_style: config.output_style, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, turn_tools: config.turn_tools, generative_ui: config.generative_ui, desktop_control: config.desktop_control }
     }
 }
 
@@ -48,7 +50,7 @@ mod tests {
         let config = AppConfig { output_style: Some(OutputStyle::Learning), prompt_suggestions: false, allow_bypass_mode: true, dynamic_workflows: true, ..AppConfig::default() };
         assert_eq!(
             SessionDefaults::from_config(&config),
-            SessionDefaults { output_style: Some(OutputStyle::Learning), prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, turn_tools: true, generative_ui: true }
+            SessionDefaults { output_style: Some(OutputStyle::Learning), prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, turn_tools: true, generative_ui: true, desktop_control: false }
         );
     }
 }

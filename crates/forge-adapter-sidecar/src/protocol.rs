@@ -29,6 +29,7 @@ pub enum SidecarCommand {
         dynamic_workflows: bool,
         turn_tools: bool,
         generative_ui: bool,
+        desktop_control: bool,
     },
     SendMessage {
         id: String,
@@ -140,6 +141,7 @@ impl SidecarCommand {
             dynamic_workflows: params.defaults.dynamic_workflows,
             turn_tools: params.defaults.turn_tools,
             generative_ui: params.defaults.generative_ui,
+            desktop_control: params.defaults.desktop_control,
         }
     }
 
@@ -233,6 +235,7 @@ mod tests {
         assert_eq!(json["dynamic_workflows"], serde_json::json!(false));
         assert_eq!(json["turn_tools"], serde_json::json!(true));
         assert_eq!(json["generative_ui"], serde_json::json!(true));
+        assert_eq!(json["desktop_control"], serde_json::json!(false));
     }
 
     #[test]
@@ -245,6 +248,7 @@ mod tests {
             dynamic_workflows: true,
             turn_tools: false,
             generative_ui: false,
+            desktop_control: true,
         };
         let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params)).unwrap();
         assert_eq!(json["output_style"], serde_json::json!("Concise"));
@@ -253,6 +257,7 @@ mod tests {
         assert_eq!(json["dynamic_workflows"], serde_json::json!(true));
         assert_eq!(json["turn_tools"], serde_json::json!(false));
         assert_eq!(json["generative_ui"], serde_json::json!(false));
+        assert_eq!(json["desktop_control"], serde_json::json!(true));
     }
 
     #[test]
@@ -364,7 +369,8 @@ mod tests {
                 "allow_bypass": false,
                 "dynamic_workflows": false,
                 "turn_tools": true,
-                "generative_ui": true
+                "generative_ui": true,
+                "desktop_control": false
             })
         );
     }

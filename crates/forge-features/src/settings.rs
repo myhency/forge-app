@@ -5,7 +5,7 @@ use std::sync::Arc;
 use dioxus::prelude::*;
 use forge_application::{ExtensionsUseCase, SettingsUseCase};
 use forge_domain::{AppConfig, Appearance, ChatWidth, FontChoice, Language, McpServerDefinition, MotionPref, NotificationPrefs, OutputStyle, PluginDefinition, SkillDefinition, TextSize, Theme, TranscriptView, WorktreeLocation};
-use forge_ports::FolderPickerPort;
+use forge_ports::{DesktopToolPort, DesktopToolStatus, FolderPickerPort};
 use forge_shared::tr;
 use forge_entities::{mcp_rows, plugin_rows, project_label, skill_rows, ExtensionRow};
 
@@ -57,6 +57,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::DynamicWorkflows(on) => config.dynamic_workflows = on,
         CodeChange::TurnTools(on) => config.turn_tools = on,
         CodeChange::GenerativeUi(on) => config.generative_ui = on,
+        CodeChange::DesktopControl(on) => config.desktop_control = on,
         CodeChange::WorktreeLocation(value) => config.worktree_location = value,
         CodeChange::AutoArchiveDays(days) => config.auto_archive_days = days,
         CodeChange::Theme(value) => config.appearance.theme = value,
@@ -106,6 +107,7 @@ pub(crate) enum CodeChange {
     DynamicWorkflows(bool),
     TurnTools(bool),
     GenerativeUi(bool),
+    DesktopControl(bool),
     WorktreeLocation(WorktreeLocation),
     AutoArchiveDays(Option<u32>),
     Theme(Theme),
@@ -127,6 +129,27 @@ pub enum NotificationKind {
     ScheduledTask,
     CodeNotice,
     PermissionRequest,
+}
+
+/// What the Code page knows about the `agent-desktop` program that "Control other apps" runs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DesktopToolView {
+    Checking,
+    Missing,
+    Installing,
+    Installed(String),
+    /// The sentence of the last failed check or install.
+    Failed(String),
+}
+
+impl From<Result<DesktopToolStatus, String>> for DesktopToolView {
+    fn from(result: Result<DesktopToolStatus, String>) -> Self {
+        match result {
+            Ok(DesktopToolStatus::Installed { version }) => Self::Installed(version),
+            Ok(DesktopToolStatus::Missing) => Self::Missing,
+            Err(message) => Self::Failed(message),
+        }
+    }
 }
 
 /// The outcome of the last save, shown under the fields until the next edit or save.
@@ -154,6 +177,8 @@ pub struct Settings {
     /// The local MCP server the Developer page shows in detail.
     server: Signal<Option<String>>,
     folder_picker: Signal<Arc<dyn FolderPickerPort>>,
+    desktop_tool: Signal<Arc<dyn DesktopToolPort>>,
+    desktop_view: Signal<DesktopToolView>,
     trusted_dialog: Signal<bool>,
     trusted_picking: Signal<bool>,
     location_nonce: Signal<u32>,
@@ -178,6 +203,8 @@ pub fn use_settings_provider() -> Settings {
         catalog: root_signal(Catalog::default()),
         server: root_signal(None),
         folder_picker: root_signal(services.folder_picker.clone()),
+        desktop_tool: root_signal(services.desktop_tool.clone()),
+        desktop_view: root_signal(DesktopToolView::Checking),
         trusted_dialog: root_signal(false),
         trusted_picking: root_signal(false),
         location_nonce: root_signal(0),
@@ -307,6 +334,50 @@ impl Settings {
 
     pub fn set_generative_ui(&self, on: bool) {
         self.change_code(CodeChange::GenerativeUi(on));
+    }
+
+    pub fn desktop_tool_view(&self) -> DesktopToolView {
+        self.desktop_view.read().clone()
+    }
+
+    /// Looks for the program again (the page shows "checking" only the first time).
+    pub fn check_desktop_tool(&self) {
+        if matches!(*self.desktop_view.peek(), DesktopToolView::Installing) {
+            return;
+        }
+        let tool = (*self.desktop_tool.peek()).clone();
+        let mut view = self.desktop_view;
+        // Root scope: the answer is kept even if the page closes while the check runs.
+        dioxus::core::spawn_forever(async move {
+            let next = DesktopToolView::from(tool.status().await);
+            if !matches!(*view.peek(), DesktopToolView::Installing) {
+                view.set(next);
+            }
+        });
+    }
+
+    /// Downloads and installs the program; the page shows "installing" until it answers.
+    pub fn install_desktop_tool(&self) {
+        if matches!(*self.desktop_view.peek(), DesktopToolView::Installing) {
+            return;
+        }
+        let tool = (*self.desktop_tool.peek()).clone();
+        let mut view = self.desktop_view;
+        view.set(DesktopToolView::Installing);
+        dioxus::core::spawn_forever(async move {
+            view.set(DesktopToolView::from(tool.install().await));
+        });
+    }
+
+    pub fn desktop_control(&self) -> bool {
+        self.saved.read().desktop_control
+    }
+
+    pub fn set_desktop_control(&self, on: bool) {
+        self.change_code(CodeChange::DesktopControl(on));
+        if on {
+            self.check_desktop_tool();
+        }
     }
 
     pub fn dynamic_workflows(&self) -> bool {
@@ -701,6 +772,7 @@ impl Settings {
             current.dynamic_workflows = config.dynamic_workflows;
             current.turn_tools = config.turn_tools;
             current.generative_ui = config.generative_ui;
+            current.desktop_control = config.desktop_control;
             current.worktree_location = config.worktree_location;
             current.auto_archive_days = config.auto_archive_days;
             current.appearance = config.appearance;
@@ -824,6 +896,15 @@ mod tests {
         assert!(config.allow_bypass_mode);
         assert!(config.dynamic_workflows);
         assert_eq!(config.model, None, "nothing else is touched");
+    }
+
+    #[test]
+    fn the_desktop_control_switch_is_off_and_changes_only_that_value() {
+        let mut config = AppConfig::default();
+        assert!(!config.desktop_control);
+        apply_code_change(&mut config, CodeChange::DesktopControl(true));
+        assert!(config.desktop_control);
+        assert!(config.turn_tools);
     }
 
     #[test]
