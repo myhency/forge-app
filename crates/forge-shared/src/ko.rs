@@ -179,6 +179,8 @@ pub static KO: &[(&str, &str)] = &[
     ("Context window", "컨텍스트 창"),
     ("Context window not measured yet", "컨텍스트 창을 아직 측정하지 않았습니다"),
     ("Control other apps", "다른 앱 제어"),
+    ("Controlled an app|tool", "다른 앱 제어함"),
+    ("Controlling an app", "다른 앱 제어 중"),
     ("Conversation only", "대화만"),
     ("Copy", "복사"),
     ("Copy address", "주소 복사"),
