@@ -25,7 +25,7 @@ function buildMac() {
   run("dx", ["bundle", "--release", "--package-types", "macos"], join(root, "crates/forge-app"));
   const built = join(root, "target/dx/forge-app/bundle/macos/macos/ForgeApp.app");
   const app = join(dist, "Forge.app");
-  rmSync(dist, { recursive: true, force: true });
+  rmSync(dist, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); // Finder can recreate .DS_Store while the folder is being removed
   mkdirSync(dist, { recursive: true });
   renameSync(built, app);
   cpSync(runtime, join(app, "Contents/Resources/runtime"), { recursive: true, verbatimSymlinks: true });
@@ -39,7 +39,7 @@ function buildWindows() {
   stage();
   run("cargo", ["build", "--release", "-p", "forge-app"]);
   const folder = join(dist, "Forge-win-x64");
-  rmSync(dist, { recursive: true, force: true });
+  rmSync(dist, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); // Finder can recreate .DS_Store while the folder is being removed
   mkdirSync(folder, { recursive: true });
   cpSync(join(root, "target/release/forge-app.exe"), join(folder, "Forge.exe"));
   cpSync(runtime, join(folder, "runtime"), { recursive: true });
