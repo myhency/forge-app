@@ -11,11 +11,18 @@ pub struct SidecarProcessFactory {
     node_binary: String,
     script_path: String,
     config: Arc<dyn ConfigRepositoryPort>,
+    tools_dir: Option<std::path::PathBuf>,
 }
 
 impl SidecarProcessFactory {
     pub fn new(node_binary: String, script_path: String, config: Arc<dyn ConfigRepositoryPort>) -> Self {
-        Self { node_binary, script_path, config }
+        Self { node_binary, script_path, config, tools_dir: None }
+    }
+
+    /// Where Forge keeps the programs it installs; the sidecar looks there for `agent-desktop` (`FORGE_TOOLS_DIR`).
+    pub fn with_tools_dir(mut self, dir: std::path::PathBuf) -> Self {
+        self.tools_dir = Some(dir);
+        self
     }
 }
 
@@ -30,7 +37,11 @@ impl SidecarFactoryPort for SidecarProcessFactory {
             .load()
             .await
             .map_err(|e| SidecarError::SpawnFailed(format!("failed to load the Forge config: {e}")))?;
-        let process = SidecarProcess::spawn(&self.node_binary, &self.script_path, &credentials_env(&config))?;
+        let mut env = credentials_env(&config);
+        if let Some(dir) = &self.tools_dir {
+            env.push(("FORGE_TOOLS_DIR".to_string(), dir.to_string_lossy().into_owned()));
+        }
+        let process = SidecarProcess::spawn(&self.node_binary, &self.script_path, &env)?;
         Ok(Arc::new(process))
     }
 }

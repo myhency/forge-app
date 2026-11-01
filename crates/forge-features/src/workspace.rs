@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use forge_application::{WorktreesUseCase, ScratchUseCase, Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::{build_turns, latest_plan, plan_text_of_request, TranscriptView};
 use forge_domain::{ChangeModeRef, ChangesViewPrefs, WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
+use forge_ports::{DesktopToolPort, BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
 use forge_ports::{ChangeSource, DiffOptions, Surface};
 use time::OffsetDateTime;
 
@@ -88,6 +88,7 @@ pub struct WorkspaceServices {
     pub worktrees: Arc<WorktreesUseCase>,
     pub scratch: Arc<ScratchUseCase>,
     pub folder_picker: Arc<dyn FolderPickerPort>,
+    pub desktop_tool: Arc<dyn DesktopToolPort>,
     pub file_picker: Arc<dyn FilePickerPort>,
     pub terminal: Arc<dyn TerminalPort>,
     pub git: Arc<dyn GitPort>,

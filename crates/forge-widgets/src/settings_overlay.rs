@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::{ChatWidth, FontChoice, MotionPref, OutputStyle, TextSize, Theme, TranscriptView};
 use forge_entities::{model_from_value, model_options, model_value};
-use forge_features::{nav_groups, search_hits, use_settings, use_workspace, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
+use forge_features::{nav_groups, search_hits, use_settings, use_workspace, DesktopToolView, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
 use crate::developer_section::DeveloperSection;
 use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, Segmented, Select, SettingRow, Switch, TextInput, IconSize};
 
@@ -252,6 +252,31 @@ const DEFAULT_STYLE_VALUE: &str = "default";
 const PROJECT_LOCATION: &str = "\u{0}project";
 const CUSTOM_LOCATION: &str = "\u{0}custom";
 
+/// The state of the `agent-desktop` program under the "Control other apps" switch, with the button that installs it.
+#[component]
+fn DesktopToolRow() -> Element {
+    let settings = use_settings();
+    use_hook(move || settings.check_desktop_tool());
+    let view = settings.desktop_tool_view();
+    let (description, can_install) = match &view {
+        DesktopToolView::Checking => (tr!("Checking for agent-desktop…").to_string(), false),
+        DesktopToolView::Missing => (tr!("Not installed. Installing downloads it from the npm registry (about 30 MB) into Forge's own folder; npm is not needed.").to_string(), true),
+        DesktopToolView::Installing => (tr!("Installing…").to_string(), false),
+        DesktopToolView::Installed(version) if cfg!(target_os = "macos") => (tr!("Installed (version {version}). On macOS, allow Forge under System Settings > Privacy & Security > Accessibility.", version = version.clone()).to_string(), false),
+        DesktopToolView::Installed(version) => (tr!("Installed (version {version}).", version = version.clone()).to_string(), false),
+        DesktopToolView::Failed(message) => (tr!("Could not install: {message}", message = message.clone()).to_string(), true),
+    };
+    rsx! {
+        SettingRow {
+            title: tr!("agent-desktop program"),
+            description,
+            if can_install {
+                Button { label: tr!("Install").to_string(), kind: ButtonKind::Primary, onclick: move |_| settings.install_desktop_tool() }
+            }
+        }
+    }
+}
+
 #[component]
 fn CodeSection() -> Element {
     let settings = use_settings();
@@ -337,6 +362,12 @@ fn CodeSection() -> Element {
             description: tr!("Claude can draw a small interactive page in the chat, such as a calculator or a chart, when text would explain less."),
             Switch { on: settings.generative_ui(), onchange: move |on| settings.set_generative_ui(on) }
         }
+        SettingRow {
+            title: tr!("Control other apps"),
+            description: tr!("Claude can read and press other desktop apps through the accessibility tree. Needs the agent-desktop program (install it below); every action asks first."),
+            Switch { on: settings.desktop_control(), onchange: move |on| settings.set_desktop_control(on) }
+        }
+        DesktopToolRow {}
         if cfg!(target_os = "macos") {
             SettingRow {
                 title: tr!("Bounce the Dock icon"),
