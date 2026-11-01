@@ -745,6 +745,10 @@ export class SidecarSession {
         for (const block of blocks) {
           if (block?.type === "tool_use") {
             this.emit({ type: "tool_use", tool_call_id: block.id, name: block.name, input: block.input });
+          } else if (block?.type === "text" && typeof block.text === "string" && typeof message.error === "string") {
+            // The SDK reports a failure (invalid API key, billing, rate limit...) as an assistant message
+            // with `error` set and no stream deltas; without this the chat stays silent.
+            this.emit({ type: "assistant_delta", text: block.text });
           }
         }
         return;

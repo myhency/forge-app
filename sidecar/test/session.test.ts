@@ -340,6 +340,36 @@ describe("SidecarSession", () => {
     expect(events).toContainEqual({ type: "tool_use", tool_call_id: "t-1", name: "Bash", input: { command: "ls" } });
   });
 
+  it("shows the text of an assistant message the SDK marked with an error (a bad API key arrives only this way)", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield {
+          type: "assistant",
+          error: "authentication_failed",
+          message: { model: "<synthetic>", content: [{ type: "text", text: "Invalid API key · Fix external API key" }] },
+        };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events).toContainEqual({ type: "assistant_delta", text: "Invalid API key · Fix external API key" });
+  });
+
+  it("does not repeat the text of an ordinary assistant message (it already streamed as deltas)", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "assistant", message: { model: "claude-test", content: [{ type: "text", text: "hello" }] } };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events.some((e) => e.type === "assistant_delta")).toBe(false);
+  });
+
   it("forwards a tool_result content block from a synthesized user message", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>

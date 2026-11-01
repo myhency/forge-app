@@ -20,6 +20,13 @@ describe("agent_desktop tool", () => {
     expect(createDesktopServer().type).toBe("sdk");
   });
 
+  it("tells the model what to do when an app runs as several processes and not to use osascript keystrokes", () => {
+    const text = JSON.stringify(desktopToolDefinitions()[0].description);
+    expect(text).toContain("AMBIGUOUS_TARGET");
+    expect(text).toContain("--window-id");
+    expect(text).toContain("osascript");
+  });
+
   it("runs the binary with the arguments as given, without a shell", async () => {
     let seen: { binary: string; args: string[] } | undefined;
     const runner: Runner = async (binary, args) => {

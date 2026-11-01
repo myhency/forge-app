@@ -303,7 +303,11 @@ fn tool_row(call: &ToolCall) -> ToolRow {
             let name = call.input.get("skill").and_then(Value::as_str).unwrap_or_default();
             (tr!("Skill ran|tool").to_string(), format!("/{name}"), String::new())
         }
-        ToolKind::Other => (call.name.clone(), summary.clone(), String::new()),
+        ToolKind::Other if is_desktop_tool(&call.name) => {
+            let verb = if call.result.is_some() { tr!("Controlled an app|tool") } else { tr!("Controlling an app") };
+            (verb.to_string(), desktop_command(&call.input), String::new())
+        }
+        ToolKind::Other => (short_tool_name(&call.name).to_string(), summary.clone(), String::new()),
     };
     let error = call.result.as_ref().filter(|result| result.is_error).map(|result| result.output.clone());
     let stopped = error.as_deref().is_some_and(forge_domain::is_denial_text);
@@ -311,6 +315,28 @@ fn tool_row(call: &ToolCall) -> ToolRow {
 }
 
 const SKILL_TOOL: &str = "Skill";
+const DESKTOP_TOOL: &str = "mcp__forge_desktop__agent_desktop";
+
+fn is_desktop_tool(name: &str) -> bool {
+    name == DESKTOP_TOOL
+}
+
+/// `mcp__server__tool` is shown as `tool`; the server prefix is plumbing, not something to read.
+fn short_tool_name(name: &str) -> &str {
+    name.strip_prefix("mcp__").and_then(|rest| rest.split_once("__")).map_or(name, |(_, tool)| tool)
+}
+
+/// The agent-desktop command line (`snapshot --app Claude`) instead of the JSON `{"args":[…]}`.
+fn desktop_command(input: &Value) -> String {
+    let words: Vec<&str> = input.get("args").and_then(Value::as_array).map(|args| args.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+    let line = words.join(" ").replace('\n', " ");
+    if line.chars().count() <= 80 {
+        return line;
+    }
+    let mut cut: String = line.chars().take(79).collect();
+    cut.push('…');
+    cut
+}
 const TOOL_SEARCH: &str = "ToolSearch";
 
 /// A Bash call whose result says the command was started in the background.
@@ -452,7 +478,8 @@ fn live_label(row: &ToolRow) -> (String, String) {
         ToolKind::Read => (tr!("Reading").to_string(), row.subject.clone()),
         ToolKind::Command => (row.subject.clone(), String::new()),
         ToolKind::Other if matches!(row.call.name.as_str(), "Grep" | "Glob") => (tr!("Searching").to_string(), row.subject.clone()),
-        ToolKind::Other => (tr!("Using {name}", name = row.call.name), row.subject.clone()),
+        ToolKind::Other if is_desktop_tool(&row.call.name) => (tr!("Controlling an app").to_string(), row.subject.clone()),
+        ToolKind::Other => (tr!("Using {name}", name = short_tool_name(&row.call.name)), row.subject.clone()),
     }
 }
 
@@ -1342,7 +1369,9 @@ mod tests {
         let other = line("WebFetch", json!({"url": "https://a.test"}));
         assert_eq!((other.label.as_str(), other.subject.as_str()), ("Using WebFetch", "https://a.test"));
         let empty = line("mcp__x__go", json!({}));
-        assert_eq!((empty.label.as_str(), empty.subject.as_str()), ("Using mcp__x__go", ""));
+        assert_eq!((empty.label.as_str(), empty.subject.as_str()), ("Using go", ""));
+        let desktop = line("mcp__forge_desktop__agent_desktop", json!({"args": ["snapshot", "--app", "Claude"]}));
+        assert_eq!((desktop.label.as_str(), desktop.subject.as_str()), ("Controlling an app", "snapshot --app Claude"));
     }
 
     #[test]
