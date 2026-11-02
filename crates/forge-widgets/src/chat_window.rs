@@ -53,6 +53,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
     };
     let view = view_signal.read();
     let mode = workspace.transcript_view(id, settings.default_transcript_view());
+    let mode_index = TranscriptView::ALL.iter().position(|option| *option == mode).unwrap_or(0);
     let archived = view
         .claude_session_id
         .as_ref()
@@ -79,14 +80,21 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                         span { class: "pane-tag", "{tag}" }
                     }
                 }
-                div { class: "view-switch", role: "radiogroup", "aria-label": tr!("Transcript view"),
-                    for option in TranscriptView::ALL {
-                        button {
+                // One compact dropdown instead of three buttons: the header keeps its width for the title.
+                select {
+                    class: "select view-select",
+                    "aria-label": tr!("Transcript view"),
+                    value: "{mode_index}",
+                    onchange: move |evt| {
+                        if let Some(option) = evt.value().parse::<usize>().ok().and_then(|i| TranscriptView::ALL.get(i).copied()) {
+                            workspace.set_transcript_view(id, option);
+                        }
+                    },
+                    for (index, option) in TranscriptView::ALL.into_iter().enumerate() {
+                        option {
                             key: "{option.label()}",
-                            class: if option == mode { "view-option selected" } else { "view-option" },
-                            role: "radio",
-                            "aria-checked": "{option == mode}",
-                            onclick: move |_| workspace.set_transcript_view(id, option),
+                            value: "{index}",
+                            selected: option == mode,
                             {forge_shared::i18n::text(option.label())}
                         }
                     }

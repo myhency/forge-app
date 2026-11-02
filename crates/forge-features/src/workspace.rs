@@ -32,7 +32,7 @@ use crate::shortcut::{match_code, shortcut_allowed, shortcut_for, swallowed_behi
 use crate::tool_activity::finished_tool_calls;
 use crate::task_list_views::{TaskListView, TaskListViews};
 use crate::transcript_views::TranscriptViews;
-use crate::arrange::{arrange_with_origins, open_session_order_with_origins, ArrangedGroup};
+use crate::arrange::{arrange_with_environments, open_session_order_with_environments, ArrangedGroup};
 use crate::search::{merge_search, recent_rows, SearchRow, RECENT_LIMIT};
 use crate::sidebar::{archive_key_plan, cycle_target, ArchiveKey, SidebarEntry, nth_session, mark_archived, merge_sidebar, project_for_open, replace_project_sessions, EntryKey, ForkOrigin, LiveSummary, SidebarGroup};
 use crate::worktree_view::{folder_choices, NewWorktree, RepoInfo, WorktreeTag};
@@ -106,6 +106,8 @@ pub enum Active {
     NewSession,
     Customize,
     Routines,
+    /// The Sessions page (`모두 보기` in the sidebar menu): every session in one list.
+    Sessions,
     Live(LiveSessionId),
 }
 
@@ -627,11 +629,27 @@ impl Workspace {
     pub fn arranged_sidebar(&self, now: OffsetDateTime) -> Vec<ArrangedGroup> {
         let active = match self.active() {
             Active::Live(id) => Some(id),
-            Active::NewSession | Active::Customize | Active::Routines => None,
+            Active::NewSession | Active::Customize | Active::Routines | Active::Sessions => None,
         };
         let records = self.worktrees.read().clone();
         let scratch_root = self.scratch_root();
-        arrange_with_origins(&self.sidebar(), &self.prefs.read(), now, active, &|path| forge_domain::origin_for_grouping(&records, scratch_root.as_deref(), path))
+        // The sidebar lists active sessions only; the archived ones are on the Sessions page.
+        let prefs = SidebarPrefs { status: forge_domain::StatusFilter::Active, ..self.prefs.read().clone() };
+        arrange_with_environments(&self.sidebar(), &prefs, now, active, &|path| forge_domain::origin_for_grouping(&records, scratch_root.as_deref(), path), &|path, entry| self.environment_label(path, entry))
+    }
+
+    /// The group a session is in when the sidebar groups by environment: its saved environment's name, else its
+    /// folder's name (`This computer` for a session in no folder).
+    fn environment_label(&self, path: &Path, entry: &crate::sidebar::SidebarEntry) -> String {
+        if let Some(environment) = self.session_environment(path, entry.session_id.as_ref()) {
+            return environment.name;
+        }
+        if self.is_scratch_group(path) {
+            return tr!("This computer").to_string();
+        }
+        // A worktree is named by its repository, as the folder grouping does.
+        let home = self.origin_of(path);
+        home.file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_else(|| home.display().to_string())
     }
 
     pub fn shortcuts_open(&self) -> bool {
@@ -1767,6 +1785,11 @@ impl Workspace {
         self.navigate(Active::Routines);
     }
 
+    /// Shows the Sessions page in the main pane.
+    pub fn show_sessions(&self) {
+        self.navigate(Active::Sessions);
+    }
+
     /// Shows a session that something other than the person started (a routine). It is not selected:
     /// the person keeps what they were doing.
     pub fn adopt(&self, handle: LiveSessionHandle) {
@@ -1985,8 +2008,8 @@ impl Workspace {
     pub fn context_project(&self) -> Option<PathBuf> {
         match self.active() {
             Active::Live(id) => self.live_view(id).map(|view| view.read().project_path.clone()),
-            Active::NewSession | Active::Customize | Active::Routines if self.effective_no_folder() => None,
-            Active::NewSession | Active::Customize | Active::Routines => self
+            Active::NewSession | Active::Customize | Active::Routines | Active::Sessions if self.effective_no_folder() => None,
+            Active::NewSession | Active::Customize | Active::Routines | Active::Sessions => self
                 .new_folder()
                 .or_else(|| self.new_session_projects().into_iter().next().map(|project| project.path)),
         }
@@ -2225,7 +2248,7 @@ impl Workspace {
     fn reachable(&self, screen: Active) -> bool {
         match screen {
             Active::Live(id) => self.handle(id).is_some(),
-            Active::NewSession | Active::Customize | Active::Routines => true,
+            Active::NewSession | Active::Customize | Active::Routines | Active::Sessions => true,
         }
     }
 
@@ -2755,10 +2778,10 @@ impl Workspace {
     pub fn cycle(&self, forward: bool) -> bool {
         let records = self.worktrees.read().clone();
         let scratch_root = self.scratch_root();
-        let order = open_session_order_with_origins(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local(), &|path| forge_domain::origin_for_grouping(&records, scratch_root.as_deref(), path));
+        let order = open_session_order_with_environments(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local(), &|path| forge_domain::origin_for_grouping(&records, scratch_root.as_deref(), path), &|path, entry| self.environment_label(path, entry));
         let current = match self.active() {
             Active::Live(id) => Some(id),
-            Active::NewSession | Active::Customize | Active::Routines => None,
+            Active::NewSession | Active::Customize | Active::Routines | Active::Sessions => None,
         };
         match cycle_target(&order, current, forward) {
             // The only open session: nothing to switch to, so the key stays the caret's.
@@ -2776,7 +2799,7 @@ impl Workspace {
     pub fn go_to_session(&self, index: usize) {
         let records = self.worktrees.read().clone();
         let scratch_root = self.scratch_root();
-        let order = open_session_order_with_origins(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local(), &|path| forge_domain::origin_for_grouping(&records, scratch_root.as_deref(), path));
+        let order = open_session_order_with_environments(&self.sidebar(), &self.prefs.read(), crate::arrange::now_local(), &|path| forge_domain::origin_for_grouping(&records, scratch_root.as_deref(), path), &|path, entry| self.environment_label(path, entry));
         if let Some(id) = nth_session(&order, index) {
             self.select(id);
         }

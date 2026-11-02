@@ -21,6 +21,10 @@ pub enum SortBy {
 #[serde(rename_all = "snake_case")]
 pub enum GroupBy {
     Date,
+    /// By what the session is doing: needs input, running, idle.
+    Status,
+    /// By the saved environment the session runs in (the folder's name when it has none).
+    Environment,
     Flat,
     #[default]
     #[serde(other)]
@@ -74,6 +78,8 @@ pub struct SidebarPrefs {
     pub status: StatusFilter,
     /// Whether a project with no sessions still gets a heading.
     pub show_empty: bool,
+    /// Whether a row says its folder or worktree branch under the title (the desktop app's `표시 → 메타데이터`).
+    pub show_metadata: bool,
     /// Sorts the other way round: oldest first for the times, Z to A for the names. Off is the order the
     /// sidebar always had (newest first, A to Z).
     pub reversed: bool,
@@ -90,6 +96,7 @@ impl Default for SidebarPrefs {
             group_by: GroupBy::default(),
             status: StatusFilter::default(),
             show_empty: false,
+            show_metadata: true,
             reversed: false,
             collapsed: Vec::new(),
             width: DEFAULT_SIDEBAR_WIDTH,
@@ -99,6 +106,14 @@ impl Default for SidebarPrefs {
 }
 
 impl SidebarPrefs {
+    /// Whether sort, group, status and what is shown are all at their defaults (the reset has nothing to do).
+    pub fn is_default_view(&self) -> bool {
+        let defaults = Self::default();
+        // The status is not in the menu any more (the Sessions page has the active and archived tabs).
+        (self.sort_by, self.group_by, self.show_empty, self.show_metadata, self.reversed)
+            == (defaults.sort_by, defaults.group_by, defaults.show_empty, defaults.show_metadata, defaults.reversed)
+    }
+
     /// The width to draw: a hand-edited or corrupt value never makes the sidebar unusable.
     pub fn clamped_width(&self) -> u32 {
         self.width.clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH)
@@ -596,6 +611,7 @@ mod tests {
         assert_eq!(config.sidebar.sort_by, SortBy::Activity);
         assert_eq!(config.sidebar.group_by, GroupBy::Folder);
         assert!(!config.sidebar.show_empty);
+        assert!(config.sidebar.show_metadata);
         assert!(!config.sidebar.reversed);
         assert!(!config.sidebar.hidden);
         assert_eq!(config.sidebar.width, DEFAULT_SIDEBAR_WIDTH);
@@ -615,6 +631,7 @@ mod tests {
             group_by: GroupBy::Date,
             status: StatusFilter::All,
             show_empty: true,
+            show_metadata: false,
             reversed: true,
             collapsed: vec!["folder:/work/a".to_string()],
             width: 300,
