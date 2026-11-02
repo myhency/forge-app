@@ -308,7 +308,7 @@ button:not(:disabled):active { scale: 0.98; }
 .usage-ring.danger .arc { stroke: var(--danger); }
 .usage-ring.empty .arc { stroke: none; }
 .usage-backdrop { position: fixed; inset: 0; z-index: 9; background: transparent; }
-.usage-popover { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 10; width: 300px; padding: var(--sp-12); box-sizing: border-box; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); box-shadow: var(--shadow); font-size: var(--text-sm); }
+.usage-popover { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 10; width: 300px; max-width: calc(100vw - 32px); max-height: calc(100vh - 120px); overflow-y: auto; padding: var(--sp-12); box-sizing: border-box; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); box-shadow: var(--shadow); font-size: var(--text-sm); }
 .usage-heading { margin: 0 0 var(--sp-6); font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .usage-row { display: flex; justify-content: space-between; gap: var(--sp-12); padding: var(--sp-1) 0; }
 .usage-row .value { font-variant-numeric: tabular-nums; }
@@ -430,6 +430,16 @@ button:not(:disabled):active { scale: 0.98; }
 .setting-title { font-weight: var(--weight-medium); }
 .setting-desc { font-size: var(--text-sm); color: var(--fg-muted); }
 .setting-control { display: flex; align-items: center; gap: var(--sp-8); flex: none; }
+/* A narrow window: the nav shrinks (the panel keeps its margin: the ☰ button floats over its top left corner), and a row whose control does not fit beside its text puts the control under it (the text keeps at least 200 px). */
+@media (max-width: 760px) {
+  .settings-nav { width: 168px; padding: var(--sp-16) var(--sp-8); }
+  .settings-content { padding: var(--sp-24) var(--sp-20); }
+  .setting-row { flex-wrap: wrap; gap: var(--sp-8) var(--sp-16); }
+  .setting-info { flex: 1 1 200px; }
+  .setting-control { flex: 0 1 auto; max-width: 100%; flex-wrap: wrap; }
+  .setting-control .text-input { min-width: 0; max-width: 100%; }
+  .skill-files { grid-template-columns: minmax(0, 1fr); }
+}
 .status-line { min-height: 20px; margin-top: var(--sp-12); font-size: var(--text-base); color: var(--fg-muted); }
 .status-line.error { color: var(--danger); }
 
@@ -574,9 +584,13 @@ button:not(:disabled):active { scale: 0.98; }
 .markdown li:has(> input:checked) { color: var(--fg-muted); text-decoration: line-through; }
 .markdown blockquote { padding: var(--sp-2) 0 var(--sp-2) var(--sp-14); border-left: 3px solid var(--border); color: var(--fg-muted); }
 .markdown blockquote > :last-child { margin-bottom: 0; }
-.markdown table { display: table; width: 100%; border-collapse: collapse; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); }
+/* A table wider than the column scrolls sideways instead of being cut off; a narrow one still fills the column. */
+.markdown table { display: block; width: max-content; min-width: 100%; max-width: 100%; overflow-x: auto; border-collapse: collapse; border: 1px solid var(--border); border-radius: var(--radius); }
 .markdown th, .markdown td { padding: var(--sp-8) var(--sp-12); border: none; border-top: 1px solid var(--border); text-align: left; }
+/* A narrow chat squeezes a column with a long cell down to one letter per line; a cell keeps room for a few characters, and the long text breaks inside the others. */
+.markdown th, .markdown td { min-width: 5ch; overflow-wrap: anywhere; }
 .markdown thead th { background: var(--bg-hover); border-top: none; font-weight: var(--weight-semibold); }
+.markdown img { max-width: 100%; height: auto; border-radius: var(--r-8); }
 .markdown hr { border: none; border-top: 1px solid var(--border); margin: var(--sp-16) 0; }
 .code-wrap { position: relative; width: fit-content; max-width: 100%; margin: 0 0 var(--sp-10); }
 .code-copy { appearance: none; position: absolute; top: 6px; right: 6px; border: none; background: var(--bg-card); color: var(--fg-muted); border-radius: var(--r-6); padding: var(--sp-2) var(--sp-6); cursor: pointer; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
@@ -736,13 +750,23 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .chip-remove:hover { color: var(--fg); }
 
 /* The dock: columns right of the chat. */
-.dock-column { position: relative; flex: 0 1 auto; display: flex; flex-direction: column; min-width: 260px; max-width: 70vw; padding: var(--sp-8); box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
+.dock-column { position: relative; flex: 0 1 auto; display: flex; flex-direction: column; min-width: 260px; padding: var(--sp-8); box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
+/* The session rail floats over the chat as a card when the chat would get too little beside it (the desktop app does the same). */
+/* The session rail as a card: the desktop app puts it at the left of the chat, under the other columns, above the composer. */
+.rail-floats .dock-column.rail { position: absolute; z-index: 1; top: 12px; bottom: 92px; left: 31px; width: 320px !important; flex: none; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+.rail-floats .dock-column:not(.rail) { z-index: 2; }
+/* A floating dock is the card's containing block: its left edge is the pane's width minus the other columns and the 8 px margin. */
+.rail-floats.dock-float .dock { overflow: visible; }
+.rail-floats.dock-float .dock-column.rail { left: calc(31px - (var(--pane-w) - var(--dock-rest) - 8px)); top: -8px; bottom: calc(92px - 8px); }
+.pane.rail-floats { overflow: hidden; }
+.rail-floats .dock-column.rail .dock-resize { display: none; }
+.rail-backdrop { position: absolute; top: 0; bottom: 0; left: 0; right: var(--dock-rest, 0px); z-index: 0; }
 .dock-column.expanded { flex: 1; max-width: none; }
 /* The columns of one session. Beside the chat they are plain flex items; when the chat would get
    too narrow they float over it as one rounded card (observation round 10). */
 .dock { display: contents; }
 .dock-float .dock { display: flex; position: absolute; top: 8px; right: 8px; bottom: 8px; z-index: 8; max-width: calc(100% - 16px); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); }
-.dock-float .dock-column { flex: none; max-width: 400px; }
+.dock-float .dock-column { flex: none; max-width: 100%; }
 .dock-float .dock-column.expanded { max-width: none; }
 .dock-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 5px; cursor: col-resize; z-index: 7; }
 .dock-resize:hover { background: var(--accent-soft); }
@@ -776,6 +800,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .pane-tools .pane-close { position: static; }
 .chat-narrow .pane-header { flex-wrap: wrap; row-gap: var(--sp-6); padding: var(--sp-12) var(--sp-16); }
 .chat-narrow .pane-title { flex: 1 1 120px; }
+.chat-narrow .pane-titlebox { flex: 1 1 150px; }
 .chat-narrow .messages { padding: var(--sp-8) var(--sp-16) var(--sp-16); }
 .chat-narrow .perm-buttons { flex-direction: column; align-items: stretch; }
 .chat-narrow .perm-buttons .spacer { display: none; }

@@ -2327,6 +2327,21 @@ impl Workspace {
         });
     }
 
+    /// Closes every details panel that opened by itself. A narrow window floats a panel over the chat,
+    /// and a floating one hides the permission card that a new session's first turn asks.
+    /// Reading the set makes a caller inside an effect run again when a panel opens by itself.
+    pub fn dismiss_auto_details(&self) {
+        let ids: Vec<LiveSessionId> = self.auto_details.read().iter().cloned().collect();
+        if ids.is_empty() {
+            return;
+        }
+        let mut auto = self.auto_details;
+        auto.write().clear();
+        for id in ids {
+            self.change_dock(id, |dock| dock.close(Panel::Details));
+        }
+    }
+
     /// Opens a panel that came up by itself (a plan arrived, a side question was asked). A details
     /// panel that opened by itself gives way to it, so two panels do not cover the chat.
     pub fn open_panel_over_auto_details(&self, id: LiveSessionId, panel: Panel) {
