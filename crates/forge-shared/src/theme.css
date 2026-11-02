@@ -947,6 +947,8 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 /* With room the content sits at the bottom; in a pane too short for it the top stays reachable and the panel scrolls. */
 .new-session > :first-child { margin-top: auto; }
 .chip-button { appearance: none; padding: var(--sp-4) var(--sp-8); border: none; border-radius: var(--r-8); background: transparent; color: var(--fg-muted); font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.chip-check { display: inline-flex; align-items: center; gap: var(--sp-6); padding: var(--sp-4) var(--sp-8); color: var(--fg-muted); font-size: var(--text-sm); cursor: pointer; }
+.chip-check input { margin: 0; accent-color: var(--accent); cursor: pointer; }
 .chip-button:hover { background: var(--bg-hover); color: var(--fg); }
 .send-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: none; border-radius: var(--r-round); background: transparent; color: var(--fg-muted); opacity: 0.5; cursor: default; }
 .send-icon.ready { color: var(--fg); opacity: 1; cursor: pointer; }

@@ -27,15 +27,11 @@ pub fn FolderChip() -> Element {
         section: (index == 0).then(|| tr!("Recent").to_string()),
         ..Default::default()
     }));
-    let mut draft = use_new_session_draft();
+    let draft = use_new_session_draft();
     if draft.environment.read().is_some() {
         return rsx! {};
     }
-    let repo = workspace.new_repo();
     items.push(PickerItem { label: tr!("Open folder…").to_string(), divider_before: true, ..Default::default() });
-    if repo.is_some() {
-        items.push(PickerItem { label: tr!("Worktree").to_string(), checked: *draft.worktree.read(), divider_before: true, ..Default::default() });
-    }
     // The desktop app names the button "Choose…" while no folder is chosen.
     let current_label = if scratch && no_folder {
         tr!("Choose…").to_string()
@@ -60,11 +56,7 @@ pub fn FolderChip() -> Element {
                 let index = if scratch { index - 1 } else { index };
                 match paths.get(index) {
                     Some(path) => workspace.set_new_folder(Some(path.clone())),
-                    None if index == paths.len() => workspace.open_folder(),
-                    None => {
-                        let on = *draft.worktree.peek();
-                        draft.worktree.set(!on);
-                    }
+                    None => workspace.open_folder(),
                 }
                 refocus_composer();
             },
@@ -72,39 +64,24 @@ pub fn FolderChip() -> Element {
     }
 }
 
-/// The branch a worktree starts from; shown only for a git folder with the worktree row on.
+/// The worktree checkbox beside the folder, shown for a git folder (checked by default, like the desktop app): the
+/// session then works in its own worktree, made from the folder's current branch.
 #[component]
-pub fn BranchChip() -> Element {
+pub fn WorktreeCheckbox() -> Element {
     let workspace = use_workspace();
     let mut draft = use_new_session_draft();
-    if draft.environment.read().is_some() {
+    if draft.environment.read().is_some() || workspace.new_repo().is_none() {
         return rsx! {};
     }
-    let Some(info) = workspace.new_repo() else { return rsx! {} };
-    if !*draft.worktree.read() {
-        return rsx! {};
-    }
-    let chosen = draft.branch.read().clone().or_else(|| info.branches.current.clone());
-    let items: Vec<PickerItem> = info
-        .branches
-        .local
-        .iter()
-        .map(|name| PickerItem { label: name.clone(), description: None, key: None, checked: chosen.as_deref() == Some(name.as_str()), divider_before: false, ..Default::default() })
-        .collect();
-    let names = info.branches.local.clone();
-    let label = chosen.unwrap_or_else(|| tr!("Detached HEAD").to_string());
+    let on = *draft.worktree.read();
     rsx! {
-        Picker {
-            title: tr!("Branch"),
-            heading: tr!("Branches"),
-            current: label,
-            items,
-            onpick: move |index: usize| {
-                if let Some(name) = names.get(index) {
-                    draft.branch.set(Some(name.clone()));
-                }
-                refocus_composer();
-            },
+        label { class: "chip-check",
+            input {
+                r#type: "checkbox",
+                checked: on,
+                onchange: move |event| draft.worktree.set(event.checked()),
+            }
+            span { {tr!("Worktree")} }
         }
     }
 }

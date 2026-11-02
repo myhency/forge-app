@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use forge_features::{use_new_session_draft_provider, use_workspace, user_name, NewSessionComposer};
 
 use crate::environment_chip::EnvironmentChip;
-use crate::new_session_controls::{BranchChip, FolderChip, NewModePicker, NewModelPicker};
+use crate::new_session_controls::{FolderChip, WorktreeCheckbox, NewModePicker, NewModelPicker};
 use crate::plus_menu::PlusMenu;
 use crate::auto_mode_card::AutoModeCard;
 use crate::environment_card::EnvironmentCard;
@@ -26,7 +26,7 @@ pub fn NewSessionPanel() -> Element {
                 start: rsx! {
                     EnvironmentChip {}
                     FolderChip {}
-                    BranchChip {}
+                    WorktreeCheckbox {}
                 },
                 end: rsx! {
                     NewModelPicker {}
