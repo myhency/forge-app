@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use forge_application::{SideAnswer, WorktreesUseCase, ScratchUseCase, Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::{build_turns, latest_plan, plan_text_of_request, TranscriptView};
 use forge_domain::{ChangeModeRef, ChangesViewPrefs, WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
-use forge_ports::{DesktopToolPort, BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
+use forge_ports::{DesktopToolPort, BrowserPort, FilePickerPort, FileSavePort, FileVersion, LogReportPort, ReportSummary, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
 use forge_ports::{ChangeSource, DiffOptions, Surface};
 use time::OffsetDateTime;
 
@@ -97,6 +97,8 @@ pub struct WorkspaceServices {
     pub webviews: Arc<dyn WebViewPort>,
     pub usage_stats: Arc<dyn UsageStatsPort>,
     pub mcp_logs: Arc<dyn McpLogPort>,
+    pub log_report: Arc<dyn LogReportPort>,
+    pub file_saver: Arc<dyn FileSavePort>,
     pub routines: RoutineServices,
 }
 
@@ -1705,6 +1707,42 @@ impl Workspace {
     pub fn open_mcp_log(&self, server: &str) -> Result<(), String> {
         let path = crate::developer::log_to_open(self.services.peek().mcp_logs.as_ref(), server)?;
         crate::developer::open_log(self.browser().as_ref(), &path)
+    }
+
+    /// Asks where to save the report. `None` means the person cancelled.
+    pub async fn pick_report_path(&self) -> Option<PathBuf> {
+        let (report, saver) = {
+            let services = self.services.peek();
+            (services.log_report.clone(), services.file_saver.clone())
+        };
+        saver.pick_save_path(&report.suggested_name()).await
+    }
+
+    /// Packs the logs and the computer's details into a zip at `dest`. The page that asked shows the outcome,
+    /// because a notice would sit behind the Settings window.
+    pub async fn write_log_report(&self, dest: PathBuf, conversations: bool) -> Result<(PathBuf, ReportSummary), String> {
+        let report = self.services.peek().log_report.clone();
+        forge_log::info("report", &format!("the report goes to {}", dest.display()));
+        let target = dest.clone();
+        // Asking the system for its logs takes seconds: it stays off the thread that draws.
+        let outcome = tokio::task::spawn_blocking(move || report.write_report(&target, conversations)).await;
+        match outcome {
+            Ok(Ok(summary)) => {
+                forge_log::info("report", &format!("saved a report of {} files", summary.entries.len()));
+                Ok((dest, summary))
+            }
+            Ok(Err(message)) => {
+                forge_log::error("report", &format!("could not save: {message}"));
+                Err(message)
+            }
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    /// Shows the folder with Forge's own log files.
+    pub fn reveal_log_dir(&self) -> Result<(), String> {
+        let dir = self.services.peek().log_report.logs_dir();
+        self.browser().open_with(&dir, None)
     }
 
     /// Opens a file with the default app or a named one; a failure becomes a notice.
@@ -3479,6 +3517,7 @@ impl Workspace {
     }
 
     pub fn report(&self, message: String) {
+        forge_log::warn("notice", &message);
         let mut notice = self.notice;
         notice.set(Some(message));
     }

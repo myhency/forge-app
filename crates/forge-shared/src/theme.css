@@ -414,6 +414,9 @@ button:not(:disabled):active { scale: 0.98; }
 .developer-body { display: flex; gap: var(--sp-16); margin-top: var(--sp-12); }
 .developer-list { flex: 0 0 180px; }
 .developer-detail { flex: 1; min-width: 0; }
+.developer-report { margin-top: var(--sp-24); padding-top: var(--sp-16); border-top: 1px solid var(--border); }
+.developer-report-buttons { display: flex; gap: var(--sp-8); margin: var(--sp-12) 0; }
+.developer-report .status-line { overflow-wrap: anywhere; margin-bottom: var(--sp-8); }
 .developer-detail .label { margin-top: var(--sp-12); font-size: var(--text-sm); color: var(--fg-muted); }
 .settings-nav-item:hover { background: var(--bg-hover); }
 .settings-hit + .settings-hit { margin-top: var(--sp-6); }

@@ -20,6 +20,7 @@ use forge_adapter_sidecar::{NodeDesktopTool, SidecarProcessFactory};
 use forge_adapter_browser::SystemBrowser;
 use forge_adapter_files::{LocalFiles, ScratchFs};
 use forge_adapter_git::GitCli;
+use forge_adapter_report::ZipLogReport;
 use forge_adapter_terminal::PtyTerminal;
 use forge_adapter_webview::WryWebViews;
 use forge_application::{ConfigLock, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, RegistryHost, RoutineRunner, RoutinesUseCase, SessionRegistry, ScratchUseCase, SettingsUseCase, SkillCatalogUseCase, WorktreesUseCase};
@@ -48,10 +49,27 @@ fn main() {
     if let Some(tag) = sys_locale::get_locale() {
         forge_shared::i18n::set_system_language(forge_domain::Language::from_locale(&tag));
     }
+    start_log();
     dioxus::LaunchBuilder::desktop()
         .with_cfg(window_config())
         .with_context(build_services())
         .launch(App);
+}
+
+// The log folder sits beside the config file (so a moved config, the harness, moves its log too); by default it
+// is the app's data folder. Logging starts before anything else so a failure while starting is kept.
+fn log_dir() -> Option<std::path::PathBuf> {
+    match std::env::var_os("FORGE_CONFIG_PATH").filter(|path| !path.is_empty()) {
+        Some(path) => std::path::Path::new(&path).parent().map(|dir| dir.join("logs")),
+        None => directories::ProjectDirs::from("", "", "Forge").map(|dirs| dirs.data_local_dir().join("logs")),
+    }
+}
+
+fn start_log() {
+    if let Some(dir) = log_dir() {
+        forge_log::init(&dir);
+    }
+    forge_log::info("app", &format!("Forge {} starts on {} {}", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH));
 }
 
 // Amendment A (spec §15.10 (c)): Dioxus's default menu binds the platform's
@@ -177,7 +195,7 @@ fn build_services() -> WorkspaceServices {
         .with_config_lock(config_lock.clone()),
     );
     let plugin_catalog = Arc::new(PluginCatalogUseCase::new(
-        Arc::new(ClaudePluginCli::new(plugin_binary, claude_home.clone(), plugin_config_dir)),
+        Arc::new(ClaudePluginCli::new(plugin_binary.clone(), claude_home.clone(), plugin_config_dir)),
         config.clone(),
     ).with_config_lock(config_lock.clone()));
     let skill_catalog = Arc::new(
@@ -187,7 +205,7 @@ fn build_services() -> WorkspaceServices {
     // Programs Forge installs for the person (agent-desktop) live beside the config file; the sidecar reads the same folder.
     let tools_dir = tools_dir_beside(&config_path_for_tools);
     let desktop_tool: Arc<dyn forge_ports::DesktopToolPort> = Arc::new(NodeDesktopTool::new(node.clone(), std::path::Path::new(&script), tools_dir.clone()));
-    let factory = Arc::new(SidecarProcessFactory::new(node, script, config.clone()).with_tools_dir(tools_dir));
+    let factory = Arc::new(SidecarProcessFactory::new(node.clone(), script, config.clone()).with_tools_dir(tools_dir));
     let settings = Arc::new(SettingsUseCase::new(config.clone()).with_config_lock(config_lock.clone()));
     // With no project open the tabs read the home directory as the project, so only the global
     // definitions (`~/.claude/skills`, the global MCP servers) show.
@@ -210,6 +228,11 @@ fn build_services() -> WorkspaceServices {
     let worktrees = Arc::new(WorktreesUseCase::new(git.clone(), settings.clone()));
     let scratch = Arc::new(ScratchUseCase::new(scratch_root, Arc::new(ScratchFs)));
     let picker = Arc::new(RfdFolderPicker::new());
+    let log_report = Arc::new(ZipLogReport::new(log_dir().unwrap_or_else(|| std::env::temp_dir().join("forge-logs")), directories::UserDirs::new().map(|dirs| dirs.home_dir().to_path_buf())).with_details(forge_adapter_report::Details {
+        config_path: Some(config_path_for_tools.clone()),
+        transcripts_dir: Some(claude_home.join("projects")),
+        tools: vec![("node".to_string(), std::path::PathBuf::from(&node)), ("claude".to_string(), std::path::PathBuf::from(&plugin_binary))],
+    }));
     let shell = default_shell(std::env::var("SHELL").ok());
     WorkspaceServices {
         registry,
@@ -224,7 +247,9 @@ fn build_services() -> WorkspaceServices {
         scratch,
         folder_picker: picker.clone(),
         desktop_tool,
-        file_picker: picker,
+        file_picker: picker.clone(),
+        file_saver: picker,
+        log_report,
         terminal: Arc::new(PtyTerminal::new(shell)),
         git: git.clone(),
         files: Arc::new(LocalFiles::new()),
