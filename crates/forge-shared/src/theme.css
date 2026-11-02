@@ -430,6 +430,16 @@ button:not(:disabled):active { scale: 0.98; }
 .setting-title { font-weight: var(--weight-medium); }
 .setting-desc { font-size: var(--text-sm); color: var(--fg-muted); }
 .setting-control { display: flex; align-items: center; gap: var(--sp-8); flex: none; }
+/* A narrow window: the nav shrinks (the panel keeps its margin: the ☰ button floats over its top left corner), and a row whose control does not fit beside its text puts the control under it (the text keeps at least 200 px). */
+@media (max-width: 760px) {
+  .settings-nav { width: 168px; padding: var(--sp-16) var(--sp-8); }
+  .settings-content { padding: var(--sp-24) var(--sp-20); }
+  .setting-row { flex-wrap: wrap; gap: var(--sp-8) var(--sp-16); }
+  .setting-info { flex: 1 1 200px; }
+  .setting-control { flex: 0 1 auto; max-width: 100%; flex-wrap: wrap; }
+  .setting-control .text-input { min-width: 0; max-width: 100%; }
+  .skill-files { grid-template-columns: minmax(0, 1fr); }
+}
 .status-line { min-height: 20px; margin-top: var(--sp-12); font-size: var(--text-base); color: var(--fg-muted); }
 .status-line.error { color: var(--danger); }
 
