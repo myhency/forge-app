@@ -1,5 +1,6 @@
 mod browser_port;
 mod config_port;
+mod desktop_tool_port;
 mod connector_catalog_port;
 mod extension_ports;
 mod file_picker_port;
@@ -36,6 +37,7 @@ pub use extension_ports::{
     SkillRepositoryError, SkillRepositoryPort,
 };
 pub use file_picker_port::FilePickerPort;
+pub use desktop_tool_port::{DesktopToolPort, DesktopToolStatus};
 pub use folder_picker_port::FolderPickerPort;
 pub use plugin_manager_port::{PluginManagerError, PluginManagerPort};
 pub use project_port::{ProjectRepositoryError, ProjectRepositoryPort};
@@ -76,6 +78,8 @@ pub use mcp_manager_port::MockMcpManagerPort;
 pub use extension_ports::{MockMcpRegistryPort, MockPluginRepositoryPort, MockSkillRepositoryPort};
 #[cfg(any(test, feature = "mocks"))]
 pub use file_picker_port::MockFilePickerPort;
+#[cfg(any(test, feature = "mocks"))]
+pub use desktop_tool_port::MockDesktopToolPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use folder_picker_port::MockFolderPickerPort;
 #[cfg(any(test, feature = "mocks"))]

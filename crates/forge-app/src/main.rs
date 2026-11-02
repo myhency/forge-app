@@ -16,7 +16,7 @@ use forge_adapter_notify::NoNotify;
 #[cfg(target_os = "macos")]
 use forge_adapter_notify::{AttentionSlot, MacNotify};
 use forge_adapter_config::{default_config_path, ConfigFileAdapter};
-use forge_adapter_sidecar::SidecarProcessFactory;
+use forge_adapter_sidecar::{NodeDesktopTool, SidecarProcessFactory};
 use forge_adapter_browser::SystemBrowser;
 use forge_adapter_files::{LocalFiles, ScratchFs};
 use forge_adapter_git::GitCli;
@@ -158,6 +158,7 @@ fn build_services() -> WorkspaceServices {
         .expect("could not resolve the config directory");
     let runtime::Runtime { node, script } = runtime::locate_here(DEFAULT_SIDECAR_SCRIPT);
 
+    let config_path_for_tools = config_path.clone();
     let scratch_root = forge_domain::scratch_root(&config_path);
     let config = Arc::new(ConfigFileAdapter::new(config_path));
     // Every use case that loads, edits and saves the Forge config holds this one lock while it does.
@@ -183,7 +184,10 @@ fn build_services() -> WorkspaceServices {
         SkillCatalogUseCase::new(Arc::new(ClaudeSkillCatalogAdapter::new(claude_home.clone())), config.clone())
             .with_config_lock(config_lock.clone()),
     );
-    let factory = Arc::new(SidecarProcessFactory::new(node, script, config.clone()));
+    // Programs Forge installs for the person (agent-desktop) live beside the config file; the sidecar reads the same folder.
+    let tools_dir = tools_dir_beside(&config_path_for_tools);
+    let desktop_tool: Arc<dyn forge_ports::DesktopToolPort> = Arc::new(NodeDesktopTool::new(node.clone(), std::path::Path::new(&script), tools_dir.clone()));
+    let factory = Arc::new(SidecarProcessFactory::new(node, script, config.clone()).with_tools_dir(tools_dir));
     let settings = Arc::new(SettingsUseCase::new(config.clone()).with_config_lock(config_lock.clone()));
     // With no project open the tabs read the home directory as the project, so only the global
     // definitions (`~/.claude/skills`, the global MCP servers) show.
@@ -219,6 +223,7 @@ fn build_services() -> WorkspaceServices {
         worktrees,
         scratch,
         folder_picker: picker.clone(),
+        desktop_tool,
         file_picker: picker,
         terminal: Arc::new(PtyTerminal::new(shell)),
         git: git.clone(),
@@ -229,6 +234,11 @@ fn build_services() -> WorkspaceServices {
         mcp_logs: Arc::new(ClaudeMcpLogAdapter::new(default_cli_cache_dir(), claude_json)),
         routines: RoutineServices { routines, runner, host, starts: Arc::new(std::sync::Mutex::new(starts)), notify: notifier() },
     }
+}
+
+/// `tools` next to the config file, so a moved config (the harness) moves the installed programs with it.
+fn tools_dir_beside(config_path: &std::path::Path) -> std::path::PathBuf {
+    config_path.parent().unwrap_or_else(|| std::path::Path::new(".")).join("tools")
 }
 
 // The shell of the terminal panel: the person's own on macOS and Linux; PowerShell, which every

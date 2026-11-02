@@ -59,10 +59,14 @@ describe("SidecarSession", () => {
       allowed_tools: ["Read"],
     });
     expect(Object.keys(captured!.mcpServers).sort()).toEqual(["ccd_turn", "files"]);
-    expect(captured!.allowedTools).toEqual(["Read", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
+    expect(captured!.allowedTools).toEqual(["Read"]);
+    const signal = new AbortController().signal;
+    for (const tool of ["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]) {
+      await expect(captured!.canUseTool(tool, { a: 1 }, { requestId: "r", signal })).resolves.toEqual({ behavior: "allow", updatedInput: { a: 1 } });
+    }
   });
 
-  it("adds the forge_ui server and allows its tool when generative_ui is on", async () => {
+  it("adds the forge_ui server and approves its tools without a question when generative_ui is on", async () => {
     let captured: Record<string, any> | undefined;
     const queryFn: QueryFn = ({ options }) => {
       captured = options;
@@ -70,7 +74,22 @@ describe("SidecarSession", () => {
     };
     await new SidecarSession(queryFn, () => {}).handle({ ...startCommand, generative_ui: true, allowed_tools: ["Read"] });
     expect(Object.keys(captured!.mcpServers)).toEqual(["forge_ui"]);
-    expect(captured!.allowedTools).toEqual(["Read", "mcp__forge_ui__ui_guide", "mcp__forge_ui__generate_sandboxed_ui"]);
+    expect(captured!.allowedTools).toEqual(["Read"]);
+    const signal = new AbortController().signal;
+    for (const tool of ["mcp__forge_ui__ui_guide", "mcp__forge_ui__generate_sandboxed_ui"]) {
+      await expect(captured!.canUseTool(tool, {}, { requestId: "r", signal })).resolves.toEqual({ behavior: "allow", updatedInput: {} });
+    }
+  });
+
+  it("adds the forge_desktop server but does not allow its tool up front, so each call asks", async () => {
+    let captured: Record<string, any> | undefined;
+    const queryFn: QueryFn = ({ options }) => {
+      captured = options;
+      return toQueryHandle((async function* () {})());
+    };
+    await new SidecarSession(queryFn, () => {}).handle({ ...startCommand, desktop_control: true, allowed_tools: ["Read"] });
+    expect(Object.keys(captured!.mcpServers)).toEqual(["forge_desktop"]);
+    expect(captured!.allowedTools).toEqual(["Read"]);
   });
 
   it("adds nothing when turn_tools is off or missing (an older parent)", async () => {
@@ -319,6 +338,36 @@ describe("SidecarSession", () => {
     await session.handle(startCommand);
 
     expect(events).toContainEqual({ type: "tool_use", tool_call_id: "t-1", name: "Bash", input: { command: "ls" } });
+  });
+
+  it("shows the text of an assistant message the SDK marked with an error (a bad API key arrives only this way)", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield {
+          type: "assistant",
+          error: "authentication_failed",
+          message: { model: "<synthetic>", content: [{ type: "text", text: "Invalid API key · Fix external API key" }] },
+        };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events).toContainEqual({ type: "assistant_delta", text: "Invalid API key · Fix external API key" });
+  });
+
+  it("does not repeat the text of an ordinary assistant message (it already streamed as deltas)", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "assistant", message: { model: "claude-test", content: [{ type: "text", text: "hello" }] } };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events.some((e) => e.type === "assistant_delta")).toBe(false);
   });
 
   it("forwards a tool_result content block from a synthesized user message", async () => {

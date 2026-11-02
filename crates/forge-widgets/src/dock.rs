@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
-use forge_features::{use_workspace, Panel};
+use forge_features::{use_pane_width, use_workspace, Panel};
 
 use crate::changes_panel::ChangesPanel;
 use crate::files_panel::FilesPanel;
@@ -19,6 +19,8 @@ struct Grab {
     column: usize,
     x: f64,
     width: f32,
+    /// The width of the column left of this one, for a handle between two columns.
+    before: f32,
 }
 
 /// The columns right of the chat. Each column's left edge is a handle that resizes it; while one
@@ -29,6 +31,9 @@ pub fn Dock(id: LiveSessionId, cwd: PathBuf) -> Element {
     let workspace = use_workspace();
     let state = workspace.dock(id);
     let mut grab = use_signal(|| None::<Grab>);
+    let pane_width = use_pane_width() as f32;
+    let widths: Vec<f32> = state.columns.iter().map(|column| column.width).collect();
+    let rails: Vec<bool> = (0..state.columns.len()).map(|column| state.is_rail(column)).collect();
     if state.columns.is_empty() {
         return rsx! {};
     }
@@ -40,8 +45,15 @@ pub fn Dock(id: LiveSessionId, cwd: PathBuf) -> Element {
                     class: "dock-drag-shield",
                     onmousemove: move |event| {
                         if let Some(start) = grab() {
-                            let width = start.width + (start.x - event.client_coordinates().x) as f32;
-                            workspace.change_dock(id, |dock| dock.resize(start.column, width));
+                            let left = (start.x - event.client_coordinates().x) as f32;
+                            workspace.change_dock(id, |dock| {
+                                if dock.is_chat_edge(start.column) {
+                                    dock.resize_chat_edge(start.column, start.width + left, pane_width);
+                                } else if start.column > 0 {
+                                    // Between two columns: the one on the left gives what the one on the right takes.
+                                    dock.move_boundary(start.column - 1, start.before, start.width, -left);
+                                }
+                            });
                         }
                     },
                     onmouseup: move |_| grab.set(None),
@@ -51,18 +63,23 @@ pub fn Dock(id: LiveSessionId, cwd: PathBuf) -> Element {
                 if expanded.is_none_or(|panel| column.panels.contains(&panel)) {
                     {
                         let width = column.width;
+                        let before = widths.get(index.wrapping_sub(1)).copied().unwrap_or(0.0);
                         let style = if expanded.is_some() { String::new() } else { format!("width: {width}px") };
                         rsx! {
                             div {
                                 key: "{index}",
-                                class: if expanded.is_some() { "dock-column expanded" } else { "dock-column" },
+                                class: match (expanded.is_some(), column.panels.contains(&Panel::Details)) {
+                                    (true, _) => "dock-column expanded",
+                                    (false, true) => "dock-column rail",
+                                    (false, false) => "dock-column",
+                                },
                                 style: "{style}",
-                                if expanded.is_none() {
+                                if expanded.is_none() && !rails[index] {
                                     div {
                                         class: "dock-resize",
                                         onmousedown: move |event| {
                                             event.prevent_default();
-                                            grab.set(Some(Grab { column: index, x: event.client_coordinates().x, width }));
+                                            grab.set(Some(Grab { column: index, x: event.client_coordinates().x, width, before }));
                                         },
                                     }
                                 }

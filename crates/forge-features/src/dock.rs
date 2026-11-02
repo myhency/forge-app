@@ -7,7 +7,8 @@ pub const DEFAULT_COLUMN_WIDTH: f32 = 480.0;
 pub const MIN_COLUMN_WIDTH: f32 = 280.0;
 /// The session rail is a narrow strip of cards (the desktop app's is about 310 pt wide).
 pub const RAIL_COLUMN_WIDTH: f32 = 320.0;
-pub const MAX_COLUMN_WIDTH: f32 = 900.0;
+/// A column grows until the chat is this wide (the desktop app stops there; there is no fixed largest width).
+pub const MIN_CHAT_WHILE_RESIZING: f32 = 100.0;
 
 /// A panel that can sit in the dock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -45,13 +46,9 @@ impl Panel {
         }
     }
 
-    // Changes and Preview share one column.
-    fn partner(self) -> Option<Panel> {
-        match self {
-            Panel::Changes => Some(Panel::Preview),
-            Panel::Preview => Some(Panel::Changes),
-            Panel::Terminal | Panel::Files | Panel::Tasks | Panel::Details | Panel::Plan | Panel::Side => None,
-        }
+    /// Whether the panel can share a column with one other (Files, the Terminal, Changes and Preview can; the rest always stand alone).
+    fn can_stack(self) -> bool {
+        matches!(self, Panel::Files | Panel::Terminal | Panel::Changes | Panel::Preview)
     }
 }
 
@@ -75,16 +72,17 @@ impl DockState {
         self.columns.iter().any(|column| column.panels.contains(&panel))
     }
 
-    /// Opens a closed panel in a new column at the far right (the session rail: at the far left), or in its partner's column when the
-    /// partner is open (Changes and Preview), or closes an open one. Opening a panel never closes
-    /// another.
+    /// Opens a closed panel, or closes an open one. Opening a panel never closes another. The session rail opens in a new
+    /// column at the far left. Files, the Terminal, Changes and Preview join the rightmost column below what is there when
+    /// that column holds one of them alone (a column holds two; seen in the desktop app: whichever opened last is lower). With that
+    /// column full, or any other panel there, they open a new column at the far right, as the other panels always do.
     pub fn toggle(&mut self, panel: Panel) {
         if self.is_open(panel) {
             self.close(panel);
             return;
         }
-        if let Some(partner) = panel.partner() {
-            if let Some(column) = self.columns.iter_mut().find(|column| column.panels.contains(&partner)) {
+        if panel.can_stack() {
+            if let Some(column) = self.columns.last_mut().filter(|column| column.panels.len() == 1 && column.panels[0].can_stack()) {
                 column.panels.push(panel);
                 return;
             }
@@ -141,15 +139,37 @@ impl DockState {
         [Panel::Files, Panel::Changes].into_iter().find(|panel| self.is_open(*panel))
     }
 
-    /// Sets a column's width, kept between the minimum and the maximum. A column that does not
-    /// exist and a width that is not a number are ignored.
-    pub fn resize(&mut self, column: usize, width: f32) {
-        if !width.is_finite() {
+    /// Whether a column is the session rail (a fixed width: it has no handle).
+    pub fn is_rail(&self, column: usize) -> bool {
+        self.columns.get(column).is_some_and(|column| column.panels.contains(&Panel::Details))
+    }
+
+    /// Whether the left edge of a column is the edge next to the chat: no column but the rail stands left of it.
+    pub fn is_chat_edge(&self, column: usize) -> bool {
+        !self.is_rail(column) && (0..column).all(|before| self.is_rail(before))
+    }
+
+    /// Sets the width of the column next to the chat. It is at least `MIN_COLUMN_WIDTH`, and grows until the chat is
+    /// `MIN_CHAT_WHILE_RESIZING` wide beside it and the other columns. (The rail does not count: it floats over the chat as a card.) A column that does not exist and a width that is not a number are ignored.
+    pub fn resize_chat_edge(&mut self, column: usize, width: f32, pane_width: f32) {
+        if !width.is_finite() || !pane_width.is_finite() || column >= self.columns.len() {
             return;
         }
-        if let Some(column) = self.columns.get_mut(column) {
-            column.width = width.clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH);
+        let others: f32 = self.columns.iter().enumerate().filter(|(index, other)| *index != column && !other.panels.contains(&Panel::Details)).map(|(_, other)| other.width).sum();
+        let largest = (pane_width - MIN_CHAT_WHILE_RESIZING - others).max(MIN_COLUMN_WIDTH);
+        self.columns[column].width = width.clamp(MIN_COLUMN_WIDTH, largest);
+    }
+
+    /// Moves the edge between column `left` and the next one by `delta` (right is positive) from the widths they had when it
+    /// was grabbed. The two share what they had: each keeps at least `MIN_COLUMN_WIDTH`, and the chat does not change.
+    pub fn move_boundary(&mut self, left: usize, start_left: f32, start_right: f32, delta: f32) {
+        if !delta.is_finite() || left + 1 >= self.columns.len() {
+            return;
         }
+        let total = start_left + start_right;
+        let new_left = (start_left + delta).clamp(MIN_COLUMN_WIDTH, (total - MIN_COLUMN_WIDTH).max(MIN_COLUMN_WIDTH));
+        self.columns[left].width = new_left;
+        self.columns[left + 1].width = total - new_left;
     }
 }
 
@@ -192,9 +212,9 @@ mod tests {
         dock.toggle_expanded();
         assert_eq!(dock.expanded, None, "nothing is open");
         dock.toggle(Panel::Terminal);
-        dock.toggle(Panel::Preview);
+        dock.toggle(Panel::Tasks);
         dock.toggle_expanded();
-        assert_eq!(dock.expanded, Some(Panel::Preview));
+        assert_eq!(dock.expanded, Some(Panel::Tasks));
         dock.toggle_expanded();
         assert_eq!(dock.expanded, None);
     }
@@ -225,8 +245,8 @@ mod tests {
         dock.toggle(Panel::Files);
         dock.toggle(Panel::Terminal);
         dock.toggle(Panel::Details);
-        let order: Vec<Panel> = dock.columns.iter().map(|column| column.panels[0]).collect();
-        assert_eq!(order, vec![Panel::Details, Panel::Files, Panel::Terminal]);
+        let order: Vec<Vec<Panel>> = dock.columns.iter().map(|column| column.panels.clone()).collect();
+        assert_eq!(order, vec![vec![Panel::Details], vec![Panel::Files, Panel::Terminal]]);
         // Closed and opened again after another panel: still leftmost.
         dock.toggle(Panel::Details);
         dock.toggle(Panel::Changes);
@@ -288,23 +308,56 @@ mod tests {
     }
 
     #[test]
-    fn resize_clamps_to_the_minimum_and_maximum() {
+    fn the_chat_edge_column_grows_until_the_chat_is_100_wide_and_shrinks_to_280() {
         let mut dock = DockState::default();
         dock.toggle(Panel::Terminal);
-        dock.resize(0, 10.0);
+        dock.resize_chat_edge(0, 10.0, 1000.0);
         assert_eq!(dock.columns[0].width, MIN_COLUMN_WIDTH);
-        dock.resize(0, 5000.0);
-        assert_eq!(dock.columns[0].width, MAX_COLUMN_WIDTH);
-        dock.resize(0, 500.0);
+        // The desktop app at 1700 pt: 1320 of the 1420 pt of the pane, the chat keeps 100.
+        dock.resize_chat_edge(0, 5000.0, 1420.0);
+        assert_eq!(dock.columns[0].width, 1320.0);
+        dock.resize_chat_edge(0, 500.0, 1420.0);
         assert_eq!(dock.columns[0].width, 500.0);
     }
 
     #[test]
-    fn resize_ignores_a_missing_column_and_a_width_that_is_not_a_number() {
+    fn the_rail_does_not_count_for_room_and_has_no_handle() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Details);
+        dock.toggle(Panel::Files);
+        assert!(dock.is_rail(0) && !dock.is_rail(1));
+        assert!(!dock.is_chat_edge(0));
+        assert!(dock.is_chat_edge(1), "the first column right of the rail is next to the chat");
+        dock.resize_chat_edge(1, 5000.0, 1200.0);
+        assert_eq!(dock.columns[1].width, 1200.0 - MIN_CHAT_WHILE_RESIZING);
+        assert_eq!(dock.columns[0].width, RAIL_COLUMN_WIDTH);
+    }
+
+    #[test]
+    fn a_boundary_between_two_columns_shares_their_width_and_keeps_280_each() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Files);
+        dock.toggle(Panel::Terminal);
+        dock.toggle(Panel::Plan);
+        // Files + Terminal share a column, so Plan is the second.
+        assert_eq!(dock.columns.len(), 2);
+        let (a, b) = (dock.columns[0].width, dock.columns[1].width);
+        assert!(!dock.is_chat_edge(1));
+        dock.move_boundary(0, a, b, -5000.0);
+        assert_eq!((dock.columns[0].width, dock.columns[1].width), (MIN_COLUMN_WIDTH, a + b - MIN_COLUMN_WIDTH));
+        dock.move_boundary(0, a, b, 5000.0);
+        assert_eq!((dock.columns[0].width, dock.columns[1].width), (a + b - MIN_COLUMN_WIDTH, MIN_COLUMN_WIDTH));
+        dock.move_boundary(0, a, b, 40.0);
+        assert_eq!(dock.columns[0].width + dock.columns[1].width, a + b);
+    }
+
+    #[test]
+    fn resizing_ignores_a_missing_column_and_a_width_that_is_not_a_number() {
         let mut dock = DockState::default();
         dock.toggle(Panel::Terminal);
-        dock.resize(3, 500.0);
-        dock.resize(0, f32::NAN);
+        dock.resize_chat_edge(3, 500.0, 1200.0);
+        dock.resize_chat_edge(0, f32::NAN, 1200.0);
+        dock.move_boundary(0, 400.0, 400.0, f32::NAN);
         assert_eq!(dock.columns[0].width, DEFAULT_COLUMN_WIDTH);
     }
 
@@ -327,27 +380,41 @@ mod tests {
     }
 
     #[test]
-    fn preview_joins_the_changes_column_and_changes_joins_the_preview_column() {
-        let mut dock = DockState::default();
-        dock.toggle(Panel::Changes);
-        dock.toggle(Panel::Preview);
-        assert_eq!(dock.columns.len(), 1);
-        assert_eq!(dock.columns[0].panels, vec![Panel::Changes, Panel::Preview]);
-
-        let mut dock = DockState::default();
-        dock.toggle(Panel::Preview);
-        dock.toggle(Panel::Changes);
-        assert_eq!(dock.columns.len(), 1);
-        assert_eq!(dock.columns[0].panels, vec![Panel::Preview, Panel::Changes]);
+    fn a_second_panel_joins_the_rightmost_column_below_the_first_whichever_it_is() {
+        // Seen in the desktop app, each pair opened in both orders where checked: the panel opened last is the lower one.
+        for (first, second) in [(Panel::Changes, Panel::Terminal), (Panel::Terminal, Panel::Changes), (Panel::Preview, Panel::Changes), (Panel::Changes, Panel::Preview), (Panel::Files, Panel::Terminal)] {
+            let mut dock = DockState::default();
+            dock.toggle(first);
+            dock.toggle(second);
+            assert_eq!(dock.columns.len(), 1);
+            assert_eq!(dock.columns[0].panels, vec![first, second]);
+        }
     }
 
     #[test]
-    fn files_and_the_terminal_get_their_own_columns() {
+    fn a_third_panel_opens_a_new_column_and_the_fourth_joins_it() {
         let mut dock = DockState::default();
+        dock.toggle(Panel::Terminal);
         dock.toggle(Panel::Changes);
         dock.toggle(Panel::Files);
+        assert_eq!(dock.columns.len(), 2);
+        assert_eq!(dock.columns[1].panels, vec![Panel::Files]);
+        dock.toggle(Panel::Preview);
+        assert_eq!(dock.columns.len(), 2);
+        assert_eq!(dock.columns[1].panels, vec![Panel::Files, Panel::Preview]);
+    }
+
+    #[test]
+    fn a_panel_with_a_column_of_its_own_is_never_joined() {
+        let mut dock = DockState::default();
         dock.toggle(Panel::Terminal);
-        assert_eq!(dock.columns.len(), 3);
+        dock.toggle(Panel::Plan);
+        dock.toggle(Panel::Changes);
+        assert_eq!(dock.columns.len(), 3, "Plan stands last, so Changes does not join the Terminal behind it");
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Tasks);
+        dock.toggle(Panel::Files);
+        assert_eq!(dock.columns.len(), 2);
     }
 
     #[test]
@@ -376,7 +443,7 @@ mod tests {
         assert_eq!(dock.columns.len(), 2);
         assert_eq!(dock.columns[1].panels, vec![Panel::Plan]);
         assert_eq!(Panel::Plan.title(), "Plan");
-        assert_eq!(Panel::Plan.partner(), None);
+        assert_eq!(Panel::Plan.can_stack(), false);
         dock.toggle(Panel::Plan);
         assert!(!dock.is_open(Panel::Plan));
         assert_eq!(dock.columns.len(), 1);

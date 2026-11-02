@@ -313,7 +313,7 @@ fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>
                     span { class: "row-subject", "{tool.subject}" }
                 }
                 if tool.failed {
-                    span { class: "row-failed", "failed" }
+                    span { class: "row-failed", {tr!("failed")} }
                 }
                 if tool.stopped {
                     span { class: "row-stopped", {tr!("Stopped")} }

@@ -71,7 +71,7 @@ mod workspace;
 mod worktree_view;
 
 pub use thumbnail::{provide_thumbnail_loader, thumbnail_allowed, thumbnail_data_url, ComposerAttachment, THUMBNAIL_LIMIT};
-pub use pane_context::{use_pane_focused, use_pane_index, PaneIndex};
+pub use pane_context::{use_pane_focused, use_pane_index, use_pane_width, PaneIndex, PaneWidth};
 pub use pane_tree::{drag_ratio, Dir, Divider, PaneTree, Rect, MAX_PANES, MIN_PANE_HEIGHT, MIN_PANE_WIDTH};
 pub use arrange::{arrange, arrange_with_origins, arranged_open_order, folder_group_id, fork_fold_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use file_menu::{file_menu, show_in_file_manager, menu_height, submenu_opens_left, FileAction, MenuEntry, MenuTarget};
@@ -100,7 +100,7 @@ pub use details::{change_counts, ChangeCounts, DetailsCard, OneShot};
 pub use output_files::offers_default_program;
 pub use file_lists::{FileListState, FILE_LIST_LIMIT};
 pub use mention_popup::{absolute_in, attached_in, key_decision, provisional_cursor, KeyDecision, MentionOutcome, MentionPick, MentionPopup, MentionStatus};
-pub use dock::{Column, DockState, DockStates, Panel, DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH};
+pub use dock::{Column, DockState, DockStates, Panel, DEFAULT_COLUMN_WIDTH, MIN_CHAT_WHILE_RESIZING, MIN_COLUMN_WIDTH};
 pub use environment::{card_folders, environment_card_rows, folder_menu, FolderMenu, environment_menu, numbered_ids, picker_choices, start_plan, variables_error_text, EnvRow, EnvironmentDraft, EnvironmentKey, EnvironmentMenu, EnvironmentRequest, EnvironmentStart, StartError};
 pub use effort::{effort_button_label, effort_levels, slider_position, effort_help, slider_faster, slider_smarter};
 pub use composer_cards::ComposerCards;
@@ -120,7 +120,7 @@ pub use send_message::SendMessageBox;
 pub use worktree_view::{folder_choices, NewWorktree, RepoInfo, WorktreeTag};
 mod account_menu;
 pub use account_menu::{account_rows, user_initial, user_name, AccountAction, AccountRow};
-pub use settings::{auto_archive_text, auto_archive_value, use_settings, use_settings_provider, ExtensionKind, NotificationKind, Settings, SettingsSection, SettingsStatus};
+pub use settings::{auto_archive_text, auto_archive_value, use_settings, use_settings_provider, DesktopToolView, ExtensionKind, NotificationKind, Settings, SettingsSection, SettingsStatus};
 pub use settings_draft::ConnectionDraft;
 pub use shortcut::{forwarded_shortcut, command_held, match_code, swallowed_behind_overlay, types_text, command_pressed, shortcut_allowed, shortcut_for, preview_shortcut, shortcut_sections, PickerKind, PreviewKey, KeyPress, Shortcut, ShortcutSection};
 pub use sidebar::{

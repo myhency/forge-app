@@ -33,3 +33,21 @@ Typing: `osascript keystroke` drops letters when a Korean input method is on, an
 `key code N` works for single keys. IME and dark mode are not covered. A blank first capture is retried once.
 
 `FORGE_HARNESS_THEME=dark FORGE_HARNESS_EXTRA=scripts/harness/add_all_samples.py scripts/harness/launch.sh` starts the app in dark mode (`light` and `system` too) with the usage samples (20 sessions over four months, two models: `/usage` and `/stats`), the path-link session (a folder `Todo.app`, a missing file, an empty file, a real one) and the four environments. `add_dark_theme.py` alone only sets the theme in the harness config. A command typed with `osascript keystroke` can lose a letter under the Korean input method: type it in two short pieces and look at the box before pressing Enter; two Enters run a slash command (the first picks it from the list).
+
+## Reading and pressing through the accessibility tree (agent-desktop)
+
+    npm install -g agent-desktop         # once; macOS asks for Accessibility (agent-desktop permissions --guide)
+    scripts/harness/ad.sh snapshot       # JSON tree of buttons, fields, links with refs (@sXXXX:eN) and Korean labels
+    scripts/harness/ad.sh click @sXXXX:eN  # headless press: no cursor, no focus change, works with the window off-screen
+    scripts/harness/ad.sh type --headed @sXXXX:eN "한글 text"   # typing needs --headed (see below); other commands are passed through
+
+`ad.sh` only addresses the window of the app `launch.sh` started. Refs belong to the snapshot that made them: snapshot again after every action
+(`STALE_REF` means the page changed). Use it to find and press elements by name instead of by pixel; keep `capture.py` for
+looking at layout, colour and dark mode, which the tree cannot show. Snapshots can hold private text, so do not paste them into public logs.
+
+Typing: without `--headed`, `type` and `set-value` report `ACTION_FAILED` and the field stays empty (the webview ignores accessibility value writes).
+`type --headed` sends real Unicode key events to the app and the Korean text arrived complete, with a Korean input method active in the terminal's session
+(checked with "안녕하세요 한글 입력 테스트" in the composer; nothing is sent until Enter). It may move focus, so snapshot again afterwards.
+
+Keys: `ad.sh press return` (also `escape`, `cmd+k`, ...) goes to the harness window by `--window-id` (checked: ⌘K search palette, typed "login", `press return` opened "Fix the login bug").
+Do not press Enter in the composer unless you want a real turn: it starts the real Claude (see above).
