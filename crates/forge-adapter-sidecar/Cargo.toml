@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 forge-domain = { path = "../forge-domain" }
 forge-ports = { path = "../forge-ports" }
+forge-log = { path = "../forge-log" }
 async-trait = "0.1"
 tokio = { version = "1", features = ["process", "io-util", "io-std", "rt-multi-thread", "macros", "sync"] }
 serde = { version = "1", features = ["derive"] }

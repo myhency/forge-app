@@ -8,6 +8,7 @@ mod files_port;
 mod folder_picker_port;
 mod git_port;
 mod mcp_log_port;
+mod log_report_port;
 mod mcp_manager_port;
 mod notify_port;
 mod plugin_manager_port;
@@ -28,6 +29,7 @@ pub use worktree_port::{BranchList, WorktreeError, WorktreePort, WorktreeState};
 pub use config_port::{ConfigError, ConfigRepositoryPort};
 pub use connector_catalog_port::{ConnectorCatalogError, ConnectorCatalogPort};
 pub use mcp_log_port::McpLogPort;
+pub use log_report_port::{FileSavePort, LogReportPort, ReportSummary};
 pub use mcp_manager_port::{McpManagerError, McpManagerPort};
 pub use notify_port::{ClickHandler, NotifyPort};
 pub use files_port::{ContentHit, DocBlock, DocumentView, SearchOptions, DirEntry, FileContent, FileList, FileVersion, FilesError, FilesPort, Rgb, Sheet, SheetBook, SheetCell, Slide, SlideDeck, SlideItem, TableCell, TextRun, WriteError, READ_LIMIT};
@@ -72,6 +74,8 @@ pub use config_port::MockConfigRepositoryPort;
 pub use connector_catalog_port::MockConnectorCatalogPort;
 #[cfg(any(test, feature = "mocks"))]
 pub use mcp_log_port::MockMcpLogPort;
+#[cfg(any(test, feature = "mocks"))]
+pub use log_report_port::{MockFileSavePort, MockLogReportPort};
 #[cfg(any(test, feature = "mocks"))]
 pub use mcp_manager_port::MockMcpManagerPort;
 #[cfg(any(test, feature = "mocks"))]

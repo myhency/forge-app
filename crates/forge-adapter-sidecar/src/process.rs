@@ -34,11 +34,22 @@ impl SidecarProcess {
             .envs(env.iter().map(|(name, value)| (name.as_str(), value.as_str())))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| SidecarError::SpawnFailed(e.to_string()))?;
 
+        forge_log::info("sidecar", &format!("started (pid {})", child.id().map(|pid| pid.to_string()).unwrap_or_default()));
+        // The sidecar's stderr still reaches the app's own, and each line is kept in the log file too.
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    eprintln!("{line}");
+                    forge_log::warn("sidecar", &line);
+                }
+            });
+        }
         let mut stdin = child.stdin.take().expect("stdin was piped");
         let stdout = child.stdout.take().expect("stdout was piped");
 
@@ -82,7 +93,10 @@ impl SidecarProcess {
                             }
                         }
                     }
-                    Ok(None) => break,
+                    Ok(None) => {
+                        forge_log::info("sidecar", "output closed");
+                        break;
+                    }
                     Err(_) => break,
                 }
             }

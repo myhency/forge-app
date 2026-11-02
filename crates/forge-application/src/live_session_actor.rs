@@ -229,7 +229,9 @@ impl Actor {
     // The sidecar's stderr goes to the app's, so this line shows when a restart was asked for.
     async fn restart_on_next_send(&mut self, reason: &str) {
         if self.sidecar.is_some() {
-            eprintln!("forge: session {} stops its sidecar ({reason}); the next send resumes it", self.view.id.0);
+            let line = format!("session {} stops its sidecar ({reason}); the next send resumes it", self.view.id.0);
+            eprintln!("forge: {line}");
+            forge_log::info("session", &line);
         }
         self.discard_sidecar(true).await;
     }
@@ -359,6 +361,7 @@ impl Actor {
         };
 
         let history_len = self.view.session.messages.len();
+        forge_log::info("session", &format!("{}: sends a message of {} characters, {} attachments", self.view.id.0, text.chars().count(), attachments.len()));
         match SendMessageUseCase::new(sidecar).execute(&mut self.view.session, text.clone(), attachments.clone()).await {
             Ok(()) => {
                 self.view.phase = Phase::Running;
@@ -400,6 +403,7 @@ impl Actor {
         // still start: the SDK refuses that mode unless it is allowed up front.
         let mut defaults = configured;
         defaults.allow_bypass |= self.view.session.permission_mode == PermissionMode::BypassPermissions;
+        forge_log::info("session", &format!("{}: starting a sidecar (resume: {}, mode {:?}, model {})", self.view.id.0, self.view.claude_session_id.is_some(), self.view.session.permission_mode, self.model.as_deref().unwrap_or("default")));
         let sidecar = self.factory.spawn().await.map_err(|e| e.to_string())?;
         sidecar
             .start_session(StartSessionParams {
@@ -512,7 +516,40 @@ impl Actor {
         }
     }
 
+    // One line per event that matters for finding out what went wrong. Only names, counts and the first part of
+    // an error are kept: what the person and Claude wrote never goes to the log.
+    fn log_event(&self, event: &SidecarEvent) {
+        let id = self.view.id.0;
+        match event {
+            SidecarEvent::SessionStarted { session_id } => forge_log::info("session", &format!("{id}: started, claude session {session_id}")),
+            SidecarEvent::ToolUse { name, .. } => forge_log::info("tool", &format!("{id}: {name} called")),
+            SidecarEvent::ToolResult { output, is_error: true, .. } => forge_log::warn("tool", &format!("{id}: a tool call failed: {}", brief(output))),
+            SidecarEvent::PermissionRequest { tool_name, .. } => forge_log::info("permission", &format!("{id}: asks to use {tool_name}")),
+            SidecarEvent::TurnComplete { usage } => {
+                let tokens: u64 = usage.values().map(|used| used.input + used.output).sum();
+                let seconds = self.view.turn_started.and_then(|at| at.elapsed().ok()).map(|elapsed| elapsed.as_secs()).unwrap_or(0);
+                forge_log::info("session", &format!("{id}: turn done in {seconds}s, {tokens} tokens, models {:?}", usage.keys().collect::<Vec<_>>()));
+            }
+            SidecarEvent::McpStatus { servers } => {
+                for server in servers.iter().filter(|server| server.status != "connected" || server.error.is_some()) {
+                    forge_log::warn("mcp", &format!("{id}: {} is {} {}", server.name, server.status, server.error.as_deref().map(brief).unwrap_or_default()));
+                }
+            }
+            SidecarEvent::SettingFailed { message } => forge_log::warn("session", &format!("{id}: a setting was refused: {}", brief(message))),
+            SidecarEvent::ModelSet { model } => forge_log::info("session", &format!("{id}: model {}", model.as_deref().unwrap_or("default"))),
+            SidecarEvent::PermissionModeSet { mode } => forge_log::info("session", &format!("{id}: permission mode {mode:?}")),
+            SidecarEvent::Interrupted => forge_log::info("session", &format!("{id}: stopped by the person")),
+            SidecarEvent::RateLimit { status, kind, percent, .. } if status != "allowed" => forge_log::warn("limit", &format!("{id}: {status} {} {}", kind.as_deref().unwrap_or(""), percent.map(|p| format!("{p}%")).unwrap_or_default())),
+            SidecarEvent::SideAnswer { error: Some(error), .. } => forge_log::warn("session", &format!("{id}: a side question failed: {}", brief(error))),
+            SidecarEvent::TaskFinished { status, .. } if status != "completed" => forge_log::warn("task", &format!("{id}: a background task ended as {status}")),
+            SidecarEvent::Error { message } => forge_log::error("sidecar", &format!("{id}: {}", brief(message))),
+            SidecarEvent::SessionEnded => forge_log::warn("sidecar", &format!("{id}: the session ended")),
+            _ => {}
+        }
+    }
+
     async fn apply_event(&mut self, event: SidecarEvent) {
+        self.log_event(&event);
         match apply_sidecar_event(&mut self.view.session, &event) {
             SessionUpdate::SessionStarted { session_id } => {
                 self.view.session.id = session_id.clone();
@@ -661,6 +698,7 @@ impl Actor {
     // answered are cleared. `shutdown` asks a still-running sidecar to exit first; the port's
     // `shutdown` waits (bounded) for it, so its cleanup runs before the process is dropped.
     async fn fail(&mut self, message: String, shutdown: bool) {
+        forge_log::error("session", &format!("{}: failed: {}", self.view.id.0, brief(&message)));
         self.discard_sidecar(shutdown).await;
         self.view.phase = Phase::Failed;
         self.view.turn_started = None;
@@ -683,6 +721,15 @@ impl Actor {
             }
         }
     }
+}
+
+/// The first 400 characters of a message, so an error keeps its cause without a long output filling the log.
+fn brief(text: &str) -> String {
+    let mut short: String = text.chars().take(400).collect();
+    if text.chars().count() > 400 {
+        short.push('…');
+    }
+    short
 }
 
 /// What the SDK is asked for a side question: the finished questions and answers of the thread, then the new question.

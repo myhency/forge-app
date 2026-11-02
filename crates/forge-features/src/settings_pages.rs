@@ -27,7 +27,7 @@ fn row_titles(section: SettingsSection) -> Vec<&'static str> {
         SettingsSection::Code => vec![tr!("Default transcript view"), tr!("Archive inactive sessions"), tr!("Worktree location"), tr!("Output style"), tr!("Prompt suggestions"), tr!("Allow bypass permissions mode"), tr!("Bounce the Dock icon")],
         SettingsSection::Connection => vec![tr!("Base URL"), tr!("API key")],
         SettingsSection::Model => vec![tr!("Default model"), tr!("Other model ID")],
-        SettingsSection::Developer => vec![tr!("Local MCP servers"), tr!("Edit config"), tr!("View logs")],
+        SettingsSection::Developer => vec![tr!("Local MCP servers"), tr!("Edit config"), tr!("View logs"), tr!("Report a problem"), tr!("Save logs…"), tr!("Open log folder")],
         SettingsSection::Skills | SettingsSection::Plugins | SettingsSection::McpServers => vec![],
     }
 }
