@@ -23,7 +23,10 @@ impl SessionMarker {
 #[component]
 pub fn SidebarItem(
     title: String,
+    /// The folder under the title (empty: none). Cut short before the branch is.
     subtitle: String,
+    /// The branch of a worktree session, drawn before the folder with a branch mark.
+    #[props(default)] branch: Option<String>,
     marker: SessionMarker,
     active: bool,
     /// Shown in the other pane of a split screen: a softer highlight than `active`.
@@ -44,8 +47,22 @@ pub fn SidebarItem(
             if archived {
                 span { class: "archived-mark", title: tr!("Archived"), Icon { kind: IconKind::Archive, size: IconSize::Small } }
             }
-            span { class: "title", "{title}" }
-            span { class: "subtitle", "{subtitle}" }
+            div { class: "item-text",
+                span { class: "title", "{title}" }
+                if branch.is_some() || !subtitle.is_empty() {
+                    div { class: "item-meta",
+                        if let Some(branch) = branch {
+                            span { class: "item-branch", title: "{branch}",
+                                Icon { kind: IconKind::Fork, size: IconSize::Small }
+                                span { class: "branch-name", "{branch}" }
+                            }
+                        }
+                        if !subtitle.is_empty() {
+                            span { class: "subtitle", "{subtitle}" }
+                        }
+                    }
+                }
+            }
             {children}
         }
     }
