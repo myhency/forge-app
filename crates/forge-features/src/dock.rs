@@ -45,16 +45,9 @@ impl Panel {
         }
     }
 
-    /// Where a panel stands in a column that holds two (the desktop app keeps this order whichever opened first: Files above
-    /// the Terminal, the Terminal above Changes, Changes above Preview). `None` for a panel that always has a column of its own.
-    fn stack_rank(self) -> Option<u8> {
-        match self {
-            Panel::Files => Some(0),
-            Panel::Terminal => Some(1),
-            Panel::Changes => Some(2),
-            Panel::Preview => Some(3),
-            Panel::Tasks | Panel::Details | Panel::Plan | Panel::Side => None,
-        }
+    /// Whether the panel can share a column with one other (Files, the Terminal, Changes and Preview can; the rest always stand alone).
+    fn can_stack(self) -> bool {
+        matches!(self, Panel::Files | Panel::Terminal | Panel::Changes | Panel::Preview)
     }
 }
 
@@ -79,22 +72,17 @@ impl DockState {
     }
 
     /// Opens a closed panel, or closes an open one. Opening a panel never closes another. The session rail opens in a new
-    /// column at the far left. Files, the Terminal, Changes and Preview join the rightmost column when it holds one of them
-    /// alone (a column holds two, in the order of `stack_rank`); with that column full, or any other panel on its own there,
-    /// they open a new column at the far right. The other panels always open a new column at the far right.
+    /// column at the far left. Files, the Terminal, Changes and Preview join the rightmost column below what is there when
+    /// that column holds one of them alone (a column holds two; seen in the desktop app: whichever opened last is lower). With that
+    /// column full, or any other panel there, they open a new column at the far right, as the other panels always do.
     pub fn toggle(&mut self, panel: Panel) {
         if self.is_open(panel) {
             self.close(panel);
             return;
         }
-        if let Some(rank) = panel.stack_rank() {
-            if let Some(column) = self.columns.last_mut().filter(|column| column.panels.len() == 1 && column.panels[0].stack_rank().is_some()) {
-                let before = column.panels[0].stack_rank().is_some_and(|other| other > rank);
-                if before {
-                    column.panels.insert(0, panel);
-                } else {
-                    column.panels.push(panel);
-                }
+        if panel.can_stack() {
+            if let Some(column) = self.columns.last_mut().filter(|column| column.panels.len() == 1 && column.panels[0].can_stack()) {
+                column.panels.push(panel);
                 return;
             }
         }
@@ -336,24 +324,15 @@ mod tests {
     }
 
     #[test]
-    fn a_second_panel_joins_the_rightmost_column_in_a_fixed_order_whichever_opened_first() {
-        // Seen in the desktop app: Changes then the Terminal puts the Terminal above; Files then the Terminal puts Files above.
-        let mut dock = DockState::default();
-        dock.toggle(Panel::Changes);
-        dock.toggle(Panel::Terminal);
-        assert_eq!(dock.columns.len(), 1);
-        assert_eq!(dock.columns[0].panels, vec![Panel::Terminal, Panel::Changes]);
-
-        let mut dock = DockState::default();
-        dock.toggle(Panel::Terminal);
-        dock.toggle(Panel::Files);
-        assert_eq!(dock.columns.len(), 1);
-        assert_eq!(dock.columns[0].panels, vec![Panel::Files, Panel::Terminal]);
-
-        let mut dock = DockState::default();
-        dock.toggle(Panel::Preview);
-        dock.toggle(Panel::Changes);
-        assert_eq!(dock.columns[0].panels, vec![Panel::Changes, Panel::Preview]);
+    fn a_second_panel_joins_the_rightmost_column_below_the_first_whichever_it_is() {
+        // Seen in the desktop app, each pair opened in both orders where checked: the panel opened last is the lower one.
+        for (first, second) in [(Panel::Changes, Panel::Terminal), (Panel::Terminal, Panel::Changes), (Panel::Preview, Panel::Changes), (Panel::Changes, Panel::Preview), (Panel::Files, Panel::Terminal)] {
+            let mut dock = DockState::default();
+            dock.toggle(first);
+            dock.toggle(second);
+            assert_eq!(dock.columns.len(), 1);
+            assert_eq!(dock.columns[0].panels, vec![first, second]);
+        }
     }
 
     #[test]
@@ -408,7 +387,7 @@ mod tests {
         assert_eq!(dock.columns.len(), 2);
         assert_eq!(dock.columns[1].panels, vec![Panel::Plan]);
         assert_eq!(Panel::Plan.title(), "Plan");
-        assert_eq!(Panel::Plan.stack_rank(), None);
+        assert_eq!(Panel::Plan.can_stack(), false);
         dock.toggle(Panel::Plan);
         assert!(!dock.is_open(Panel::Plan));
         assert_eq!(dock.columns.len(), 1);
