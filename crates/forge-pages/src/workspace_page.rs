@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
-use forge_domain::{keep_peek, pane_class, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO, SIDEBAR_RAIL_WIDTH};
-use forge_features::{drag_ratio, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
+use forge_domain::{keep_peek, pane_class, rail_hidden, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO, SIDEBAR_RAIL_WIDTH};
+use forge_features::{drag_ratio, Panel, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
 use forge_widgets::{ChatWindow, OutsideFileDialog, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, CodeRunWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
 use forge_shared::{tr, Icon, IconKind, IconSize};
 
@@ -272,18 +272,29 @@ fn Pane(index: usize, target: Active, rect: Rect, area: (u32, u32), split: bool,
     if *index_signal.0.peek() != index {
         index_signal.0.set(index);
     }
-    let dock_width: u32 = match target {
+    // The width of the dock's columns, and of the session rail among them.
+    let (mut dock_width, rail_width): (u32, u32) = match target {
         Active::Live(id) => {
             let dock = workspace.dock(id);
             if dock.expanded.is_some() {
-                0
+                (0, 0)
             } else {
-                dock.columns.iter().map(|column| column.width as u32).sum()
+                let total = dock.columns.iter().map(|column| column.width as u32).sum();
+                let rail = dock.columns.iter().filter(|column| column.panels.contains(&Panel::Details)).map(|column| column.width as u32).sum();
+                (total, rail)
             }
         }
-        Active::NewSession | Active::Customize | Active::Routines => 0,
+        Active::NewSession | Active::Customize | Active::Routines => (0, 0),
     };
+    // Like the desktop app, the rail steps aside when the chat would get too little, before the dock floats over the chat.
+    let rail_away = rail_hidden(rect.w, dock_width, rail_width);
+    if rail_away {
+        dock_width -= rail_width;
+    }
     let mut class = pane_class(rect.w, rect.h, dock_width);
+    if rail_away {
+        class.push_str(" rail-hidden");
+    }
     // A pane that is not a session has no tools row, so the page draws its ×.
     let closable = split && !matches!(target, Active::Live(_));
     if split {

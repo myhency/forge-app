@@ -45,12 +45,15 @@ impl Panel {
         }
     }
 
-    // Changes and Preview share one column.
-    fn partner(self) -> Option<Panel> {
+    /// Where a panel stands in a column that holds two (the desktop app keeps this order whichever opened first: Files above
+    /// the Terminal, the Terminal above Changes, Changes above Preview). `None` for a panel that always has a column of its own.
+    fn stack_rank(self) -> Option<u8> {
         match self {
-            Panel::Changes => Some(Panel::Preview),
-            Panel::Preview => Some(Panel::Changes),
-            Panel::Terminal | Panel::Files | Panel::Tasks | Panel::Details | Panel::Plan | Panel::Side => None,
+            Panel::Files => Some(0),
+            Panel::Terminal => Some(1),
+            Panel::Changes => Some(2),
+            Panel::Preview => Some(3),
+            Panel::Tasks | Panel::Details | Panel::Plan | Panel::Side => None,
         }
     }
 }
@@ -75,17 +78,23 @@ impl DockState {
         self.columns.iter().any(|column| column.panels.contains(&panel))
     }
 
-    /// Opens a closed panel in a new column at the far right (the session rail: at the far left), or in its partner's column when the
-    /// partner is open (Changes and Preview), or closes an open one. Opening a panel never closes
-    /// another.
+    /// Opens a closed panel, or closes an open one. Opening a panel never closes another. The session rail opens in a new
+    /// column at the far left. Files, the Terminal, Changes and Preview join the rightmost column when it holds one of them
+    /// alone (a column holds two, in the order of `stack_rank`); with that column full, or any other panel on its own there,
+    /// they open a new column at the far right. The other panels always open a new column at the far right.
     pub fn toggle(&mut self, panel: Panel) {
         if self.is_open(panel) {
             self.close(panel);
             return;
         }
-        if let Some(partner) = panel.partner() {
-            if let Some(column) = self.columns.iter_mut().find(|column| column.panels.contains(&partner)) {
-                column.panels.push(panel);
+        if let Some(rank) = panel.stack_rank() {
+            if let Some(column) = self.columns.last_mut().filter(|column| column.panels.len() == 1 && column.panels[0].stack_rank().is_some()) {
+                let before = column.panels[0].stack_rank().is_some_and(|other| other > rank);
+                if before {
+                    column.panels.insert(0, panel);
+                } else {
+                    column.panels.push(panel);
+                }
                 return;
             }
         }
@@ -192,9 +201,9 @@ mod tests {
         dock.toggle_expanded();
         assert_eq!(dock.expanded, None, "nothing is open");
         dock.toggle(Panel::Terminal);
-        dock.toggle(Panel::Preview);
+        dock.toggle(Panel::Tasks);
         dock.toggle_expanded();
-        assert_eq!(dock.expanded, Some(Panel::Preview));
+        assert_eq!(dock.expanded, Some(Panel::Tasks));
         dock.toggle_expanded();
         assert_eq!(dock.expanded, None);
     }
@@ -225,8 +234,8 @@ mod tests {
         dock.toggle(Panel::Files);
         dock.toggle(Panel::Terminal);
         dock.toggle(Panel::Details);
-        let order: Vec<Panel> = dock.columns.iter().map(|column| column.panels[0]).collect();
-        assert_eq!(order, vec![Panel::Details, Panel::Files, Panel::Terminal]);
+        let order: Vec<Vec<Panel>> = dock.columns.iter().map(|column| column.panels.clone()).collect();
+        assert_eq!(order, vec![vec![Panel::Details], vec![Panel::Files, Panel::Terminal]]);
         // Closed and opened again after another panel: still leftmost.
         dock.toggle(Panel::Details);
         dock.toggle(Panel::Changes);
@@ -327,27 +336,50 @@ mod tests {
     }
 
     #[test]
-    fn preview_joins_the_changes_column_and_changes_joins_the_preview_column() {
+    fn a_second_panel_joins_the_rightmost_column_in_a_fixed_order_whichever_opened_first() {
+        // Seen in the desktop app: Changes then the Terminal puts the Terminal above; Files then the Terminal puts Files above.
         let mut dock = DockState::default();
         dock.toggle(Panel::Changes);
-        dock.toggle(Panel::Preview);
+        dock.toggle(Panel::Terminal);
         assert_eq!(dock.columns.len(), 1);
-        assert_eq!(dock.columns[0].panels, vec![Panel::Changes, Panel::Preview]);
+        assert_eq!(dock.columns[0].panels, vec![Panel::Terminal, Panel::Changes]);
+
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Terminal);
+        dock.toggle(Panel::Files);
+        assert_eq!(dock.columns.len(), 1);
+        assert_eq!(dock.columns[0].panels, vec![Panel::Files, Panel::Terminal]);
 
         let mut dock = DockState::default();
         dock.toggle(Panel::Preview);
         dock.toggle(Panel::Changes);
-        assert_eq!(dock.columns.len(), 1);
-        assert_eq!(dock.columns[0].panels, vec![Panel::Preview, Panel::Changes]);
+        assert_eq!(dock.columns[0].panels, vec![Panel::Changes, Panel::Preview]);
     }
 
     #[test]
-    fn files_and_the_terminal_get_their_own_columns() {
+    fn a_third_panel_opens_a_new_column_and_the_fourth_joins_it() {
         let mut dock = DockState::default();
+        dock.toggle(Panel::Terminal);
         dock.toggle(Panel::Changes);
         dock.toggle(Panel::Files);
+        assert_eq!(dock.columns.len(), 2);
+        assert_eq!(dock.columns[1].panels, vec![Panel::Files]);
+        dock.toggle(Panel::Preview);
+        assert_eq!(dock.columns.len(), 2);
+        assert_eq!(dock.columns[1].panels, vec![Panel::Files, Panel::Preview]);
+    }
+
+    #[test]
+    fn a_panel_with_a_column_of_its_own_is_never_joined() {
+        let mut dock = DockState::default();
         dock.toggle(Panel::Terminal);
-        assert_eq!(dock.columns.len(), 3);
+        dock.toggle(Panel::Plan);
+        dock.toggle(Panel::Changes);
+        assert_eq!(dock.columns.len(), 3, "Plan stands last, so Changes does not join the Terminal behind it");
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Tasks);
+        dock.toggle(Panel::Files);
+        assert_eq!(dock.columns.len(), 2);
     }
 
     #[test]
@@ -376,7 +408,7 @@ mod tests {
         assert_eq!(dock.columns.len(), 2);
         assert_eq!(dock.columns[1].panels, vec![Panel::Plan]);
         assert_eq!(Panel::Plan.title(), "Plan");
-        assert_eq!(Panel::Plan.partner(), None);
+        assert_eq!(Panel::Plan.stack_rank(), None);
         dock.toggle(Panel::Plan);
         assert!(!dock.is_open(Panel::Plan));
         assert_eq!(dock.columns.len(), 1);

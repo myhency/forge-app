@@ -751,6 +751,8 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 
 /* The dock: columns right of the chat. */
 .dock-column { position: relative; flex: 0 1 auto; display: flex; flex-direction: column; min-width: 260px; max-width: 70vw; padding: var(--sp-8); box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
+/* The session rail steps aside when the chat would get too little (the desktop app does the same). */
+.rail-hidden .dock-column.rail { display: none; }
 .dock-column.expanded { flex: 1; max-width: none; }
 /* The columns of one session. Beside the chat they are plain flex items; when the chat would get
    too narrow they float over it as one rounded card (observation round 10). */

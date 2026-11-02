@@ -55,7 +55,11 @@ pub fn Dock(id: LiveSessionId, cwd: PathBuf) -> Element {
                         rsx! {
                             div {
                                 key: "{index}",
-                                class: if expanded.is_some() { "dock-column expanded" } else { "dock-column" },
+                                class: match (expanded.is_some(), column.panels.contains(&Panel::Details)) {
+                                    (true, _) => "dock-column expanded",
+                                    (false, true) => "dock-column rail",
+                                    (false, false) => "dock-column",
+                                },
                                 style: "{style}",
                                 if expanded.is_none() {
                                     div {

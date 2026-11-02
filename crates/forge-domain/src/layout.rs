@@ -51,6 +51,13 @@ pub fn pane_layout(pane_width: u32, dock_width: u32) -> PaneLayout {
     }
 }
 
+/// Whether the session rail (the Environment column, `rail_width` of the `dock_width`) steps aside. The desktop app hides it
+/// when the chat would otherwise be under `MIN_CHAT_WIDTH` and shows it again when there is room; it never hides a rail that is
+/// the only column.
+pub fn rail_hidden(pane_width: u32, dock_width: u32, rail_width: u32) -> bool {
+    rail_width > 0 && dock_width > rail_width && pane_width.saturating_sub(dock_width) < MIN_CHAT_WIDTH
+}
+
 /// Whether an open overlay sidebar stays open. It goes away when the window grows past the overlay
 /// width (so it does not come back by itself on the way down) and when Settings or the search
 /// palette opens over it (they would be half hidden under the sidebar).
@@ -105,6 +112,18 @@ mod tests {
     #[test]
     fn a_window_below_the_minimum_is_treated_like_the_smallest() {
         assert_eq!(sidebar_mode_for(0), SidebarMode::Overlay);
+    }
+
+    #[test]
+    fn the_rail_steps_aside_only_when_other_columns_are_open_and_the_chat_would_be_under_300() {
+        // 1100 - (320 + 355) = 425: room for both.
+        assert!(!rail_hidden(1100, 675, 320));
+        // 900 - (320 + 355) = 225: the rail goes.
+        assert!(rail_hidden(900, 675, 320));
+        // Alone, it stays (and floats when it must).
+        assert!(!rail_hidden(500, 320, 320));
+        // No rail, nothing to hide.
+        assert!(!rail_hidden(500, 355, 0));
     }
 
     #[test]
