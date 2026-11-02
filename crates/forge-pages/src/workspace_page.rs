@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_domain::{keep_peek, pane_class, rail_hidden, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO, SIDEBAR_RAIL_WIDTH};
+use forge_domain::{keep_peek, pane_class, rail_floats, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO, SIDEBAR_RAIL_WIDTH};
 use forge_features::{drag_ratio, Panel, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
 use forge_widgets::{ChatWindow, OutsideFileDialog, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, CodeRunWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
 use forge_shared::{tr, Icon, IconKind, IconSize};
@@ -286,14 +286,15 @@ fn Pane(index: usize, target: Active, rect: Rect, area: (u32, u32), split: bool,
         }
         Active::NewSession | Active::Customize | Active::Routines => (0, 0),
     };
-    // Like the desktop app, the rail steps aside when the chat would get too little, before the dock floats over the chat.
-    let rail_away = rail_hidden(rect.w, dock_width, rail_width);
-    if rail_away {
+    // Like the desktop app, the rail floats over the chat as a card when the chat would get too little beside it; the other columns
+    // then decide push or float on their own.
+    let rail_card = rail_floats(rect.w, dock_width, rail_width);
+    if rail_card {
         dock_width -= rail_width;
     }
     let mut class = pane_class(rect.w, rect.h, dock_width);
-    if rail_away {
-        class.push_str(" rail-hidden");
+    if rail_card {
+        class.push_str(" rail-floats");
     }
     // A pane that is not a session has no tools row, so the page draws its ×.
     let closable = split && !matches!(target, Active::Live(_));
@@ -306,7 +307,11 @@ fn Pane(index: usize, target: Active, rect: Rect, area: (u32, u32), split: bool,
     if focused {
         class.push_str(" focused");
     }
-    let style = rect.percent_style(area.0, area.1);
+    let mut style = rect.percent_style(area.0, area.1);
+    if rail_card {
+        // Where the card's right edge goes: left of the other columns.
+        style.push_str(&format!(" --dock-rest: {dock_width}px;"));
+    }
     rsx! {
         div {
             class,
@@ -322,6 +327,12 @@ fn Pane(index: usize, target: Active, rect: Rect, area: (u32, u32), split: bool,
             }
             if closable {
                 PaneClose { index }
+            }
+            // A click outside the floating card puts it away, as in the desktop app.
+            if rail_card {
+                if let Active::Live(id) = target {
+                    div { class: "rail-backdrop", onmousedown: move |_| workspace.change_dock(id, |dock| dock.close(Panel::Details)) }
+                }
             }
         }
     }
