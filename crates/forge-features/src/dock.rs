@@ -150,13 +150,12 @@ impl DockState {
     }
 
     /// Sets the width of the column next to the chat. It is at least `MIN_COLUMN_WIDTH`, and grows until the chat is
-    /// `MIN_CHAT_WHILE_RESIZING` wide beside it and the other columns. (The desktop app does not count the rail, which floats over the
-    /// chat; here the floating dock holds the rail too, so it counts, or the column would be cut off at the window's edge.) A column that does not exist and a width that is not a number are ignored.
+    /// `MIN_CHAT_WHILE_RESIZING` wide beside it and the other columns. (The rail does not count: it floats over the chat as a card.) A column that does not exist and a width that is not a number are ignored.
     pub fn resize_chat_edge(&mut self, column: usize, width: f32, pane_width: f32) {
         if !width.is_finite() || !pane_width.is_finite() || column >= self.columns.len() {
             return;
         }
-        let others: f32 = self.columns.iter().enumerate().filter(|(index, _)| *index != column).map(|(_, other)| other.width).sum();
+        let others: f32 = self.columns.iter().enumerate().filter(|(index, other)| *index != column && !other.panels.contains(&Panel::Details)).map(|(_, other)| other.width).sum();
         let largest = (pane_width - MIN_CHAT_WHILE_RESIZING - others).max(MIN_COLUMN_WIDTH);
         self.columns[column].width = width.clamp(MIN_COLUMN_WIDTH, largest);
     }
@@ -322,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn the_rail_counts_for_room_and_has_no_handle() {
+    fn the_rail_does_not_count_for_room_and_has_no_handle() {
         let mut dock = DockState::default();
         dock.toggle(Panel::Details);
         dock.toggle(Panel::Files);
@@ -330,7 +329,7 @@ mod tests {
         assert!(!dock.is_chat_edge(0));
         assert!(dock.is_chat_edge(1), "the first column right of the rail is next to the chat");
         dock.resize_chat_edge(1, 5000.0, 1200.0);
-        assert_eq!(dock.columns[1].width, 1200.0 - MIN_CHAT_WHILE_RESIZING - RAIL_COLUMN_WIDTH);
+        assert_eq!(dock.columns[1].width, 1200.0 - MIN_CHAT_WHILE_RESIZING);
         assert_eq!(dock.columns[0].width, RAIL_COLUMN_WIDTH);
     }
 
