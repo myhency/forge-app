@@ -10,6 +10,7 @@ use std::sync::OnceLock;
 use time::{OffsetDateTime, UtcOffset};
 
 use crate::sidebar::{EntryKey, SidebarEntry, SidebarGroup};
+use forge_entities::SessionMarker;
 use forge_shared::tr;
 
 /// The age buckets of date grouping, newest first (the derived order is the drawing order).
@@ -49,8 +50,12 @@ impl DateBucket {
 pub enum Heading {
     Project(ProjectSummary),
     Bucket(DateBucket),
-    /// No grouping: no heading at all.
-    None,
+    /// Grouping by status: one group per thing a session can be doing.
+    Status(SessionMarker),
+    /// Grouping by environment: the environment's name (the folder's name for a session in none).
+    Environment(String),
+    /// No grouping: one group, `Recent items`.
+    Recent,
 }
 
 /// A row, with the project it belongs to (a row in a date group needs it to open and to show it).
@@ -166,6 +171,36 @@ pub fn folder_group_id(path: &Path) -> String {
     format!("folder:{}", path.display())
 }
 
+/// The groups of the status grouping, in the order they are drawn: what wants the person first.
+const STATUS_ORDER: [SessionMarker; 3] = [SessionMarker::NeedsAttention, SessionMarker::Running, SessionMarker::Idle];
+
+/// What the group of the no-grouping list is called.
+pub fn recent_heading() -> &'static str {
+    tr!("Recent items")
+}
+
+/// What the status grouping calls a group.
+pub fn status_heading(marker: SessionMarker) -> &'static str {
+    match marker {
+        SessionMarker::NeedsAttention => tr!("Needs input"),
+        SessionMarker::Running => tr!("Running"),
+        SessionMarker::Idle => tr!("Idle"),
+    }
+}
+
+fn status_group_id(marker: SessionMarker) -> String {
+    let slug = match marker {
+        SessionMarker::NeedsAttention => "needs-input",
+        SessionMarker::Running => "running",
+        SessionMarker::Idle => "idle",
+    };
+    format!("status:{slug}")
+}
+
+fn environment_group_id(name: &str) -> String {
+    format!("env:{name}")
+}
+
 fn bucket_group_id(bucket: DateBucket) -> String {
     format!("date:{}", bucket.slug())
 }
@@ -189,7 +224,7 @@ fn created_of(entry: &SidebarEntry) -> Option<OffsetDateTime> {
 }
 
 // A stable sort: sessions that tie keep the order the adapter gave them (newest first, then id).
-fn sort_entries(entries: &mut [ArrangedEntry], sort_by: SortBy, reversed: bool) {
+pub(crate) fn sort_entries(entries: &mut [ArrangedEntry], sort_by: SortBy, reversed: bool) {
     match sort_by {
         SortBy::Name => entries.sort_by_key(|item| item.entry.title.to_lowercase()),
         SortBy::Created => entries.sort_by_key(|item| newest_first(created_of(&item.entry))),
@@ -298,6 +333,19 @@ pub fn arrange_with_origins(
     active: Option<LiveSessionId>,
     origin: &dyn Fn(&Path) -> PathBuf,
 ) -> Vec<ArrangedGroup> {
+    arrange_with_environments(groups, prefs, now, active, origin, &|path: &Path, _: &SidebarEntry| path.display().to_string())
+}
+
+/// `arrange_with_origins`, where the Environment grouping names a row's group with `environment_of` (the environment's
+/// name, or the folder's name for a session that is in none).
+pub fn arrange_with_environments(
+    groups: &[SidebarGroup],
+    prefs: &SidebarPrefs,
+    now: OffsetDateTime,
+    active: Option<LiveSessionId>,
+    origin: &dyn Fn(&Path) -> PathBuf,
+    environment_of: &dyn Fn(&Path, &SidebarEntry) -> String,
+) -> Vec<ArrangedGroup> {
     let limited: Vec<SidebarGroup> = groups
         .iter()
         .map(|group| SidebarGroup {
@@ -305,7 +353,7 @@ pub fn arrange_with_origins(
             entries: group.entries.iter().filter(|entry| shown(entry, prefs.status)).cloned().collect(),
         })
         .collect();
-    arrange_filtered(&limited, prefs, now, active, origin)
+    arrange_filtered(&limited, prefs, now, active, origin, environment_of)
 }
 
 fn arrange_filtered(
@@ -314,6 +362,7 @@ fn arrange_filtered(
     now: OffsetDateTime,
     active: Option<LiveSessionId>,
     origin: &dyn Fn(&Path) -> PathBuf,
+    environment_of: &dyn Fn(&Path, &SidebarEntry) -> String,
 ) -> Vec<ArrangedGroup> {
     match prefs.group_by {
         GroupBy::Folder => {
@@ -376,13 +425,41 @@ fn arrange_filtered(
                 })
                 .collect()
         }
+        GroupBy::Status => {
+            let mut items = all_entries(groups);
+            sort_entries(&mut items, prefs.sort_by, prefs.reversed);
+            STATUS_ORDER
+                .into_iter()
+                .filter_map(|marker| {
+                    let list: Vec<ArrangedEntry> = items.iter().filter(|item| item.entry.marker == marker).cloned().collect();
+                    // A status nobody is in has no heading: the idle group would otherwise be one of three empty ones.
+                    (!list.is_empty()).then(|| finish(status_group_id(marker), Heading::Status(marker), nest_forks(list, prefs, active), prefs, active))
+                })
+                .collect()
+        }
+        GroupBy::Environment => {
+            let mut items = all_entries(groups);
+            sort_entries(&mut items, prefs.sort_by, prefs.reversed);
+            let mut named: Vec<(String, Vec<ArrangedEntry>)> = Vec::new();
+            for item in items {
+                let name = environment_of(&item.project.path, &item.entry);
+                match named.iter_mut().find(|(known, _)| *known == name) {
+                    Some((_, list)) => list.push(item),
+                    None => named.push((name, vec![item])),
+                }
+            }
+            named
+                .into_iter()
+                .map(|(name, list)| finish(environment_group_id(&name), Heading::Environment(name), nest_forks(list, prefs, active), prefs, active))
+                .collect()
+        }
         GroupBy::Flat => {
             let mut items = all_entries(groups);
             if items.is_empty() {
                 return Vec::new();
             }
             sort_entries(&mut items, prefs.sort_by, prefs.reversed);
-            vec![ArrangedGroup { id: "flat".to_string(), heading: Heading::None, collapsed: false, entries: nest_forks(items, prefs, active) }]
+            vec![finish("recent".to_string(), Heading::Recent, nest_forks(items, prefs, active), prefs, active)]
         }
     }
 }
@@ -395,16 +472,28 @@ pub fn open_session_order(groups: &[SidebarGroup], prefs: &SidebarPrefs, now: Of
 }
 
 /// `open_session_order` with the same `origin` the drawn sidebar uses, so the order matches it.
+#[cfg(test)]
 pub fn open_session_order_with_origins(
     groups: &[SidebarGroup],
     prefs: &SidebarPrefs,
     now: OffsetDateTime,
     origin: &dyn Fn(&Path) -> PathBuf,
 ) -> Vec<LiveSessionId> {
+    open_session_order_with_environments(groups, prefs, now, origin, &|path: &Path, _: &SidebarEntry| path.display().to_string())
+}
+
+/// `open_session_order_with_origins` with the same environment names the drawn sidebar uses.
+pub fn open_session_order_with_environments(
+    groups: &[SidebarGroup],
+    prefs: &SidebarPrefs,
+    now: OffsetDateTime,
+    origin: &dyn Fn(&Path) -> PathBuf,
+    environment_of: &dyn Fn(&Path, &SidebarEntry) -> String,
+) -> Vec<LiveSessionId> {
     let mut prefs = prefs.clone();
     prefs.collapsed.clear();
     prefs.status = StatusFilter::All;
-    arranged_open_order(&arrange_with_origins(groups, &prefs, now, None, origin))
+    arranged_open_order(&arrange_with_environments(groups, &prefs, now, None, origin, environment_of))
 }
 
 /// The open sessions in the order the sidebar draws them; Ctrl+Tab cycles through this. Pass
@@ -476,9 +565,45 @@ mod tests {
             .map(|group| match &group.heading {
                 Heading::Project(project) => project.path.display().to_string(),
                 Heading::Bucket(bucket) => bucket.label().to_string(),
-                Heading::None => String::new(),
+                Heading::Status(marker) => status_heading(*marker).to_string(),
+                Heading::Environment(name) => name.clone(),
+                Heading::Recent => recent_heading().to_string(),
             })
             .collect()
+    }
+
+    #[test]
+    fn the_status_grouping_draws_what_needs_input_first_and_leaves_out_empty_groups() {
+        let mut waiting = entry("waiting", None, Some("2026-10-02T00:00:00Z"));
+        waiting.marker = SessionMarker::NeedsAttention;
+        let mut running = entry("running", None, Some("2026-10-01T00:00:00Z"));
+        running.marker = SessionMarker::Running;
+        let idle = entry("idle", None, Some("2026-10-03T00:00:00Z"));
+        let groups = vec![group("/a", vec![idle, running, waiting])];
+
+        let arranged = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Status), now(), None);
+
+        assert_eq!(headings(&arranged), ["Needs input", "Running", "Idle"]);
+        assert_eq!(titles(&arranged[0]), ["waiting"]);
+        let only_idle = arrange(&[group("/a", vec![entry("idle", None, Some("2026-10-03T00:00:00Z"))])], &prefs(SortBy::Activity, GroupBy::Status), now(), None);
+        assert_eq!(headings(&only_idle), ["Idle"]);
+        assert_eq!(only_idle[0].id, "status:idle");
+    }
+
+    #[test]
+    fn the_environment_grouping_gathers_the_folders_of_one_environment_in_the_order_they_are_first_met() {
+        let groups = vec![
+            group("/a", vec![entry("a1", None, Some("2026-10-03T00:00:00Z"))]),
+            group("/b", vec![entry("b1", None, Some("2026-10-02T00:00:00Z"))]),
+            group("/c", vec![entry("c1", None, Some("2026-10-01T00:00:00Z"))]),
+        ];
+        let environment_of = |path: &Path, _: &SidebarEntry| if path == Path::new("/b") { "one".to_string() } else if path == Path::new("/a") { "two".to_string() } else { "one".to_string() };
+
+        let arranged = arrange_with_environments(&groups, &prefs(SortBy::Activity, GroupBy::Environment), now(), None, &|path: &Path| path.to_path_buf(), &environment_of);
+
+        assert_eq!(headings(&arranged), ["two", "one"]);
+        assert_eq!(titles(&arranged[1]), ["b1", "c1"]);
+        assert_eq!(arranged[1].id, "env:one");
     }
 
     #[test]
@@ -706,7 +831,7 @@ mod tests {
         let none = arrange(&[], &prefs(SortBy::Activity, GroupBy::Flat), now(), None);
 
         assert_eq!(flat.len(), 1);
-        assert_eq!(flat[0].heading, Heading::None);
+        assert_eq!(flat[0].heading, Heading::Recent);
         assert_eq!(titles(&flat[0]), ["two", "one"]);
         assert!(none.is_empty());
     }

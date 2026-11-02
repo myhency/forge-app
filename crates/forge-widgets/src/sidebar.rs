@@ -6,7 +6,7 @@ use forge_features::{use_workspace, Active, EntryKey, Heading};
 use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
 use crate::account_menu::AccountMenu;
-use crate::filter_menu::SidebarFilterMenu;
+use crate::filter_menu::{use_filter_ui_provider, FilterButton, SidebarFilterMenu};
 use crate::session_row::{fork_indent, SessionRow};
 
 /// The folder's own name for a sidebar heading; the full path stays available as a tooltip. A
@@ -118,6 +118,7 @@ pub fn NavButtons() -> Element {
 #[component]
 pub fn Sidebar() -> Element {
     let workspace = use_workspace();
+    let _filter_ui = use_filter_ui_provider();
     let prefs = workspace.prefs();
     let groups = workspace.arranged_sidebar(forge_features::now_local());
     // Headings of folder groups are told apart when two folders share a name; rows in a date
@@ -137,6 +138,7 @@ pub fn Sidebar() -> Element {
 
     rsx! {
         div { class: "sidebar", style: "width: {prefs.clamped_width()}px",
+            SidebarFilterMenu {}
             div { class: "sidebar-top",
                 NavButtons {}
                 button {
@@ -160,7 +162,6 @@ pub fn Sidebar() -> Element {
                     kind: ButtonKind::Primary,
                     onclick: move |_| workspace.show_new_session(),
                 }
-                SidebarFilterMenu {}
             }
             button {
                 class: if active == Active::Customize { "sidebar-link active" } else { "sidebar-link" },
@@ -181,13 +182,35 @@ pub fn Sidebar() -> Element {
                     Button { label: tr!("Dismiss"), onclick: move |_| workspace.dismiss_notice() }
                 }
             }
+            if groups.is_empty() {
+                // Without a session there is no heading to carry the menu, and the empty groups may be what the person wants.
+                div { class: "sidebar-group-header empty", FilterButton {} }
+            }
             for group in groups {
                 div { key: "{group.id}",
                     match &group.heading {
-                        Heading::None => rsx! {},
+                        Heading::Recent => rsx! {
+                            div { class: "sidebar-group-header",
+                                {group_toggle(workspace, &group.id, group.collapsed, forge_features::recent_heading().to_string(), String::new(), false)}
+                                FilterButton {}
+                            }
+                        },
                         Heading::Bucket(bucket) => rsx! {
                             div { class: "sidebar-group-header",
                                 {group_toggle(workspace, &group.id, group.collapsed, bucket.label().to_string(), String::new(), false)}
+                                FilterButton {}
+                            }
+                        },
+                        Heading::Status(marker) => rsx! {
+                            div { class: "sidebar-group-header",
+                                {group_toggle(workspace, &group.id, group.collapsed, forge_features::status_heading(*marker).to_string(), String::new(), false)}
+                                FilterButton {}
+                            }
+                        },
+                        Heading::Environment(name) => rsx! {
+                            div { class: "sidebar-group-header",
+                                {group_toggle(workspace, &group.id, group.collapsed, name.clone(), String::new(), false)}
+                                FilterButton {}
                             }
                         },
                         Heading::Project(project) => {
@@ -219,19 +242,24 @@ pub fn Sidebar() -> Element {
                                         "+"
                                     }
                                 }
+                                FilterButton {}
                             }
                             }
                         },
                     }
-                    for item in group.entries.iter() {
+                    for item in group.entries.iter().filter(|item| prefs.show_side_chats || !is_side_chat_session(&item.entry)) {
                         SessionRow {
                             key: "{item.entry.key.dom_key()}",
                             project: item.project.path.clone(),
                             entry: item.entry.clone(),
                             project_name: match group.heading {
+                                // The folder and the branch are the metadata line: off, a row is only its title.
+                                _ if !prefs.show_metadata => None,
                                 Heading::Project(_) => None,
-                                _ => Some(project_label_in(scratch_root.as_deref(), &item.project.path)),
+                                // A worktree is named by its repository, as the desktop app does.
+                                _ => Some(project_label_in(scratch_root.as_deref(), &workspace.origin_of(&item.project.path))),
                             },
+                            branch: if prefs.show_metadata { workspace.worktree_tag(&item.project.path).and_then(|tag| tag.branch) } else { None },
                             depth: item.depth,
                             fork_count: item.fork_count,
                             forks_folded: item.forks_folded,
@@ -254,6 +282,14 @@ pub fn Sidebar() -> Element {
                                 }
                             },
                         }
+                        if let EntryKey::Live(id) = &item.entry.key {
+                            crate::side_panel::SideChatSync { key: "sync-{id:?}", id: *id }
+                        }
+                        if prefs.show_side_chats {
+                            if let EntryKey::Live(id) = &item.entry.key {
+                                SideChatRows { key: "side-{id:?}", id: *id, depth: item.depth.saturating_add(1) }
+                            }
+                        }
                         if item.hidden_forks > 0 {
                             div { class: "fork-hidden", style: "margin-left: {fork_indent(item.depth.saturating_add(1))}px", {nested_label(item.hidden_forks)} }
                         }
@@ -263,6 +299,50 @@ pub fn Sidebar() -> Element {
             }
             div { class: "sidebar-footer",
                 AccountMenu {}
+            }
+        }
+    }
+}
+
+/// A side chat kept as a session: a fork named `btw: <question>`.
+fn is_side_chat_session(entry: &forge_features::SidebarEntry) -> bool {
+    entry.forked_from.is_some() && entry.title.starts_with("btw: ")
+}
+
+/// A session's side chats as rows under it, newest first: `Side chat` (`Side chat 2`…) while a tab is empty, then
+/// `btw: <the first question>`. A click shows that tab in the side chat panel.
+#[component]
+fn SideChatRows(id: forge_application::LiveSessionId, depth: u8) -> Element {
+    let workspace = forge_features::use_workspace();
+    if !workspace.has_side_chat(id) {
+        return rsx! {};
+    }
+    let tabs = workspace.side_tabs(id);
+    let thread = workspace
+        .live_view(id)
+        .map(|view| view.read().side_thread.clone())
+        .unwrap_or_default();
+    rsx! {
+        for tab in tabs.tabs.iter().rev().copied().filter(|tab| !workspace.side_tab_saved(id, *tab)) {
+            {
+                let asked = thread.iter().any(|side| side.tab == tab);
+                let name = crate::side_panel::side_tab_title(tab, &thread);
+                let title = if asked { format!("btw: {name}") } else { name };
+                rsx! {
+                    div {
+                        key: "side-{tab}",
+                        class: "sidebar-item side-chat-row",
+                        style: "margin-left: {fork_indent(depth)}px",
+                        title: "{title}",
+                        onclick: move |_| {
+                            workspace.open_session(id);
+                            workspace.change_side_tabs(id, |tabs| tabs.select(tab));
+                            workspace.open_panel_over_auto_details(id, forge_features::Panel::Side);
+                        },
+                        span { class: "fork-mark", "└" }
+                        span { class: "item-text", span { class: "title", "{title}" } }
+                    }
+                }
             }
         }
     }

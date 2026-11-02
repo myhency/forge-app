@@ -17,6 +17,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
     let files_open = workspace.dock(id).is_open(Panel::Files);
     let tasks_open = workspace.dock(id).is_open(Panel::Tasks);
     let preview_open = workspace.dock(id).is_open(Panel::Preview);
+    let side_open = workspace.dock(id).is_open(Panel::Side);
     rsx! {
         div { class: "pane-tools",
             if terminal {
@@ -146,6 +147,18 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                                     open.set(false);
                                 },
                                 span { {tr!("Files")} }
+                            }
+                            button {
+                                class: "picker-item",
+                                r#type: "button",
+                                role: "menuitemcheckbox",
+                                "aria-checked": "{side_open}",
+                                onclick: move |_| {
+                                    workspace.change_dock(id, |dock| dock.toggle(Panel::Side));
+                                    open.set(false);
+                                },
+                                span { {tr!("Side chat")} }
+                                span { class: "picker-hint", "⌘;" }
                             }
                             button {
                                 class: "picker-item",

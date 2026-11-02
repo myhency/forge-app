@@ -6,7 +6,7 @@ use forge_shared::{tr, Icon, IconKind};
 /// The box every dock panel sits in: a header with its title, the panel's own tools, expand and
 /// close, and the body below.
 #[component]
-pub fn PanelFrame(id: LiveSessionId, panel: Panel, tools: Element, children: Element, #[props(default)] onkeydown: Option<EventHandler<KeyboardEvent>>) -> Element {
+pub fn PanelFrame(id: LiveSessionId, panel: Panel, tools: Element, children: Element, #[props(default)] heading: Option<Element>, #[props(default)] onkeydown: Option<EventHandler<KeyboardEvent>>) -> Element {
     let workspace = use_workspace();
     let expanded = workspace.dock(id).expanded == Some(panel);
     rsx! {
@@ -20,8 +20,13 @@ pub fn PanelFrame(id: LiveSessionId, panel: Panel, tools: Element, children: Ele
                 }
             },
             header { class: "dock-header",
-                span { class: "dock-title", "{panel.title()}" }
-                div { class: "dock-tools", {tools} }
+                if let Some(heading) = heading {
+                    // A panel with its own heading (the side chat's tabs) takes all the room the buttons leave.
+                    {heading}
+                } else {
+                    span { class: "dock-title", "{panel.title()}" }
+                    div { class: "dock-tools", {tools} }
+                }
                 button {
                     class: "icon-button",
                     r#type: "button",

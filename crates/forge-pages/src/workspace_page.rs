@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, pane_class, rail_floats, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO, SIDEBAR_RAIL_WIDTH};
 use forge_features::{drag_ratio, Panel, PaneWidth, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
-use forge_widgets::{ChatWindow, OutsideFileDialog, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, CodeRunWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
+use forge_widgets::{ChatWindow, OutsideFileDialog, CustomizePage, RoutinesPage, SessionsPage, Lightbox, WebViewHost, FileLinkWatcher, CodeRunWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
 use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// Makes the state the whole window shares (settings, customize, the workspace, routines, notices).
@@ -288,7 +288,7 @@ fn Pane(index: usize, target: Active, rect: Rect, area: (u32, u32), split: bool,
                 (total, rail)
             }
         }
-        Active::NewSession | Active::Customize | Active::Routines => (0, 0),
+        Active::NewSession | Active::Customize | Active::Routines | Active::Sessions => (0, 0),
     };
     // Like the desktop app, the rail floats over the chat as a card when the chat would get too little beside it; the other columns
     // then decide push or float on their own.
@@ -328,6 +328,7 @@ fn Pane(index: usize, target: Active, rect: Rect, area: (u32, u32), split: bool,
                 Active::NewSession => rsx! { NewSessionPanel {} },
                 Active::Customize => rsx! { CustomizePage {} },
                 Active::Routines => rsx! { RoutinesPage {} },
+                Active::Sessions => rsx! { SessionsPage {} },
                 Active::Live(id) => rsx! { ChatWindow { key: "{id:?}", id } },
             }
             if closable {

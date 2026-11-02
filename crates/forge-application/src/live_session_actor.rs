@@ -128,7 +128,7 @@ impl Actor {
                     }
                 }
             }
-            LiveCommand::AskSide { question } => self.ask_side(question).await,
+            LiveCommand::AskSide { question, tab } => self.ask_side(question, tab).await,
             LiveCommand::Rewind { message_uuid, dry_run } => self.rewind(message_uuid, dry_run).await,
             LiveCommand::CloseRewind => {
                 self.view.rewind = None;
@@ -306,7 +306,7 @@ impl Actor {
 
     // `/btw`: the SDK answers from the conversation so far and keeps the question out of it. A
     // session with no sidecar yet gets one (it resumes the conversation) first.
-    async fn ask_side(&mut self, question: String) {
+    async fn ask_side(&mut self, question: String, tab: u32) {
         if !self.view.can_send {
             self.view.last_error = Some(CANNOT_SEND.to_string());
             self.refusal_shown = false;
@@ -317,8 +317,8 @@ impl Actor {
         let id = format!("side-{}", self.side_count);
         // The SDK answers one question at a time from the conversation: a follow-up carries the
         // earlier questions and answers of the thread in its text.
-        let asked = side_prompt(&self.view.side_thread, &question);
-        self.view.side_thread.push(SideQuestion { id: id.clone(), question, answer: SideAnswer::Pending });
+        let asked = side_prompt(&self.view.side_thread, tab, &question);
+        self.view.side_thread.push(SideQuestion { id: id.clone(), tab, question, answer: SideAnswer::Pending });
         self.dirty = true;
         let fail = |view: &mut LiveSessionView, id: &str, message: String| {
             if let Some(side) = view.side_thread.iter_mut().find(|side| side.id == id) {
@@ -686,9 +686,10 @@ impl Actor {
 }
 
 /// What the SDK is asked for a side question: the finished questions and answers of the thread, then the new question.
-fn side_prompt(thread: &[SideQuestion], question: &str) -> String {
+fn side_prompt(thread: &[SideQuestion], tab: u32, question: &str) -> String {
     let earlier: Vec<String> = thread
         .iter()
+        .filter(|side| side.tab == tab)
         .filter_map(|side| match &side.answer {
             SideAnswer::Done(answer) => Some(format!("Q: {}\nA: {answer}", side.question)),
             _ => None,

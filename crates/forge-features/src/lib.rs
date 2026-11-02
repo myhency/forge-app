@@ -37,6 +37,7 @@ mod file_menu;
 mod file_tree;
 mod files_store;
 mod filter_menu;
+mod sessions_page;
 mod folder_choice;
 mod hit_list;
 mod folder_menu;
@@ -73,7 +74,7 @@ mod worktree_view;
 pub use thumbnail::{provide_thumbnail_loader, thumbnail_allowed, thumbnail_data_url, ComposerAttachment, THUMBNAIL_LIMIT};
 pub use pane_context::{use_pane_focused, use_pane_index, use_pane_width, PaneIndex, PaneWidth};
 pub use pane_tree::{drag_ratio, Dir, Divider, PaneTree, Rect, MAX_PANES, MIN_PANE_HEIGHT, MIN_PANE_WIDTH};
-pub use arrange::{arrange, arrange_with_origins, arranged_open_order, folder_group_id, fork_fold_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
+pub use arrange::{arrange, arrange_with_origins, arranged_open_order, recent_heading, status_heading, folder_group_id, fork_fold_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
 pub use file_menu::{file_menu, show_in_file_manager, menu_height, submenu_opens_left, FileAction, MenuEntry, MenuTarget};
 pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
@@ -100,15 +101,16 @@ pub use details::{change_counts, ChangeCounts, DetailsCard, OneShot};
 pub use output_files::offers_default_program;
 pub use file_lists::{FileListState, FILE_LIST_LIMIT};
 pub use mention_popup::{absolute_in, attached_in, key_decision, provisional_cursor, KeyDecision, MentionOutcome, MentionPick, MentionPopup, MentionStatus};
-pub use dock::{Column, DockState, DockStates, Panel, DEFAULT_COLUMN_WIDTH, MIN_CHAT_WHILE_RESIZING, MIN_COLUMN_WIDTH};
+pub use dock::{Column, DockState, DockStates, Panel, SideTabs, DEFAULT_COLUMN_WIDTH, MIN_CHAT_WHILE_RESIZING, MIN_COLUMN_WIDTH};
 pub use environment::{card_folders, environment_card_rows, folder_menu, FolderMenu, environment_menu, numbered_ids, picker_choices, start_plan, variables_error_text, EnvRow, EnvironmentDraft, EnvironmentKey, EnvironmentMenu, EnvironmentRequest, EnvironmentStart, StartError};
 pub use effort::{effort_button_label, effort_levels, slider_position, effort_help, slider_faster, slider_smarter};
 pub use composer_cards::ComposerCards;
 pub use composer_shell::{composer_action, ComposerAction, ComposerShell};
 pub use composer_state::{use_composer_state, use_composer_state_provider, ComposerChips, ComposerState, MentionView, Outgoing};
+pub use sessions_page::{session_when, sessions_list, sessions_sort_label, split_match, SessionsSort, SessionsTab, SESSIONS_SORTS};
 pub use filter_menu::{
-    current_index, direction_label, filter_key, group_label, sort_label, status_label, FilterChoice, FilterKey, FilterMenu, FilterOutcome, FilterRow,
-    FILTER_ROWS, GROUP_ITEMS, SORT_ITEMS, STATUS_ITEMS,
+    current_index, direction_label, display_label, display_on, filter_key, group_label, sort_label, DisplayItem, FilterChoice, FilterKey,
+    FilterMenu, FilterOutcome, FilterRow, DISPLAY_ITEMS, FILTER_ROWS, GROUP_DIVIDER_BEFORE, GROUP_ITEMS, SORT_ITEMS,
 };
 pub use folder_choice::{choose_folder, FolderChoice};
 pub use folder_menu::{folder_menu_rows, FolderMenuRow, MAX_RECENT_FOLDERS};

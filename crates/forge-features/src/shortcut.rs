@@ -173,6 +173,7 @@ pub static SHORTCUTS: &[ShortcutRow] = &[
     ShortcutRow { group: Group::Panels, label: msg!("Files"), action: Shortcut::TogglePanel(Panel::Files), keys: &[cmd_shift("KeyF")] },
     ShortcutRow { group: Group::Panels, label: msg!("Terminal"), action: Shortcut::TogglePanel(Panel::Terminal), keys: &[cmd("KeyJ"), ctrl("Backquote")] },
     ShortcutRow { group: Group::Panels, label: msg!("Preview"), action: Shortcut::TogglePanel(Panel::Preview), keys: &[cmd_shift("KeyB")] },
+    ShortcutRow { group: Group::Panels, label: msg!("Side chat"), action: Shortcut::TogglePanel(Panel::Side), keys: &[cmd("Semicolon")] },
     ShortcutRow { group: Group::Panels, label: msg!("Show or hide the file list"), action: Shortcut::ToggleFileList, keys: &[cmd_shift("KeyY")] },
     ShortcutRow { group: Group::Panels, label: msg!("Expand or collapse the panel"), action: Shortcut::ExpandPanel, keys: &[cmd_shift("Backslash")] },
     ShortcutRow { group: Group::Composer, label: msg!("Open the mode menu"), action: Shortcut::OpenPicker(PickerKind::Mode), keys: &[cmd_shift("KeyM")] },

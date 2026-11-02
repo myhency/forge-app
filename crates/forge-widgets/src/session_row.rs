@@ -1,10 +1,18 @@
 use std::path::PathBuf;
 
 use dioxus::prelude::*;
-use forge_entities::{relative_time, SidebarItem};
-use forge_features::{menu_key_action, refocus_workspace, use_workspace, ArchiveAction, DeleteAction, EntryKey, MenuKeyAction, SidebarEntry};
+use forge_entities::SidebarItem;
+use forge_features::{menu_key_action, refocus_workspace, split_match, use_workspace, ArchiveAction, DeleteAction, EntryKey, MenuKeyAction, SidebarEntry};
 use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
-use time::OffsetDateTime;
+
+/// What a row of the Sessions page says beside the title.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageRow {
+    pub folder: String,
+    pub when: String,
+    /// The search text; its matches in the title are drawn in bold.
+    pub query: String,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 enum RowMode {
@@ -29,6 +37,13 @@ pub fn SessionRow(
     /// Set in date and no-grouping lists, where the heading does not say which project a row is in.
     #[props(default)]
     project_name: Option<String>,
+    /// The branch of a worktree session; drawn under the title before the folder.
+    #[props(default)]
+    branch: Option<String>,
+    /// Set on the Sessions page: the row is drawn as a line of that page (title, folder, time) and not as the
+    /// sidebar's item; the menu, rename and delete are the same.
+    #[props(default)]
+    page: Option<PageRow>,
     /// How many forks deep the row is drawn (0 = not under another session).
     #[props(default)]
     depth: u8,
@@ -41,7 +56,6 @@ pub fn SessionRow(
     let workspace = use_workspace();
     let mut mode = use_signal(|| RowMode::Normal);
     let actions = entry.actions();
-    let now = OffsetDateTime::now_utc();
     let session_id = entry.session_id.clone();
 
     // ⌥⌘R asks the active session's row to start renaming.
@@ -161,50 +175,69 @@ pub fn SessionRow(
             let shown_title = entry.title.clone();
             let shown_title = if depth > 0 { format!("└ {shown_title}") } else { shown_title };
             let fold_id = session_id.as_ref().map(forge_features::fork_fold_id);
+            let click = move |event: MouseEvent| {
+                mode.set(RowMode::Normal);
+                onopen.call(event.modifiers().alt());
+            };
+            let buttons = rsx! {
+                if let (true, Some(fold_id)) = (fork_count > 0, fold_id.clone()) {
+                    button {
+                        class: "fork-fold",
+                        title: if forks_folded { tr!("Show the forks of this session") } else { tr!("Fold the forks of this session") },
+                        "aria-label": if forks_folded { "Show forks" } else { "Fold forks" },
+                        onclick: move |event| {
+                            event.stop_propagation();
+                            workspace.update_prefs(|prefs| prefs.toggle_collapsed(&fold_id));
+                        },
+                        Icon { kind: IconKind::Chevron, size: IconSize::Small, open: !forks_folded }
+                    }
+                }
+                if has_menu {
+                    button {
+                        class: if menu_open { "row-menu-button open" } else { "row-menu-button" },
+                        title: tr!("Rename, fork, archive or delete"),
+                        onclick: move |event| {
+                            event.stop_propagation();
+                            mode.set(if menu_open { RowMode::Normal } else { RowMode::MenuOpen });
+                        },
+                        Icon { kind: IconKind::MoreHorizontal }
+                    }
+                }
+            };
+            let item = match page.clone() {
+                Some(page) => rsx! {
+                    PageItem { title: entry.title.clone(), page, menu_open, onclick: click, {buttons} }
+                },
+                None => rsx! {
+                    SidebarItem {
+                        title: shown_title,
+                        archived: entry.archived,
+                        subtitle: row_subtitle(project_name.as_deref()),
+                        branch: branch.clone(),
+                        marker: entry.marker,
+                        active,
+                        shown,
+                        onclick: click,
+                        {buttons}
+                    }
+                },
+            };
             rsx! {
                 div {
                     class: "sidebar-row",
                     style: "margin-left: {fork_indent(depth)}px",
                     title: "{plan_hint}",
-                    SidebarItem {
-                        title: shown_title,
-                        archived: entry.archived,
-                        subtitle: row_subtitle(
-                            project_name.as_deref(),
-                            entry.updated_at.as_deref().map(|updated_at| relative_time(updated_at, now)),
-                        ),
-                        marker: entry.marker,
-                        active,
-                        shown,
-                        onclick: move |event: MouseEvent| {
-                            mode.set(RowMode::Normal);
-                            onopen.call(event.modifiers().alt());
-                        },
-                        if let (true, Some(fold_id)) = (fork_count > 0, fold_id.clone()) {
-                            button {
-                                class: "fork-fold",
-                                title: if forks_folded { tr!("Show the forks of this session") } else { tr!("Fold the forks of this session") },
-                                "aria-label": if forks_folded { "Show forks" } else { "Fold forks" },
-                                onclick: move |event| {
-                                    event.stop_propagation();
-                                    workspace.update_prefs(|prefs| prefs.toggle_collapsed(&fold_id));
-                                },
-                                Icon { kind: IconKind::Chevron, size: IconSize::Small, open: !forks_folded }
-                            }
-                        }
-                        if has_menu {
-                            button {
-                                class: if menu_open { "row-menu-button open" } else { "row-menu-button" },
-                                title: tr!("Rename, fork, archive or delete"),
-                                onclick: move |event| {
-                                    event.stop_propagation();
-                                    mode.set(if menu_open { RowMode::Normal } else { RowMode::MenuOpen });
-                                },
-                                Icon { kind: IconKind::MoreHorizontal }
-                            }
-                        }
-                    }
+                    {item}
                     if menu_open {
+                        // A click anywhere outside closes the menu, as the filter menu's does.
+                        div {
+                            class: "menu-backdrop",
+                            onclick: move |event| {
+                                event.stop_propagation();
+                                mode.set(RowMode::Normal);
+                                refocus_workspace();
+                            },
+                        }
                         div {
                             class: "row-menu",
                             tabindex: "0",
@@ -330,18 +363,42 @@ pub fn SessionRow(
     }
 }
 
+/// One line of the Sessions page: the title (its search matches in bold), then the folder and how long ago. The
+/// buttons (`⋯`) replace the folder and time while the pointer is on the line.
+#[component]
+fn PageItem(title: String, page: PageRow, menu_open: bool, onclick: EventHandler<MouseEvent>, #[props(default)] children: Element) -> Element {
+    let pieces = split_match(&title, &page.query);
+    rsx! {
+        div { class: if menu_open { "sessions-row menu-open" } else { "sessions-row" }, onclick: move |event| onclick.call(event),
+            span { class: "sessions-row-title",
+                for (index, (text, hit)) in pieces.into_iter().enumerate() {
+                    if hit {
+                        b { key: "{index}", "{text}" }
+                    } else {
+                        span { key: "{index}", "{text}" }
+                    }
+                }
+            }
+            span { class: "sessions-row-meta",
+                if !page.folder.is_empty() {
+                    span { class: "sessions-row-folder", "{page.folder}" }
+                }
+                span { class: "sessions-row-when", "{page.when}" }
+            }
+            {children}
+        }
+    }
+}
+
 /// How far a fork row is moved in (pixels); a deep chain stops moving at the third step.
 pub fn fork_indent(depth: u8) -> u32 {
     u32::from(depth.min(3)) * 14
 }
 
-/// The grey text at the right of a row: how long ago, or in a date or no-grouping list the project
-/// (the date heading already says when, and a longer text squeezes the title to a few letters).
-pub fn row_subtitle(project_name: Option<&str>, ago: Option<String>) -> String {
-    match project_name {
-        Some(name) => name.to_string(),
-        None => ago.unwrap_or_default(),
-    }
+/// The folder under a row's title. Only a list that does not group by folder names it (a folder
+/// heading already says it); the desktop app shows no time here.
+pub fn row_subtitle(project_name: Option<&str>) -> String {
+    project_name.unwrap_or_default().to_string()
 }
 
 /// What a rename input should save: the trimmed draft, unless it is empty or the title the session
@@ -377,12 +434,9 @@ mod tests {
     }
 
     #[test]
-    fn a_row_subtitle_is_the_project_in_a_date_list_and_the_time_otherwise() {
-        assert_eq!(row_subtitle(None, Some("3d ago".to_string())), "3d ago");
-        // The time is left out beside a project name: the long subtitle squeezed titles to a few letters.
-        assert_eq!(row_subtitle(Some("forge"), Some("3d ago".to_string())), "forge");
-        assert_eq!(row_subtitle(Some("forge"), None), "forge");
-        assert_eq!(row_subtitle(None, None), "");
+    fn a_row_subtitle_is_the_folder_in_a_list_that_does_not_group_by_folder() {
+        assert_eq!(row_subtitle(Some("forge")), "forge");
+        assert_eq!(row_subtitle(None), "");
     }
 
     #[test]

@@ -71,6 +71,15 @@ pub trait SessionRepositoryPort: Send + Sync {
         message_uuid: &str,
         title: &str,
     ) -> Result<SessionId, SessionRepositoryError>;
+    /// Adds a side question and its answer to the end of the session's transcript, as a user message and the
+    /// assistant's reply (a `/btw` chat kept as a session of its own). `NotFound` when there is no such transcript.
+    async fn append_exchange(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        question: &str,
+        answer: &str,
+    ) -> Result<(), SessionRepositoryError>;
     /// Cuts the session's own transcript back to just before the user message `message_uuid`. The
     /// original is first copied beside it (`<id>.jsonl.before-rewind-<time>.bak`), so nothing is lost.
     /// `NotFound` when the transcript has no such message; a failure leaves the transcript as it was.
