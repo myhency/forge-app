@@ -584,7 +584,8 @@ button:not(:disabled):active { scale: 0.98; }
 .markdown li:has(> input:checked) { color: var(--fg-muted); text-decoration: line-through; }
 .markdown blockquote { padding: var(--sp-2) 0 var(--sp-2) var(--sp-14); border-left: 3px solid var(--border); color: var(--fg-muted); }
 .markdown blockquote > :last-child { margin-bottom: 0; }
-.markdown table { display: table; width: 100%; border-collapse: collapse; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); }
+/* A table wider than the column scrolls sideways instead of being cut off; a narrow one still fills the column. */
+.markdown table { display: block; width: max-content; min-width: 100%; max-width: 100%; overflow-x: auto; border-collapse: collapse; border: 1px solid var(--border); border-radius: var(--radius); }
 .markdown th, .markdown td { padding: var(--sp-8) var(--sp-12); border: none; border-top: 1px solid var(--border); text-align: left; }
 /* A narrow chat squeezes a column with a long cell down to one letter per line; a cell keeps room for a few characters, and the long text breaks inside the others. */
 .markdown th, .markdown td { min-width: 5ch; overflow-wrap: anywhere; }
@@ -789,6 +790,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .pane-tools .pane-close { position: static; }
 .chat-narrow .pane-header { flex-wrap: wrap; row-gap: var(--sp-6); padding: var(--sp-12) var(--sp-16); }
 .chat-narrow .pane-title { flex: 1 1 120px; }
+.chat-narrow .pane-titlebox { flex: 1 1 150px; }
 .chat-narrow .messages { padding: var(--sp-8) var(--sp-16) var(--sp-16); }
 .chat-narrow .perm-buttons { flex-direction: column; align-items: stretch; }
 .chat-narrow .perm-buttons .spacer { display: none; }
