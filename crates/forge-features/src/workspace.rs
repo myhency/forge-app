@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
-use forge_application::{WorktreesUseCase, ScratchUseCase, Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
+use forge_application::{SideAnswer, WorktreesUseCase, ScratchUseCase, Phase, ConnectorCatalogUseCase, ExtensionsUseCase, PluginCatalogUseCase, SkillCatalogUseCase, LiveSessionHandle, LiveSessionId, LiveSessionView, ProbeSlot, SessionRegistry, SettingsUseCase};
 use forge_entities::{build_turns, latest_plan, plan_text_of_request, TranscriptView};
 use forge_domain::{ChangeModeRef, ChangesViewPrefs, WorktreeRecord, ArchivedRef, Attachment, AvailableModel, Card, LineRange, EditorPrefs, EffortLevel, PermissionDecision, PermissionMode, ProjectSummary, SearchHit, SessionId, SessionSummary, SidebarPrefs, SlashCommand};
 use forge_ports::{DesktopToolPort, BrowserPort, FilePickerPort, FileVersion, FilesPort, FolderPickerPort, GitPort, McpLogPort, ProjectRepositoryPort, SessionRepositoryPort, TerminalPort, UsageStatsPort, WebViewEvent, WebViewPort, WebViewTabId};
@@ -210,6 +210,13 @@ pub struct Workspace {
     code_runs: Signal<HashMap<LiveSessionId, crate::code_runs::CodeRuns>>,
     /// The person's comments on the plan of each session, sent along with a request for changes.
     plan_comments: Signal<HashMap<LiveSessionId, Vec<forge_entities::PlanComment>>>,
+    side_tabs: Signal<HashMap<LiveSessionId, crate::dock::SideTabs>>,
+    /// The session each side chat tab was saved as (`btw: <question>`, a fork of the open session).
+    side_forks: Signal<HashMap<(LiveSessionId, u32), SessionId>>,
+    /// The side answers that are saved or being saved, by session and question id.
+    side_saved: Signal<HashSet<(LiveSessionId, String)>>,
+    /// The side answer being written now; one save at a time, so a tab's second answer finds its session.
+    side_saving: Signal<Option<(LiveSessionId, String)>>,
     /// The usage limit bar the person closed: it stays closed until the limit's level, window or reset time changes.
     rate_dismissed: Signal<Option<(forge_domain::RateLevel, forge_domain::RateWindow, Option<i64>)>>,
     /// Sessions whose details panel opened by itself (not by the person): the plan panel, which opens by itself too, takes its place.
@@ -311,6 +318,10 @@ pub fn use_workspace_provider() -> Workspace {
             stats_cards: root_signal(HashMap::new()),
             code_runs: root_signal(HashMap::new()),
             plan_comments: root_signal(HashMap::new()),
+            side_tabs: root_signal(HashMap::new()),
+            side_forks: root_signal(HashMap::new()),
+            side_saved: root_signal(HashSet::new()),
+            side_saving: root_signal(None),
             auto_details: root_signal(std::collections::HashSet::new()),
             rate_dismissed: root_signal(None),
             added_folders: root_signal(HashMap::new()),
@@ -2398,9 +2409,100 @@ impl Workspace {
     /// `/btw`: asks the SDK on the side and opens the side chat panel to show the answer.
     pub fn ask_side(&self, id: LiveSessionId, question: String) {
         if let Some(handle) = self.handle(id) {
-            handle.ask_side(question);
+            self.change_side_tabs(id, |_| {});
+            handle.ask_side(question, self.side_tabs(id).active);
             self.open_panel_over_auto_details(id, Panel::Side);
         }
+    }
+
+    /// The side chat tabs of a session: one empty tab until the person opens more.
+    pub fn side_tabs(&self, id: LiveSessionId) -> crate::dock::SideTabs {
+        self.side_tabs.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    pub fn change_side_tabs(&self, id: LiveSessionId, change: impl FnOnce(&mut crate::dock::SideTabs)) {
+        let mut tabs = self.side_tabs;
+        change(tabs.write().entry(id).or_default());
+    }
+
+    /// Whether a side chat tab is already a session of its own (the sidebar then lists that session, not the tab).
+    pub fn side_tab_saved(&self, id: LiveSessionId, tab: u32) -> bool {
+        self.side_forks.read().contains_key(&(id, tab))
+    }
+
+    /// Keeps each answered side question as a session: the first answer of a tab forks the open session as
+    /// `btw: <question>`, and that answer and the later ones of the tab are added to the fork, so the desktop
+    /// app's side chat survives a restart and opens as an ordinary session. Needs the open session to be on disk;
+    /// a failure shows as a notice and the question stays in the panel only.
+    pub fn save_side_chats(&self, id: LiveSessionId) {
+        let Some(view) = self.live_view(id) else { return };
+        // Read here so the caller's effect runs again when a save finishes and the next answer can go.
+        let saved_now = self.side_saved.read().clone();
+        if self.side_saving.peek().is_some() {
+            return;
+        }
+        let (project, parent, thread) = {
+            let view = view.peek();
+            (view.project_path.clone(), view.claude_session_id.clone(), view.side_thread.clone())
+        };
+        let Some(parent) = parent else { return };
+        for (index, side) in thread.iter().enumerate() {
+            let SideAnswer::Done(answer) = &side.answer else { continue };
+            if saved_now.contains(&(id, side.id.clone())) {
+                continue;
+            }
+            // A tab's answers go to its session in the order they were asked.
+            let earlier_pending = thread[..index]
+                .iter()
+                .any(|before| before.tab == side.tab && !saved_now.contains(&(id, before.id.clone())) && matches!(before.answer, SideAnswer::Done(_) | SideAnswer::Pending));
+            if earlier_pending {
+                continue;
+            }
+            let this = *self;
+            let services = (*self.services.peek()).clone();
+            let mut saved = self.side_saved;
+            let mut saving = self.side_saving;
+            let mut forks = self.side_forks;
+            let mut past = self.past;
+            let (key, tab, question, answer) = ((id, side.id.clone()), side.tab, side.question.clone(), answer.clone());
+            let existing = self.side_forks.peek().get(&(id, tab)).cloned();
+            let (project, parent) = (project.clone(), parent.clone());
+            saving.set(Some(key.clone()));
+            // Root scope: the files are written even if the panel closes meanwhile.
+            dioxus::core::spawn_forever(async move {
+                let outcome = async {
+                    let target = match existing {
+                        Some(target) => target,
+                        None => {
+                            let first = question.lines().next().unwrap_or_default();
+                            let title = format!("btw: {}", first.chars().take(60).collect::<String>());
+                            services.registry.fork_titled(&project, &parent, &title).await.map_err(|error| error.to_string())?
+                        }
+                    };
+                    services.registry.append_exchange(&project, &target, &question, &answer).await.map_err(|error| error.to_string())?;
+                    let sessions = services.sessions.list_sessions(&project).await.map_err(|error| format!("{}: {error}", project.display()))?;
+                    replace_project_sessions(&mut past.write(), &project, sessions);
+                    Ok::<_, String>(target)
+                }
+                .await;
+                match outcome {
+                    Ok(target) => {
+                        forks.write().insert((id, tab), target);
+                    }
+                    Err(message) => this.report(message),
+                }
+                // Done or failed, the answer is not tried again (a failure was told once).
+                saved.write().insert(key);
+                saving.set(None);
+            });
+            // One save at a time: the next answer goes when this one has finished and the effect runs again.
+            break;
+        }
+    }
+
+    /// Whether the session has a side chat to show in the sidebar: its panel was opened or a question was asked.
+    pub fn has_side_chat(&self, id: LiveSessionId) -> bool {
+        self.side_tabs.read().contains_key(&id)
     }
 
     pub fn plan_comments(&self, id: LiveSessionId) -> Vec<forge_entities::PlanComment> {

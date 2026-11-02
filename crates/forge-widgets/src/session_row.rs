@@ -229,6 +229,15 @@ pub fn SessionRow(
                     title: "{plan_hint}",
                     {item}
                     if menu_open {
+                        // A click anywhere outside closes the menu, as the filter menu's does.
+                        div {
+                            class: "menu-backdrop",
+                            onclick: move |event| {
+                                event.stop_propagation();
+                                mode.set(RowMode::Normal);
+                                refocus_workspace();
+                            },
+                        }
                         div {
                             class: "row-menu",
                             tabindex: "0",

@@ -226,6 +226,16 @@ impl SessionRegistry {
         Ok(self.sessions.fork_session(project_path, session_id, &fork_title(title)).await?)
     }
 
+    /// Copies a session into a new one called exactly `title` (a side chat: `btw: <question>`; no `(fork)` is added).
+    pub async fn fork_titled(&self, project_path: &Path, session_id: &SessionId, title: &str) -> Result<SessionId, ManageSessionError> {
+        Ok(self.sessions.fork_session(project_path, session_id, title).await?)
+    }
+
+    /// Adds a side question and its answer to the end of a session.
+    pub async fn append_exchange(&self, project_path: &Path, session_id: &SessionId, question: &str, answer: &str) -> Result<(), ManageSessionError> {
+        Ok(self.sessions.append_exchange(project_path, session_id, question, answer).await?)
+    }
+
     /// Like `fork`, but the copy ends just before the user message `message_uuid` (the conversation
     /// as it was before that message).
     pub async fn fork_before(
@@ -594,6 +604,10 @@ mod tests {
         }
 
         async fn fork_session_before(&self, _project_path: &Path, _session_id: &SessionId, _message_uuid: &str, _title: &str) -> Result<SessionId, SessionRepositoryError> {
+            unimplemented!("not used by these tests")
+        }
+
+        async fn append_exchange(&self, _project_path: &Path, _session_id: &SessionId, _question: &str, _answer: &str) -> Result<(), SessionRepositoryError> {
             unimplemented!("not used by these tests")
         }
 

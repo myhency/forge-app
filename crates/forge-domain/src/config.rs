@@ -80,6 +80,8 @@ pub struct SidebarPrefs {
     pub show_empty: bool,
     /// Whether a row says its folder or worktree branch under the title (the desktop app's `표시 → 메타데이터`).
     pub show_metadata: bool,
+    /// Whether a session's side chat is a row under it (the desktop app's `표시 → 사이드 채팅`, on by default).
+    pub show_side_chats: bool,
     /// Sorts the other way round: oldest first for the times, Z to A for the names. Off is the order the
     /// sidebar always had (newest first, A to Z).
     pub reversed: bool,
@@ -97,6 +99,7 @@ impl Default for SidebarPrefs {
             status: StatusFilter::default(),
             show_empty: false,
             show_metadata: true,
+            show_side_chats: true,
             reversed: false,
             collapsed: Vec::new(),
             width: DEFAULT_SIDEBAR_WIDTH,
@@ -110,8 +113,8 @@ impl SidebarPrefs {
     pub fn is_default_view(&self) -> bool {
         let defaults = Self::default();
         // The status is not in the menu any more (the Sessions page has the active and archived tabs).
-        (self.sort_by, self.group_by, self.show_empty, self.show_metadata, self.reversed)
-            == (defaults.sort_by, defaults.group_by, defaults.show_empty, defaults.show_metadata, defaults.reversed)
+        (self.sort_by, self.group_by, self.show_empty, self.show_metadata, self.show_side_chats, self.reversed)
+            == (defaults.sort_by, defaults.group_by, defaults.show_empty, defaults.show_metadata, defaults.show_side_chats, defaults.reversed)
     }
 
     /// The width to draw: a hand-edited or corrupt value never makes the sidebar unusable.
@@ -632,6 +635,7 @@ mod tests {
             status: StatusFilter::All,
             show_empty: true,
             show_metadata: false,
+            show_side_chats: false,
             reversed: true,
             collapsed: vec!["folder:/work/a".to_string()],
             width: 300,

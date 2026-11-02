@@ -103,6 +103,52 @@ pub(crate) fn forked_transcript(
     out
 }
 
+/// The two lines that add a side question and its answer to the end of a transcript: a user message under the last
+/// message of the conversation, then the assistant's reply under it. They carry the folder, version and branch of
+/// the line they follow, so Claude Code reads them as part of the same conversation.
+pub(crate) fn appended_exchange(
+    source: &str,
+    session_id: &str,
+    question: &str,
+    answer: &str,
+    now: &str,
+    mut new_uuid: impl FnMut() -> String,
+) -> String {
+    let last = source
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|value| matches!(value.get("type").and_then(Value::as_str), Some("user" | "assistant")))
+        .filter(|value| value.get("isSidechain").and_then(Value::as_bool) != Some(true))
+        .filter(|value| value.get("uuid").and_then(Value::as_str).is_some())
+        .last();
+    let from = |key: &str| last.as_ref().and_then(|value| value.get(key)).cloned().unwrap_or(Value::Null);
+    let parent = from("uuid");
+    let user = new_uuid();
+    let assistant = new_uuid();
+    let common = |parent: Value| {
+        json!({
+            "parentUuid": parent,
+            "isSidechain": false,
+            "userType": "external",
+            "entrypoint": from("entrypoint"),
+            "cwd": from("cwd"),
+            "sessionId": session_id,
+            "version": from("version"),
+            "gitBranch": from("gitBranch"),
+            "timestamp": now,
+        })
+    };
+    let mut first = common(parent);
+    first["type"] = json!("user");
+    first["uuid"] = json!(user);
+    first["message"] = json!({"role": "user", "content": question});
+    let mut second = common(json!(user));
+    second["type"] = json!("assistant");
+    second["uuid"] = json!(assistant);
+    second["message"] = json!({"role": "assistant", "type": "message", "content": [{"type": "text", "text": answer}], "stop_reason": "end_turn"});
+    format!("{first}\n{second}\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,6 +199,30 @@ mod tests {
         let titles: Vec<String> = kept.iter().filter_map(|v| v.get("customTitle").or(v.get("aiTitle")).and_then(Value::as_str).map(str::to_string)).collect();
         assert_eq!(titles, vec!["Mine", "newer guess"], "the last title lines survive a cut that removes everything else");
         assert_eq!(truncated_before(&text, "u1").unwrap(), "", "nothing came before the first message but its own snapshot");
+    }
+
+    #[test]
+    fn a_side_exchange_hangs_under_the_last_message_and_keeps_its_folder_and_version() {
+        let text = source(&[
+            json!({"type": "user", "uuid": "u1", "parentUuid": null, "cwd": "/work", "version": "2.1.0", "gitBranch": "main", "entrypoint": "sdk-cli"}),
+            json!({"type": "assistant", "uuid": "a1", "parentUuid": "u1", "cwd": "/work", "version": "2.1.0", "gitBranch": "main", "entrypoint": "sdk-cli"}),
+            json!({"type": "assistant", "uuid": "side", "isSidechain": true, "cwd": "/elsewhere"}),
+            json!({"type": "custom-title", "customTitle": "T"}),
+        ]);
+
+        let lines = parse(&appended_exchange(&text, "s1", "why?", "because", "2026-11-02T00:00:00Z", counter()));
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0]["type"], "user");
+        assert_eq!(lines[0]["parentUuid"], "a1", "under the last message of the conversation, not a side branch");
+        assert_eq!(lines[0]["message"]["content"], "why?");
+        assert_eq!((lines[0]["cwd"].as_str(), lines[0]["version"].as_str()), (Some("/work"), Some("2.1.0")));
+        assert_eq!(lines[1]["type"], "assistant");
+        assert_eq!(lines[1]["parentUuid"], lines[0]["uuid"]);
+        assert_eq!(lines[1]["message"]["content"][0]["text"], "because");
+        assert_eq!(lines[1]["sessionId"], "s1");
+        let empty = parse(&appended_exchange("", "s1", "q", "a", "t", counter()));
+        assert!(empty[0]["parentUuid"].is_null(), "an empty transcript gives the question no parent");
     }
 
     #[test]

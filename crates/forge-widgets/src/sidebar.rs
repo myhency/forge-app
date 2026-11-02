@@ -247,7 +247,7 @@ pub fn Sidebar() -> Element {
                             }
                         },
                     }
-                    for item in group.entries.iter() {
+                    for item in group.entries.iter().filter(|item| prefs.show_side_chats || !is_side_chat_session(&item.entry)) {
                         SessionRow {
                             key: "{item.entry.key.dom_key()}",
                             project: item.project.path.clone(),
@@ -282,6 +282,14 @@ pub fn Sidebar() -> Element {
                                 }
                             },
                         }
+                        if let EntryKey::Live(id) = &item.entry.key {
+                            crate::side_panel::SideChatSync { key: "sync-{id:?}", id: *id }
+                        }
+                        if prefs.show_side_chats {
+                            if let EntryKey::Live(id) = &item.entry.key {
+                                SideChatRows { key: "side-{id:?}", id: *id, depth: item.depth.saturating_add(1) }
+                            }
+                        }
                         if item.hidden_forks > 0 {
                             div { class: "fork-hidden", style: "margin-left: {fork_indent(item.depth.saturating_add(1))}px", {nested_label(item.hidden_forks)} }
                         }
@@ -291,6 +299,50 @@ pub fn Sidebar() -> Element {
             }
             div { class: "sidebar-footer",
                 AccountMenu {}
+            }
+        }
+    }
+}
+
+/// A side chat kept as a session: a fork named `btw: <question>`.
+fn is_side_chat_session(entry: &forge_features::SidebarEntry) -> bool {
+    entry.forked_from.is_some() && entry.title.starts_with("btw: ")
+}
+
+/// A session's side chats as rows under it, newest first: `Side chat` (`Side chat 2`…) while a tab is empty, then
+/// `btw: <the first question>`. A click shows that tab in the side chat panel.
+#[component]
+fn SideChatRows(id: forge_application::LiveSessionId, depth: u8) -> Element {
+    let workspace = forge_features::use_workspace();
+    if !workspace.has_side_chat(id) {
+        return rsx! {};
+    }
+    let tabs = workspace.side_tabs(id);
+    let thread = workspace
+        .live_view(id)
+        .map(|view| view.read().side_thread.clone())
+        .unwrap_or_default();
+    rsx! {
+        for tab in tabs.tabs.iter().rev().copied().filter(|tab| !workspace.side_tab_saved(id, *tab)) {
+            {
+                let asked = thread.iter().any(|side| side.tab == tab);
+                let name = crate::side_panel::side_tab_title(tab, &thread);
+                let title = if asked { format!("btw: {name}") } else { name };
+                rsx! {
+                    div {
+                        key: "side-{tab}",
+                        class: "sidebar-item side-chat-row",
+                        style: "margin-left: {fork_indent(depth)}px",
+                        title: "{title}",
+                        onclick: move |_| {
+                            workspace.open_session(id);
+                            workspace.change_side_tabs(id, |tabs| tabs.select(tab));
+                            workspace.open_panel_over_auto_details(id, forge_features::Panel::Side);
+                        },
+                        span { class: "fork-mark", "└" }
+                        span { class: "item-text", span { class: "title", "{title}" } }
+                    }
+                }
             }
         }
     }
