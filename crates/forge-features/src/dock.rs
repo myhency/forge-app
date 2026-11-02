@@ -7,7 +7,8 @@ pub const DEFAULT_COLUMN_WIDTH: f32 = 480.0;
 pub const MIN_COLUMN_WIDTH: f32 = 280.0;
 /// The session rail is a narrow strip of cards (the desktop app's is about 310 pt wide).
 pub const RAIL_COLUMN_WIDTH: f32 = 320.0;
-pub const MAX_COLUMN_WIDTH: f32 = 900.0;
+/// A column grows until the chat is this wide (the desktop app stops there; there is no fixed largest width).
+pub const MIN_CHAT_WHILE_RESIZING: f32 = 100.0;
 
 /// A panel that can sit in the dock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -138,15 +139,38 @@ impl DockState {
         [Panel::Files, Panel::Changes].into_iter().find(|panel| self.is_open(*panel))
     }
 
-    /// Sets a column's width, kept between the minimum and the maximum. A column that does not
-    /// exist and a width that is not a number are ignored.
-    pub fn resize(&mut self, column: usize, width: f32) {
-        if !width.is_finite() {
+    /// Whether a column is the session rail (a fixed width: it has no handle).
+    pub fn is_rail(&self, column: usize) -> bool {
+        self.columns.get(column).is_some_and(|column| column.panels.contains(&Panel::Details))
+    }
+
+    /// Whether the left edge of a column is the edge next to the chat: no column but the rail stands left of it.
+    pub fn is_chat_edge(&self, column: usize) -> bool {
+        !self.is_rail(column) && (0..column).all(|before| self.is_rail(before))
+    }
+
+    /// Sets the width of the column next to the chat. It is at least `MIN_COLUMN_WIDTH`, and grows until the chat is
+    /// `MIN_CHAT_WHILE_RESIZING` wide beside it and the other columns. (The desktop app does not count the rail, which floats over the
+    /// chat; here the floating dock holds the rail too, so it counts, or the column would be cut off at the window's edge.) A column that does not exist and a width that is not a number are ignored.
+    pub fn resize_chat_edge(&mut self, column: usize, width: f32, pane_width: f32) {
+        if !width.is_finite() || !pane_width.is_finite() || column >= self.columns.len() {
             return;
         }
-        if let Some(column) = self.columns.get_mut(column) {
-            column.width = width.clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH);
+        let others: f32 = self.columns.iter().enumerate().filter(|(index, _)| *index != column).map(|(_, other)| other.width).sum();
+        let largest = (pane_width - MIN_CHAT_WHILE_RESIZING - others).max(MIN_COLUMN_WIDTH);
+        self.columns[column].width = width.clamp(MIN_COLUMN_WIDTH, largest);
+    }
+
+    /// Moves the edge between column `left` and the next one by `delta` (right is positive) from the widths they had when it
+    /// was grabbed. The two share what they had: each keeps at least `MIN_COLUMN_WIDTH`, and the chat does not change.
+    pub fn move_boundary(&mut self, left: usize, start_left: f32, start_right: f32, delta: f32) {
+        if !delta.is_finite() || left + 1 >= self.columns.len() {
+            return;
         }
+        let total = start_left + start_right;
+        let new_left = (start_left + delta).clamp(MIN_COLUMN_WIDTH, (total - MIN_COLUMN_WIDTH).max(MIN_COLUMN_WIDTH));
+        self.columns[left].width = new_left;
+        self.columns[left + 1].width = total - new_left;
     }
 }
 
@@ -285,23 +309,56 @@ mod tests {
     }
 
     #[test]
-    fn resize_clamps_to_the_minimum_and_maximum() {
+    fn the_chat_edge_column_grows_until_the_chat_is_100_wide_and_shrinks_to_280() {
         let mut dock = DockState::default();
         dock.toggle(Panel::Terminal);
-        dock.resize(0, 10.0);
+        dock.resize_chat_edge(0, 10.0, 1000.0);
         assert_eq!(dock.columns[0].width, MIN_COLUMN_WIDTH);
-        dock.resize(0, 5000.0);
-        assert_eq!(dock.columns[0].width, MAX_COLUMN_WIDTH);
-        dock.resize(0, 500.0);
+        // The desktop app at 1700 pt: 1320 of the 1420 pt of the pane, the chat keeps 100.
+        dock.resize_chat_edge(0, 5000.0, 1420.0);
+        assert_eq!(dock.columns[0].width, 1320.0);
+        dock.resize_chat_edge(0, 500.0, 1420.0);
         assert_eq!(dock.columns[0].width, 500.0);
     }
 
     #[test]
-    fn resize_ignores_a_missing_column_and_a_width_that_is_not_a_number() {
+    fn the_rail_counts_for_room_and_has_no_handle() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Details);
+        dock.toggle(Panel::Files);
+        assert!(dock.is_rail(0) && !dock.is_rail(1));
+        assert!(!dock.is_chat_edge(0));
+        assert!(dock.is_chat_edge(1), "the first column right of the rail is next to the chat");
+        dock.resize_chat_edge(1, 5000.0, 1200.0);
+        assert_eq!(dock.columns[1].width, 1200.0 - MIN_CHAT_WHILE_RESIZING - RAIL_COLUMN_WIDTH);
+        assert_eq!(dock.columns[0].width, RAIL_COLUMN_WIDTH);
+    }
+
+    #[test]
+    fn a_boundary_between_two_columns_shares_their_width_and_keeps_280_each() {
+        let mut dock = DockState::default();
+        dock.toggle(Panel::Files);
+        dock.toggle(Panel::Terminal);
+        dock.toggle(Panel::Plan);
+        // Files + Terminal share a column, so Plan is the second.
+        assert_eq!(dock.columns.len(), 2);
+        let (a, b) = (dock.columns[0].width, dock.columns[1].width);
+        assert!(!dock.is_chat_edge(1));
+        dock.move_boundary(0, a, b, -5000.0);
+        assert_eq!((dock.columns[0].width, dock.columns[1].width), (MIN_COLUMN_WIDTH, a + b - MIN_COLUMN_WIDTH));
+        dock.move_boundary(0, a, b, 5000.0);
+        assert_eq!((dock.columns[0].width, dock.columns[1].width), (a + b - MIN_COLUMN_WIDTH, MIN_COLUMN_WIDTH));
+        dock.move_boundary(0, a, b, 40.0);
+        assert_eq!(dock.columns[0].width + dock.columns[1].width, a + b);
+    }
+
+    #[test]
+    fn resizing_ignores_a_missing_column_and_a_width_that_is_not_a_number() {
         let mut dock = DockState::default();
         dock.toggle(Panel::Terminal);
-        dock.resize(3, 500.0);
-        dock.resize(0, f32::NAN);
+        dock.resize_chat_edge(3, 500.0, 1200.0);
+        dock.resize_chat_edge(0, f32::NAN, 1200.0);
+        dock.move_boundary(0, 400.0, 400.0, f32::NAN);
         assert_eq!(dock.columns[0].width, DEFAULT_COLUMN_WIDTH);
     }
 

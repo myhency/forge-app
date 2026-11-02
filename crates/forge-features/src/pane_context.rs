@@ -7,6 +7,15 @@ use crate::use_workspace;
 #[derive(Clone, Copy)]
 pub struct PaneIndex(pub Signal<usize>);
 
+/// The width of the pane this component is in, in pixels. A signal, because the window and the splits change it.
+#[derive(Clone, Copy)]
+pub struct PaneWidth(pub Signal<u32>);
+
+/// The width of the pane this component is in; 1200 outside any pane.
+pub fn use_pane_width() -> u32 {
+    try_use_context::<PaneWidth>().map(|width| *width.0.read()).unwrap_or(1200)
+}
+
 /// The index of the pane this component is in; 0 outside any pane.
 pub fn use_pane_index() -> usize {
     try_use_context::<PaneIndex>().map(|index| *index.0.read()).unwrap_or(0)

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_domain::{keep_peek, pane_class, rail_floats, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO, SIDEBAR_RAIL_WIDTH};
-use forge_features::{drag_ratio, Panel, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
+use forge_features::{drag_ratio, Panel, PaneWidth, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
 use forge_widgets::{ChatWindow, OutsideFileDialog, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, CodeRunWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
 use forge_shared::{tr, Icon, IconKind, IconSize};
 
@@ -267,6 +267,10 @@ fn pane_row(workspace: Workspace, main_w: u32, main_h: u32, mut dragging: Signal
 fn Pane(index: usize, target: Active, rect: Rect, area: (u32, u32), split: bool, focused: bool) -> Element {
     let workspace = use_workspace();
     let mut index_signal = use_context_provider(|| PaneIndex(Signal::new(index)));
+    let mut width_signal = use_context_provider(|| PaneWidth(Signal::new(rect.w)));
+    if *width_signal.0.peek() != rect.w {
+        width_signal.0.set(rect.w);
+    }
     // Set while rendering, before the children read it: an effect would leave them one render behind
     // after a pane closed or moved.
     if *index_signal.0.peek() != index {

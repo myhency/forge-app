@@ -750,7 +750,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .chip-remove:hover { color: var(--fg); }
 
 /* The dock: columns right of the chat. */
-.dock-column { position: relative; flex: 0 1 auto; display: flex; flex-direction: column; min-width: 260px; max-width: 70vw; padding: var(--sp-8); box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
+.dock-column { position: relative; flex: 0 1 auto; display: flex; flex-direction: column; min-width: 260px; padding: var(--sp-8); box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
 /* The session rail floats over the chat as a card when the chat would get too little beside it (the desktop app does the same). */
 .rail-floats:not(.dock-float) .dock-column.rail { position: absolute; z-index: 9; top: 8px; bottom: 8px; right: calc(var(--dock-rest, 0px) + 8px); width: 320px !important; flex: none; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
 .rail-floats:not(.dock-float) .dock-column.rail .dock-resize { display: none; }
@@ -760,7 +760,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
    too narrow they float over it as one rounded card (observation round 10). */
 .dock { display: contents; }
 .dock-float .dock { display: flex; position: absolute; top: 8px; right: 8px; bottom: 8px; z-index: 8; max-width: calc(100% - 16px); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); }
-.dock-float .dock-column { flex: none; max-width: 400px; }
+.dock-float .dock-column { flex: none; max-width: 100%; }
 .dock-float .dock-column.expanded { max-width: none; }
 .dock-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 5px; cursor: col-resize; z-index: 7; }
 .dock-resize:hover { background: var(--accent-soft); }
