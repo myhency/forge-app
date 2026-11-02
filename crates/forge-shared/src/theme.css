@@ -752,13 +752,15 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 /* The dock: columns right of the chat. */
 .dock-column { position: relative; flex: 0 1 auto; display: flex; flex-direction: column; min-width: 260px; padding: var(--sp-8); box-sizing: border-box; background: var(--bg-sidebar); border-left: 1px solid var(--border); }
 /* The session rail floats over the chat as a card when the chat would get too little beside it (the desktop app does the same). */
-.rail-floats .dock-column.rail { position: absolute; z-index: 9; top: 8px; bottom: 8px; right: calc(var(--dock-rest, 0px) + 8px); width: 320px !important; flex: none; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
-/* In a floating dock the card stands left of the other columns, outside the dock's clipped box. */
+/* The session rail as a card: the desktop app puts it at the left of the chat, under the other columns, above the composer. */
+.rail-floats .dock-column.rail { position: absolute; z-index: 1; top: 12px; bottom: 92px; left: 31px; width: 320px !important; flex: none; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+.rail-floats .dock-column:not(.rail) { z-index: 2; }
+/* A floating dock is the card's containing block: its left edge is the pane's width minus the other columns and the 8 px margin. */
 .rail-floats.dock-float .dock { overflow: visible; }
+.rail-floats.dock-float .dock-column.rail { left: calc(31px - (var(--pane-w) - var(--dock-rest) - 8px)); top: -8px; bottom: calc(92px - 8px); }
 .pane.rail-floats { overflow: hidden; }
-.rail-floats.dock-float .dock-column.rail { top: 0; bottom: 0; right: calc(100% + 8px); }
 .rail-floats .dock-column.rail .dock-resize { display: none; }
-.rail-backdrop { position: absolute; top: 0; bottom: 0; left: 0; right: var(--dock-rest, 0px); z-index: 8; }
+.rail-backdrop { position: absolute; top: 0; bottom: 0; left: 0; right: var(--dock-rest, 0px); z-index: 0; }
 .dock-column.expanded { flex: 1; max-width: none; }
 /* The columns of one session. Beside the chat they are plain flex items; when the chat would get
    too narrow they float over it as one rounded card (observation round 10). */

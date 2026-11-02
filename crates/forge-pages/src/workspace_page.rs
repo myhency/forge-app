@@ -313,8 +313,9 @@ fn Pane(index: usize, target: Active, rect: Rect, area: (u32, u32), split: bool,
     }
     let mut style = rect.percent_style(area.0, area.1);
     if rail_card {
-        // Where the card's right edge goes: left of the other columns.
-        style.push_str(&format!(" --dock-rest: {dock_width}px;"));
+        // The card stands at the left of the chat and goes under the other columns, so the pane's width and the other columns' width
+        // tell where its left edge is inside a floating dock.
+        style.push_str(&format!(" --dock-rest: {dock_width}px; --pane-w: {}px;", rect.w));
     }
     rsx! {
         div {
