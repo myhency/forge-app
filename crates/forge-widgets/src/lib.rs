@@ -70,7 +70,7 @@ mod workspace_trust_dialog;
 pub use chat_window::ChatWindow;
 pub use customize_page::CustomizePage;
 pub use dock::Dock;
-pub use composer_controls::{EffortPicker, ModePicker, ModelPicker};
+pub use composer_controls::{ModePicker, ModelPicker};
 pub use filter_menu::SidebarFilterMenu;
 pub use lightbox::Lightbox;
 pub use mention_list::MentionList;

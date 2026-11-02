@@ -5,14 +5,6 @@ pub fn effort_help() -> &'static str {
     tr!("Higher effort means a more thorough answer, but it takes longer and uses your limit faster.")
 }
 
-pub fn slider_faster() -> &'static str {
-    tr!("Faster")
-}
-
-pub fn slider_smarter() -> &'static str {
-    tr!("Smarter")
-}
-
 /// The effort levels the session's model takes, lowest first; empty when the model is not listed or
 /// takes none. A model is found by its listed name or by the full id that name stands for. A session
 /// on the SDK's default model (`None`) uses the first model the SDK listed: that is the `default` row
@@ -28,11 +20,14 @@ pub fn effort_levels(models: &[AvailableModel], model: Option<&str>) -> Vec<Effo
     levels
 }
 
-/// Where the slider thumb stands: on the current level, else on High (the SDK's default), else on
-/// the first stop.
-pub fn slider_position(levels: &[EffortLevel], current: Option<EffortLevel>) -> usize {
-    let wanted = current.unwrap_or(EffortLevel::High);
-    levels.iter().position(|level| *level == wanted).unwrap_or(0)
+/// The effort a session should have after its model changed: the one it has when the new model takes it, else Medium
+/// when the new model takes that, else none (the SDK's default). `None` for "no change needed" is `Some(current)`.
+pub fn effort_after_model_change(current: Option<EffortLevel>, new_levels: &[EffortLevel]) -> Option<EffortLevel> {
+    match current {
+        Some(level) if new_levels.contains(&level) => Some(level),
+        None => None,
+        Some(_) => new_levels.contains(&EffortLevel::Medium).then_some(EffortLevel::Medium),
+    }
 }
 
 /// The text of the composer's effort button.
@@ -81,11 +76,16 @@ mod tests {
     }
 
     #[test]
-    fn the_thumb_sits_on_the_current_level_else_on_high_else_on_the_first_stop() {
-        assert_eq!(slider_position(&[Low, Medium, High], Some(Medium)), 1);
-        assert_eq!(slider_position(&[Low, Medium, High], None), 2, "the SDK default is high");
-        assert_eq!(slider_position(&[Low, Medium], None), 0, "no high to stand on");
-        assert_eq!(slider_position(&[Low, Medium], Some(Max)), 0, "a level the model lacks");
+    fn a_level_the_new_model_takes_is_kept() {
+        assert_eq!(effort_after_model_change(Some(High), &[Low, Medium, High]), Some(High));
+        assert_eq!(effort_after_model_change(None, &[Low, Medium]), None);
+    }
+
+    #[test]
+    fn a_level_the_new_model_lacks_falls_back_to_medium_then_to_none() {
+        assert_eq!(effort_after_model_change(Some(XHigh), &[Low, Medium, High, Max]), Some(Medium));
+        assert_eq!(effort_after_model_change(Some(XHigh), &[]), None);
+        assert_eq!(effort_after_model_change(Some(XHigh), &[Low, High]), None);
     }
 
     #[test]

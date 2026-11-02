@@ -680,6 +680,11 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .picker-more { position: relative; }
 .picker-more-row { align-items: center; }
 .picker-more-row.open { background: var(--bg-hover); }
+.picker-more-value { margin-left: auto; color: var(--fg-muted); }
+.picker-more-value + .picker-more-chevron { margin-left: var(--sp-4); }
+.picker-dim { margin-left: var(--sp-6); color: var(--fg-muted); }
+.picker-note { max-width: 240px; padding: var(--sp-6) var(--sp-8) var(--sp-4); font-size: var(--text-xs); line-height: 1.4; color: var(--fg-muted); }
+.picker-item:disabled { opacity: 0.45; cursor: default; background: transparent; }
 .picker-more-chevron { margin-left: auto; display: inline-flex; color: var(--fg-muted); }
 .picker-flyout { position: absolute; right: calc(100% + var(--sp-8)); bottom: 0; z-index: 11; min-width: 200px; padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); box-shadow: var(--shadow); }
 .chat-narrow .picker-flyout { right: 0; bottom: calc(100% + var(--sp-4)); }
