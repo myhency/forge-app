@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::PermissionDecision;
 use forge_entities::{plan_card_takes_focus, plan_key, plan_revision_reason, PlanChoice, PlanKey, DEFAULT_PLAN_REFUSAL};
+use forge_domain::SIDEBAR_OVERLAY_UP_TO;
 use forge_features::{use_workspace, Panel};
 use forge_shared::{tr, Icon, IconKind, IconSize};
 
@@ -53,7 +54,14 @@ pub fn PlanCard(id: LiveSessionId, request_id: String) -> Element {
             class: "permission-panel plan-card",
             tabindex: "0",
             onmounted: move |mounted| {
-                workspace.open_panel_over_auto_details(id, Panel::Plan);
+                // A narrow window floats the panel over this card and its buttons: the card's link opens it there.
+                spawn(async move {
+                    // Read once here: `use_window_width` keeps one listener for the page, a second caller would cut the first off.
+                    let width = document::eval("dioxus.send(Math.round(window.innerWidth))").recv::<u32>().await.unwrap_or(u32::MAX);
+                    if width > SIDEBAR_OVERLAY_UP_TO {
+                        workspace.open_panel_over_auto_details(id, Panel::Plan);
+                    }
+                });
                 take_focus_when_no_field_has_it(mounted.data())
             },
             onkeydown: move |event: KeyboardEvent| {

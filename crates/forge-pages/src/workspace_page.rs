@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_domain::{keep_peek, pane_class, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_RAIL_WIDTH};
+use forge_domain::{keep_peek, pane_class, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO, SIDEBAR_RAIL_WIDTH};
 use forge_features::{drag_ratio, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
 use forge_widgets::{ChatWindow, OutsideFileDialog, CustomizePage, RoutinesPage, Lightbox, WebViewHost, FileLinkWatcher, CodeRunWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
 use forge_shared::{tr, Icon, IconKind, IconSize};
@@ -50,6 +50,13 @@ pub fn WorkspacePage() -> Element {
         let overlay_open = settings.is_open() || workspace.search_open() || workspace.shortcuts_open() || workspace.environment_request().is_some() || workspace.trust_request().is_some();
         if *peek.peek() && !keep_peek(true, window_width(), overlay_open) {
             peek.set(false);
+        }
+    });
+
+    // A panel the app opened by itself would float over the chat in a narrow window: leave it closed there.
+    use_effect(move || {
+        if window_width() <= SIDEBAR_OVERLAY_UP_TO {
+            workspace.dismiss_auto_details();
         }
     });
 
