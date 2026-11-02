@@ -1644,6 +1644,7 @@ name = "forge-adapter-dialog"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "directories",
  "forge-ports",
  "rfd",
 ]
@@ -1687,11 +1688,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-adapter-report"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "forge-log",
+ "forge-ports",
+ "regex",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "time",
+ "zip 2.4.2",
+]
+
+[[package]]
 name = "forge-adapter-sidecar"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "forge-domain",
+ "forge-log",
  "forge-ports",
  "serde",
  "serde_json",
@@ -1725,6 +1742,7 @@ name = "forge-app"
 version = "0.1.0"
 dependencies = [
  "dioxus",
+ "directories",
  "forge-adapter-browser",
  "forge-adapter-claude-fs",
  "forge-adapter-claude-plugins",
@@ -1733,12 +1751,14 @@ dependencies = [
  "forge-adapter-files",
  "forge-adapter-git",
  "forge-adapter-notify",
+ "forge-adapter-report",
  "forge-adapter-sidecar",
  "forge-adapter-terminal",
  "forge-adapter-webview",
  "forge-application",
  "forge-domain",
  "forge-features",
+ "forge-log",
  "forge-pages",
  "forge-ports",
  "forge-shared",
@@ -1754,6 +1774,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "forge-domain",
+ "forge-log",
  "forge-ports",
  "mockall",
  "serde_json",
@@ -1799,12 +1820,21 @@ dependencies = [
  "forge-application",
  "forge-domain",
  "forge-entities",
+ "forge-log",
  "forge-ports",
  "forge-shared",
  "serde_json",
  "tempfile",
  "time",
  "tokio",
+]
+
+[[package]]
+name = "forge-log"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "time",
 ]
 
 [[package]]
@@ -3263,6 +3293,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
 
 [[package]]
+name = "ntapi"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3b335231dfd352ffb0f8017f3b6027a4917f7df785ea2143d8af2adc66980ae"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3447,6 +3486,16 @@ dependencies = [
  "block2",
  "libc",
  "objc2",
+ "objc2-core-foundation",
+]
+
+[[package]]
+name = "objc2-io-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33fafba39597d6dc1fb709123dfa8289d39406734be322956a69f0931c73bb15"
+dependencies = [
+ "libc",
  "objc2-core-foundation",
 ]
 
@@ -5021,6 +5070,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "sysinfo"
+version = "0.37.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16607d5caffd1c07ce073528f9ed972d88db15dd44023fa57142963be3feb11f"
+dependencies = [
+ "libc",
+ "memchr",
+ "ntapi",
+ "objc2-core-foundation",
+ "objc2-io-kit",
+ "windows 0.61.3",
 ]
 
 [[package]]

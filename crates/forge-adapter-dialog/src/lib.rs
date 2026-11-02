@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-use forge_ports::{FilePickerPort, FolderPickerPort};
+use forge_ports::{FilePickerPort, FileSavePort, FolderPickerPort};
 
 /// The operating system's folder dialog, through `rfd`. The dialog itself cannot be tested
 /// without a person; spec §19.6 leaves it to the manual checklist.
@@ -34,6 +34,18 @@ impl FilePickerPort for RfdFolderPicker {
             .await
             .map(|handles| handles.into_iter().map(|handle| handle.path().to_path_buf()).collect())
             .unwrap_or_default()
+    }
+}
+
+#[async_trait]
+impl FileSavePort for RfdFolderPicker {
+    async fn pick_save_path(&self, file_name: &str) -> Option<PathBuf> {
+        let mut dialog = rfd::AsyncFileDialog::new().set_title("Save report").set_file_name(file_name).add_filter("Zip", &["zip"]);
+        // The folder the panel opens in: the person's downloads, so the answer always carries a whole path.
+        if let Some(dir) = directories::UserDirs::new().and_then(|dirs| dirs.download_dir().map(std::path::Path::to_path_buf)) {
+            dialog = dialog.set_directory(dir);
+        }
+        dialog.save_file().await.map(|handle| handle.path().to_path_buf())
     }
 }
 

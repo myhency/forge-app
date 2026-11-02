@@ -34,7 +34,7 @@ impl Panel {
             Panel::Tasks => tr!("Background tasks"),
             Panel::Details => tr!("Environment"),
             Panel::Plan => tr!("Plan"),
-            Panel::Side => tr!("Side question"),
+            Panel::Side => tr!("Side chat"),
         }
     }
 
@@ -49,6 +49,53 @@ impl Panel {
     /// Whether the panel can share a column with one other (Files, the Terminal, Changes and Preview can; the rest always stand alone).
     fn can_stack(self) -> bool {
         matches!(self, Panel::Files | Panel::Terminal | Panel::Changes | Panel::Preview)
+    }
+}
+
+/// The side chat tabs of one session (the desktop app's `사이드 채팅`, `사이드 채팅 2`…): their numbers in the
+/// order they were opened, the one shown, and the number the next one gets. Numbers are never reused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SideTabs {
+    pub tabs: Vec<u32>,
+    pub active: u32,
+    pub next: u32,
+}
+
+impl Default for SideTabs {
+    /// A session's side chat starts with one empty tab.
+    fn default() -> Self {
+        Self { tabs: vec![1], active: 1, next: 2 }
+    }
+}
+
+impl SideTabs {
+    /// Opens a new empty tab and shows it.
+    pub fn add(&mut self) -> u32 {
+        let tab = self.next;
+        self.next += 1;
+        self.tabs.push(tab);
+        self.active = tab;
+        tab
+    }
+
+    /// Closes a tab; the one before it (or the first) is shown next. `false` when it was the only tab: the
+    /// side chat closes with its last tab.
+    pub fn close(&mut self, tab: u32) -> bool {
+        let Some(index) = self.tabs.iter().position(|open| *open == tab) else { return true };
+        self.tabs.remove(index);
+        if self.tabs.is_empty() {
+            return false;
+        }
+        if self.active == tab {
+            self.active = self.tabs[index.saturating_sub(1)];
+        }
+        true
+    }
+
+    pub fn select(&mut self, tab: u32) {
+        if self.tabs.contains(&tab) {
+            self.active = tab;
+        }
     }
 }
 

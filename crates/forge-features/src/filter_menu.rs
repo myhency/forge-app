@@ -10,14 +10,16 @@ pub const GROUP_DIVIDER_BEFORE: usize = 4;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayItem {
     Metadata,
+    SideChats,
     EmptyGroups,
 }
 
-pub const DISPLAY_ITEMS: [DisplayItem; 2] = [DisplayItem::Metadata, DisplayItem::EmptyGroups];
+pub const DISPLAY_ITEMS: [DisplayItem; 3] = [DisplayItem::Metadata, DisplayItem::SideChats, DisplayItem::EmptyGroups];
 
 pub fn display_label(item: DisplayItem) -> &'static str {
     match item {
         DisplayItem::Metadata => tr!("Metadata"),
+        DisplayItem::SideChats => tr!("Side chat"),
         DisplayItem::EmptyGroups => tr!("Empty groups"),
     }
 }
@@ -25,6 +27,7 @@ pub fn display_label(item: DisplayItem) -> &'static str {
 pub fn display_on(item: DisplayItem, prefs: &SidebarPrefs) -> bool {
     match item {
         DisplayItem::Metadata => prefs.show_metadata,
+        DisplayItem::SideChats => prefs.show_side_chats,
         DisplayItem::EmptyGroups => prefs.show_empty,
     }
 }
@@ -91,6 +94,7 @@ pub enum FilterChoice {
     Group(GroupBy),
     ToggleShowEmpty,
     ToggleMetadata,
+    ToggleSideChats,
     /// Newest first or A to Z (`false`), or the other way round (`true`).
     Reverse(bool),
     /// Sort, group, status and empty groups go back to their defaults; the width, the collapsed groups and
@@ -112,6 +116,7 @@ impl FilterChoice {
             FilterChoice::Group(group_by) => prefs.group_by = group_by,
             FilterChoice::ToggleShowEmpty => prefs.show_empty = !prefs.show_empty,
             FilterChoice::ToggleMetadata => prefs.show_metadata = !prefs.show_metadata,
+            FilterChoice::ToggleSideChats => prefs.show_side_chats = !prefs.show_side_chats,
             FilterChoice::ViewAll => {}
             FilterChoice::Reverse(reversed) => prefs.reversed = reversed,
             FilterChoice::Reset => {
@@ -121,6 +126,7 @@ impl FilterChoice {
                 prefs.status = defaults.status;
                 prefs.show_empty = defaults.show_empty;
                 prefs.show_metadata = defaults.show_metadata;
+                prefs.show_side_chats = defaults.show_side_chats;
                 prefs.reversed = defaults.reversed;
             }
         }
@@ -190,6 +196,7 @@ impl FilterMenu {
                     FilterRow::Group => FilterChoice::Group(GROUP_ITEMS[index]),
                     FilterRow::Display => match DISPLAY_ITEMS[index] {
                         DisplayItem::Metadata => FilterChoice::ToggleMetadata,
+                        DisplayItem::SideChats => FilterChoice::ToggleSideChats,
                         DisplayItem::EmptyGroups => FilterChoice::ToggleShowEmpty,
                     },
                     FilterRow::Reset => FilterChoice::Reset,
@@ -286,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn the_display_submenu_toggles_metadata_and_empty_groups() {
+    fn the_display_submenu_toggles_metadata_side_chats_and_empty_groups() {
         let mut prefs = SidebarPrefs::default();
         let mut menu = FilterMenu::default();
 
@@ -299,6 +306,14 @@ mod tests {
         }
         assert!(!prefs.show_metadata);
         assert!(!display_on(DisplayItem::Metadata, &prefs));
+
+        let outcome = press(&mut menu, &[FilterKey::Down, FilterKey::Enter], &prefs);
+        assert_eq!(outcome, FilterOutcome::Choose(FilterChoice::ToggleSideChats));
+        if let FilterOutcome::Choose(choice) = outcome {
+            choice.apply(&mut prefs);
+        }
+        assert!(!prefs.show_side_chats);
+        assert!(!display_on(DisplayItem::SideChats, &prefs));
 
         let outcome = press(&mut menu, &[FilterKey::Down, FilterKey::Enter], &prefs);
         assert_eq!(outcome, FilterOutcome::Choose(FilterChoice::ToggleShowEmpty));
@@ -349,6 +364,7 @@ mod tests {
             status: StatusFilter::Archived,
             show_empty: true,
             show_metadata: false,
+            show_side_chats: false,
             reversed: true,
             collapsed: vec!["folder:/a".to_string()],
             width: 300,

@@ -8,7 +8,7 @@ pub struct NavGroup {
 
 pub fn nav_groups() -> Vec<NavGroup> {
     vec![
-        NavGroup { title: tr!("Settings"), pages: vec![(SettingsSection::General, tr!("General")), (SettingsSection::Code, tr!("Claude Code"))] },
+        NavGroup { title: tr!("Settings"), pages: vec![(SettingsSection::General, tr!("General")), (SettingsSection::Code, tr!("Claude Code")), (SettingsSection::Memory, tr!("Memory"))] },
         NavGroup { title: tr!("This computer"), pages: vec![(SettingsSection::Connection, tr!("Connection")), (SettingsSection::Model, tr!("Model")), (SettingsSection::Developer, tr!("Developer"))] },
         NavGroup {
             title: tr!("Customize"),
@@ -25,9 +25,10 @@ fn row_titles(section: SettingsSection) -> Vec<&'static str> {
             tr!("Scheduled task"), tr!("Code notice"), tr!("Permission request"),
         ],
         SettingsSection::Code => vec![tr!("Default transcript view"), tr!("Archive inactive sessions"), tr!("Worktree location"), tr!("Output style"), tr!("Prompt suggestions"), tr!("Allow bypass permissions mode"), tr!("Bounce the Dock icon")],
+        SettingsSection::Memory => vec![tr!("Auto memory"), tr!("Notes")],
         SettingsSection::Connection => vec![tr!("Base URL"), tr!("API key")],
         SettingsSection::Model => vec![tr!("Default model"), tr!("Other model ID")],
-        SettingsSection::Developer => vec![tr!("Local MCP servers"), tr!("Edit config"), tr!("View logs")],
+        SettingsSection::Developer => vec![tr!("Local MCP servers"), tr!("Edit config"), tr!("View logs"), tr!("Report a problem"), tr!("Save logs…"), tr!("Open log folder")],
         SettingsSection::Skills | SettingsSection::Plugins | SettingsSection::McpServers => vec![],
     }
 }
@@ -154,14 +155,20 @@ mod tests {
         let groups = nav_groups();
         let titles: Vec<_> = groups.iter().map(|group| group.title).collect();
         assert_eq!(titles, ["Settings", "This computer", "Customize"]);
-        assert_eq!(groups[0].pages.iter().map(|page| page.1).collect::<Vec<_>>(), ["General", "Claude Code"]);
+        assert_eq!(groups[0].pages.iter().map(|page| page.1).collect::<Vec<_>>(), ["General", "Claude Code", "Memory"]);
         assert_eq!(groups[1].pages.iter().map(|page| page.1).collect::<Vec<_>>(), ["Connection", "Model", "Developer"]);
         assert_eq!(groups[2].pages.iter().map(|page| page.1).collect::<Vec<_>>(), ["Skills", "Plugins", "MCP servers"]);
     }
 
     #[test]
+    fn a_search_for_memory_finds_its_page_by_name_and_by_row() {
+        assert_eq!(filter_pages("memory"), [SettingsSection::Memory]);
+        assert_eq!(filter_pages("notes"), [SettingsSection::Memory]);
+    }
+
+    #[test]
     fn an_empty_search_keeps_every_page() {
-        assert_eq!(filter_pages("  ").len(), 8);
+        assert_eq!(filter_pages("  ").len(), 9);
     }
 
     #[test]

@@ -80,6 +80,8 @@ pub struct SidebarPrefs {
     pub show_empty: bool,
     /// Whether a row says its folder or worktree branch under the title (the desktop app's `표시 → 메타데이터`).
     pub show_metadata: bool,
+    /// Whether a session's side chat is a row under it (the desktop app's `표시 → 사이드 채팅`, on by default).
+    pub show_side_chats: bool,
     /// Sorts the other way round: oldest first for the times, Z to A for the names. Off is the order the
     /// sidebar always had (newest first, A to Z).
     pub reversed: bool,
@@ -97,6 +99,7 @@ impl Default for SidebarPrefs {
             status: StatusFilter::default(),
             show_empty: false,
             show_metadata: true,
+            show_side_chats: true,
             reversed: false,
             collapsed: Vec::new(),
             width: DEFAULT_SIDEBAR_WIDTH,
@@ -110,8 +113,8 @@ impl SidebarPrefs {
     pub fn is_default_view(&self) -> bool {
         let defaults = Self::default();
         // The status is not in the menu any more (the Sessions page has the active and archived tabs).
-        (self.sort_by, self.group_by, self.show_empty, self.show_metadata, self.reversed)
-            == (defaults.sort_by, defaults.group_by, defaults.show_empty, defaults.show_metadata, defaults.reversed)
+        (self.sort_by, self.group_by, self.show_empty, self.show_metadata, self.show_side_chats, self.reversed)
+            == (defaults.sort_by, defaults.group_by, defaults.show_empty, defaults.show_metadata, defaults.show_side_chats, defaults.reversed)
     }
 
     /// The width to draw: a hand-edited or corrupt value never makes the sidebar unusable.
@@ -351,6 +354,9 @@ pub struct AppConfig {
     /// Whether Claude may run several agents in parallel for a complex task (the SDK's Workflow tool).
     #[serde(default)]
     pub dynamic_workflows: bool,
+    /// Whether Claude keeps notes between sessions: the SDK's auto memory (`~/.claude/projects/<folder>/memory`).
+    #[serde(default = "default_true")]
+    pub auto_memory: bool,
     /// Whether Claude gets the `update_plan` and `wrap_up` tools: a task list while it works and a
     /// next-step card at the end of a turn.
     #[serde(default = "default_true")]
@@ -447,6 +453,7 @@ impl Default for AppConfig {
             prompt_suggestions: true,
             allow_bypass_mode: false,
             dynamic_workflows: false,
+            auto_memory: true,
             turn_tools: true,
             generative_ui: default_generative_ui(),
             desktop_control: false,
@@ -632,6 +639,7 @@ mod tests {
             status: StatusFilter::All,
             show_empty: true,
             show_metadata: false,
+            show_side_chats: false,
             reversed: true,
             collapsed: vec!["folder:/work/a".to_string()],
             width: 300,
@@ -860,6 +868,14 @@ mod tests {
         assert!(!config.allow_bypass_mode);
         assert!(!config.dynamic_workflows, "workflows stay off for a config written before the switch existed");
         assert!(AppConfig::default().prompt_suggestions, "the manual Default agrees with the file default");
+    }
+
+    #[test]
+    fn auto_memory_is_on_for_a_config_written_before_the_switch_existed() {
+        let config: AppConfig = serde_json::from_str("{}").unwrap();
+        assert!(config.auto_memory);
+        let off: AppConfig = serde_json::from_str(r#"{"auto_memory": false}"#).unwrap();
+        assert!(!off.auto_memory);
     }
 
     #[test]

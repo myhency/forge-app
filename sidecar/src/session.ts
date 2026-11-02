@@ -487,17 +487,21 @@ export class SidecarSession {
           allowDangerouslySkipPermissions: command.allow_bypass,
           // The SDK sends thinking with its text omitted unless asked for a summary.
           thinking: { type: "adaptive", display: "summarized" },
+          // Claude Code's own system prompt: it carries the instructions for auto memory (without it the SDK
+          // gives the model no memory directory at all).
+          systemPrompt: { type: "preset", preset: "claude_code" },
           settingSources: ["project"],
           strictMcpConfig: true,
           skills: skillsPlugin?.skills ?? [],
           plugins,
           // Inline settings of a new session: its output style (the SDK's default when none is set) and the
           // Workflow tool, which the SDK leaves off unless asked (Forge reads no user settings file).
-          ...(command.output_style || command.dynamic_workflows
+          ...(command.output_style || command.dynamic_workflows || command.auto_memory === false
             ? {
                 settings: {
                   ...(command.output_style ? { outputStyle: command.output_style } : {}),
                   ...(command.dynamic_workflows ? { enableWorkflows: true } : {}),
+                  ...(command.auto_memory === false ? { autoMemoryEnabled: false } : {}),
                 },
               }
             : {}),
@@ -745,9 +749,11 @@ export class SidecarSession {
         for (const block of blocks) {
           if (block?.type === "tool_use") {
             this.emit({ type: "tool_use", tool_call_id: block.id, name: block.name, input: block.input });
-          } else if (block?.type === "text" && typeof block.text === "string" && typeof message.error === "string") {
+          } else if (block?.type === "text" && typeof block.text === "string" && (typeof message.error === "string" || isCommandAnswer(model, block.text))) {
             // The SDK reports a failure (invalid API key, billing, rate limit...) as an assistant message
             // with `error` set and no stream deltas; without this the chat stays silent.
+            // A command the CLI answers itself (`/autocompact auto`) arrives the same way, as a
+            // synthetic message with no error and no turn behind it.
             this.emit({ type: "assistant_delta", text: block.text });
           }
         }
@@ -789,6 +795,11 @@ export class SidecarSession {
         return;
     }
   }
+}
+
+/** The text a command prints for itself: a synthetic assistant message, except the empty-reply filler. */
+function isCommandAnswer(model: unknown, text: string): boolean {
+  return model === "<synthetic>" && text.trim() !== "" && text.trim() !== "No response requested.";
 }
 
 function extractTextContent(content: unknown): string {

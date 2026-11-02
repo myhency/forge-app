@@ -97,6 +97,8 @@ pub struct RewindState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SideQuestion {
     pub id: String,
+    /// The side chat tab it was asked in; a follow-up carries only its own tab's earlier turns.
+    pub tab: u32,
     pub question: String,
     pub answer: SideAnswer,
 }
@@ -125,7 +127,7 @@ pub enum LiveCommand {
     /// of dropping it.
     Dequeue { index: usize, send_now: bool },
     /// Asks about the conversation without adding the question to it (`/btw`).
-    AskSide { question: String },
+    AskSide { question: String, tab: u32 },
     /// Forgets the `/btw` thread.
     DismissSide,
     /// The transcript was cut back on disk (`/rewind`): the session is the one read from it, and
@@ -186,8 +188,8 @@ impl LiveSessionHandle {
     }
 
     /// `/btw`: a question about the conversation that is not added to it.
-    pub fn ask_side(&self, question: String) {
-        let _ = self.commands.send(LiveCommand::AskSide { question });
+    pub fn ask_side(&self, question: String, tab: u32) {
+        let _ = self.commands.send(LiveCommand::AskSide { question, tab });
     }
 
     /// `/rewind`: previews (`dry_run`) or does putting the files back as they were before a message.
@@ -492,7 +494,7 @@ mod tests {
 
         assert_eq!(
             started_defaults(control.calls()),
-            SessionDefaults { output_style: Some(OutputStyle::Concise), prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, turn_tools: true, generative_ui: true, desktop_control: false }
+            SessionDefaults { output_style: Some(OutputStyle::Concise), prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false }
         );
     }
 
@@ -1182,7 +1184,7 @@ mod tests {
         let handle = spawn_live_session(new_init(factory));
         let mut view = handle.subscribe();
         handle.queue("later".to_string(), Vec::new());
-        handle.ask_side("q".to_string());
+        handle.ask_side("q".to_string(), 1);
         wait_for(&mut view, "the side question", |v| !v.side_thread.is_empty()).await;
 
         let mut earlier = empty_session();
@@ -1204,7 +1206,7 @@ mod tests {
         let handle = spawn_live_session(new_init(factory));
         let mut view = handle.subscribe();
 
-        handle.ask_side("what was the number?".to_string());
+        handle.ask_side("what was the number?".to_string(), 1);
         let asked = wait_for(&mut view, "the question to show", |v| !v.side_thread.is_empty()).await;
         let side = asked.side_thread[0].clone();
         assert_eq!(side.question, "what was the number?");
@@ -1229,12 +1231,12 @@ mod tests {
         let handle = spawn_live_session(new_init(factory));
         let mut view = handle.subscribe();
 
-        handle.ask_side("first?".to_string());
+        handle.ask_side("first?".to_string(), 1);
         let asked = wait_for(&mut view, "the first question", |v| !v.side_thread.is_empty()).await;
         control.push(SidecarEvent::SideAnswer { request_id: asked.side_thread[0].id.clone(), answer: Some("one".to_string()), error: None });
         wait_for(&mut view, "the first answer", |v| v.side_thread[0].answer == SideAnswer::Done("one".to_string())).await;
 
-        handle.ask_side("and then?".to_string());
+        handle.ask_side("and then?".to_string(), 1);
         let two = wait_for(&mut view, "the second question", |v| v.side_thread.len() == 2).await;
         assert_eq!(two.side_thread[1].question, "and then?", "the thread shows what the person typed");
         let sent = control.calls().into_iter().filter_map(|call| if let Call::SideQuestion(_, text) = call { Some(text) } else { None }).collect::<Vec<_>>();
@@ -1248,7 +1250,7 @@ mod tests {
         let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
         let handle = spawn_live_session(new_init(factory));
         let mut view = handle.subscribe();
-        handle.ask_side("q".to_string());
+        handle.ask_side("q".to_string(), 1);
         let asked = wait_for(&mut view, "the question to show", |v| !v.side_thread.is_empty()).await;
         let id = asked.side_thread[0].id.clone();
         control.push(SidecarEvent::SideAnswer { request_id: id, answer: None, error: Some("boom".to_string()) });

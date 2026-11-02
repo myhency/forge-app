@@ -1,0 +1,10 @@
+[package]
+name = "forge-log"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+time = { version = "0.3.55", features = ["formatting"] }
+
+[dev-dependencies]
+tempfile = "3"

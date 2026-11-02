@@ -903,6 +903,36 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         Ok(SessionId(new))
     }
 
+    async fn append_exchange(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+        question: &str,
+        answer: &str,
+    ) -> Result<(), SessionRepositoryError> {
+        use tokio::io::AsyncWriteExt;
+        let id = &session_id.0;
+        if !valid_session_id(id) {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+        let path = self.project_dir(project_path).await.join(format!("{id}.jsonl"));
+        let bytes = match tokio::fs::read(&path).await {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(SessionRepositoryError::NotFound(session_id.clone())),
+            Err(e) => return Err(fork_error(&path, e)),
+        };
+        let now = time::OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default();
+        let source = String::from_utf8_lossy(&bytes);
+        let mut lines = crate::fork::appended_exchange(&source, id, question, answer, &now, || uuid::Uuid::new_v4().to_string());
+        // The file ends with a newline already, or is empty; if it does not, the first new line must not join the old last.
+        if !source.is_empty() && !source.ends_with('\n') {
+            lines.insert(0, '\n');
+        }
+        let mut file = tokio::fs::OpenOptions::new().append(true).open(&path).await.map_err(|e| fork_error(&path, e))?;
+        file.write_all(lines.as_bytes()).await.map_err(|e| fork_error(&path, e))?;
+        file.flush().await.map_err(|e| fork_error(&path, e))
+    }
+
     async fn truncate_session_before(
         &self,
         project_path: &Path,

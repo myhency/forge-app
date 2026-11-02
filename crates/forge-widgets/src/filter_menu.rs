@@ -44,6 +44,7 @@ pub fn SidebarFilterMenu() -> Element {
             .map(|item| {
                 let choice = match item {
                     forge_features::DisplayItem::Metadata => FilterChoice::ToggleMetadata,
+                    forge_features::DisplayItem::SideChats => FilterChoice::ToggleSideChats,
                     forge_features::DisplayItem::EmptyGroups => FilterChoice::ToggleShowEmpty,
                 };
                 (display_label(*item).to_string(), display_on(*item, &prefs), choice)
