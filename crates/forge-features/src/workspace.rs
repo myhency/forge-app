@@ -98,6 +98,7 @@ pub struct WorkspaceServices {
     pub usage_stats: Arc<dyn UsageStatsPort>,
     pub mcp_logs: Arc<dyn McpLogPort>,
     pub log_report: Arc<dyn LogReportPort>,
+    pub memory: Arc<dyn forge_ports::MemoryPort>,
     pub file_saver: Arc<dyn FileSavePort>,
     pub routines: RoutineServices,
 }
@@ -1737,6 +1738,24 @@ impl Workspace {
             }
             Err(error) => Err(error.to_string()),
         }
+    }
+
+    /// The notes Claude keeps, by folder. Reads many small files, so it stays off the thread that draws.
+    pub async fn memory_list(&self) -> Result<Vec<forge_ports::MemoryProject>, String> {
+        let memory = self.services.peek().memory.clone();
+        tokio::task::spawn_blocking(move || memory.list()).await.map_err(|error| error.to_string())?
+    }
+
+    pub fn memory_read(&self, project: &str, file: &str) -> Result<String, String> {
+        self.services.peek().memory.read(project, file)
+    }
+
+    pub fn memory_write(&self, project: &str, file: &str, text: &str) -> Result<(), String> {
+        self.services.peek().memory.write(project, file, text)
+    }
+
+    pub fn memory_delete(&self, project: &str, file: &str) -> Result<(), String> {
+        self.services.peek().memory.delete(project, file)
     }
 
     /// Shows the folder with Forge's own log files.

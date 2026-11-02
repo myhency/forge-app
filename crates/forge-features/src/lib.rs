@@ -1,4 +1,5 @@
 mod appearance;
+mod memory_view;
 mod change_comments;
 mod change_rows;
 mod session_notices;
@@ -122,6 +123,7 @@ pub use send_message::SendMessageBox;
 pub use worktree_view::{folder_choices, NewWorktree, RepoInfo, WorktreeTag};
 mod account_menu;
 pub use account_menu::{account_rows, user_initial, user_name, AccountAction, AccountRow};
+pub use memory_view::{kind_label, updated_day};
 pub use settings::{auto_archive_text, auto_archive_value, use_settings, use_settings_provider, DesktopToolView, ExtensionKind, NotificationKind, Settings, SettingsSection, SettingsStatus};
 pub use settings_draft::ConnectionDraft;
 pub use shortcut::{forwarded_shortcut, command_held, match_code, swallowed_behind_overlay, types_text, command_pressed, shortcut_allowed, shortcut_for, preview_shortcut, shortcut_sections, PickerKind, PreviewKey, KeyPress, Shortcut, ShortcutSection};

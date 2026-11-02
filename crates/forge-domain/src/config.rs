@@ -354,6 +354,9 @@ pub struct AppConfig {
     /// Whether Claude may run several agents in parallel for a complex task (the SDK's Workflow tool).
     #[serde(default)]
     pub dynamic_workflows: bool,
+    /// Whether Claude keeps notes between sessions: the SDK's auto memory (`~/.claude/projects/<folder>/memory`).
+    #[serde(default = "default_true")]
+    pub auto_memory: bool,
     /// Whether Claude gets the `update_plan` and `wrap_up` tools: a task list while it works and a
     /// next-step card at the end of a turn.
     #[serde(default = "default_true")]
@@ -450,6 +453,7 @@ impl Default for AppConfig {
             prompt_suggestions: true,
             allow_bypass_mode: false,
             dynamic_workflows: false,
+            auto_memory: true,
             turn_tools: true,
             generative_ui: default_generative_ui(),
             desktop_control: false,
@@ -864,6 +868,14 @@ mod tests {
         assert!(!config.allow_bypass_mode);
         assert!(!config.dynamic_workflows, "workflows stay off for a config written before the switch existed");
         assert!(AppConfig::default().prompt_suggestions, "the manual Default agrees with the file default");
+    }
+
+    #[test]
+    fn auto_memory_is_on_for_a_config_written_before_the_switch_existed() {
+        let config: AppConfig = serde_json::from_str("{}").unwrap();
+        assert!(config.auto_memory);
+        let off: AppConfig = serde_json::from_str(r#"{"auto_memory": false}"#).unwrap();
+        assert!(!off.auto_memory);
     }
 
     #[test]

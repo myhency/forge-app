@@ -57,6 +57,8 @@ export type SidecarCommand =
       prompt_suggestions: boolean;
       allow_bypass: boolean;
       dynamic_workflows: boolean;
+      // Lets Claude keep notes between sessions (a parent that omits it means on).
+      auto_memory?: boolean;
       // Offers Claude the update_plan and wrap_up tools (a parent that omits it means off).
       turn_tools?: boolean;
       // Offers Claude the generate_sandboxed_ui tool (a parent that omits it means off).

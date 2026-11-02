@@ -414,6 +414,17 @@ button:not(:disabled):active { scale: 0.98; }
 .developer-body { display: flex; gap: var(--sp-16); margin-top: var(--sp-12); }
 .developer-list { flex: 0 0 180px; }
 .developer-detail { flex: 1; min-width: 0; }
+.memory-project { margin-top: var(--sp-16); }
+.memory-project-title { font-weight: var(--weight-semibold); }
+.memory-project-path { font-size: var(--text-sm); color: var(--fg-muted); margin-bottom: var(--sp-6); }
+.memory-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2) var(--sp-10); width: 100%; box-sizing: border-box; padding: var(--sp-7) var(--sp-10); border: none; border-radius: var(--r-8); background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.memory-row:hover, .memory-row.active { background: var(--bg-hover); }
+.memory-row-name { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.memory-row-kind, .memory-row-date { font-size: var(--text-sm); color: var(--fg-muted); }
+.memory-row-desc { flex-basis: 100%; font-size: var(--text-sm); color: var(--fg-muted); overflow-wrap: anywhere; }
+.memory-editor { margin-top: var(--sp-20); padding-top: var(--sp-12); border-top: 1px solid var(--border); }
+.memory-text { display: block; width: 100%; box-sizing: border-box; min-height: 220px; resize: vertical; padding: var(--sp-8) var(--sp-10); border: 1px solid var(--border); border-radius: var(--r-8); background: var(--bg); color: var(--fg); font-size: var(--text-sm); }
+.memory-buttons { display: flex; gap: var(--sp-8); margin-top: var(--sp-10); }
 .developer-report { margin-top: var(--sp-24); padding-top: var(--sp-16); border-top: 1px solid var(--border); }
 .developer-report-buttons { display: flex; gap: var(--sp-8); margin: var(--sp-12) 0; }
 .developer-report .status-line { overflow-wrap: anywhere; margin-bottom: var(--sp-8); }

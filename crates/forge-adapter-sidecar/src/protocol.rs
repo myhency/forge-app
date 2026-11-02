@@ -27,6 +27,7 @@ pub enum SidecarCommand {
         prompt_suggestions: bool,
         allow_bypass: bool,
         dynamic_workflows: bool,
+        auto_memory: bool,
         turn_tools: bool,
         generative_ui: bool,
         desktop_control: bool,
@@ -139,6 +140,7 @@ impl SidecarCommand {
             prompt_suggestions: params.defaults.prompt_suggestions,
             allow_bypass: params.defaults.allow_bypass,
             dynamic_workflows: params.defaults.dynamic_workflows,
+            auto_memory: params.defaults.auto_memory,
             turn_tools: params.defaults.turn_tools,
             generative_ui: params.defaults.generative_ui,
             desktop_control: params.defaults.desktop_control,
@@ -236,6 +238,7 @@ mod tests {
         assert_eq!(json["turn_tools"], serde_json::json!(true));
         assert_eq!(json["generative_ui"], serde_json::json!(true));
         assert_eq!(json["desktop_control"], serde_json::json!(false));
+        assert_eq!(json["auto_memory"], serde_json::json!(true));
     }
 
     #[test]
@@ -246,6 +249,7 @@ mod tests {
             prompt_suggestions: false,
             allow_bypass: true,
             dynamic_workflows: true,
+            auto_memory: false,
             turn_tools: false,
             generative_ui: false,
             desktop_control: true,
@@ -255,6 +259,7 @@ mod tests {
         assert_eq!(json["prompt_suggestions"], serde_json::json!(false));
         assert_eq!(json["allow_bypass"], serde_json::json!(true));
         assert_eq!(json["dynamic_workflows"], serde_json::json!(true));
+        assert_eq!(json["auto_memory"], serde_json::json!(false));
         assert_eq!(json["turn_tools"], serde_json::json!(false));
         assert_eq!(json["generative_ui"], serde_json::json!(false));
         assert_eq!(json["desktop_control"], serde_json::json!(true));
@@ -368,6 +373,7 @@ mod tests {
                 "prompt_suggestions": true,
                 "allow_bypass": false,
                 "dynamic_workflows": false,
+                "auto_memory": true,
                 "turn_tools": true,
                 "generative_ui": true,
                 "desktop_control": false
