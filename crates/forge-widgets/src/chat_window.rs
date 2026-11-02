@@ -3,7 +3,7 @@ use forge_application::{LiveSessionId, Phase};
 use forge_entities::{live_state, CardMark, TranscriptView, Turns};
 use forge_features::{use_settings, use_workspace, Panel, SendMessageBox};
 
-use crate::composer_controls::{EffortPicker, ModePicker, ModelPicker};
+use crate::composer_controls::{ModePicker, ModelPicker};
 use crate::dock::Dock;
 use crate::mention_list::MentionList;
 use crate::permission_panel::PermissionPanel;
@@ -187,7 +187,6 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     leading: rsx! { PlusMenu { project: Some(view.project_path.clone()), add_folder_enabled: true } },
                     end: rsx! {
                         ModelPicker { id }
-                        EffortPicker { id }
                         ModePicker { id }
                         UsageRing { id }
                     },

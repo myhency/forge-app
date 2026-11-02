@@ -1,10 +1,9 @@
 use dioxus::prelude::*;
 use forge_application::LiveSessionId;
 use forge_domain::{EffortLevel, PermissionMode};
-use forge_entities::{model_menu_rows, more_model_rows};
+use forge_entities::{model_menu_rows, more_model_rows, ModelRow};
 use forge_features::{
-    confirmation_still_valid, effort_button_label, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, slider_position, use_settings, use_workspace, ModeChoice, PickerKind,
-    effort_help, slider_faster, slider_smarter,
+    confirmation_still_valid, effort_after_model_change, effort_button_label, effort_help, effort_levels, menu_digit_row, mode_choice, mode_rows, refocus_composer, use_settings, use_workspace, ModeChoice, PickerKind,
 };
 use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
@@ -18,6 +17,21 @@ pub(crate) struct PickerItem {
     pub(crate) divider_before: bool,
     /// A small tag after the label ("Default", "Credits needed").
     pub(crate) badge: Option<String>,
+    /// Shown greyed and not pressable (the bypass row while the switch in Settings is off).
+    pub(crate) disabled: bool,
+    /// A heading drawn above the row (after its divider), for a list in sections.
+    pub(crate) section: Option<String>,
+}
+
+/// A row below the list that opens a flyout beside the menu ("Effort", "More models").
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct Flyout {
+    pub(crate) label: String,
+    /// The current choice, shown at the right of the row.
+    pub(crate) value: Option<String>,
+    /// A sentence above the rows.
+    pub(crate) note: Option<String>,
+    pub(crate) items: Vec<PickerItem>,
 }
 
 /// Opens the menu when a shortcut asked for the menu of `kind` (⇧⌘M, ⇧⌘I, ⇧⌘E).
@@ -42,15 +56,31 @@ pub(crate) fn Picker(
     #[props(default)] heading: Option<String>,
     #[props(default)] kind: Option<PickerKind>,
     #[props(default)] icon: Option<IconKind>,
-    /// Rows for a flyout that opens beside the list under the row `more_label` ("More models"); `onpick_more` gets the index
-    /// in this list. The flyout is not drawn when the list is empty.
-    #[props(default)] more: Vec<PickerItem>,
-    #[props(default)] more_label: Option<String>,
-    #[props(default)] onpick_more: Option<EventHandler<usize>>,
+    /// Rows below the list that open a flyout beside it; `onpick_flyout` gets `(flyout index, row index)`. A flyout
+    /// without rows is not drawn.
+    #[props(default)] flyouts: Vec<Flyout>,
+    #[props(default)] onpick_flyout: Option<EventHandler<(usize, usize)>>,
+    /// A second shortcut that opens this menu with flyout `index` already open (⇧⌘E opens the effort flyout).
+    #[props(default)] flyout_kind: Option<(PickerKind, usize)>,
+    /// A fainter word after the current choice (the effort after the model's name).
+    #[props(default)] current_dim: Option<String>,
+    /// A search field above the list with this placeholder; it filters the rows by their label.
+    #[props(default)] search: Option<String>,
 ) -> Element {
+    let mut query = use_signal(String::new);
     let mut open = use_signal(|| false);
-    let mut more_open = use_signal(|| false);
+    let mut flyout_open = use_signal(|| None::<usize>);
     use_picker_request(kind, open);
+    let workspace = use_workspace();
+    use_effect(move || {
+        if let Some((wanted, index)) = flyout_kind {
+            if workspace.picker_request() == Some(wanted) {
+                workspace.clear_picker_request();
+                open.set(true);
+                flyout_open.set(Some(index));
+            }
+        }
+    });
     let keyed = items.clone();
     rsx! {
         div { class: "picker",
@@ -65,6 +95,9 @@ pub(crate) fn Picker(
                     Icon { kind: icon }
                 }
                 span { "{current}" }
+                if let Some(dim) = current_dim.as_ref() {
+                    span { class: "picker-dim", "{dim}" }
+                }
                 span { class: "picker-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true } }
             }
             if open() {
@@ -72,6 +105,7 @@ pub(crate) fn Picker(
                     class: "picker-backdrop",
                     onclick: move |_| {
                         open.set(false);
+                        flyout_open.set(None);
                         refocus_composer();
                     },
                 }
@@ -106,16 +140,37 @@ pub(crate) fn Picker(
                             onpick.call(index);
                         }
                     },
-                    div { class: "picker-title", "{heading.clone().unwrap_or_else(|| title.clone())}" }
-                    for (index, item) in items.iter().enumerate() {
+                    if let Some(placeholder) = search.as_ref() {
+                        input {
+                            class: "env-search",
+                            r#type: "text",
+                            placeholder: "{placeholder}",
+                            value: "{query}",
+                            // A letter typed here is not a menu key.
+                            onkeydown: move |event: KeyboardEvent| {
+                                if event.key() != Key::Escape {
+                                    event.stop_propagation();
+                                }
+                            },
+                            oninput: move |event| query.set(event.value()),
+                        }
+                    }
+                    if search.is_none() {
+                        div { class: "picker-title", "{heading.clone().unwrap_or_else(|| title.clone())}" }
+                    }
+                    for (index, item) in items.iter().enumerate().filter(|(_, item)| query.read().trim().is_empty() || item.label.to_lowercase().contains(&query.read().trim().to_lowercase())) {
                         div { key: "{index}",
                             if item.divider_before {
                                 div { class: "picker-divider" }
+                            }
+                            if let Some(section) = item.section.as_ref() {
+                                div { class: "picker-title", "{section}" }
                             }
                             button {
                                 class: if item.checked { "picker-item checked" } else { "picker-item" },
                                 role: "menuitemradio",
                                 "aria-checked": "{item.checked}",
+                                disabled: item.disabled,
                                 onclick: move |_| {
                                     open.set(false);
                                     onpick.call(index);
@@ -139,22 +194,28 @@ pub(crate) fn Picker(
                         }
                     }
                 }
-                    if let (Some(label), false) = (more_label.clone(), more.is_empty()) {
-                        div { class: "picker-more",
+                    for (flyout_index, flyout) in flyouts.iter().enumerate().filter(|(_, flyout)| !flyout.items.is_empty()) {
+                        div { class: "picker-more", key: "flyout-{flyout_index}",
                             div { class: "picker-divider" }
                             button {
-                                class: if more_open() { "picker-item picker-more-row open" } else { "picker-item picker-more-row" },
+                                class: if flyout_open() == Some(flyout_index) { "picker-item picker-more-row open" } else { "picker-item picker-more-row" },
                                 r#type: "button",
                                 role: "menuitem",
                                 "aria-haspopup": "menu",
-                                "aria-expanded": "{more_open()}",
-                                onclick: move |_| more_open.set(!more_open()),
-                                span { class: "picker-text", span { class: "picker-label", "{label}" } }
+                                "aria-expanded": "{flyout_open() == Some(flyout_index)}",
+                                onclick: move |_| flyout_open.set(if flyout_open() == Some(flyout_index) { None } else { Some(flyout_index) }),
+                                span { class: "picker-text", span { class: "picker-label", "{flyout.label}" } }
+                                if let Some(value) = flyout.value.as_ref() {
+                                    span { class: "picker-more-value", "{value}" }
+                                }
                                 span { class: "picker-more-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                             }
-                            if more_open() {
+                            if flyout_open() == Some(flyout_index) {
                                 div { class: "picker-flyout", role: "menu",
-                                    for (index, item) in more.iter().enumerate() {
+                                    if let Some(note) = flyout.note.as_ref() {
+                                        div { class: "picker-note", "{note}" }
+                                    }
+                                    for (index, item) in flyout.items.iter().enumerate() {
                                         button {
                                             key: "{index}",
                                             class: if item.checked { "picker-item checked" } else { "picker-item" },
@@ -163,9 +224,9 @@ pub(crate) fn Picker(
                                             "aria-checked": "{item.checked}",
                                             onclick: move |_| {
                                                 open.set(false);
-                                                more_open.set(false);
-                                                if let Some(pick) = onpick_more {
-                                                    pick.call(index);
+                                                flyout_open.set(None);
+                                                if let Some(pick) = onpick_flyout {
+                                                    pick.call((flyout_index, index));
                                                 }
                                             },
                                             span { class: "picker-check", if item.checked { Icon { kind: IconKind::Check, size: IconSize::Small } } }
@@ -196,8 +257,9 @@ pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<Per
     let mut confirming = use_signal(|| None::<PermissionMode>);
     let settings = use_settings();
     // A session already in bypass mode keeps its row, selected, even when the switch is off.
-    let rows = mode_rows(settings.allow_bypass_mode() || current == PermissionMode::BypassPermissions);
-    let items: Vec<PickerItem> = rows
+    let bypass_on = settings.allow_bypass_mode() || current == PermissionMode::BypassPermissions;
+    let rows = mode_rows(bypass_on);
+    let mut items: Vec<PickerItem> = rows
         .iter()
         .map(|row| PickerItem {
             label: row.label.to_string(),
@@ -208,11 +270,21 @@ pub(crate) fn ModePickerView(current: PermissionMode, onchange: EventHandler<Per
             ..Default::default()
         })
         .collect();
+    // The desktop app keeps the bypass row in the list, greyed, and says where to turn it on.
+    if !bypass_on {
+        items.push(PickerItem {
+            label: tr!("Bypass permissions").to_string(),
+            description: Some(tr!("Turn on in Settings").to_string()),
+            disabled: true,
+            ..Default::default()
+        });
+    }
     let label = rows.iter().find(|row| row.mode == current).map_or(tr!("Mode"), |row| row.label).to_string();
     let rows_for_pick = rows.clone();
     rsx! {
         Picker {
             title: tr!("Mode"),
+            heading: tr!("Permissions · this session"),
             kind: PickerKind::Mode,
             current: label,
             items,
@@ -260,155 +332,103 @@ pub fn ModePicker(id: LiveSessionId) -> Element {
     rsx! { ModePickerView { current, onchange: move |mode| workspace.set_permission_mode(id, mode) } }
 }
 
-/// The model picker. `current` is the model in force (`None` is the SDK's default); `onchange` gets
-/// the row's value.
+/// The model button of the composer, with the effort next to it and a menu like the desktop app's: the models, an
+/// "Effort" row with a flyout of the levels, and "More models" with a flyout of the older models. `current` is the
+/// model in force (`None` is the SDK's default, which is the row tagged `Default`); `levels` are the efforts the
+/// model takes (the Effort row is left out when empty).
 #[component]
-pub(crate) fn ModelPickerView(current: Option<String>, onchange: EventHandler<Option<String>>) -> Element {
+pub(crate) fn ModelPickerView(
+    current: Option<String>,
+    levels: Vec<EffortLevel>,
+    effort: Option<EffortLevel>,
+    onmodel: EventHandler<Option<String>>,
+    oneffort: EventHandler<Option<EffortLevel>>,
+) -> Element {
     let rows = model_menu_rows(current.as_deref());
-    let item_of = |row: &forge_entities::ModelRow, current: &Option<String>| PickerItem {
+    let is_current = |row: &ModelRow| row.value == current || (current.is_none() && row.is_default);
+    let item_of = |row: &ModelRow| PickerItem {
         label: row.label.clone(),
         description: None,
         key: row.key,
-        checked: row.value == *current,
+        checked: is_current(row),
         divider_before: row.divider_before,
         badge: row.badge.map(|badge| forge_shared::i18n::text(badge).to_string()),
+        ..Default::default()
     };
-    let items: Vec<PickerItem> = rows.iter().map(|row| item_of(row, &current)).collect();
+    let items: Vec<PickerItem> = rows.iter().map(item_of).collect();
     let more_rows = more_model_rows();
-    let more: Vec<PickerItem> = more_rows.iter().map(|row| item_of(row, &current)).collect();
+    let more_items: Vec<PickerItem> = more_rows.iter().map(item_of).collect();
     // The button names the model in force, wherever it is listed.
-    let label = rows
-        .iter()
-        .chain(more_rows.iter())
-        .find(|row| row.value == current)
-        .map_or_else(|| tr!("Model").to_string(), |row| row.label.clone());
+    let label = rows.iter().chain(more_rows.iter()).find(|row| is_current(row)).map_or_else(|| tr!("Model").to_string(), |row| row.label.clone());
     let values: Vec<Option<String>> = rows.iter().map(|row| row.value.clone()).collect();
     let more_values: Vec<Option<String>> = more_rows.iter().map(|row| row.value.clone()).collect();
+
+    let effort_items: Vec<PickerItem> = levels
+        .iter()
+        .map(|level| PickerItem {
+            label: forge_shared::i18n::text(level.label()).to_string(),
+            checked: Some(*level) == effort,
+            badge: (*level == EffortLevel::Medium).then(|| tr!("Recommended").to_string()),
+            ..Default::default()
+        })
+        .collect();
+    let flyouts = vec![
+        Flyout { label: tr!("Effort").to_string(), value: effort.map(|_| effort_button_label(effort)), note: Some(effort_help().to_string()), items: effort_items },
+        Flyout { label: tr!("More models").to_string(), value: None, note: None, items: more_items },
+    ];
     rsx! {
         Picker {
             title: tr!("Model"),
+            heading: tr!("Model · this session"),
             kind: PickerKind::Model,
+            flyout_kind: (PickerKind::Effort, 0),
             current: label,
+            current_dim: effort.map(|_| effort_button_label(effort)),
             items,
             onpick: move |index: usize| {
-                onchange.call(values[index].clone());
+                onmodel.call(values[index].clone());
                 refocus_composer();
             },
-            more,
-            more_label: tr!("More models").to_string(),
-            onpick_more: move |index: usize| {
-                onchange.call(more_values[index].clone());
+            flyouts,
+            onpick_flyout: move |(flyout, index): (usize, usize)| {
+                if flyout == 0 {
+                    oneffort.call(levels.get(index).copied());
+                } else {
+                    onmodel.call(more_values[index].clone());
+                }
                 refocus_composer();
             },
         }
     }
 }
 
-/// The model of the open session, changed from the composer.
+/// The model and effort of the open session, changed from the composer.
 #[component]
 pub fn ModelPicker(id: LiveSessionId) -> Element {
     let workspace = use_workspace();
     let Some(view) = workspace.live_view(id) else { return rsx! {} };
-    let current = view.read().model.clone();
-    rsx! { ModelPickerView { current, onchange: move |model| workspace.set_model(id, model) } }
-}
-
-/// The effort of the open session, changed from the composer with a stepped slider. Only the levels
-/// the session's model takes get a stop; a model that takes none, or that the SDK has not listed,
-/// shows no control.
-#[component]
-pub fn EffortPicker(id: LiveSessionId) -> Element {
-    let workspace = use_workspace();
-    let Some(view) = workspace.live_view(id) else { return rsx! {} };
-    let (levels, current) = {
+    let (current, levels, effort) = {
         let view = view.read();
-        (effort_levels(&view.available_models, view.model.as_deref()), view.effort)
+        (view.model.clone(), effort_levels(&view.available_models, view.model.as_deref()), view.effort)
     };
-    rsx! { EffortPickerView { levels, current, onchange: move |level| workspace.set_effort(id, level) } }
-}
-
-/// The effort button and its slider menu, for any owner of an effort: `levels` are the stops (nothing
-/// is drawn when empty), `onchange` gets a level, or `None` for "Use the default".
-#[component]
-pub fn EffortPickerView(levels: Vec<EffortLevel>, current: Option<EffortLevel>, onchange: EventHandler<Option<EffortLevel>>) -> Element {
-    let mut open = use_signal(|| false);
-    use_picker_request(Some(PickerKind::Effort), open);
-    if levels.is_empty() {
-        return rsx! {};
-    }
-    let position = slider_position(&levels, current);
-    let last_stop = levels.len() - 1;
-    let label = effort_button_label(current);
     rsx! {
-        div { class: "picker",
-            button {
-                class: if open() { "picker-button open" } else { "picker-button" },
-                r#type: "button",
-                title: tr!("Effort"),
-                "aria-haspopup": "dialog",
-                "aria-expanded": "{open()}",
-                onclick: move |_| open.set(!open()),
-                span { "{label}" }
-                span { class: "picker-chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true } }
-            }
-            if open() {
-                div {
-                    class: "picker-backdrop",
-                    onclick: move |_| {
-                        open.set(false);
-                        refocus_composer();
-                    },
+        ModelPickerView {
+            current,
+            levels,
+            effort,
+            onmodel: move |model: Option<String>| {
+                // The new model may not take the level the session has.
+                let (effort, levels) = {
+                    let view = view.read();
+                    (view.effort, effort_levels(&view.available_models, model.as_deref()))
+                };
+                let adjusted = effort_after_model_change(effort, &levels);
+                workspace.set_model(id, model);
+                if adjusted != effort {
+                    workspace.set_effort(id, adjusted);
                 }
-                div {
-                    class: "picker-menu effort-menu",
-                    role: "dialog",
-                    tabindex: "0",
-                    onmounted: move |mounted| async move {
-                        let _ = mounted.set_focus(true).await;
-                    },
-                    onkeydown: move |event: KeyboardEvent| {
-                        if event.key() == Key::Escape {
-                            event.stop_propagation();
-                            open.set(false);
-                            refocus_composer();
-                        }
-                    },
-                    div { class: "effort-head",
-                        span { class: "picker-title", {tr!("Effort")} }
-                        span { class: "effort-current", "{label}" }
-                        span { class: "effort-help", title: "{effort_help()}", "?" }
-                    }
-                    div { class: "effort-ends",
-                        span { {slider_faster()} }
-                        span { {slider_smarter()} }
-                    }
-                    input {
-                        class: "effort-slider",
-                        r#type: "range",
-                        min: "0",
-                        max: "{last_stop}",
-                        step: "1",
-                        value: "{position}",
-                        "aria-label": tr!("Effort"),
-                        // `onchange`, not `oninput`: it fires when the thumb is released (and once per arrow
-                        // key), so a drag sends one change and the SDK's answers cannot arrive out of order.
-                        onchange: {
-                            let levels = levels.clone();
-                            move |event: FormEvent| {
-                                if let Some(level) = event.value().parse::<usize>().ok().and_then(|index| levels.get(index)) {
-                                    onchange.call(Some(*level));
-                                }
-                            }
-                        },
-                    }
-                    button {
-                        class: "picker-item",
-                        r#type: "button",
-                        onclick: move |_| onchange.call(None),
-                        span { class: "picker-text", span { class: "picker-label", {tr!("Use the default")} } }
-                    }
-                }
-            }
+            },
+            oneffort: move |level| workspace.set_effort(id, level),
         }
     }
 }
