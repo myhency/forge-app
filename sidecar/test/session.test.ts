@@ -357,6 +357,20 @@ describe("SidecarSession", () => {
     expect(events).toContainEqual({ type: "assistant_delta", text: "Invalid API key · Fix external API key" });
   });
 
+  it("shows what a command answers for itself (a synthetic message without an error, e.g. /autocompact auto)", async () => {
+    const events: SidecarEvent[] = [];
+    const queryFn: QueryFn = () =>
+      toQueryHandle((async function* () {
+        yield { type: "assistant", message: { model: "<synthetic>", content: [{ type: "text", text: "Auto-compact window for Sonnet 5.5 set to auto" }] } };
+        yield { type: "assistant", message: { model: "<synthetic>", content: [{ type: "text", text: "No response requested." }] } };
+      })());
+
+    const session = new SidecarSession(queryFn, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    expect(events.filter((e) => e.type === "assistant_delta")).toEqual([{ type: "assistant_delta", text: "Auto-compact window for Sonnet 5.5 set to auto" }]);
+  });
+
   it("does not repeat the text of an ordinary assistant message (it already streamed as deltas)", async () => {
     const events: SidecarEvent[] = [];
     const queryFn: QueryFn = () =>
