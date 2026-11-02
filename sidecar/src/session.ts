@@ -745,9 +745,11 @@ export class SidecarSession {
         for (const block of blocks) {
           if (block?.type === "tool_use") {
             this.emit({ type: "tool_use", tool_call_id: block.id, name: block.name, input: block.input });
-          } else if (block?.type === "text" && typeof block.text === "string" && typeof message.error === "string") {
+          } else if (block?.type === "text" && typeof block.text === "string" && (typeof message.error === "string" || isCommandAnswer(model, block.text))) {
             // The SDK reports a failure (invalid API key, billing, rate limit...) as an assistant message
             // with `error` set and no stream deltas; without this the chat stays silent.
+            // A command the CLI answers itself (`/autocompact auto`) arrives the same way, as a
+            // synthetic message with no error and no turn behind it.
             this.emit({ type: "assistant_delta", text: block.text });
           }
         }
@@ -789,6 +791,11 @@ export class SidecarSession {
         return;
     }
   }
+}
+
+/** The text a command prints for itself: a synthetic assistant message, except the empty-reply filler. */
+function isCommandAnswer(model: unknown, text: string): boolean {
+  return model === "<synthetic>" && text.trim() !== "" && text.trim() !== "No response requested.";
 }
 
 function extractTextContent(content: unknown): string {
