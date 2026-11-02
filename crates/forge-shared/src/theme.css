@@ -586,6 +586,8 @@ button:not(:disabled):active { scale: 0.98; }
 .markdown blockquote > :last-child { margin-bottom: 0; }
 .markdown table { display: table; width: 100%; border-collapse: collapse; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); }
 .markdown th, .markdown td { padding: var(--sp-8) var(--sp-12); border: none; border-top: 1px solid var(--border); text-align: left; }
+/* A narrow chat squeezes a column with a long cell down to one letter per line; a cell keeps room for a few characters, and the long text breaks inside the others. */
+.markdown th, .markdown td { min-width: 5ch; overflow-wrap: anywhere; }
 .markdown thead th { background: var(--bg-hover); border-top: none; font-weight: var(--weight-semibold); }
 .markdown hr { border: none; border-top: 1px solid var(--border); margin: var(--sp-16) 0; }
 .code-wrap { position: relative; width: fit-content; max-width: 100%; margin: 0 0 var(--sp-10); }
