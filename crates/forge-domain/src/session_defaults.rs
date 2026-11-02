@@ -9,6 +9,8 @@ pub struct SessionDefaults {
     pub allow_bypass: bool,
     /// Whether the SDK gets the Workflow tool in this session.
     pub dynamic_workflows: bool,
+    /// Whether the session keeps notes between sessions (the SDK's auto memory).
+    pub auto_memory: bool,
     /// Whether the session gets the task list and next-step tools.
     pub turn_tools: bool,
     /// Whether the session gets the tool that draws an interactive page in the chat.
@@ -19,13 +21,13 @@ pub struct SessionDefaults {
 
 impl Default for SessionDefaults {
     fn default() -> Self {
-        Self { output_style: None, prompt_suggestions: true, allow_bypass: false, dynamic_workflows: false, turn_tools: true, generative_ui: true, desktop_control: false }
+        Self { output_style: None, prompt_suggestions: true, allow_bypass: false, dynamic_workflows: false, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false }
     }
 }
 
 impl SessionDefaults {
     pub fn from_config(config: &AppConfig) -> Self {
-        Self { output_style: config.output_style, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, turn_tools: config.turn_tools, generative_ui: config.generative_ui, desktop_control: config.desktop_control }
+        Self { output_style: config.output_style, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, auto_memory: config.auto_memory, turn_tools: config.turn_tools, generative_ui: config.generative_ui, desktop_control: config.desktop_control }
     }
 }
 
@@ -36,6 +38,13 @@ mod tests {
     #[test]
     fn a_default_config_gives_the_default_defaults() {
         assert_eq!(SessionDefaults::from_config(&AppConfig::default()), SessionDefaults::default());
+    }
+
+    #[test]
+    fn auto_memory_is_carried_and_default_on() {
+        assert!(SessionDefaults::default().auto_memory);
+        let config = AppConfig { auto_memory: false, ..AppConfig::default() };
+        assert!(!SessionDefaults::from_config(&config).auto_memory);
     }
 
     #[test]
@@ -50,7 +59,7 @@ mod tests {
         let config = AppConfig { output_style: Some(OutputStyle::Learning), prompt_suggestions: false, allow_bypass_mode: true, dynamic_workflows: true, ..AppConfig::default() };
         assert_eq!(
             SessionDefaults::from_config(&config),
-            SessionDefaults { output_style: Some(OutputStyle::Learning), prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, turn_tools: true, generative_ui: true, desktop_control: false }
+            SessionDefaults { output_style: Some(OutputStyle::Learning), prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false }
         );
     }
 }

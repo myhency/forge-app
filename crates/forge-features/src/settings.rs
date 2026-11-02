@@ -23,6 +23,7 @@ pub enum SettingsSection {
     Plugins,
     McpServers,
     Code,
+    Memory,
     Developer,
 }
 
@@ -55,6 +56,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::PromptSuggestions(on) => config.prompt_suggestions = on,
         CodeChange::AllowBypass(on) => config.allow_bypass_mode = on,
         CodeChange::DynamicWorkflows(on) => config.dynamic_workflows = on,
+        CodeChange::AutoMemory(on) => config.auto_memory = on,
         CodeChange::TurnTools(on) => config.turn_tools = on,
         CodeChange::GenerativeUi(on) => config.generative_ui = on,
         CodeChange::DesktopControl(on) => config.desktop_control = on,
@@ -105,6 +107,7 @@ pub(crate) enum CodeChange {
     PromptSuggestions(bool),
     AllowBypass(bool),
     DynamicWorkflows(bool),
+    AutoMemory(bool),
     TurnTools(bool),
     GenerativeUi(bool),
     DesktopControl(bool),
@@ -378,6 +381,14 @@ impl Settings {
         if on {
             self.check_desktop_tool();
         }
+    }
+
+    pub fn auto_memory(&self) -> bool {
+        self.saved.read().auto_memory
+    }
+
+    pub fn set_auto_memory(&self, on: bool) {
+        self.change_code(CodeChange::AutoMemory(on));
     }
 
     pub fn dynamic_workflows(&self) -> bool {
@@ -770,6 +781,7 @@ impl Settings {
             current.prompt_suggestions = config.prompt_suggestions;
             current.allow_bypass_mode = config.allow_bypass_mode;
             current.dynamic_workflows = config.dynamic_workflows;
+            current.auto_memory = config.auto_memory;
             current.turn_tools = config.turn_tools;
             current.generative_ui = config.generative_ui;
             current.desktop_control = config.desktop_control;
@@ -896,6 +908,15 @@ mod tests {
         assert!(config.allow_bypass_mode);
         assert!(config.dynamic_workflows);
         assert_eq!(config.model, None, "nothing else is touched");
+    }
+
+    #[test]
+    fn the_auto_memory_switch_is_on_and_changes_only_that_value() {
+        let mut config = AppConfig::default();
+        assert!(config.auto_memory);
+        apply_code_change(&mut config, CodeChange::AutoMemory(false));
+        assert!(!config.auto_memory);
+        assert!(config.turn_tools, "nothing else is touched");
     }
 
     #[test]

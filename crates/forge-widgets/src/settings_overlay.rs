@@ -3,6 +3,7 @@ use forge_domain::{ChatWidth, FontChoice, MotionPref, OutputStyle, TextSize, The
 use forge_entities::{model_from_value, model_options, model_value};
 use forge_features::{nav_groups, search_hits, use_settings, use_workspace, DesktopToolView, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
 use crate::developer_section::DeveloperSection;
+use crate::memory_section::MemorySection;
 use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, Segmented, Select, SettingRow, Switch, TextInput, IconSize};
 
 /// The settings overlay (spec §16): a left navigation and rows on the right. Renders nothing while
@@ -104,6 +105,7 @@ pub fn SettingsOverlay() -> Element {
                         SettingsSection::Plugins => rsx! { ExtensionSection { kind: ExtensionKind::Plugin } },
                         SettingsSection::McpServers => rsx! { ExtensionSection { kind: ExtensionKind::McpServer } },
                         SettingsSection::Code => rsx! { CodeSection {} },
+                        SettingsSection::Memory => rsx! { MemorySection {} },
                         SettingsSection::Developer => rsx! { DeveloperSection {} },
                     }
                     StatusLine {}

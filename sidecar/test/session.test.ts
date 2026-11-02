@@ -1819,6 +1819,17 @@ describe("SidecarSession", () => {
       expect(both.options().settings).toEqual({ outputStyle: "Concise", enableWorkflows: true });
     });
 
+    it("uses Claude Code's system prompt, and turns auto memory off only when the command says so", async () => {
+      const on = capture();
+      await new SidecarSession(on.queryFn, () => {}).handle(startCommand);
+      expect(on.options().systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+      expect(on.options().settings).toBeUndefined();
+
+      const off = capture();
+      await new SidecarSession(off.queryFn, () => {}).handle({ ...startCommand, auto_memory: false, output_style: "Concise" });
+      expect(off.options().settings).toEqual({ outputStyle: "Concise", autoMemoryEnabled: false });
+    });
+
     it("follows the command for prompt suggestions", async () => {
       const off = capture();
       await new SidecarSession(off.queryFn, () => {}).handle({ ...startCommand, prompt_suggestions: false });

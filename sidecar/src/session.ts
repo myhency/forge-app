@@ -487,17 +487,21 @@ export class SidecarSession {
           allowDangerouslySkipPermissions: command.allow_bypass,
           // The SDK sends thinking with its text omitted unless asked for a summary.
           thinking: { type: "adaptive", display: "summarized" },
+          // Claude Code's own system prompt: it carries the instructions for auto memory (without it the SDK
+          // gives the model no memory directory at all).
+          systemPrompt: { type: "preset", preset: "claude_code" },
           settingSources: ["project"],
           strictMcpConfig: true,
           skills: skillsPlugin?.skills ?? [],
           plugins,
           // Inline settings of a new session: its output style (the SDK's default when none is set) and the
           // Workflow tool, which the SDK leaves off unless asked (Forge reads no user settings file).
-          ...(command.output_style || command.dynamic_workflows
+          ...(command.output_style || command.dynamic_workflows || command.auto_memory === false
             ? {
                 settings: {
                   ...(command.output_style ? { outputStyle: command.output_style } : {}),
                   ...(command.dynamic_workflows ? { enableWorkflows: true } : {}),
+                  ...(command.auto_memory === false ? { autoMemoryEnabled: false } : {}),
                 },
               }
             : {}),

@@ -52,6 +52,7 @@ mod session_row;
 mod session_title_menu;
 mod session_tools;
 mod developer_section;
+mod memory_section;
 mod settings_overlay;
 mod environment_dialog;
 mod shortcuts_dialog;

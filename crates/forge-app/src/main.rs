@@ -250,6 +250,7 @@ fn build_services() -> WorkspaceServices {
         file_picker: picker.clone(),
         file_saver: picker,
         log_report,
+        memory: Arc::new(forge_adapter_claude_fs::ClaudeMemoryAdapter::new(claude_home.clone(), Arc::new(forge_adapter_claude_fs::SystemTrash))),
         terminal: Arc::new(PtyTerminal::new(shell)),
         git: git.clone(),
         files: Arc::new(LocalFiles::new()),
