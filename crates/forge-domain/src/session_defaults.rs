@@ -1,9 +1,11 @@
-use crate::{AppConfig, OutputStyle};
+use crate::{AppConfig, AutoModeModel, OutputStyle};
 
 /// What the Code tab of Settings decides for a session at the moment its sidecar starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionDefaults {
     pub output_style: Option<OutputStyle>,
+    /// The model that approves tool calls in auto mode (`None`: Claude Code decides).
+    pub auto_mode_model: Option<AutoModeModel>,
     pub prompt_suggestions: bool,
     /// Whether the SDK may enter bypass-permissions mode in this session.
     pub allow_bypass: bool,
@@ -21,13 +23,13 @@ pub struct SessionDefaults {
 
 impl Default for SessionDefaults {
     fn default() -> Self {
-        Self { output_style: None, prompt_suggestions: true, allow_bypass: false, dynamic_workflows: false, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false }
+        Self { output_style: None, auto_mode_model: None, prompt_suggestions: true, allow_bypass: false, dynamic_workflows: false, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false }
     }
 }
 
 impl SessionDefaults {
     pub fn from_config(config: &AppConfig) -> Self {
-        Self { output_style: config.output_style, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, auto_memory: config.auto_memory, turn_tools: config.turn_tools, generative_ui: config.generative_ui, desktop_control: config.desktop_control }
+        Self { output_style: config.output_style, auto_mode_model: config.auto_mode_model, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, auto_memory: config.auto_memory, turn_tools: config.turn_tools, generative_ui: config.generative_ui, desktop_control: config.desktop_control }
     }
 }
 
@@ -56,10 +58,10 @@ mod tests {
 
     #[test]
     fn the_config_values_are_carried() {
-        let config = AppConfig { output_style: Some(OutputStyle::Learning), prompt_suggestions: false, allow_bypass_mode: true, dynamic_workflows: true, ..AppConfig::default() };
+        let config = AppConfig { output_style: Some(OutputStyle::Learning), auto_mode_model: None, prompt_suggestions: false, allow_bypass_mode: true, dynamic_workflows: true, ..AppConfig::default() };
         assert_eq!(
             SessionDefaults::from_config(&config),
-            SessionDefaults { output_style: Some(OutputStyle::Learning), prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false }
+            SessionDefaults { output_style: Some(OutputStyle::Learning), auto_mode_model: None, prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false }
         );
     }
 }
