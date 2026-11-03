@@ -1492,7 +1492,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .env-search { width: calc(100% - 16px); margin: var(--sp-6) var(--sp-8); padding: var(--sp-6) var(--sp-8); border: 1px solid var(--border); border-radius: var(--r-8); background: transparent; color: inherit; font: inherit; box-sizing: border-box; }
 .env-row { position: relative; display: flex; align-items: center; }
 .env-row > .picker-item { flex: 1; min-width: 0; }
-.env-row .picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.env-row .picker-label, .env-folder-popover .picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .env-row:hover > .picker-item { padding-right: 96px; }
 .env-row .menu-key { white-space: nowrap; flex: none; }
 .env-row-icons { position: absolute; right: 8px; display: none; gap: var(--sp-2); }
@@ -1507,14 +1507,14 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .env-label { display: block; margin: var(--sp-14) 0 var(--sp-6); font-weight: var(--weight-semibold); }
 .env-folders-head { position: relative; display: flex; align-items: center; justify-content: space-between; }
 .env-add { border: 1px solid var(--border); background: transparent; border-radius: var(--r-8); padding: var(--sp-4) var(--sp-10); cursor: pointer; color: inherit; }
-.env-folders { border: 1px solid var(--border); border-radius: var(--r-10); }
+.env-folders { overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-10); }
 .env-folder { display: flex; align-items: center; gap: var(--sp-10); padding: var(--sp-10) var(--sp-12); }
 .env-folder + .env-folder { border-top: 1px solid var(--border); }
-.env-folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.env-branch { font-family: var(--mono, monospace); border: 0; background: transparent; color: var(--fg-muted); }
-.env-worktree { display: inline-flex; align-items: center; gap: var(--sp-4); color: var(--fg-muted); }
-.env-note { color: var(--fg-muted); }
-.env-remove { visibility: hidden; border: 0; background: transparent; cursor: pointer; color: inherit; }
+.env-folder-name { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.env-branch { flex: 0 1 auto; min-width: 0; max-width: 40%; text-overflow: ellipsis; font-family: var(--mono, monospace); border: 0; background: transparent; color: var(--fg-muted); }
+.env-worktree { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: var(--sp-4); color: var(--fg-muted); }
+.env-note { flex: none; white-space: nowrap; color: var(--fg-muted); }
+.env-remove { flex: none; visibility: hidden; border: 0; background: transparent; cursor: pointer; color: inherit; }
 .env-folder:hover .env-remove { visibility: visible; }
 .env-variables-card { display: flex; align-items: center; gap: var(--sp-10); width: 100%; margin-top: var(--sp-14); padding: var(--sp-12) var(--sp-14); border: 1px solid var(--border); border-radius: var(--r-10); background: transparent; text-align: left; cursor: pointer; color: inherit; }
 .env-variables-card .hint { flex: 1; }
