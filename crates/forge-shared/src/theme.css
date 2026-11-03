@@ -1524,9 +1524,11 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .env-delete { border: 0; background: transparent; color: var(--danger); cursor: pointer; }
 .env-ask-backdrop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--fg) 20%, transparent); border-radius: 16px; }
 .env-ask { width: min(440px, 90%); padding: var(--sp-18) var(--sp-20); border-radius: var(--r-14); background: var(--bg-elevated, var(--bg)); box-shadow: var(--shadow-3); }
-.env-folder-popover { position: absolute; top: 100%; bottom: auto; left: auto; margin-top: var(--sp-6); right: 0; z-index: 10; min-width: 260px; max-height: min(320px, 50vh); overflow: hidden; display: flex; flex-direction: column; }
-.env-folder-popover .env-folder-list { overflow: auto; min-height: 0; flex: 1 1 auto; }
-.env-folder-popover > * { flex: none; }
+.env-folder-popover { position: absolute; top: 100%; bottom: auto; left: auto; margin-top: var(--sp-6); right: 0; z-index: 10; box-sizing: border-box; width: min(360px, 100%); min-width: 0; max-height: min(320px, 50vh); overflow: hidden; display: flex; flex-direction: column; }
+.env-folder-popover .env-folder-list { overflow-x: hidden; overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+.env-folder-popover > * { flex: none; min-width: 0; }
+.env-folder-popover .picker-item { align-items: center; }
+.env-folder-popover .picker-text { overflow: hidden; }
 .env-folder-popover > .env-folder-list { flex: 1 1 auto; }
 
 .plan-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--sp-12) var(--sp-12); }
