@@ -1730,7 +1730,7 @@ describe("SidecarSession", () => {
       await session.handle({ type: "set_model", id: "3", model: null });
       await finish();
 
-      expect(open.calls.model).toEqual(["claude-opus-5-5", undefined]);
+      expect(open.calls.model).toEqual(["claude-opus-5-5", "claude-sonnet-5-5"]);
       expect(events).toContainEqual({ type: "model_set", model: "claude-opus-5-5" });
       expect(events).toContainEqual({ type: "model_set", model: null });
     });
