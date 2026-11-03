@@ -53,6 +53,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
     match change {
         CodeChange::DefaultView(view) => config.default_transcript_view = view,
         CodeChange::OutputStyle(style) => config.output_style = style,
+        CodeChange::AutoModeModel(model) => config.auto_mode_model = model,
         CodeChange::PromptSuggestions(on) => config.prompt_suggestions = on,
         CodeChange::AllowBypass(on) => config.allow_bypass_mode = on,
         CodeChange::DynamicWorkflows(on) => config.dynamic_workflows = on,
@@ -104,6 +105,7 @@ pub fn auto_archive_text(days: Option<u32>) -> String {
 pub(crate) enum CodeChange {
     DefaultView(TranscriptView),
     OutputStyle(Option<OutputStyle>),
+    AutoModeModel(Option<forge_domain::AutoModeModel>),
     PromptSuggestions(bool),
     AllowBypass(bool),
     DynamicWorkflows(bool),
@@ -401,6 +403,14 @@ impl Settings {
 
     pub fn set_output_style(&self, style: Option<OutputStyle>) {
         self.change_code(CodeChange::OutputStyle(style));
+    }
+
+    pub fn auto_mode_model(&self) -> Option<forge_domain::AutoModeModel> {
+        self.saved.read().auto_mode_model
+    }
+
+    pub fn set_auto_mode_model(&self, model: Option<forge_domain::AutoModeModel>) {
+        self.change_code(CodeChange::AutoModeModel(model));
     }
 
     pub fn set_prompt_suggestions(&self, on: bool) {
@@ -778,6 +788,7 @@ impl Settings {
             let mut current = saved.write();
             current.default_transcript_view = config.default_transcript_view;
             current.output_style = config.output_style;
+            current.auto_mode_model = config.auto_mode_model;
             current.prompt_suggestions = config.prompt_suggestions;
             current.allow_bypass_mode = config.allow_bypass_mode;
             current.dynamic_workflows = config.dynamic_workflows;

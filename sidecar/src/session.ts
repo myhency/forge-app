@@ -510,7 +510,9 @@ export class SidecarSession {
           allowedTools: command.allowed_tools ?? [],
           // Variables of the environment the session starts from, over Forge's own (the SDK would
           // replace the whole environment with what it is given).
-          ...(command.env && Object.keys(command.env).length > 0 ? { env: { ...process.env, ...command.env } } : {}),
+          ...(command.auto_mode_model || (command.env && Object.keys(command.env).length > 0)
+            ? { env: { ...process.env, ...(command.auto_mode_model ? { CLAUDE_CODE_AUTO_MODE_MODEL: command.auto_mode_model } : {}), ...command.env } }
+            : {}),
           // Forge shows a stop button per background task and predicts the next prompt unless Settings turns it off.
           promptSuggestions: command.prompt_suggestions,
           perTaskStopAffordance: true,

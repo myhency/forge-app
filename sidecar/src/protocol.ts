@@ -54,6 +54,8 @@ export type SidecarCommand =
       allowed_tools?: string[];
       env?: Record<string, string>;
       output_style?: string;
+      // The model that approves tool calls in auto mode (omitted: Claude Code decides).
+      auto_mode_model?: string;
       prompt_suggestions: boolean;
       allow_bypass: boolean;
       dynamic_workflows: boolean;

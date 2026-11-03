@@ -345,6 +345,9 @@ pub struct AppConfig {
     /// The output style new sessions start with; `None` is the SDK's own default.
     #[serde(default, deserialize_with = "lenient")]
     pub output_style: Option<crate::OutputStyle>,
+    /// The model that approves tool calls in auto mode; `None` leaves the choice to Claude Code.
+    #[serde(default, deserialize_with = "lenient")]
+    pub auto_mode_model: Option<crate::AutoModeModel>,
     /// Whether Claude predicts the next prompt after each answer.
     #[serde(default = "default_true")]
     pub prompt_suggestions: bool,
@@ -450,6 +453,7 @@ impl Default for AppConfig {
             routine_runs: Vec::new(),
             default_transcript_view: crate::TranscriptView::default(),
             output_style: None,
+            auto_mode_model: None,
             prompt_suggestions: true,
             allow_bypass_mode: false,
             dynamic_workflows: false,
