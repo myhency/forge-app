@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_domain::AppConfig;
+use forge_domain::{AppConfig, CONFIG_INCOMPLETE};
 use forge_ports::{ConfigRepositoryPort, SidecarError, SidecarFactoryPort, SidecarPort};
 
 use crate::process::SidecarProcess;
@@ -30,13 +30,16 @@ impl SidecarProcessFactory {
 impl SidecarFactoryPort for SidecarProcessFactory {
     async fn spawn(&self) -> Result<Arc<dyn SidecarPort>, SidecarError> {
         // Loaded on every spawn, so an edit to config.json applies to the next session opened.
-        // A missing config file is not an error (the adapter returns `AppConfig::default()`); a
-        // malformed one is, so a broken config is reported instead of silently ignored.
+        // A malformed config is an error, and so is one that is missing or has no API key (a missing
+        // file loads as `AppConfig::default()`, which has none): a session must not start half set up.
         let config = self
             .config
             .load()
             .await
             .map_err(|e| SidecarError::SpawnFailed(format!("failed to load the Forge config: {e}")))?;
+        if config.api_key.as_deref().map_or(true, |key| key.trim().is_empty()) {
+            return Err(SidecarError::SpawnFailed(CONFIG_INCOMPLETE.to_string()));
+        }
         let mut env = credentials_env(&config);
         if let Some(dir) = &self.tools_dir {
             env.push(("FORGE_TOOLS_DIR".to_string(), dir.to_string_lossy().into_owned()));
