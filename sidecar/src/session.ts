@@ -7,6 +7,10 @@ import { createGenerativeUiServer, GENERATE_UI_TOOL, UI_GUIDE_TOOL, UI_SERVER_NA
 import { createTurnToolsServer, TURN_SERVER_NAME, UPDATE_PLAN_TOOL, WRAP_UP_TOOL } from "./turn_tools.js";
 import type { SidecarCommand, SidecarEvent, WireAvailableModel, WireEffort, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
 
+// The model Forge shows as `Default` in its picker (forge-entities model_catalog.rs DEFAULT_MODEL_ID). With no model
+// given the SDK picks its own (the packaged app got Opus), so the default is named here.
+const DEFAULT_MODEL = "claude-sonnet-5-5";
+
 export type QueryHandle = AsyncIterable<unknown> & {
   interrupt: () => Promise<unknown>;
   getContextUsage?: () => Promise<{
@@ -251,7 +255,7 @@ export class SidecarSession {
         return;
       case "set_model":
         await this.change(
-          (query) => query.setModel?.(command.model ?? undefined),
+          (query) => query.setModel?.(command.model ?? DEFAULT_MODEL),
           { type: "model_set", model: command.model },
         );
         return;
@@ -475,7 +479,7 @@ export class SidecarSession {
           cwd: command.cwd,
           resume: command.resume_session_id ?? undefined,
           permissionMode: toSdkPermissionMode(command.permission_mode),
-          model: command.model ?? undefined,
+          model: command.model ?? DEFAULT_MODEL,
           effort: command.effort ?? undefined,
           abortController: this.abortController,
           canUseTool,
