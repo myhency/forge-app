@@ -475,6 +475,10 @@ impl Default for AppConfig {
     }
 }
 
+/// The sentence a session start fails with when `config.json` is missing or has no API key. The chat
+/// window looks for it to offer a button to Settings → Connection.
+pub const CONFIG_INCOMPLETE: &str = "Forge is not set up: config.json is missing or has no API key. Open Settings > Connection.";
+
 /// What a settings text field is stored as: trimmed, and `None` when nothing is left.
 pub fn normalize_setting(value: &str) -> Option<String> {
     let trimmed = value.trim();

@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
 use forge_entities::{live_state, CardMark, TranscriptView, Turns};
-use forge_features::{use_settings, use_workspace, Panel, SendMessageBox};
+use forge_features::{use_settings, SettingsSection, use_workspace, Panel, SendMessageBox};
 
 use crate::composer_controls::{ModePicker, ModelPicker};
 use crate::dock::Dock;
@@ -139,7 +139,21 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
             }
             ScrollToEnd {}
             if let Some(error) = view.last_error.as_ref() {
-                div { class: "banner error", "{error}" }
+                if error.contains(forge_domain::CONFIG_INCOMPLETE) {
+                    div { class: "banner error",
+                        span { {tr!("Forge is not set up: config.json is missing or has no API key.")} }
+                        button {
+                            class: "archived-bar-button",
+                            onclick: move |_| {
+                                settings.open();
+                                settings.set_section(SettingsSection::Connection);
+                            },
+                            {tr!("Open Settings > Connection")}
+                        }
+                    }
+                } else {
+                    div { class: "banner error", "{error}" }
+                }
             }
             if let Some(text) = workspace.rate_limit_bar(id) {
                 div { class: "usage-bar",
