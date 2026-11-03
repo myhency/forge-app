@@ -41,6 +41,23 @@ async fn start(sidecar: &dyn SidecarPort) {
     ));
 }
 
+fn configured() -> AppConfig {
+    AppConfig { api_key: Some("sk-test".to_string()), ..AppConfig::default() }
+}
+
+#[tokio::test]
+async fn spawn_fails_when_the_config_has_no_api_key() {
+    let mut config = MockConfigRepositoryPort::new();
+    config.expect_load().returning(|| Ok(AppConfig::default()));
+    let factory = factory_with(config);
+
+    let Err(SidecarError::SpawnFailed(message)) = factory.spawn().await else {
+        panic!("spawn should fail without an API key");
+    };
+
+    assert_eq!(message, forge_domain::CONFIG_INCOMPLETE);
+}
+
 // Asks the fixture sidecar to echo one of its own environment variables.
 async fn ask_env(sidecar: &dyn SidecarPort, name: &str) -> String {
     sidecar.send_message(format!("TRIGGER_ENV:{name}"), Vec::new()).await.unwrap();
@@ -97,7 +114,7 @@ async fn spawn_reloads_the_config_every_time_so_edits_apply_to_the_next_session(
 #[tokio::test]
 async fn spawn_with_a_default_config_still_starts_a_working_sidecar() {
     let mut config = MockConfigRepositoryPort::new();
-    config.expect_load().returning(|| Ok(AppConfig::default()));
+    config.expect_load().returning(|| Ok(configured()));
     let factory = factory_with(config);
 
     let sidecar = factory.spawn().await.unwrap();
@@ -130,7 +147,7 @@ async fn spawn_fails_with_spawn_failed_when_the_config_cannot_be_loaded() {
 #[tokio::test]
 async fn spawn_fails_with_spawn_failed_when_the_node_binary_does_not_exist() {
     let mut config = MockConfigRepositoryPort::new();
-    config.expect_load().returning(|| Ok(AppConfig::default()));
+    config.expect_load().returning(|| Ok(configured()));
     let factory = SidecarProcessFactory::new(
         "forge-test-no-such-node-binary".to_string(),
         fixture_path(),
