@@ -494,7 +494,7 @@ mod tests {
 
         assert_eq!(
             started_defaults(control.calls()),
-            SessionDefaults { output_style: Some(OutputStyle::Concise), prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false }
+            SessionDefaults { output_style: Some(OutputStyle::Concise), auto_mode_model: None, prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false }
         );
     }
 

@@ -290,6 +290,8 @@ fn CodeSection() -> Element {
     };
     location_options.insert(0, (PROJECT_LOCATION.to_string(), tr!("Inside the project (.claude/worktrees)").to_string()));
     location_options.push((CUSTOM_LOCATION.to_string(), tr!("Custom…").to_string()));
+    let mut auto_mode_options = vec![(DEFAULT_STYLE_VALUE.to_string(), tr!("Default").to_string())];
+    auto_mode_options.extend(forge_domain::AutoModeModel::ALL.iter().map(|model| (model.id().to_string(), model.label().to_string())));
     let style_value = settings.output_style().map_or(DEFAULT_STYLE_VALUE, OutputStyle::name).to_string();
     let mut style_options = vec![(DEFAULT_STYLE_VALUE.to_string(), tr!("Default").to_string())];
     style_options.extend(OutputStyle::ALL.iter().map(|style| (style.name().to_string(), forge_shared::i18n::text(style.label()).to_string())));
@@ -337,6 +339,15 @@ fn CodeSection() -> Element {
                 value: style_value,
                 options: style_options,
                 onchange: move |value: String| settings.set_output_style(OutputStyle::from_name(&value)),
+            }
+        }
+        SettingRow {
+            title: tr!("Auto mode approver"),
+            description: tr!("The model that approves or denies each action in auto mode. Default leaves the choice to Claude Code. Applies to new sessions."),
+            Select {
+                value: settings.auto_mode_model().map_or(DEFAULT_STYLE_VALUE, forge_domain::AutoModeModel::id).to_string(),
+                options: auto_mode_options,
+                onchange: move |value: String| settings.set_auto_mode_model(forge_domain::AutoModeModel::from_id(&value)),
             }
         }
         SettingRow {

@@ -24,6 +24,8 @@ pub enum SidecarCommand {
         env: BTreeMap<String, String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         output_style: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        auto_mode_model: Option<String>,
         prompt_suggestions: bool,
         allow_bypass: bool,
         dynamic_workflows: bool,
@@ -137,6 +139,7 @@ impl SidecarCommand {
             allowed_tools: params.allowed_tools,
             env: params.env.0.into_iter().collect(),
             output_style: params.defaults.output_style.map(|style| style.name().to_string()),
+            auto_mode_model: params.defaults.auto_mode_model.map(|model| model.id().to_string()),
             prompt_suggestions: params.defaults.prompt_suggestions,
             allow_bypass: params.defaults.allow_bypass,
             dynamic_workflows: params.defaults.dynamic_workflows,
@@ -246,6 +249,7 @@ mod tests {
         let mut params = params_with(Vec::new());
         params.defaults = forge_domain::SessionDefaults {
             output_style: Some(forge_domain::OutputStyle::Concise),
+            auto_mode_model: Some(forge_domain::AutoModeModel::Sonnet),
             prompt_suggestions: false,
             allow_bypass: true,
             dynamic_workflows: true,
@@ -259,6 +263,7 @@ mod tests {
         assert_eq!(json["prompt_suggestions"], serde_json::json!(false));
         assert_eq!(json["allow_bypass"], serde_json::json!(true));
         assert_eq!(json["dynamic_workflows"], serde_json::json!(true));
+        assert_eq!(json["auto_mode_model"], serde_json::json!("claude-sonnet-5-5"));
         assert_eq!(json["auto_memory"], serde_json::json!(false));
         assert_eq!(json["turn_tools"], serde_json::json!(false));
         assert_eq!(json["generative_ui"], serde_json::json!(false));
