@@ -149,6 +149,8 @@ button:not(:disabled):active { scale: 0.98; }
 .sidebar-item:hover { background: var(--bg-hover); }
 .title-skeleton { display: block; height: 0.9em; margin: 0.25em 0; border-radius: var(--r-4); background: linear-gradient(90deg, var(--bg-hover) 0%, var(--border) 50%, var(--bg-hover) 100%); background-size: 200% 100%; animation: title-shimmer 1.4s linear infinite; }
 @keyframes title-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.env-missing-line { width: 100%; max-width: var(--chat-column); box-sizing: border-box; margin: 0 auto var(--sp-6); padding: 0 var(--sp-16); color: var(--danger); font-size: var(--text-sm); }
+.env-missing-line .link-button { appearance: none; border: none; background: none; padding: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .attention-dot { flex: none; width: 8px; height: 8px; margin-left: auto; border-radius: var(--r-round); background: var(--warning); }
 .attention-dot.naming { background: var(--fg-muted); opacity: 0.5; }
 .sidebar-item.active { background: var(--bg-hover); }

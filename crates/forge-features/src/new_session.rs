@@ -107,6 +107,12 @@ pub fn NewSessionComposer(leading: Element, start: Element, end: Element) -> Ele
     });
 
     let picked_environment = draft.environment.read().clone().and_then(|id| workspace.environments().into_iter().find(|environment| environment.id == id));
+    // The desktop app says at once, above the box, when the picked environment's folder is gone
+    // (round 37), instead of only refusing the send.
+    let missing_folder = picked_environment.as_ref().and_then(|environment| {
+        let plan = start_plan(environment).ok().filter(folder_missing)?;
+        Some((environment.id.clone(), environment.name.clone(), plan.folder.display().to_string()))
+    });
     let has_folder = can_send_here(picked_environment.is_some(), workspace.effective_no_folder(), workspace.new_session_projects().len());
 
     // `submit` is used by two handlers, so it may capture only `Copy` values (signals): it looks the
@@ -182,6 +188,18 @@ pub fn NewSessionComposer(leading: Element, start: Element, end: Element) -> Ele
         div { class: "new-session",
             if !has_folder {
                 div { class: "banner info", {tr!("No existing project folder was found in your Claude Code history. Use “Open folder…” to choose one.")} }
+            }
+            if let Some((env_id, name, folder)) = missing_folder {
+                div { class: "env-missing-line",
+                    span { {tr!("The {name} environment cannot start: the folder {path} no longer exists.", name = name, path = folder)} }
+                    " "
+                    button {
+                        class: "link-button",
+                        r#type: "button",
+                        onclick: move |_| workspace.open_environment_dialog(crate::EnvironmentRequest::Edit(env_id.clone())),
+                        {tr!("Edit environment")}
+                    }
+                }
             }
             ComposerShell {
                 top: rsx! {

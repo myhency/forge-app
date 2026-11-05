@@ -841,6 +841,7 @@ pub static KO: &[(&str, &str)] = &[
     ("The variables of this environment are not valid (line {line}). Edit the environment.", "이 환경의 변수가 올바르지 않습니다({line}번째 줄). 환경을 편집하세요."),
     ("The view sessions open in. The view menu of a session changes that session only.", "세션이 열릴 때의 보기입니다. 세션의 보기 메뉴는 그 세션에만 적용됩니다."),
     ("The weekly usage limit is reached", "주간 사용량 한도에 도달했습니다"),
+    ("The {name} environment cannot start: the folder {path} no longer exists.", "{name} 환경을 시작할 수 없습니다: {path} 폴더가 더 이상 존재하지 않습니다."),
     ("Theme", "테마"),
     ("There is no earlier message yet.", "아직 이전 메시지가 없습니다."),
     ("There was no answer.", "답이 없습니다."),
