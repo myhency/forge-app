@@ -162,6 +162,7 @@ impl Actor {
             LiveCommand::Approve { id, decision, reason } => self.approve(id, decision, reason).await,
             LiveCommand::AnswerQuestion { id, answers } => self.answer_question(id, answers).await,
             LiveCommand::StopTask { task_id } => self.stop_task(task_id).await,
+            LiveCommand::AnswerApp { id, output, is_error } => self.answer_app(id, output, is_error).await,
             LiveCommand::Interrupt => self.interrupt().await,
             LiveCommand::SetMode(mode) => self.set_mode(mode).await,
             LiveCommand::SetModel(model) => self.set_model(model).await,
@@ -427,6 +428,18 @@ impl Actor {
         Ok(())
     }
 
+    async fn answer_app(&mut self, id: String, output: String, is_error: bool) {
+        let before = self.view.app_requests.len();
+        self.view.app_requests.retain(|request| request.id != id);
+        if self.view.app_requests.len() == before {
+            return;
+        }
+        self.dirty = true;
+        if let Some(sidecar) = self.sidecar.clone() {
+            let _ = sidecar.answer_app_request(id, output, is_error).await;
+        }
+    }
+
     async fn stop_task(&mut self, task_id: String) {
         let Some(sidecar) = self.sidecar.clone() else {
             return;
@@ -659,6 +672,7 @@ impl Actor {
                     state.outcome = Some(outcome);
                 }
             }
+            SessionUpdate::AppRequest(request) => self.view.app_requests.push(request),
             SessionUpdate::SideAnswer { request_id, result } => {
                 if let Some(side) = self.view.side_thread.iter_mut().find(|side| side.id == request_id) {
                     side.answer = match result {

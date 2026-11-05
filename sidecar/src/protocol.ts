@@ -82,6 +82,8 @@ export type SidecarCommand =
   | { type: "set_permission_mode"; id: string; mode: WirePermissionMode }
   | { type: "set_model"; id: string; model: string | null }
   | { type: "set_effort"; id: string; effort: WireEffort | null }
+  // The app's answer to an `app_request`.
+  | { type: "app_response"; id: string; request_id: string; output: string; is_error: boolean }
   | { type: "shutdown"; id: string };
 
 export type SidecarEvent =
@@ -160,6 +162,8 @@ export type SidecarEvent =
   | { type: "models_available"; models: WireAvailableModel[] }
   | { type: "setting_failed"; message: string }
   | { type: "error"; message: string }
+  // Claude called one of the app's tools (list_sessions, set_pinned, ...): the app answers with `app_response`.
+  | { type: "app_request"; request_id: string; tool: string; input: Record<string, unknown> }
   | { type: "session_ended" };
 
 export function parseCommand(line: string): SidecarCommand {

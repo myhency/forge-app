@@ -81,6 +81,8 @@ pub struct LiveSessionView {
     pub rate_limit: Option<forge_domain::RateLimit>,
     /// The `/btw` questions and answers, oldest first; they are not part of the session.
     pub side_thread: Vec<SideQuestion>,
+    /// App tool calls waiting for the app's answer (list_sessions, set_pinned, ...).
+    pub app_requests: Vec<AppRequest>,
     /// The `/rewind` the person is looking at: a preview of what would change, then the result.
     pub rewind: Option<RewindState>,
 }
@@ -120,6 +122,15 @@ pub struct QueuedMessage {
     pub attachments: Vec<Attachment>,
 }
 
+/// One call Claude made to an app tool, waiting for the app.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppRequest {
+    pub id: String,
+    /// The tool's short name (`list_sessions`).
+    pub tool: String,
+    pub input: serde_json::Value,
+}
+
 #[derive(Debug)]
 pub enum LiveCommand {
     Send { text: String, attachments: Vec<Attachment> },
@@ -153,6 +164,8 @@ pub enum LiveCommand {
     Approve { id: String, decision: PermissionDecision, reason: Option<String> },
     AnswerQuestion { id: String, answers: std::collections::BTreeMap<String, String> },
     StopTask { task_id: String },
+    /// The app's answer to an app tool call.
+    AnswerApp { id: String, output: String, is_error: bool },
     Interrupt,
     SetTitle(String),
     SetMode(PermissionMode),
@@ -295,6 +308,11 @@ impl LiveSessionHandle {
         let _ = self.commands.send(LiveCommand::Interrupt);
     }
 
+    /// Answers an app tool call Claude made (see `LiveSessionView::app_requests`).
+    pub fn answer_app_request(&self, id: String, output: String, is_error: bool) {
+        let _ = self.commands.send(LiveCommand::AnswerApp { id, output, is_error });
+    }
+
     /// Changes the permission mode from the next turn on. With a sidecar running the view follows
     /// once the SDK accepts it; without one the view changes now and the next start uses it.
     pub fn set_permission_mode(&self, mode: PermissionMode) {
@@ -384,6 +402,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         queued: Vec::new(),
         rate_limit: None,
         side_thread: Vec::new(),
+        app_requests: Vec::new(),
         rewind: None,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
@@ -1200,6 +1219,24 @@ mod tests {
         assert_eq!(after.unsent.as_deref(), Some("rewound text"));
         assert_eq!(after.failed_sends, 1, "the box takes the text back as it does for a send that failed");
         assert!(after.side_thread.is_empty() && after.queued.is_empty() && after.rewind.is_none());
+    }
+
+    #[tokio::test]
+    async fn an_app_tool_call_waits_in_the_view_until_the_app_answers_it() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn", |v| v.phase == Phase::Running).await;
+
+        control.push(SidecarEvent::AppRequest { request_id: "r1".to_string(), tool: "list_sessions".to_string(), input: serde_json::json!({"limit": 3}) });
+        let waiting = wait_for(&mut view, "the request", |v| !v.app_requests.is_empty()).await;
+        assert_eq!(waiting.app_requests[0], AppRequest { id: "r1".to_string(), tool: "list_sessions".to_string(), input: serde_json::json!({"limit": 3}) });
+
+        handle.answer_app_request("r1".to_string(), "[]".to_string(), false);
+        wait_for(&mut view, "the request to go", |v| v.app_requests.is_empty()).await;
+        assert!(control.calls().contains(&Call::AppAnswer("r1".to_string(), "[]".to_string(), false)));
     }
 
     #[tokio::test]

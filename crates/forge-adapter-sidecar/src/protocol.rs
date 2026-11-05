@@ -51,6 +51,7 @@ pub enum SidecarCommand {
     AnswerQuestion { id: String, permission_request_id: String, answers: BTreeMap<String, String> },
     Interrupt { id: String },
     SideQuestion { id: String, request_id: String, question: String },
+    AppResponse { id: String, request_id: String, output: String, is_error: bool },
     RewindFiles { id: String, request_id: String, message_uuid: String, dry_run: bool },
     StopTask { id: String, task_id: String },
     SetPermissionMode { id: String, mode: WireMode },

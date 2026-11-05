@@ -116,6 +116,10 @@ pub fn use_session_notices(workspace: Workspace, settings: Settings) {
                 before.retain(|id, _| views.iter().any(|(open, _)| open == id));
                 for (id, view) in views {
                     workspace.start_requested_offers(id);
+                    // Claude's calls to the app's own tools (list_sessions, set_pinned, ...).
+                    if !view.peek().app_requests.is_empty() {
+                        workspace.serve_app_requests(id, &settings.saved_config());
+                    }
                     if workspace.is_routine_session(id) {
                         continue;
                     }

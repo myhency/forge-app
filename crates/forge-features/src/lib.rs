@@ -1,3 +1,4 @@
+mod app_tools;
 mod appearance;
 mod memory_view;
 mod change_comments;

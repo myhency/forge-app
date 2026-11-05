@@ -1691,6 +1691,33 @@ impl Workspace {
         }
     }
 
+    /// Which open session each card or hand-off started: (the session that started it, the started one).
+    pub(crate) fn offer_sessions_snapshot(&self) -> Vec<(LiveSessionId, LiveSessionId)> {
+        self.offer_sessions.peek().iter().map(|((parent, _), child)| (*parent, *child)).collect()
+    }
+
+    pub(crate) fn services_snapshot(&self) -> WorkspaceServices {
+        (*self.services.peek()).clone()
+    }
+
+    /// Opens a past session in the background (it stays where it is in the sidebar) and sends it
+    /// `text` (an app tool's `send_message`).
+    pub(crate) fn open_and_send(&self, folder: PathBuf, session: SessionId, text: String) {
+        let this = *self;
+        let services = self.services_snapshot();
+        let past = self.past;
+        dioxus::core::spawn_forever(async move {
+            let project = project_for_open(&past.peek(), &folder);
+            match services.registry.open_existing(&project, session).await {
+                Ok(outcome) => {
+                    this.ensure_attached(outcome.handle.clone());
+                    outcome.handle.send_with(text, Vec::new());
+                }
+                Err(error) => this.report(error.to_string()),
+            }
+        });
+    }
+
     /// Claude's `hand_off_to_session`: forks this conversation in the background, sends the fork the
     /// remaining plan and nests it under this session; the line `title ›` opens it. Marked at once,
     /// so the watcher never starts it twice while the copy is being made.
@@ -4096,6 +4123,7 @@ mod plan_text_tests {
             queued: Vec::new(),
             rate_limit: None,
             side_thread: Vec::new(),
+            app_requests: Vec::new(),
             rewind: None,
         }
     }

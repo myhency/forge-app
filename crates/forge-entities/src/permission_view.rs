@@ -65,6 +65,21 @@ pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
             };
         }
     }
+    // The app's own tools that change another session or the sidebar: say what they do.
+    let app_ask = match tool_name {
+        "mcp__ccd_session_mgmt__send_message" => Some((
+            tr!("Allow Claude to send a message to another session?").to_string(),
+            text("message"),
+        )),
+        "mcp__ccd_sidebar__set_pinned" => Some((
+            if input.get("pinned").and_then(Value::as_bool) == Some(false) { tr!("Allow Claude to unpin a session?") } else { tr!("Allow Claude to pin a session?") }.to_string(),
+            None,
+        )),
+        _ => None,
+    };
+    if let Some((title, description)) = app_ask {
+        return PermissionView { title, subject: tool_name.to_string(), description, path: None, command: None, workflow: None, plan: None };
+    }
     let kind = tool_kind(tool_name);
     let (verb, subject, path, command) = match kind {
         ToolKind::Created | ToolKind::Edited | ToolKind::Read => {
@@ -438,5 +453,14 @@ mod tests {
         assert_eq!(plan_reason("  "), DEFAULT_PLAN_REFUSAL);
         assert_eq!(plan_reason(""), DEFAULT_PLAN_REFUSAL);
         assert_eq!(plan_reason(" no "), "no");
+    }
+
+    #[test]
+    fn the_app_tools_that_change_things_say_what_they_do() {
+        let view = permission_view("mcp__ccd_session_mgmt__send_message", &json!({"session_id": "s", "message": "say hi"}));
+        assert_eq!(view.title, "Allow Claude to send a message to another session?");
+        assert_eq!(view.description.as_deref(), Some("say hi"));
+        let unpin = permission_view("mcp__ccd_sidebar__set_pinned", &json!({"session_id": "s", "pinned": false}));
+        assert_eq!(unpin.title, "Allow Claude to unpin a session?");
     }
 }

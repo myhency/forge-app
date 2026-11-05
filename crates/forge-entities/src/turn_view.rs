@@ -185,6 +185,24 @@ pub enum OfferAction {
 /// does the work instead of splitting it off again.
 pub const SPLIT_OFF_PREAMBLE: &str = "This session was started from another session to do the request below. Do it here; do not start or propose another session for it.";
 
+/// The row words for the app's own tools (`ccd_session_mgmt`, `ccd_sidebar`, `ccd_view`,
+/// `ccd_settings`): what was done, and to what.
+fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
+    let text = |key: &str| call.input.get(key).and_then(Value::as_str).map(str::trim).unwrap_or_default().to_string();
+    let first_line = |value: String| value.lines().next().unwrap_or_default().to_string();
+    Some(match call.name.as_str() {
+        "mcp__ccd_session_mgmt__list_sessions" => (tr!("Listed the sessions").to_string(), String::new()),
+        "mcp__ccd_session_mgmt__get_session" => (tr!("Looked up a session").to_string(), String::new()),
+        "mcp__ccd_session_mgmt__send_message" => (tr!("Sent a message").to_string(), first_line(text("message"))),
+        "mcp__ccd_session_mgmt__search_session_transcripts" => (tr!("Searched the sessions").to_string(), text("query")),
+        "mcp__ccd_sidebar__set_pinned" if call.input.get("pinned").and_then(Value::as_bool) == Some(false) => (tr!("Unpinned a session").to_string(), String::new()),
+        "mcp__ccd_sidebar__set_pinned" => (tr!("Pinned a session").to_string(), String::new()),
+        "mcp__ccd_view__set_transcript_view" => (tr!("Changed the transcript view").to_string(), text("view")),
+        "mcp__ccd_settings__get_settings" => (tr!("Read the settings").to_string(), String::new()),
+        _ => return None,
+    })
+}
+
 /// The tool that moves the task in progress into a fork of the session (the desktop app's name).
 pub const HAND_OFF_TOOL: &str = "mcp__ccd_session__hand_off_to_session";
 
@@ -476,6 +494,10 @@ fn tool_row(call: &ToolCall) -> ToolRow {
         ToolKind::Other if call.name == SKILL_TOOL => {
             let name = call.input.get("skill").and_then(Value::as_str).unwrap_or_default();
             (tr!("Skill ran|tool").to_string(), format!("/{name}"), String::new())
+        }
+        ToolKind::Other if call.name.starts_with("mcp__ccd_") && app_tool_words(call).is_some() => {
+            let (verb, subject) = app_tool_words(call).unwrap_or_default();
+            (verb, subject, String::new())
         }
         ToolKind::Other if call.name == HAND_OFF_TOOL => {
             let title = call.input.get("title").and_then(Value::as_str).map(str::trim).unwrap_or_default();
@@ -1904,6 +1926,14 @@ mod tests {
         assert_eq!(offers(&later), 0);
         let row = build_turns(&later, TranscriptView::Normal, None);
         assert!(format!("{row:?}").contains("Withdrew a proposal"), "the row says what it did, not the JSON");
+    }
+
+    #[test]
+    fn the_app_tools_read_as_words_not_json() {
+        let call = ToolCall { id: "a".into(), name: "mcp__ccd_session_mgmt__send_message".into(), input: json!({"session_id": "s", "message": "say hi\nmore"}), result: None };
+        assert_eq!(app_tool_words(&call), Some(("Sent a message".to_string(), "say hi".to_string())));
+        let other = ToolCall { name: "mcp__ccd_window__close_split".into(), ..call };
+        assert_eq!(app_tool_words(&other), None);
     }
 
     #[test]

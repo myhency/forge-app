@@ -723,6 +723,7 @@ mod tests {
             queued: Vec::new(),
             rate_limit: None,
             side_thread: Vec::new(),
+            app_requests: Vec::new(),
             rewind: None,
         }
     }

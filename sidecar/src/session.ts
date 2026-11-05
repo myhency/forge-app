@@ -5,11 +5,14 @@ import { turnUsage } from "./usage.js";
 import { createDesktopServer, DESKTOP_SERVER_NAME } from "./agent_desktop.js";
 import { createGenerativeUiServer, GENERATE_UI_TOOL, UI_GUIDE_TOOL, UI_SERVER_NAME } from "./generative_ui.js";
 import { createTurnToolsServer, TURN_SERVER_NAME, UPDATE_PLAN_TOOL, WRAP_UP_TOOL } from "./turn_tools.js";
+import { type AppAnswer, createAppToolsServers, READ_ONLY_APP_TOOLS } from "./app_tools.js";
 import { createSessionToolsServer, DISMISS_TASK_TOOL, HAND_OFF_TOOL, MARK_CHAPTER_TOOL, SESSION_SERVER_NAME, START_SESSION_TOOL, unrelatedTaskFrom, unrelatedTaskPrompt } from "./session_tools.js";
 import type { SidecarCommand, SidecarEvent, WireAvailableModel, WireEffort, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
 
 // The model Forge shows as `Default` in its picker (forge-entities model_catalog.rs DEFAULT_MODEL_ID). With no model
 // given the SDK picks its own (the packaged app got Opus), so the default is named here.
+// How long an app tool waits for the app before it gives up.
+const APP_ANSWER_TIMEOUT_MS = 60_000;
 const DEFAULT_MODEL = "claude-sonnet-5-5";
 
 export type QueryHandle = AsyncIterable<unknown> & {
@@ -170,6 +173,8 @@ export class SidecarSession {
   private queuedMessages: unknown[] = [];
   private waitingResolvers: Array<(msg: unknown) => void> = [];
   private pendingPermissions = new Map<string, PendingPermission>();
+  // App tool calls waiting for the app's answer, by request id.
+  private pendingApp = new Map<string, (answer: AppAnswer) => void>();
   private abortController = new AbortController();
   private started = false;
   private shuttingDown = false;
@@ -294,9 +299,18 @@ export class SidecarSession {
         }
         return;
       }
+      case "app_response": {
+        const resolve = this.pendingApp.get(command.request_id);
+        if (!resolve) return;
+        this.pendingApp.delete(command.request_id);
+        resolve({ output: command.output, is_error: command.is_error });
+        return;
+      }
       case "shutdown":
         this.shuttingDown = true;
         this.abortController.abort();
+        for (const resolve of this.pendingApp.values()) resolve({ output: "Sidecar is shutting down", is_error: true });
+        this.pendingApp.clear();
         for (const pending of this.pendingPermissions.values()) {
           pending.resolve({ behavior: "deny", message: "Sidecar is shutting down" });
         }
@@ -304,6 +318,20 @@ export class SidecarSession {
         return;
     }
   }
+
+  /** Asks the app to run one of its tools and waits for the answer (at most a minute). */
+  readonly askApp = (tool: string, input: Record<string, unknown>): Promise<AppAnswer> =>
+    new Promise((resolve) => {
+      const requestId = randomUUID();
+      const timer = setTimeout(() => {
+        if (this.pendingApp.delete(requestId)) resolve({ output: "The app did not answer in time.", is_error: true });
+      }, APP_ANSWER_TIMEOUT_MS);
+      this.pendingApp.set(requestId, (answer) => {
+        clearTimeout(timer);
+        resolve(answer);
+      });
+      this.emit({ type: "app_request", request_id: requestId, tool, input });
+    });
 
   private async askTitle(): Promise<void> {
     const text = this.titleText;
@@ -434,7 +462,7 @@ export class SidecarSession {
     const generativeUi = command.generative_ui === true;
     // Forge's own tools never ask. They are approved here, not in `allowedTools`, because the SDK warns
     // that a bare `allowedTools` entry shadows `canUseTool`.
-    const ownTools = new Set([...(turnTools ? [UPDATE_PLAN_TOOL, WRAP_UP_TOOL, MARK_CHAPTER_TOOL, START_SESSION_TOOL, DISMISS_TASK_TOOL, HAND_OFF_TOOL] : []), ...(generativeUi ? [UI_GUIDE_TOOL, GENERATE_UI_TOOL] : [])]);
+    const ownTools = new Set([...(turnTools ? [UPDATE_PLAN_TOOL, WRAP_UP_TOOL, MARK_CHAPTER_TOOL, START_SESSION_TOOL, DISMISS_TASK_TOOL, HAND_OFF_TOOL, ...READ_ONLY_APP_TOOLS] : []), ...(generativeUi ? [UI_GUIDE_TOOL, GENERATE_UI_TOOL] : [])]);
     const canUseTool = async (
       toolName: string,
       input: Record<string, unknown>,
@@ -526,7 +554,7 @@ export class SidecarSession {
                 },
               }
             : {}),
-          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer(), [SESSION_SERVER_NAME]: createSessionToolsServer(unrelatedTaskFrom(command.unrelated_task)) } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}), ...(desktopControl ? { [DESKTOP_SERVER_NAME]: createDesktopServer() } : {}) },
+          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer(), [SESSION_SERVER_NAME]: createSessionToolsServer(unrelatedTaskFrom(command.unrelated_task)), ...createAppToolsServers(this.askApp) } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}), ...(desktopControl ? { [DESKTOP_SERVER_NAME]: createDesktopServer() } : {}) },
           additionalDirectories: command.additional_directories ?? [],
           allowedTools: command.allowed_tools ?? [],
           // Variables of the environment the session starts from, over Forge's own (the SDK would

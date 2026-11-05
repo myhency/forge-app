@@ -11,6 +11,8 @@ pub enum SessionUpdate {
     /// A compaction line was added to the transcript.
     Compacted,
     SideAnswer { request_id: String, result: Result<String, String> },
+    /// Claude called one of the app's tools; the app answers it.
+    AppRequest(crate::live_session::AppRequest),
     RewindResult { request_id: String, outcome: forge_domain::RewindOutcome },
     /// A user message got its id.
     UserMessageId,
@@ -192,6 +194,7 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             SessionUpdate::TurnCompleted
         }
         SidecarEvent::OutputTokens { tokens } => SessionUpdate::OutputTokens(*tokens),
+        SidecarEvent::AppRequest { request_id, tool, input } => SessionUpdate::AppRequest(crate::live_session::AppRequest { id: request_id.clone(), tool: tool.clone(), input: input.clone() }),
         SidecarEvent::ContextUsage { total_tokens, max_tokens } => SessionUpdate::ContextUsage(ContextUsage {
             total_tokens: *total_tokens,
             max_tokens: *max_tokens,

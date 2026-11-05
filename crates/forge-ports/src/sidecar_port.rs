@@ -145,6 +145,14 @@ pub enum SidecarEvent {
     },
     /// The person stopped the turn (the SDK wrote its interrupt line).
     Interrupted,
+    /// Claude called one of the app's tools (list_sessions, set_pinned, ...); the app answers with
+    /// `answer_app_request` and the same `request_id`.
+    AppRequest {
+        request_id: String,
+        tool: String,
+        #[serde(default)]
+        input: serde_json::Value,
+    },
     /// Where the account stands against a usage limit (`allowed`, `allowed_warning`, `rejected`).
     RateLimit {
         status: String,
@@ -218,6 +226,8 @@ pub trait SidecarPort: Send + Sync {
     /// Asks a question about the conversation without adding it to the session (`/btw`). The answer
     /// comes back as a `SideAnswer` event with the same `request_id`.
     async fn ask_side_question(&self, request_id: String, question: String) -> Result<(), SidecarError>;
+    /// Answers an `AppRequest`: the tool's text, and whether it is an error.
+    async fn answer_app_request(&self, request_id: String, output: String, is_error: bool) -> Result<(), SidecarError>;
     /// Stops one background task. A refusal comes back as a `SettingFailed` event.
     async fn stop_task(&self, task_id: String) -> Result<(), SidecarError>;
     /// Asks for a mode change in the running session. The answer comes back as an event.

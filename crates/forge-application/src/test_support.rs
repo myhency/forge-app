@@ -30,6 +30,7 @@ pub(crate) enum Call {
     Answer(String, std::collections::BTreeMap<String, String>),
     Interrupt,
     SideQuestion(String, String),
+    AppAnswer(String, String, bool),
     Rewind(String, String, bool),
     StopTask(String),
     SetMode(PermissionMode),
@@ -167,6 +168,11 @@ impl SidecarPort for FakeSidecar {
 
     async fn ask_side_question(&self, request_id: String, question: String) -> Result<(), SidecarError> {
         self.control.record(Call::SideQuestion(request_id, question));
+        Ok(())
+    }
+
+    async fn answer_app_request(&self, request_id: String, output: String, is_error: bool) -> Result<(), SidecarError> {
+        self.control.record(Call::AppAnswer(request_id, output, is_error));
         Ok(())
     }
 
