@@ -592,6 +592,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Pick an environment 1…9", "환경 선택 1…9"),
     ("Pick the message to go back to.", "되돌아갈 메시지를 고르세요."),
     ("Pin", "고정"),
+    ("Pinned", "고정됨"),
     ("Plan", "계획"),
     ("Plan mode", "계획"),
     ("Plan proposed", "계획 제안됨"),

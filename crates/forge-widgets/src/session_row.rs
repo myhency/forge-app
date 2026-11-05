@@ -57,6 +57,7 @@ pub fn SessionRow(
     let mut mode = use_signal(|| RowMode::Normal);
     let actions = entry.actions();
     let session_id = entry.session_id.clone();
+    let pinned = session_id.as_ref().is_some_and(|id| workspace.is_pinned(&project, id));
     // A new session that runs before Claude has named it: the desktop app draws a shimmering bar
     // in place of the title until the name comes (round 37).
     let naming = match &entry.key {
@@ -227,6 +228,7 @@ pub fn SessionRow(
                         active,
                         shown,
                         naming,
+                        pinned,
                         onclick: click,
                         {buttons}
                     }
@@ -300,10 +302,39 @@ pub fn SessionRow(
                                             event.prevent_default();
                                             mode.set(RowMode::ConfirmingDelete);
                                         }
+                                        Some(MenuKeyAction::TogglePin) => {
+                                            event.stop_propagation();
+                                            event.prevent_default();
+                                            if let Some(id) = session_id.clone() {
+                                                workspace.toggle_pin(project.clone(), id);
+                                            }
+                                            mode.set(RowMode::Normal);
+                                            refocus_workspace();
+                                        }
                                         None => {}
                                     }
                                 }
                             },
+                            // The desktop app's first group: 고정 P (고정 해제 on a pinned row).
+                            if actions.can_rename {
+                                button {
+                                    class: "row-menu-item",
+                                    onclick: {
+                                        let project = project.clone();
+                                        let session_id = session_id.clone();
+                                        move |_| {
+                                            if let Some(id) = session_id.clone() {
+                                                workspace.toggle_pin(project.clone(), id);
+                                            }
+                                            mode.set(RowMode::Normal);
+                                            refocus_workspace();
+                                        }
+                                    },
+                                    span { if pinned { {tr!("Unpin")} } else { {tr!("Pin")} } }
+                                    span { class: "menu-key", "P" }
+                                }
+                                div { class: "row-menu-separator" }
+                            }
                             if actions.can_rename {
                                 button {
                                     class: "row-menu-item",

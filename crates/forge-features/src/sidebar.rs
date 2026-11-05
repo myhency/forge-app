@@ -105,6 +105,8 @@ pub enum MenuKeyAction {
     Fork,
     Delete,
     ToggleArchive,
+    /// P pins or unpins (the desktop app's `고정 P`).
+    TogglePin,
 }
 
 /// The single letters the menu shows: R renames, F forks, A archives or unarchives, D deletes (Claude Code desktop's menu keys). A key
@@ -122,6 +124,7 @@ pub fn menu_key_action(code: &str, modified: bool, actions: RowActions) -> Optio
         "KeyF" if actions.can_fork => Some(MenuKeyAction::Fork),
         "KeyA" if actions.archive != ArchiveAction::Unavailable => Some(MenuKeyAction::ToggleArchive),
         "KeyD" if actions.delete == DeleteAction::Allowed => Some(MenuKeyAction::Delete),
+        "KeyP" if actions.can_rename => Some(MenuKeyAction::TogglePin),
         _ => None,
     }
 }

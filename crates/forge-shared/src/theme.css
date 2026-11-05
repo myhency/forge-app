@@ -195,6 +195,8 @@ button:not(:disabled):active { scale: 0.98; }
 .offer-started:hover { background: var(--bg-hover); }
 .offer-started-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chapter-heading { margin-top: var(--sp-10); font-weight: var(--weight-semibold); color: var(--fg); scroll-margin-top: var(--sp-16); }
+.pinned-heading { cursor: default; }
+.pinned-mark { flex: none; display: inline-flex; color: var(--fg-muted); }
 .attention-dot { flex: none; width: 8px; height: 8px; margin-left: auto; border-radius: var(--r-round); background: var(--warning); }
 .attention-dot.naming { background: var(--fg-muted); opacity: 0.5; }
 .sidebar-item.active { background: var(--sidebar-active, var(--bg-hover)); }

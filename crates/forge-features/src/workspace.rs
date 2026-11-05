@@ -450,6 +450,22 @@ impl Workspace {
         self.save_prefs();
     }
 
+    /// Whether the session is pinned (`고정`).
+    pub fn is_pinned(&self, project: &Path, session: &SessionId) -> bool {
+        self.prefs.read().pinned.iter().any(|pin| pin.project == project && pin.session_id == session.0)
+    }
+
+    /// Pins or unpins a session; pinned sessions sit in the `고정됨` group at the top of the sidebar.
+    pub fn toggle_pin(&self, project: PathBuf, session: SessionId) {
+        self.update_prefs(|prefs| {
+            if let Some(at) = prefs.pinned.iter().position(|pin| pin.project == project && pin.session_id == session.0) {
+                prefs.pinned.remove(at);
+            } else {
+                prefs.pinned.push(forge_domain::ArchivedRef { project, session_id: session.0 });
+            }
+        });
+    }
+
     /// Changes the preferences on screen only (a drag changes the width many times); call
     /// `save_prefs` when it ends.
     pub fn change_prefs_unsaved(&self, change: impl FnOnce(&mut SidebarPrefs)) {

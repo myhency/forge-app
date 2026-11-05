@@ -86,6 +86,8 @@ pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: Transcript
                                 workspace.archive_active();
                             }
                             MenuKeyAction::Delete => page.set(MenuPage::ConfirmDelete),
+                            // Pinning is a sidebar row's; the title menu has no 고정.
+                            MenuKeyAction::TogglePin => {}
                         }
                     },
                     match page() {

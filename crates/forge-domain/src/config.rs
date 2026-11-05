@@ -89,6 +89,9 @@ pub struct SidebarPrefs {
     pub collapsed: Vec<String>,
     pub width: u32,
     pub hidden: bool,
+    /// Pinned sessions, in the order pinned: the desktop app's `고정` lists them in a `고정됨` group at
+    /// the top of the sidebar.
+    pub pinned: Vec<ArchivedRef>,
 }
 
 impl Default for SidebarPrefs {
@@ -104,6 +107,7 @@ impl Default for SidebarPrefs {
             collapsed: Vec::new(),
             width: DEFAULT_SIDEBAR_WIDTH,
             hidden: false,
+            pinned: Vec::new(),
         }
     }
 }

@@ -120,7 +120,26 @@ pub fn Sidebar() -> Element {
     let workspace = use_workspace();
     let _filter_ui = use_filter_ui_provider();
     let prefs = workspace.prefs();
-    let groups = workspace.arranged_sidebar(forge_features::now_local());
+    let mut groups = workspace.arranged_sidebar(forge_features::now_local());
+    // Pinned sessions leave their group for the `고정됨` group at the top, in the order pinned (the
+    // desktop app's 고정, observed 2026-11-06). A group that only held pinned sessions goes.
+    let mut pinned_items: Vec<forge_features::ArrangedEntry> = Vec::new();
+    for group in groups.iter_mut() {
+        let before = group.entries.len();
+        group.entries.retain(|item| {
+            let pinned = item.depth == 0 && item.entry.session_id.as_ref().is_some_and(|id| workspace.is_pinned(&item.project.path, id));
+            if pinned {
+                pinned_items.push(item.clone());
+            }
+            !pinned
+        });
+        if before > 0 && group.entries.is_empty() {
+            group.id.clear();
+        }
+    }
+    groups.retain(|group| !group.id.is_empty());
+    let pin_order = prefs.pinned.clone();
+    pinned_items.sort_by_key(|item| pin_order.iter().position(|pin| Some(pin.session_id.as_str()) == item.entry.session_id.as_ref().map(|id| id.0.as_str())).unwrap_or(usize::MAX));
     // Headings of folder groups are told apart when two folders share a name; rows in a date
     // list show their folder's plain name.
     let paths: Vec<PathBuf> = groups
@@ -192,6 +211,34 @@ pub fn Sidebar() -> Element {
             if groups.is_empty() {
                 // Without a session there is no heading to carry the menu, and the empty groups may be what the person wants.
                 div { class: "sidebar-group-header empty", FilterButton {} }
+            }
+            if !pinned_items.is_empty() {
+                div { class: "pinned-group",
+                    div { class: "sidebar-group-header",
+                        span { class: "group-toggle pinned-heading",
+                            span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true } }
+                            span { class: "sidebar-group-title", {tr!("Pinned")} }
+                        }
+                    }
+                    for item in pinned_items.iter() {
+                        SessionRow {
+                            key: "pin-{item.entry.key.dom_key()}",
+                            project: item.project.path.clone(),
+                            entry: item.entry.clone(),
+                            active: matches!(&item.entry.key, EntryKey::Live(id) if active == Active::Live(*id)),
+                            onopen: {
+                                let project = item.project.clone();
+                                let key = item.entry.key.clone();
+                                move |beside: bool| match (&key, beside) {
+                                    (EntryKey::Live(id), false) => workspace.open_session(*id),
+                                    (EntryKey::Live(id), true) => workspace.add_session(*id),
+                                    (EntryKey::Past { session, .. }, false) => workspace.open_past_clicked(project.clone(), session.clone()),
+                                    (EntryKey::Past { session, .. }, true) => workspace.add_past(project.clone(), session.clone()),
+                                }
+                            },
+                        }
+                    }
+                }
             }
             for group in groups {
                 div { key: "{group.id}",

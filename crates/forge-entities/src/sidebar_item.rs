@@ -25,6 +25,8 @@ pub fn SidebarItem(
     #[props(default)] archived: bool,
     /// Claude has not named the session yet: a shimmering bar stands in for the title.
     #[props(default)] naming: bool,
+    /// A pinned row (the `고정됨` group) wears a code mark before its title, as in the desktop app.
+    #[props(default)] pinned: bool,
     onclick: EventHandler<MouseEvent>,
     #[props(default)] children: Element,
 ) -> Element {
@@ -35,6 +37,9 @@ pub fn SidebarItem(
     };
     rsx! {
         div { class, onclick: move |evt| onclick.call(evt),
+            if pinned {
+                span { class: "pinned-mark", Icon { kind: IconKind::Code, size: IconSize::Small } }
+            }
             if archived {
                 span { class: "archived-mark", title: tr!("Archived"), Icon { kind: IconKind::Archive, size: IconSize::Small } }
             }
