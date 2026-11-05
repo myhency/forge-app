@@ -435,6 +435,7 @@ pub static KO: &[(&str, &str)] = &[
     ("May", "5월"),
     ("Medium", "중간"),
     ("Memory", "메모리"),
+    ("Memory files", "메모리 파일"),
     ("Messages", "메시지"),
     ("Metadata", "메타데이터"),
     ("Mine", "내 항목"),

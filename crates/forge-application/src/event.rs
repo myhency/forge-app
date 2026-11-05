@@ -196,13 +196,14 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             total_tokens: *total_tokens,
             max_tokens: *max_tokens,
         }),
-        SidecarEvent::ContextDetail { categories, mcp_tools, agents } => SessionUpdate::ContextDetail(ContextBreakdown {
+        SidecarEvent::ContextDetail { categories, mcp_tools, agents, memory_files } => SessionUpdate::ContextDetail(ContextBreakdown {
             rows: categories
                 .iter()
                 .filter_map(|c| Some(ContextRow { name: c.name.clone(), tokens: c.tokens, kind: ContextKind::from_sdk(&c.kind)? }))
                 .collect(),
             mcp_tools: mcp_tools.iter().map(context_item).collect(),
             agents: agents.iter().map(context_item).collect(),
+            memory_files: memory_files.iter().map(context_item).collect(),
         }),
         SidecarEvent::McpStatus { servers } => SessionUpdate::McpStatus(
             servers

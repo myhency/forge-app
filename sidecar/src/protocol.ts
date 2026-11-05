@@ -100,6 +100,7 @@ export type SidecarEvent =
       categories: Array<{ name: string; tokens: number; kind: string }>;
       mcp_tools: Array<{ server: string; name: string; tokens: number }>;
       agents: Array<{ name: string; tokens: number }>;
+      memory_files: Array<{ name: string; tokens: number }>;
     }
   | {
       type: "mcp_status";

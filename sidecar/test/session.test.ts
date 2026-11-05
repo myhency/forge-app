@@ -627,6 +627,7 @@ describe("SidecarSession", () => {
             { name: "Read", serverName: "Claude Docs", tokens: 90 },
           ],
           agents: [{ agentType: "Explore", source: "built-in", tokens: 80 }],
+          memoryFiles: [{ path: "/w/forge/CLAUDE.md", type: "Project", tokens: 4500.4 }],
         }),
       }),
       (e) => events.push(e),
@@ -646,6 +647,7 @@ describe("SidecarSession", () => {
         { server: "Claude Docs", name: "Read", tokens: 90 },
       ],
       agents: [{ name: "Explore", tokens: 80 }],
+      memory_files: [{ name: "/w/forge/CLAUDE.md", tokens: 4500 }],
     });
   });
 
@@ -801,6 +803,7 @@ describe("SidecarSession", () => {
       categories: [{ name: "Messages", tokens: 13, kind: "used" }],
       mcp_tools: [{ server: "Docs", name: "Make", tokens: 3 }],
       agents: [{ name: "Explore", tokens: 8 }],
+      memory_files: [],
     });
   });
 

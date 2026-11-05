@@ -100,6 +100,9 @@ pub enum SidecarEvent {
         mcp_tools: Vec<ContextItemReport>,
         #[serde(default)]
         agents: Vec<ContextItemReport>,
+        /// The memory files (CLAUDE.md and the like) loaded into the context, by path.
+        #[serde(default)]
+        memory_files: Vec<ContextItemReport>,
     },
     /// The state of every MCP server, sent after each `TurnComplete`; each event replaces the earlier one.
     McpStatus { servers: Vec<McpServerReport> },
@@ -325,6 +328,7 @@ mod tests {
                 categories: vec![ContextCategory { name: "Messages".to_string(), tokens: 20_100, kind: "used".to_string() }],
                 mcp_tools: vec![ContextItemReport { server: Some("Claude Docs".to_string()), name: "Make".to_string(), tokens: 152 }],
                 agents: vec![ContextItemReport { server: None, name: "Explore".to_string(), tokens: 80 }],
+                memory_files: vec![],
             }
         );
     }

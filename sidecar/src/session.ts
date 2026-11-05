@@ -19,6 +19,7 @@ export type QueryHandle = AsyncIterable<unknown> & {
     categories?: Array<{ name: string; tokens: number; kind: string }>;
     mcpTools?: Array<{ name: string; serverName: string; tokens: number }>;
     agents?: Array<{ agentType: string; tokens: number }>;
+    memoryFiles?: Array<{ path: string; tokens: number }>;
   }>;
   mcpServerStatus?: () => Promise<
     Array<{
@@ -654,7 +655,10 @@ export class SidecarSession {
     const agents = (Array.isArray(context.agents) ? context.agents : [])
       .filter((a) => a && typeof a.agentType === "string" && tokensOk(a.tokens))
       .map((a) => ({ name: a.agentType, tokens: Math.round(a.tokens) }));
-    this.emit({ type: "context_detail", categories, mcp_tools, agents });
+    const memory_files = (Array.isArray(context.memoryFiles) ? context.memoryFiles : [])
+      .filter((m) => m && typeof m.path === "string" && tokensOk(m.tokens))
+      .map((m) => ({ name: m.path, tokens: Math.round(m.tokens) }));
+    this.emit({ type: "context_detail", categories, mcp_tools, agents, memory_files });
   }
 
   // Same rule as the context value: a failure or a slow answer only means no event this turn.

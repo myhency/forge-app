@@ -44,6 +44,8 @@ pub struct ContextCardView {
     pub deferred: Vec<ContextRowView>,
     pub mcp_tools: Vec<ContextItemView>,
     pub agents: Vec<ContextItemView>,
+    /// The memory files in the context, by file name (the desktop app's `메모리 파일` fold).
+    pub memory_files: Vec<ContextItemView>,
     /// The used part of the window in per-mille, for the folded card's small bar.
     pub folded_bar: u16,
 }
@@ -77,6 +79,17 @@ fn strip_mcp_prefix<'a>(name: &'a str, server: &str) -> &'a str {
     match name.strip_prefix("mcp__").and_then(|r| r.split_once("__")) {
         Some((_, rest)) if !rest.is_empty() => rest,
         _ => name,
+    }
+}
+
+/// A memory file by its folder and name (`forge/CLAUDE.md`, `.claude/CLAUDE.md`): most are named
+/// CLAUDE.md, so the name alone would not tell them apart.
+fn memory_label(path: &str) -> String {
+    let mut parts = path.rsplit(['/', '\\']).filter(|part| !part.is_empty());
+    match (parts.next(), parts.next()) {
+        (Some(name), Some(folder)) => format!("{folder}/{name}"),
+        (Some(name), None) => name.to_string(),
+        _ => path.to_string(),
     }
 }
 
@@ -134,6 +147,7 @@ pub fn context_card(usage: Option<ContextUsage>, detail: Option<&ContextBreakdow
         deferred,
         mcp_tools: detail.mcp_tools.iter().map(item_view).collect(),
         agents: detail.agents.iter().map(item_view).collect(),
+        memory_files: detail.memory_files.iter().map(|item| ContextItemView { label: memory_label(&item.name), tokens: format_tokens_short(item.tokens) }).collect(),
         folded_bar: per_mille(used_total, window) as u16,
     })
 }
@@ -282,11 +296,18 @@ mod tests {
     }
 
     fn detail(rows: Vec<ContextRow>) -> ContextBreakdown {
-        ContextBreakdown { rows, mcp_tools: vec![], agents: vec![] }
+        ContextBreakdown { rows, mcp_tools: vec![], agents: vec![], memory_files: vec![] }
     }
 
     fn server(name: &str, status: McpStatus, scope: Option<&str>) -> McpServerState {
         McpServerState { name: name.into(), status, scope: scope.map(String::from), source: None, remote: None, tool_count: 0, error: None }
+    }
+
+    #[test]
+    fn a_memory_file_is_named_by_its_folder_and_name() {
+        assert_eq!(memory_label("/Users/me/work/forge/CLAUDE.md"), "forge/CLAUDE.md");
+        assert_eq!(memory_label("/Users/me/.claude/CLAUDE.md"), ".claude/CLAUDE.md");
+        assert_eq!(memory_label("CLAUDE.md"), "CLAUDE.md");
     }
 
     #[test]

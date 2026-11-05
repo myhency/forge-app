@@ -41,6 +41,8 @@ pub struct ContextBreakdown {
     pub rows: Vec<ContextRow>,
     pub mcp_tools: Vec<ContextItem>,
     pub agents: Vec<ContextItem>,
+    /// The memory files in the context: the path as the name.
+    pub memory_files: Vec<ContextItem>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
