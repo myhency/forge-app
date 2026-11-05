@@ -171,8 +171,10 @@ pub enum RowLink {
 pub fn row_link(name: &str) -> Option<RowLink> {
     const MCP_TOOLS: &str = "MCP tools";
     const SKILLS: &str = "Skills";
+    // Underlined in the desktop app too (2026-11-06).
+    const MCP_INSTRUCTIONS: &str = "MCP server instructions";
     match name {
-        MCP_TOOLS => Some(RowLink::Connectors),
+        MCP_TOOLS | MCP_INSTRUCTIONS => Some(RowLink::Connectors),
         SKILLS => Some(RowLink::Skills),
         _ => None,
     }
@@ -313,6 +315,7 @@ mod tests {
     #[test]
     fn only_the_mcp_tools_and_skills_rows_link() {
         assert_eq!(row_link("MCP tools"), Some(RowLink::Connectors));
+        assert_eq!(row_link("MCP server instructions"), Some(RowLink::Connectors));
         assert_eq!(row_link("Skills"), Some(RowLink::Skills));
         assert_eq!(row_link("Messages"), None);
         assert_eq!(row_link("MCP tools (deferred)"), None);
