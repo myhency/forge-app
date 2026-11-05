@@ -257,6 +257,7 @@ mod tests {
             turn_tools: false,
             generative_ui: false,
             desktop_control: true,
+            unrelated_task: forge_domain::UnrelatedTask::Ask,
         };
         let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params)).unwrap();
         assert_eq!(json["output_style"], serde_json::json!("Concise"));

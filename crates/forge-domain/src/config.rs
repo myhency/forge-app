@@ -368,6 +368,9 @@ pub struct AppConfig {
     /// next-step card at the end of a turn.
     #[serde(default = "default_true")]
     pub turn_tools: bool,
+    /// What Claude does when asked for something unrelated to the session's work.
+    #[serde(default, deserialize_with = "lenient")]
+    pub unrelated_task: crate::UnrelatedTask,
     /// Whether Claude gets the `generate_sandboxed_ui` tool: an interactive page drawn in the chat.
     #[serde(default = "default_generative_ui")]
     pub generative_ui: bool,
@@ -475,6 +478,7 @@ impl Default for AppConfig {
             dynamic_workflows: false,
             auto_memory: true,
             turn_tools: true,
+            unrelated_task: crate::UnrelatedTask::Ask,
             generative_ui: default_generative_ui(),
             desktop_control: false,
             appearance: Appearance::default(),
@@ -669,6 +673,7 @@ mod tests {
             collapsed: vec!["folder:/work/a".to_string()],
             width: 300,
             hidden: true,
+            pinned: Vec::new(),
         };
         let config = AppConfig { sidebar: prefs.clone(), ..AppConfig::default() };
 

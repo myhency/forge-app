@@ -369,6 +369,7 @@ mod tests {
             collapsed: vec!["folder:/a".to_string()],
             width: 300,
             hidden: true,
+            pinned: Vec::new(),
         };
 
         FilterChoice::Reset.apply(&mut prefs);

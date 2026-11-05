@@ -59,7 +59,7 @@ pub use plugin_catalog::{plugin_id, split_plugin_id, Marketplace, PluginEntry, P
 pub use skill_catalog::{skill_id, SkillEntry, SkillFile, SkillFileList, SkillOrigin, SkillSnapshot};
 pub use auto_mode_model::AutoModeModel;
 pub use output_style::OutputStyle;
-pub use session_defaults::SessionDefaults;
+pub use session_defaults::{SessionDefaults, UnrelatedTask};
 pub use rate_limit::{local_moment, LocalMoment, RateLevel, RateLimit, RateWindow};
 pub use transcript_view::TranscriptView;
 pub use permission::{PermissionDecision, PermissionMode};
