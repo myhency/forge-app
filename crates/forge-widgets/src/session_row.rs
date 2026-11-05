@@ -58,6 +58,7 @@ pub fn SessionRow(
     let actions = entry.actions();
     let session_id = entry.session_id.clone();
     let pinned = session_id.as_ref().is_some_and(|id| workspace.is_pinned(&project, id));
+    let unread = session_id.as_ref().is_some_and(|id| workspace.is_unread(id));
     // A new session that runs before Claude has named it: the desktop app draws a shimmering bar
     // in place of the title until the name comes (round 37).
     let naming = match &entry.key {
@@ -229,6 +230,7 @@ pub fn SessionRow(
                         shown,
                         naming,
                         pinned,
+                        unread,
                         onclick: click,
                         {buttons}
                     }
@@ -302,6 +304,15 @@ pub fn SessionRow(
                                             event.prevent_default();
                                             mode.set(RowMode::ConfirmingDelete);
                                         }
+                                        Some(MenuKeyAction::ToggleUnread) => {
+                                            event.stop_propagation();
+                                            event.prevent_default();
+                                            if let Some(id) = session_id.clone() {
+                                                workspace.toggle_unread(id);
+                                            }
+                                            mode.set(RowMode::Normal);
+                                            refocus_workspace();
+                                        }
                                         Some(MenuKeyAction::TogglePin) => {
                                             event.stop_propagation();
                                             event.prevent_default();
@@ -332,6 +343,21 @@ pub fn SessionRow(
                                     },
                                     span { if pinned { {tr!("Unpin")} } else { {tr!("Pin")} } }
                                     span { class: "menu-key", "P" }
+                                }
+                                button {
+                                    class: "row-menu-item",
+                                    onclick: {
+                                        let session_id = session_id.clone();
+                                        move |_| {
+                                            if let Some(id) = session_id.clone() {
+                                                workspace.toggle_unread(id);
+                                            }
+                                            mode.set(RowMode::Normal);
+                                            refocus_workspace();
+                                        }
+                                    },
+                                    span { if unread { {tr!("Mark as read")} } else { {tr!("Mark as unread")} } }
+                                    span { class: "menu-key", "U" }
                                 }
                                 div { class: "row-menu-separator" }
                             }

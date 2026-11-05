@@ -107,6 +107,8 @@ pub enum MenuKeyAction {
     ToggleArchive,
     /// P pins or unpins (the desktop app's `고정 P`).
     TogglePin,
+    /// U marks the session unread or read (the desktop app's `읽지 않음으로 표시 U`).
+    ToggleUnread,
 }
 
 /// The single letters the menu shows: R renames, F forks, A archives or unarchives, D deletes (Claude Code desktop's menu keys). A key
@@ -125,6 +127,7 @@ pub fn menu_key_action(code: &str, modified: bool, actions: RowActions) -> Optio
         "KeyA" if actions.archive != ArchiveAction::Unavailable => Some(MenuKeyAction::ToggleArchive),
         "KeyD" if actions.delete == DeleteAction::Allowed => Some(MenuKeyAction::Delete),
         "KeyP" if actions.can_rename => Some(MenuKeyAction::TogglePin),
+        "KeyU" if actions.can_rename => Some(MenuKeyAction::ToggleUnread),
         _ => None,
     }
 }

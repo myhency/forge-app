@@ -205,6 +205,9 @@ pub struct Workspace {
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
     /// What became of each session's end cards (by the `wrap_up` call's id): closed, or already sent.
     end_card_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::CardMark>>>,
+    /// Sessions with a reply the person has not looked at, by Claude session id (the desktop app's blue
+    /// dot and `읽지 않음으로 표시`); kept while the app runs.
+    unread: Signal<std::collections::HashSet<String>>,
     /// Folders whose start-line environment hint the person put off; kept while the app runs.
     env_hint_dismissed: Signal<std::collections::HashSet<PathBuf>>,
     /// What became of each session's proposed-session cards, by the `start_session` call's id.
@@ -325,6 +328,7 @@ pub fn use_workspace_provider() -> Workspace {
             end_card_marks: root_signal(HashMap::new()),
             offer_marks: root_signal(HashMap::new()),
             env_hint_dismissed: root_signal(std::collections::HashSet::new()),
+            unread: root_signal(std::collections::HashSet::new()),
             offer_sessions: root_signal(HashMap::new()),
             local_cards: root_signal(HashMap::new()),
             stats_cards: root_signal(HashMap::new()),
@@ -448,6 +452,28 @@ impl Workspace {
     pub fn update_prefs(&self, change: impl FnOnce(&mut SidebarPrefs)) {
         self.change_prefs_unsaved(change);
         self.save_prefs();
+    }
+
+    /// Whether the session has a reply the person has not looked at.
+    pub fn is_unread(&self, session: &SessionId) -> bool {
+        self.unread.read().contains(&session.0)
+    }
+
+    /// Marks a session read or unread by hand (the row menu's `읽지 않음으로 표시 U`).
+    pub fn toggle_unread(&self, session: SessionId) {
+        let mut unread = self.unread;
+        let mut set = unread.write();
+        if !set.remove(&session.0) {
+            set.insert(session.0);
+        }
+    }
+
+    /// An open session finished a reply while the person looked elsewhere.
+    pub fn mark_unread_live(&self, id: LiveSessionId) {
+        if let Some(session) = self.live_view(id).and_then(|view| view.peek().claude_session_id.clone()) {
+            let mut unread = self.unread;
+            unread.write().insert(session.0);
+        }
     }
 
     /// Whether the session is pinned (`고정`).
@@ -2461,6 +2487,13 @@ impl Workspace {
     fn display(&self, to: Active) {
         self.close_lightbox();
         if let Active::Live(id) = to {
+            // Looking at a session reads it.
+            if let Some(session) = self.live_view(id).and_then(|view| view.peek().claude_session_id.clone()) {
+                if self.unread.peek().contains(&session.0) {
+                    let mut unread = self.unread;
+                    unread.write().remove(&session.0);
+                }
+            }
             // A routine's session the person opens stays open: what they type or edit in it must not be
             // closed away by the routine timer.
             self.services.peek().routines.host.keep_open(id);

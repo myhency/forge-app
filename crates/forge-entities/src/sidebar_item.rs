@@ -27,6 +27,8 @@ pub fn SidebarItem(
     #[props(default)] naming: bool,
     /// A pinned row (the `고정됨` group) wears a code mark before its title, as in the desktop app.
     #[props(default)] pinned: bool,
+    /// A reply the person has not looked at: a blue dot at the row's right end (the desktop app's).
+    #[props(default)] unread: bool,
     onclick: EventHandler<MouseEvent>,
     #[props(default)] children: Element,
 ) -> Element {
@@ -69,6 +71,8 @@ pub fn SidebarItem(
                 span { class: "attention-dot", title: tr!("Needs input") }
             } else if naming {
                 span { class: "attention-dot naming" }
+            } else if unread {
+                span { class: "attention-dot unread", title: tr!("Unread") }
             }
             {children}
         }

@@ -128,6 +128,10 @@ pub fn use_session_notices(workspace: Workspace, settings: Settings) {
                     let config = settings.saved_config();
                     let focused = document::eval("return document.hasFocus();").join::<bool>().await.unwrap_or(true);
                     let in_view = focused && workspace.active() == Active::Live(id);
+                    // A reply the person did not see leaves the row unread (the desktop app's blue dot).
+                    if notice == Notice::ReplyDone && workspace.active() != Active::Live(id) {
+                        workspace.mark_unread_live(id);
+                    }
                     if !should_send(notice, &config.notifications, in_view) {
                         continue;
                     }
