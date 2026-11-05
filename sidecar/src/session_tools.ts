@@ -24,7 +24,33 @@ const START_SESSION_DESCRIPTION = [
   "prompt is the brief and must stand alone: the task, the files or area, and what done looks like. background (optional, at least a few sentences) is what the new session needs to know from this conversation; it is sent before the prompt.",
 ].join("\n\n");
 
-export function sessionToolDefinitions(): SdkMcpToolDefinition<any>[] {
+/** The desktop app's `관련 없는 작업을 요청할 때` setting: what to do when the user asks for something
+ *  unrelated to this session's work. */
+export type UnrelatedTask = "ask" | "here" | "new_session";
+
+/** The system prompt section that tells Claude how to treat unrelated work, after the desktop app's
+ *  own (read from a desktop session's request, 2026-11-06): a request is a "new task" when a fresh
+ *  session would do it as well from the user's words alone; such a turn starts with a title-only
+ *  `start_session` offer and nothing else, and the app does the rest (a card, or a session started at
+ *  once). With `항상 여기서 실행` there is no section: the work stays here. */
+export function unrelatedTaskPrompt(unrelated: UnrelatedTask): string {
+  if (unrelated === "here") return "";
+  return [
+    "# Unrelated requests (this app)",
+    `Before you start on a request, decide what it is to this session. Until you have finished a task here, it is the session's first task. After that, a request is a "new task" when it is unrelated work: a fresh session would do it just as well from the user's words alone, because it builds on nothing done, found or decided in this conversation. Everything else stays here: corrections, follow-ups, questions, the next iteration of the work here, going ahead with what you just investigated or suggested, and anything a few tool calls settle. When you are unsure, it stays here.`,
+    `A new-task turn, and any turn where the user names a task and asks you to split it off or make a separate session for it, does not start on the work: its first and only tool call is \`${START_SESSION_TOOL}\` with initiation "offer" and a title, no prompt or background, so the app can act on it at once. ${
+      unrelated === "new_session"
+        ? "The app then starts the new session with the user's words; say so in one short sentence and end the turn."
+        : "The app then shows the user a card to start it in a new session or do it here; say so in one short sentence and end the turn."
+    }`,
+  ].join("\n\n");
+}
+
+export function unrelatedTaskFrom(value: unknown): UnrelatedTask {
+  return value === "here" || value === "new_session" ? value : "ask";
+}
+
+export function sessionToolDefinitions(unrelated: UnrelatedTask = "ask"): SdkMcpToolDefinition<any>[] {
   const markChapter = tool(
     "mark_chapter",
     MARK_CHAPTER_DESCRIPTION,
@@ -47,19 +73,27 @@ export function sessionToolDefinitions(): SdkMcpToolDefinition<any>[] {
     {
       initiation: z.enum(["user_asked", "own_initiative", "offer"]).optional().describe('"own_initiative" for work you propose yourself; "user_asked" or "offer" when the user asked for a separate session. Every kind is shown as a card the user starts.'),
       title: z.string().describe("Under 60 chars; an imperative action phrase naming the task. Shown on the card and as the new session's first line."),
-      prompt: z.string().describe("The brief: the task, the files or area, what done looks like. Self-contained."),
+      prompt: z.string().optional().describe('The brief: the task, the files or area, what done looks like. Self-contained. Left out only for an "offer" of the user\'s own unrelated request, which starts with their words.'),
       background: z.string().optional().describe("What the new session needs to know from this conversation; sent before the prompt."),
       context: z.enum(["fresh", "fork"]).optional().describe('Only "fresh" is supported here: the new session gets your background and prompt only.'),
     },
     async (args) => {
-      if (args.title.trim() === "" || args.prompt.trim() === "") {
+      const prompt = (args.prompt ?? "").trim();
+      if (args.title.trim() === "" || (prompt === "" && args.initiation !== "offer")) {
         return { content: [{ type: "text" as const, text: "A proposal needs a title and a prompt." }], isError: true };
+      }
+      const title = args.title.trim();
+      if (prompt === "" && unrelated === "new_session") {
+        return { content: [{ type: "text" as const, text: `Started "${title}" in a new session with the user's words. Say so in one short sentence and end your turn; do not do the work here.` }] };
+      }
+      if (prompt === "") {
+        return { content: [{ type: "text" as const, text: `Shown to the user as a card "${title}": they start it in a new session or have you do it here. Say so in one short sentence and end your turn; do not start the work.` }] };
       }
       return {
         content: [
           {
             type: "text" as const,
-            text: `Shown to the user as a card "${args.title.trim()}". Nothing runs until they press Start or choose to do it here; carry on with your answer.`,
+            text: `Shown to the user as a card "${title}". Nothing runs until they press Start or choose to do it here; carry on with your answer.`,
           },
         ],
       };
@@ -69,6 +103,6 @@ export function sessionToolDefinitions(): SdkMcpToolDefinition<any>[] {
   return [markChapter, startSession];
 }
 
-export function createSessionToolsServer(): McpSdkServerConfigWithInstance {
-  return createSdkMcpServer({ name: SESSION_SERVER_NAME, tools: sessionToolDefinitions(), alwaysLoad: true });
+export function createSessionToolsServer(unrelated: UnrelatedTask = "ask"): McpSdkServerConfigWithInstance {
+  return createSdkMcpServer({ name: SESSION_SERVER_NAME, tools: sessionToolDefinitions(unrelated), alwaysLoad: true });
 }

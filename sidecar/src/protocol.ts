@@ -67,6 +67,8 @@ export type SidecarCommand =
       generative_ui?: boolean;
       // Offers Claude the agent_desktop tool, asked on every call (a parent that omits it means off).
       desktop_control?: boolean;
+      // What Claude does when asked for unrelated work: "ask" (omitted), "here" or "new_session".
+      unrelated_task?: string;
     }
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision; reason?: string }

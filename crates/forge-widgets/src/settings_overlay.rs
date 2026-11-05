@@ -434,6 +434,19 @@ fn CodeSection() -> Element {
             Switch { on: settings.turn_tools(), onchange: move |on| settings.set_turn_tools(on) }
         }
         SettingRow {
+            title: tr!("When you ask for unrelated work"),
+            description: tr!("Whether Claude asks before starting a separate session, always works in the current one, or always starts a new session. Takes effect in new sessions."),
+            Select {
+                value: settings.unrelated_task().value().to_string(),
+                options: forge_domain::UnrelatedTask::ALL.into_iter().map(|choice| (choice.value().to_string(), forge_shared::i18n::text(choice.label()).to_string())).collect::<Vec<_>>(),
+                onchange: move |value: String| {
+                    if let Some(choice) = forge_domain::UnrelatedTask::from_value(&value) {
+                        settings.set_unrelated_task(choice);
+                    }
+                },
+            }
+        }
+        SettingRow {
             title: tr!("Interactive pages"),
             description: tr!("Claude can draw a small interactive page in the chat, such as a calculator or a chart, when text would explain less."),
             Switch { on: settings.generative_ui(), onchange: move |on| settings.set_generative_ui(on) }

@@ -33,6 +33,7 @@ pub enum SidecarCommand {
         turn_tools: bool,
         generative_ui: bool,
         desktop_control: bool,
+        unrelated_task: &'static str,
     },
     SendMessage {
         id: String,
@@ -147,6 +148,7 @@ impl SidecarCommand {
             turn_tools: params.defaults.turn_tools,
             generative_ui: params.defaults.generative_ui,
             desktop_control: params.defaults.desktop_control,
+            unrelated_task: params.defaults.unrelated_task.value(),
         }
     }
 
@@ -267,6 +269,7 @@ mod tests {
         assert_eq!(json["auto_mode_model"], serde_json::json!("claude-sonnet-5-5"));
         assert_eq!(json["auto_memory"], serde_json::json!(false));
         assert_eq!(json["turn_tools"], serde_json::json!(false));
+        assert_eq!(json["unrelated_task"], serde_json::json!("ask"));
         assert_eq!(json["generative_ui"], serde_json::json!(false));
         assert_eq!(json["desktop_control"], serde_json::json!(true));
     }
@@ -382,7 +385,8 @@ mod tests {
                 "auto_memory": true,
                 "turn_tools": true,
                 "generative_ui": true,
-                "desktop_control": false
+                "desktop_control": false,
+                "unrelated_task": "ask"
             })
         );
     }

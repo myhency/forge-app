@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MARK_CHAPTER_TOOL, sessionToolDefinitions, START_SESSION_TOOL } from "../src/session_tools.js";
+import { MARK_CHAPTER_TOOL, sessionToolDefinitions, START_SESSION_TOOL, unrelatedTaskFrom, unrelatedTaskPrompt } from "../src/session_tools.js";
 
 describe("session tools", () => {
   it("offer mark_chapter and start_session under the desktop app's names", () => {
@@ -23,5 +23,23 @@ describe("session tools", () => {
     expect(ok.content[0].text).toContain("Nothing runs until");
     const empty = await start.handler({ title: "Fix", prompt: " " }, {});
     expect(empty.isError).toBe(true);
+  });
+
+  it("tell Claude about unrelated requests in the system prompt, by setting", async () => {
+    expect(unrelatedTaskPrompt("ask")).toContain('initiation "offer"');
+    expect(unrelatedTaskPrompt("ask")).toContain("card");
+    expect(unrelatedTaskPrompt("new_session")).toContain("starts the new session");
+    expect(unrelatedTaskPrompt("here")).toBe("");
+    expect(unrelatedTaskFrom("nope")).toBe("ask");
+  });
+
+  it("answer a title-only offer by the setting", async () => {
+    const offer = { initiation: "offer", title: "Write fib.py" };
+    const started = await sessionToolDefinitions("new_session")[1].handler(offer, {});
+    expect(started.content[0].text).toMatch(/^Started "Write fib.py"/);
+    const card = await sessionToolDefinitions("ask")[1].handler(offer, {});
+    expect(card.content[0].text).toContain("Shown to the user as a card");
+    const ownWithoutPrompt = await sessionToolDefinitions("ask")[1].handler({ initiation: "own_initiative", title: "x" }, {});
+    expect(ownWithoutPrompt.isError).toBe(true);
   });
 });

@@ -149,6 +149,10 @@ pub struct SessionOffer {
     pub brief: String,
     /// The first line of the prompt, shown under the title.
     pub lead: String,
+    /// The person asked for unrelated work with `항상 새 세션 시작` on: the session starts by itself
+    /// instead of waiting for the card's Start (the sidecar's answer says `Started …`). An empty
+    /// `brief` means the person's own message is the brief.
+    pub auto_start: bool,
 }
 
 /// What became of a proposed session's card.
@@ -172,6 +176,10 @@ pub enum OfferAction {
     Open,
 }
 
+/// What a session started from the person's own split-off request reads before their words, so it
+/// does the work instead of splitting it off again.
+pub const SPLIT_OFF_PREAMBLE: &str = "This session was started from another session to do the request below. Do it here; do not start or propose another session for it.";
+
 /// The tool the desktop app gives Claude to propose a session; Forge offers the same name.
 pub const START_SESSION_TOOL: &str = "mcp__ccd_session__start_session";
 
@@ -183,13 +191,21 @@ pub fn session_offer(call: &ToolCall) -> Option<SessionOffer> {
     }
     let text = |key: &str| call.input.get(key).and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty());
     let title = text("title")?.to_string();
-    let prompt = text("prompt")?;
+    // A title-only "offer" is the person's own unrelated request: its brief is their message, which
+    // the workspace finds when it starts the session.
+    let prompt = match text("prompt") {
+        Some(prompt) => prompt,
+        None if text("initiation") == Some("offer") => "",
+        None => return None,
+    };
     let brief = match text("background") {
-        Some(background) => format!("{background}\n\n{prompt}"),
-        None => prompt.to_string(),
+        Some(background) if !prompt.is_empty() => format!("{background}\n\n{prompt}"),
+        _ => prompt.to_string(),
     };
     let lead = prompt.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or(prompt).trim_start_matches('#').trim().to_string();
-    Some(SessionOffer { id: call.id.clone(), title, brief, lead })
+    // With `항상 새 세션 시작` on, the sidecar answers `Started …`: the session starts by itself.
+    let auto_start = call.result.as_ref().is_some_and(|result| result.output.trim_start().starts_with("Started "));
+    Some(SessionOffer { id: call.id.clone(), title, brief, lead, auto_start })
 }
 
 /// A chapter of the session (the desktop app's `mark_chapter`, observed 2026-11-06).
@@ -1800,6 +1816,16 @@ mod tests {
         assert_eq!(card.brief, "Two tests fail.\n\nFix mean in stats.py\nThen run pytest.");
         let Item::Activity(activity) = items.iter().find(|item| matches!(item, Item::Activity(_))).unwrap() else { panic!() };
         assert_eq!(activity.rows.len(), 1);
+    }
+
+    #[test]
+    fn a_requested_session_the_sidecar_started_starts_by_itself() {
+        let mut call = ToolCall { id: "s1".into(), name: START_SESSION_TOOL.into(), input: json!({"initiation": "offer", "title": "Fix"}), result: Some(forge_domain::ToolResult { output: "Started \"Fix\" as a new session beside this one".into(), is_error: false }) };
+        let offer = session_offer(&call).unwrap();
+        assert!(offer.auto_start);
+        assert_eq!(offer.brief, "", "the person's message is the brief");
+        call.result = Some(forge_domain::ToolResult { output: "Shown to the user as a card".into(), is_error: false });
+        assert!(!session_offer(&call).unwrap().auto_start);
     }
 
     #[test]

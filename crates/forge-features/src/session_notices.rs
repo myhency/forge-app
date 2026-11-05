@@ -115,6 +115,7 @@ pub fn use_session_notices(workspace: Workspace, settings: Settings) {
                 let views = workspace.live_views();
                 before.retain(|id, _| views.iter().any(|(open, _)| open == id));
                 for (id, view) in views {
+                    workspace.start_requested_offers(id);
                     if workspace.is_routine_session(id) {
                         continue;
                     }

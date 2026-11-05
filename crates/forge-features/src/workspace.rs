@@ -1600,6 +1600,45 @@ impl Workspace {
         marks.write().entry(id).or_default().insert(call_id, mark);
     }
 
+    /// The person's message that the turn holding a tool call answered.
+    fn message_before_call(&self, id: LiveSessionId, call_id: &str) -> Option<String> {
+        let view = self.live_view(id)?;
+        let view = view.peek();
+        let messages = &view.session.messages;
+        let at = messages.iter().position(|message| message.blocks.iter().any(|block| matches!(block, forge_domain::Block::Tool(call) if call.id == call_id)))?;
+        messages[..at].iter().rev().find(|message| message.role == forge_domain::MessageRole::User).map(|message| message.text()).filter(|text| !text.trim().is_empty())
+    }
+
+    /// Starts, once, every session Claude started for the person with `항상 새 세션 시작` on: a
+    /// `start_session` call in the running turn that the sidecar answered with `Started …` and no card
+    /// mark yet.
+    pub fn start_requested_offers(&self, id: LiveSessionId) {
+        // A session an offer started never starts one by itself: one split-off request must not chain.
+        if self.offer_sessions.peek().values().any(|child| *child == id) {
+            return;
+        }
+        let Some(view) = self.live_view(id) else { return };
+        let offers: Vec<forge_entities::SessionOffer> = {
+            let view = view.peek();
+            // Only the running turn's calls: a reopened session must not start its old proposals again.
+            if view.phase != forge_application::Phase::Running {
+                return;
+            }
+            let turn_start = view.session.messages.iter().rposition(|message| message.role == forge_domain::MessageRole::User).unwrap_or(0);
+            view.session.messages[turn_start..]
+                .iter()
+                .flat_map(|message| message.blocks.iter())
+                .filter_map(|block| if let forge_domain::Block::Tool(call) = block { forge_entities::session_offer(call) } else { None })
+                .filter(|offer| offer.auto_start)
+                .collect()
+        };
+        for offer in offers {
+            if !self.offer_marks.peek().get(&id).is_some_and(|marks| marks.contains_key(&offer.id)) {
+                self.act_on_offer(id, offer, forge_entities::OfferAction::Start);
+            }
+        }
+    }
+
     /// Acts on a card Claude drew with `start_session` (the desktop app's `새 세션` card): starts the
     /// proposed session beside this one (same folder, mode, model and effort; it stays in the
     /// background, as in the desktop app), takes the work here, closes the card, or opens the session
@@ -1628,10 +1667,18 @@ impl Workspace {
                 };
                 let services = (*self.services.peek()).clone();
                 let project = ProjectSummary { path: project_path, last_active: String::new(), session_count: 0, exists: true };
+                // A title-only offer is the person's own request: the new session starts with their words.
+                // It is framed so the new session does the work rather than splitting it off again.
+                let brief = if offer.brief.is_empty() {
+                    let words = self.message_before_call(id, &offer.id).unwrap_or_else(|| offer.title.clone());
+                    format!("{}\n\n{words}", forge_entities::SPLIT_OFF_PREAMBLE)
+                } else {
+                    offer.brief.clone()
+                };
                 match services.registry.open_new_with_effort(&project, mode, model, effort, Vec::new()) {
                     Ok(handle) => {
                         let child = self.attach(handle.clone());
-                        handle.send_with(offer.brief.clone(), Vec::new());
+                        handle.send_with(brief, Vec::new());
                         let mut sessions = self.offer_sessions;
                         sessions.write().insert((id, offer.id.clone()), child);
                         self.mark_offer(id, offer.id.clone(), OfferMark::Started);

@@ -487,7 +487,7 @@ fn SessionOfferCard(offer: crate::turn_view::SessionOffer, mark: Option<crate::t
                 div { class: "offer-body",
                     div { class: "offer-text",
                         div { class: "offer-title", "{offer.title}" }
-                        div { class: "offer-lead", "{offer.lead}" }
+                        if !offer.lead.is_empty() { div { class: "offer-lead", "{offer.lead}" } }
                     }
                     if on_offer.is_some() {
                         button { class: "icon-button offer-close", r#type: "button", title: tr!("Close"), "aria-label": tr!("Close"), onclick: act(OfferAction::Dismiss),

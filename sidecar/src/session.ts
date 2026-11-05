@@ -5,7 +5,7 @@ import { turnUsage } from "./usage.js";
 import { createDesktopServer, DESKTOP_SERVER_NAME } from "./agent_desktop.js";
 import { createGenerativeUiServer, GENERATE_UI_TOOL, UI_GUIDE_TOOL, UI_SERVER_NAME } from "./generative_ui.js";
 import { createTurnToolsServer, TURN_SERVER_NAME, UPDATE_PLAN_TOOL, WRAP_UP_TOOL } from "./turn_tools.js";
-import { createSessionToolsServer, MARK_CHAPTER_TOOL, SESSION_SERVER_NAME, START_SESSION_TOOL } from "./session_tools.js";
+import { createSessionToolsServer, MARK_CHAPTER_TOOL, SESSION_SERVER_NAME, START_SESSION_TOOL, unrelatedTaskFrom, unrelatedTaskPrompt } from "./session_tools.js";
 import type { SidecarCommand, SidecarEvent, WireAvailableModel, WireEffort, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
 
 // The model Forge shows as `Default` in its picker (forge-entities model_catalog.rs DEFAULT_MODEL_ID). With no model
@@ -506,7 +506,11 @@ export class SidecarSession {
           thinking: { type: "adaptive", display: "summarized" },
           // Claude Code's own system prompt: it carries the instructions for auto memory (without it the SDK
           // gives the model no memory directory at all).
-          systemPrompt: { type: "preset", preset: "claude_code" },
+          // With the session tools, the desktop app's rule for unrelated requests is added to it.
+          systemPrompt: (() => {
+            const append = turnTools ? unrelatedTaskPrompt(unrelatedTaskFrom(command.unrelated_task)) : "";
+            return append === "" ? { type: "preset" as const, preset: "claude_code" as const } : { type: "preset" as const, preset: "claude_code" as const, append };
+          })(),
           settingSources: ["project"],
           strictMcpConfig: true,
           skills: skillsPlugin?.skills ?? [],
@@ -522,7 +526,7 @@ export class SidecarSession {
                 },
               }
             : {}),
-          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer(), [SESSION_SERVER_NAME]: createSessionToolsServer() } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}), ...(desktopControl ? { [DESKTOP_SERVER_NAME]: createDesktopServer() } : {}) },
+          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer(), [SESSION_SERVER_NAME]: createSessionToolsServer(unrelatedTaskFrom(command.unrelated_task)) } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}), ...(desktopControl ? { [DESKTOP_SERVER_NAME]: createDesktopServer() } : {}) },
           additionalDirectories: command.additional_directories ?? [],
           allowedTools: command.allowed_tools ?? [],
           // Variables of the environment the session starts from, over Forge's own (the SDK would

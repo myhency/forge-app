@@ -59,6 +59,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::DynamicWorkflows(on) => config.dynamic_workflows = on,
         CodeChange::AutoMemory(on) => config.auto_memory = on,
         CodeChange::TurnTools(on) => config.turn_tools = on,
+        CodeChange::UnrelatedTask(choice) => config.unrelated_task = choice,
         CodeChange::GenerativeUi(on) => config.generative_ui = on,
         CodeChange::DesktopControl(on) => config.desktop_control = on,
         CodeChange::WorktreeLocation(value) => config.worktree_location = value,
@@ -115,6 +116,7 @@ pub(crate) enum CodeChange {
     DynamicWorkflows(bool),
     AutoMemory(bool),
     TurnTools(bool),
+    UnrelatedTask(forge_domain::UnrelatedTask),
     GenerativeUi(bool),
     DesktopControl(bool),
     WorktreeLocation(WorktreeLocation),
@@ -339,6 +341,14 @@ impl Settings {
 
     pub fn set_turn_tools(&self, on: bool) {
         self.change_code(CodeChange::TurnTools(on));
+    }
+
+    pub fn unrelated_task(&self) -> forge_domain::UnrelatedTask {
+        self.saved.read().unrelated_task
+    }
+
+    pub fn set_unrelated_task(&self, choice: forge_domain::UnrelatedTask) {
+        self.change_code(CodeChange::UnrelatedTask(choice));
     }
 
     pub fn generative_ui(&self) -> bool {
@@ -819,6 +829,7 @@ impl Settings {
             current.dynamic_workflows = config.dynamic_workflows;
             current.auto_memory = config.auto_memory;
             current.turn_tools = config.turn_tools;
+            current.unrelated_task = config.unrelated_task;
             current.generative_ui = config.generative_ui;
             current.desktop_control = config.desktop_control;
             current.worktree_location = config.worktree_location;
@@ -973,6 +984,13 @@ mod tests {
         apply_code_change(&mut config, CodeChange::GenerativeUi(false));
         assert!(!config.generative_ui);
         assert!(config.turn_tools);
+    }
+
+    #[test]
+    fn the_unrelated_task_choice_is_saved() {
+        let mut config = AppConfig::default();
+        apply_code_change(&mut config, CodeChange::UnrelatedTask(forge_domain::UnrelatedTask::NewSession));
+        assert_eq!(config.unrelated_task, forge_domain::UnrelatedTask::NewSession);
     }
 
     #[test]
