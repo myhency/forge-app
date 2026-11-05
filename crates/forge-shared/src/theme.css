@@ -294,6 +294,10 @@ button:not(:disabled):active { scale: 0.98; }
 .message-actions { display: flex; gap: var(--sp-2); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); margin-top: -2px; }
 .turn-user:hover .message-actions, .message-actions:focus-within { opacity: 1; }
 .user-bubble { max-width: 85%; box-sizing: border-box; padding: 9px var(--sp-14); background: var(--bg-hover); border-radius: var(--r-14); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A long message shows its first lines under a fade, with 더 보기 below (desktop app, 2026-11-06). */
+.user-bubble.folded .user-bubble-text { max-height: 13.5em; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent); mask-image: linear-gradient(to bottom, black 70%, transparent); }
+.user-bubble-more { display: block; margin-top: var(--sp-8); padding: 0; border: 0; background: none; color: var(--fg); font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.user-bubble-more:hover { text-decoration: underline; }
 .turn-text { overflow-wrap: anywhere; }
 .turn-text.markdown { white-space: normal; }
 

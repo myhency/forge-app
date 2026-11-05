@@ -125,7 +125,7 @@ fn TurnItem(
                         }
                     }
                     if !text.is_empty() {
-                        div { class: "user-bubble", "{text}" }
+                        UserBubble { text: text.clone() }
                         div { class: "message-actions",
                             if let Some(at) = message.at.as_deref() {
                                 {
@@ -584,5 +584,33 @@ mod compacted_tests {
         assert_eq!(compacted_label(Some(5), None), "Session compacted");
         assert_eq!(compacted_label(None, Some(5)), "Session compacted");
         assert_eq!(compacted_label(Some(10), Some(20)), "Session compacted", "nothing saved is not claimed");
+    }
+}
+
+/// Whether a sent message is long enough to fold: more than about nine lines at the bubble's width.
+pub fn is_long_message(text: &str) -> bool {
+    let lines: usize = text.lines().map(|line| 1 + line.chars().count() / 70).sum();
+    lines > 9
+}
+
+/// The person's message. A long one is folded to its first lines under a fade with `더 보기`, as
+/// in the desktop app (observed 2026-11-06); `간단히 보기` folds it again.
+#[component]
+fn UserBubble(text: String) -> Element {
+    let mut open = use_signal(|| false);
+    let long = is_long_message(&text);
+    let class = if long && !open() { "user-bubble folded" } else { "user-bubble" };
+    rsx! {
+        div { class: "{class}",
+            div { class: "user-bubble-text", "{text}" }
+            if long {
+                button {
+                    class: "user-bubble-more",
+                    r#type: "button",
+                    onclick: move |_| open.set(!open()),
+                    if open() { {tr!("Show less")} } else { {tr!("Show more")} }
+                }
+            }
+        }
     }
 }
