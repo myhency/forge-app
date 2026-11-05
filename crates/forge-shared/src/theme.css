@@ -164,6 +164,7 @@ button:not(:disabled):active { scale: 0.98; }
 .inline-permission .permission-panel { width: 100%; max-width: none; max-height: none; margin: 0; box-shadow: none; }
 .chat-narrow .inline-permission .permission-panel { width: 100%; }
 .inline-permission .ndiff, .inline-permission .diff, .inline-permission .perm-command { max-height: 40vh; }
+.sidebar-peek { position: absolute; left: 0; top: 0; bottom: 0; z-index: 30; display: flex; box-shadow: var(--shadow-3); }
 .sidebar-collapsed-tools { position: absolute; top: var(--sp-8); left: var(--sp-12); z-index: 31; display: flex; align-items: center; gap: var(--sp-2); }
 .workspace.sidebar-collapsed .pane:first-child .pane-header, .workspace.sidebar-collapsed .pane:first-child.chat-narrow .pane-header { padding-left: 120px; }
 .attention-dot { flex: none; width: 8px; height: 8px; margin-left: auto; border-radius: var(--r-round); background: var(--warning); }

@@ -20,7 +20,7 @@ pub fn use_workspace_providers() {
 /// The sidebar toggle and back / forward at the top left while the sidebar is hidden or an overlay,
 /// in the row of the chat header, as the desktop app draws them (round 37).
 #[component]
-fn CollapsedTools(on_toggle: EventHandler<()>, expanded: bool) -> Element {
+fn CollapsedTools(on_toggle: EventHandler<()>, #[props(default)] on_hover: Option<EventHandler<()>>, expanded: bool) -> Element {
     rsx! {
         div { class: "sidebar-collapsed-tools",
             button {
@@ -29,6 +29,11 @@ fn CollapsedTools(on_toggle: EventHandler<()>, expanded: bool) -> Element {
                 title: tr!("Show the sidebar"),
                 "aria-label": tr!("Show the sidebar"),
                 "aria-expanded": "{expanded}",
+                onmouseenter: move |_| {
+                    if let Some(on_hover) = on_hover {
+                        on_hover.call(());
+                    }
+                },
                 onclick: move |_| on_toggle.call(()),
                 Icon { kind: IconKind::Sidebar }
             }
@@ -82,6 +87,13 @@ pub fn WorkspacePage() -> Element {
 
     let prefs = workspace.prefs();
     let hidden = prefs.hidden;
+    // The hidden sidebar shown for a moment: the desktop app floats it over the chat while the pointer
+    // is on the sidebar toggle or on the sidebar, and puts it away when the pointer leaves (round 37).
+    let mut hover_peek = use_signal(|| false);
+    use_effect(use_reactive!(|hidden| {
+        let _ = hidden;
+        hover_peek.set(false);
+    }));
     // A hidden sidebar leaves no rail: its toggle and back / forward move into the top row (the desktop app).
     let docked_sidebar = if hidden { 0 } else { prefs.clamped_width() };
     let window_height = use_window_height();
@@ -181,8 +193,16 @@ pub fn WorkspacePage() -> Element {
             },
             match sidebar_mode {
                 SidebarMode::Docked => rsx! {
-                    if hidden {
-                        CollapsedTools { on_toggle: move |_| workspace.update_prefs(|prefs| prefs.hidden = false), expanded: false }
+                    if hidden && hover_peek() {
+                        div { class: "sidebar-peek", onmouseleave: move |_| hover_peek.set(false),
+                            Sidebar {}
+                        }
+                    } else if hidden {
+                        CollapsedTools {
+                            on_toggle: move |_| workspace.update_prefs(|prefs| prefs.hidden = false),
+                            on_hover: move |_| hover_peek.set(true),
+                            expanded: false,
+                        }
                     } else {
                         Sidebar {}
                         div {

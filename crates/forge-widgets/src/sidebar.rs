@@ -146,7 +146,8 @@ pub fn Sidebar() -> Element {
                     class: "icon-button sidebar-hide",
                     title: tr!("Hide the sidebar"),
                     "aria-label": tr!("Hide the sidebar"),
-                    onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = true),
+                    // On a hidden sidebar shown for a moment (pointer on the toggle), a click keeps it open.
+                    onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = !prefs.hidden),
                     Icon { kind: IconKind::Sidebar }
                 }
                 NavButtons {}
