@@ -100,7 +100,7 @@ pub fn NavButtons() -> Element {
             "aria-label": "Back",
             disabled: !workspace.can_go_back(),
             onclick: move |_| workspace.go_back(),
-            Icon { kind: IconKind::ArrowLeft }
+            Icon { kind: IconKind::ChevronLeft }
         }
         button {
             class: "icon-button nav-button",
@@ -109,7 +109,7 @@ pub fn NavButtons() -> Element {
             "aria-label": "Forward",
             disabled: !workspace.can_go_forward(),
             onclick: move |_| workspace.go_forward(),
-            Icon { kind: IconKind::ArrowRight }
+            Icon { kind: IconKind::Chevron }
         }
     }
 }

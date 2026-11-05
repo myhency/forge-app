@@ -313,11 +313,9 @@ const MAC_CHROME_CSS: &str = "
 .sidebar { padding-top: 0; }
 .sidebar-top { height: 36px; padding-left: 70px; margin-bottom: var(--sp-6); }
 .pane-header { min-height: 36px; padding-top: 0; padding-bottom: 0; }
-.sidebar-rail { padding-top: 40px; }
 .chat-narrow .pane-header { padding-top: 0; padding-bottom: 0; }
-.sidebar-rail ~ .panes .pane:first-child .pane-header, .sidebar-rail ~ .panes .pane:first-child.chat-narrow .pane-header { padding-left: 44px; }
-.sidebar-toggle { left: 76px; top: 4px; }
-.sidebar-overlay .pane:first-child .pane-header, .sidebar-overlay .pane:first-child.chat-narrow .pane-header { padding-left: 116px; }
+.sidebar-collapsed-tools { top: 2px; left: 76px; }
+.workspace.sidebar-collapsed .pane:first-child .pane-header, .workspace.sidebar-collapsed .pane:first-child.chat-narrow .pane-header { padding-left: 184px; }
 .sidebar-overlay .sidebar { padding-top: 0; }
 ";
 

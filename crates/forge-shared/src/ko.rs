@@ -876,7 +876,6 @@ pub static KO: &[(&str, &str)] = &[
     ("Thursday", "목요일"),
     ("Time", "시간"),
     ("Today", "오늘"),
-    ("Toggle the sidebar", "사이드바 전환"),
     ("Tokens by model", "모델별 토큰"),
     ("Total", "합계"),
     ("Total tokens", "총 토큰"),

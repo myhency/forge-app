@@ -164,6 +164,8 @@ button:not(:disabled):active { scale: 0.98; }
 .inline-permission .permission-panel { width: 100%; max-width: none; max-height: none; margin: 0; box-shadow: none; }
 .chat-narrow .inline-permission .permission-panel { width: 100%; }
 .inline-permission .ndiff, .inline-permission .diff, .inline-permission .perm-command { max-height: 40vh; }
+.sidebar-collapsed-tools { position: absolute; top: var(--sp-8); left: var(--sp-12); z-index: 31; display: flex; align-items: center; gap: var(--sp-2); }
+.workspace.sidebar-collapsed .pane:first-child .pane-header, .workspace.sidebar-collapsed .pane:first-child.chat-narrow .pane-header { padding-left: 120px; }
 .attention-dot { flex: none; width: 8px; height: 8px; margin-left: auto; border-radius: var(--r-round); background: var(--warning); }
 .attention-dot.naming { background: var(--fg-muted); opacity: 0.5; }
 .sidebar-item.active { background: var(--sidebar-active, var(--bg-hover)); }
@@ -740,11 +742,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .effort-ends { display: flex; justify-content: space-between; margin-bottom: var(--sp-4); color: var(--fg-muted); font-size: var(--text-xs); }
 .effort-slider { width: 100%; margin: 0 0 var(--sp-8); accent-color: var(--accent); }
 .nav-button:disabled { opacity: 0.35; cursor: default; background: transparent; }
-.sidebar-rail .nav-button { display: block; margin-top: var(--sp-4); }
 .sidebar-top { display: flex; align-items: center; gap: var(--sp-4); margin: 0 var(--sp-4) var(--sp-8); }
-.sidebar-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-8); padding: var(--sp-6) var(--sp-10); border: 1px solid var(--border); border-radius: var(--r-8); background: var(--bg-card); color: var(--fg-muted); font: inherit; text-align: left; cursor: pointer; }
-.sidebar-search:hover { border-color: var(--fg-muted); }
-.sidebar-search .keys { margin-left: auto; font-size: var(--text-sm); }
 .icon-button { flex: none; width: 28px; height: 28px; border: none; border-radius: var(--r-6); background: transparent; color: var(--fg-muted); font: inherit; font-size: var(--text-md); line-height: 1; cursor: pointer; }
 .icon-button:disabled { opacity: 0.4; cursor: default; }
 .icon-button:hover, .icon-button.open { background: var(--bg-hover); color: var(--fg); }
@@ -764,10 +762,8 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .group-toggle .chevron { flex: none; width: var(--icon-size-sm); color: var(--fg-muted); }
 .sidebar-resize { flex: none; width: 5px; margin-left: -3px; cursor: col-resize; background: transparent; z-index: 7; }
 .sidebar-resize:hover, .sidebar-resize.dragging { background: var(--accent-soft); }
-.sidebar-rail { flex: none; width: 36px; padding: var(--sp-12) var(--sp-4) 0; box-sizing: border-box; background: var(--bg-sidebar); border-right: 1px solid var(--border); }
 .workspace.resizing { cursor: col-resize; user-select: none; }
 /* Narrow window: the sidebar is an overlay the toggle shows (observation round 10). */
-.sidebar-toggle { position: absolute; left: 8px; top: 10px; z-index: 31; }
 .sidebar-backdrop { position: absolute; inset: 0; z-index: 29; }
 .sidebar-overlay .sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 30; width: 280px !important; padding-top: 48px; box-shadow: var(--shadow); }
 .sidebar-overlay .pane:first-child .pane-header, .sidebar-overlay .pane:first-child.chat-narrow .pane-header { padding-left: 48px; }
