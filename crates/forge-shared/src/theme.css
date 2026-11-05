@@ -168,6 +168,10 @@ button:not(:disabled):active { scale: 0.98; }
 .row-menu-item { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-16); width: 100%; box-sizing: border-box; padding: var(--sp-6) var(--sp-8); border: none; border-radius: var(--r-6); background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .row-menu-item:hover:not(:disabled) { background: var(--bg-hover); }
 .row-menu-item.danger { color: var(--danger); }
+.row-menu-separator { height: 1px; margin: var(--sp-4) var(--sp-6); background: var(--border); }
+.row-menu-back { color: var(--fg-muted); justify-content: flex-start; gap: var(--sp-6); }
+.row-menu-actions { display: flex; gap: var(--sp-4); }
+.row-menu-actions .row-menu-item { justify-content: center; }
 .row-menu { outline: none; }
 .menu-key { color: var(--fg-muted); font-size: var(--text-sm); }
 .row-menu-item:disabled { color: var(--fg-muted); cursor: default; }
@@ -212,7 +216,7 @@ button:not(:disabled):active { scale: 0.98; }
 .title-menu { position: relative; flex: none; }
 .title-chevron { appearance: none; width: 22px; height: 22px; border: none; border-radius: var(--r-6); background: transparent; color: var(--fg-muted); font: inherit; line-height: 1; cursor: pointer; }
 .title-chevron:hover, .title-chevron.open { background: var(--bg-hover); color: var(--fg); }
-.title-menu-list { right: auto; left: 0; font-weight: var(--weight-regular); }
+.title-menu-list { right: auto; left: 0; min-width: 220px; font-weight: var(--weight-regular); }
 .view-switch { display: flex; flex: none; padding: var(--sp-2); gap: var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-8); font-weight: var(--weight-regular); }
 .view-option { appearance: none; border: none; background: none; color: var(--fg-muted); font: inherit; font-size: var(--text-sm); padding: var(--sp-3) var(--sp-10); border-radius: var(--r-6); cursor: pointer; }
 .view-select { flex: none; width: auto; font-size: var(--text-sm); color: var(--fg-muted); }
@@ -825,12 +829,17 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .pane-tools { margin-left: auto; display: flex; align-items: center; gap: var(--sp-4); font-weight: var(--weight-regular); }
 /* A narrow chat (under 560 pt): the header and the side margins shrink. */
 .menu-narrow { display: none; }
-.chat-narrow .picker-item.menu-narrow { display: flex; }
-.chat-narrow .pane-tools > .icon-button { display: none; }
-.chat-narrow .pane-tools > .icon-button.pane-close { display: inline-flex; }
+/* The panel icons stay in the header as in the desktop app (round 37: all five at 1133 pt with the
+   details column open); only a header too narrow for them and a title moves them into `⋯`. */
+.pane-header { container-type: inline-size; }
+@container (max-width: 400px) {
+  .picker-item.menu-narrow { display: flex; }
+  .pane-tools > .icon-button { display: none; }
+  .pane-tools > .icon-button.pane-close { display: inline-flex; }
+}
 .pane-tools .pane-close { position: static; }
 .chat-narrow .pane-header { flex-wrap: wrap; row-gap: var(--sp-6); padding: var(--sp-12) var(--sp-16); }
-.chat-narrow .pane-title { flex: 1 1 120px; }
+.chat-narrow .pane-title { flex: 0 1 auto; }
 .chat-narrow .pane-titlebox { flex: 1 1 150px; }
 .chat-narrow .messages { padding: var(--sp-8) var(--sp-16) var(--sp-16); }
 .chat-narrow .perm-buttons { flex-direction: column; align-items: stretch; }

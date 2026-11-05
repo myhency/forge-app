@@ -1,34 +1,51 @@
 use dioxus::prelude::*;
-use forge_features::{menu_key_action, refocus_workspace, use_workspace, ArchiveAction, MenuKeyAction, RowActions};
+use forge_application::LiveSessionId;
+use forge_domain::TranscriptView;
+use forge_features::{menu_key_action, refocus_workspace, use_workspace, ArchiveAction, DeleteAction, MenuKeyAction, RowActions};
 use forge_shared::{tr, Icon, IconKind, IconSize};
 
-/// The chevron after the title of the open session and its menu: rename, fork, archive. It runs the
-/// same actions as the shortcuts (⌥⌘R, F, ⌥⌘A) on the active session. There is no delete: an open
-/// session has to be closed before it can be deleted.
+/// What the title menu shows: its rows, the transcript-view choices, or the delete question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MenuPage {
+    Main,
+    Views,
+    ConfirmDelete,
+}
+
+/// The chevron after the title of the open session and its menu, laid out like the desktop app's
+/// (round 37): `이름 변경 R`, `포크 F`, then `트랜스크립트 보기 ›` (normal, thinking, detailed), then
+/// `보관 A` and `삭제 D`. Delete asks first, then closes the session and moves it to the trash.
+/// `다음에서 열기` (new window, cloud) and `출력 스타일` are left out.
 #[component]
-pub fn SessionTitleMenu(actions: RowActions) -> Element {
+pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: TranscriptView) -> Element {
     let workspace = use_workspace();
     let mut open = use_signal(|| false);
+    let mut page = use_signal(|| MenuPage::Main);
     if actions.archive == ArchiveAction::Unavailable && !actions.can_rename && !actions.can_fork {
         return rsx! {};
     }
     let archive_label = if actions.archive == ArchiveAction::Archive { tr!("Archive") } else { tr!("Unarchive") };
+    let can_delete = actions.delete == DeleteAction::Allowed;
     let mut close = move || {
         open.set(false);
+        page.set(MenuPage::Main);
         refocus_workspace();
     };
     rsx! {
         div { class: "title-menu",
             button {
                 class: if open() { "title-chevron open" } else { "title-chevron" },
-                title: tr!("Rename, fork or archive"),
+                title: tr!("Session menu"),
                 "aria-haspopup": "menu",
                 "aria-expanded": "{open()}",
-                onclick: move |_| open.set(!open()),
+                onclick: move |_| {
+                    page.set(MenuPage::Main);
+                    open.set(!open());
+                },
                 Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true }
             }
             if open() {
-                div { class: "menu-backdrop", onclick: move |_| open.set(false) }
+                div { class: "menu-backdrop", onclick: move |_| close() }
                 div {
                     class: "row-menu title-menu-list",
                     tabindex: "0",
@@ -39,7 +56,14 @@ pub fn SessionTitleMenu(actions: RowActions) -> Element {
                     onkeydown: move |event: KeyboardEvent| {
                         if event.key() == Key::Escape {
                             event.stop_propagation();
-                            close();
+                            if page() == MenuPage::Main {
+                                close();
+                            } else {
+                                page.set(MenuPage::Main);
+                            }
+                            return;
+                        }
+                        if page() != MenuPage::Main {
                             return;
                         }
                         let modified = event.modifiers().intersects(Modifiers::CONTROL | Modifiers::META | Modifiers::ALT);
@@ -48,57 +72,125 @@ pub fn SessionTitleMenu(actions: RowActions) -> Element {
                         };
                         event.stop_propagation();
                         event.prevent_default();
-                        open.set(false);
                         match action {
-                            MenuKeyAction::Rename => workspace.rename_active(),
-                            MenuKeyAction::Fork => {
-                                workspace.fork_active();
-                                refocus_workspace();
-                            }
-                            MenuKeyAction::ToggleArchive => {
-                                workspace.archive_active();
-                                refocus_workspace();
-                            }
-                            MenuKeyAction::Delete => {}
-                        }
-                    },
-                    if actions.can_rename {
-                        button {
-                            class: "row-menu-item",
-                            role: "menuitem",
-                            onclick: move |_| {
+                            MenuKeyAction::Rename => {
                                 open.set(false);
                                 workspace.rename_active();
-                            },
-                            span { {tr!("Rename")} }
-                            span { class: "menu-key", "R" }
-                        }
-                    }
-                    if actions.can_fork {
-                        button {
-                            class: "row-menu-item",
-                            role: "menuitem",
-                            onclick: move |_| {
-                                open.set(false);
+                            }
+                            MenuKeyAction::Fork => {
+                                close();
                                 workspace.fork_active();
-                                refocus_workspace();
-                            },
-                            span { {tr!("Fork")} }
-                            span { class: "menu-key", "F" }
-                        }
-                    }
-                    if actions.archive != ArchiveAction::Unavailable {
-                        button {
-                            class: "row-menu-item",
-                            role: "menuitem",
-                            onclick: move |_| {
-                                open.set(false);
+                            }
+                            MenuKeyAction::ToggleArchive => {
+                                close();
                                 workspace.archive_active();
-                                refocus_workspace();
-                            },
-                            span { {archive_label} }
-                            span { class: "menu-key", "A" }
+                            }
+                            MenuKeyAction::Delete => page.set(MenuPage::ConfirmDelete),
                         }
+                    },
+                    match page() {
+                        MenuPage::Main => rsx! {
+                            if actions.can_rename {
+                                button {
+                                    class: "row-menu-item",
+                                    role: "menuitem",
+                                    onclick: move |_| {
+                                        open.set(false);
+                                        workspace.rename_active();
+                                    },
+                                    span { {tr!("Rename")} }
+                                    span { class: "menu-key", "R" }
+                                }
+                            }
+                            if actions.can_fork {
+                                button {
+                                    class: "row-menu-item",
+                                    role: "menuitem",
+                                    onclick: move |_| {
+                                        close();
+                                        workspace.fork_active();
+                                    },
+                                    span { {tr!("Fork")} }
+                                    span { class: "menu-key", "F" }
+                                }
+                            }
+                            div { class: "row-menu-separator" }
+                            button {
+                                class: "row-menu-item",
+                                role: "menuitem",
+                                "aria-haspopup": "menu",
+                                onclick: move |_| page.set(MenuPage::Views),
+                                span { {tr!("Transcript view")} }
+                                span { class: "menu-key", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
+                            }
+                            if actions.archive != ArchiveAction::Unavailable || can_delete {
+                                div { class: "row-menu-separator" }
+                            }
+                            if actions.archive != ArchiveAction::Unavailable {
+                                button {
+                                    class: "row-menu-item",
+                                    role: "menuitem",
+                                    onclick: move |_| {
+                                        close();
+                                        workspace.archive_active();
+                                    },
+                                    span { {archive_label} }
+                                    span { class: "menu-key", "A" }
+                                }
+                            }
+                            if can_delete {
+                                button {
+                                    class: "row-menu-item danger",
+                                    role: "menuitem",
+                                    onclick: move |_| page.set(MenuPage::ConfirmDelete),
+                                    span { {tr!("Delete")} }
+                                    span { class: "menu-key", "D" }
+                                }
+                            }
+                        },
+                        MenuPage::Views => rsx! {
+                            button {
+                                class: "row-menu-item row-menu-back",
+                                role: "menuitem",
+                                onclick: move |_| page.set(MenuPage::Main),
+                                Icon { kind: IconKind::ChevronLeft, size: IconSize::Small }
+                                span { {tr!("Transcript view")} }
+                            }
+                            for option in TranscriptView::ALL {
+                                button {
+                                    key: "{option.label()}",
+                                    class: "row-menu-item",
+                                    role: "menuitemradio",
+                                    "aria-checked": "{option == mode}",
+                                    onclick: move |_| {
+                                        workspace.set_transcript_view(id, option);
+                                        close();
+                                    },
+                                    span { {forge_shared::i18n::text(option.label())} }
+                                    if option == mode {
+                                        span { class: "menu-key", Icon { kind: IconKind::Check, size: IconSize::Small } }
+                                    }
+                                }
+                            }
+                        },
+                        MenuPage::ConfirmDelete => rsx! {
+                            div { class: "row-menu-note", {tr!("Delete this session? It is closed and moved to the trash.")} }
+                            div { class: "row-menu-actions",
+                                button {
+                                    class: "row-menu-item",
+                                    onclick: move |_| page.set(MenuPage::Main),
+                                    span { {tr!("Cancel")} }
+                                }
+                                button {
+                                    class: "row-menu-item danger",
+                                    onclick: move |_| {
+                                        close();
+                                        workspace.delete_active();
+                                    },
+                                    span { {tr!("Delete")} }
+                                }
+                            }
+                        },
                     }
                 }
             }

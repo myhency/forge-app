@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
-use forge_entities::{live_state, CardMark, TranscriptView, Turns};
+use forge_entities::{live_state, CardMark, Turns};
 use forge_features::{use_settings, SettingsSection, use_workspace, Panel, SendMessageBox};
 
 use crate::composer_controls::{ModePicker, ModelPicker};
@@ -11,7 +11,7 @@ use crate::plus_menu::PlusMenu;
 use crate::question_panel::QuestionPanel;
 use crate::session_title_menu::SessionTitleMenu;
 use crate::session_tools::SessionTools;
-use crate::sidebar::project_label_in;
+
 use crate::fork_line::ForkLine;
 use crate::local_card::LocalCards;
 use crate::start_line::StartLine;
@@ -53,14 +53,12 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
     };
     let view = view_signal.read();
     let mode = workspace.transcript_view(id, settings.default_transcript_view());
-    let mode_index = TranscriptView::ALL.iter().position(|option| *option == mode).unwrap_or(0);
     let archived = view
         .claude_session_id
         .as_ref()
         .is_some_and(|session| workspace.is_archived(&view.project_path, session));
     let dock_expanded = workspace.dock(id).expanded.is_some() && !archived;
     let heading = view.session.title.as_deref().unwrap_or(tr!("Session")).to_string();
-    let folder = project_label_in(workspace.scratch_root().as_deref(), &workspace.origin_of(&view.project_path));
     let title_menu = workspace.active_title_menu();
     let tag = workspace.worktree_tag(&view.project_path).map(|tag| match tag.branch {
         Some(branch) => format!("{} · {}", tr!("Worktree"), branch),
@@ -73,30 +71,10 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 div { class: "pane-titlebox",
                     span { class: "pane-title", "{heading}" }
                     if let Some(actions) = title_menu {
-                        SessionTitleMenu { actions }
+                        SessionTitleMenu { id, actions, mode }
                     }
-                    span { class: "pane-tag", "{folder}" }
                     if let Some(tag) = tag {
                         span { class: "pane-tag", "{tag}" }
-                    }
-                }
-                // One compact dropdown instead of three buttons: the header keeps its width for the title.
-                select {
-                    class: "select view-select",
-                    "aria-label": tr!("Transcript view"),
-                    value: "{mode_index}",
-                    onchange: move |evt| {
-                        if let Some(option) = evt.value().parse::<usize>().ok().and_then(|i| TranscriptView::ALL.get(i).copied()) {
-                            workspace.set_transcript_view(id, option);
-                        }
-                    },
-                    for (index, option) in TranscriptView::ALL.into_iter().enumerate() {
-                        option {
-                            key: "{option.label()}",
-                            value: "{index}",
-                            selected: option == mode,
-                            {forge_shared::i18n::text(option.label())}
-                        }
                     }
                 }
                 SessionTools { id, terminal: !archived }

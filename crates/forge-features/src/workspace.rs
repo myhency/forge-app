@@ -1945,6 +1945,22 @@ impl Workspace {
         }
     }
 
+    /// Deletes the active session from the menu under its title, as the desktop app's `삭제 D` does:
+    /// it closes the session, then moves its transcript to the trash. A session that is still working
+    /// is not deleted.
+    pub fn delete_active(&self) {
+        let (Active::Live(id), Some((project, entry))) = (self.active(), self.active_entry()) else {
+            return;
+        };
+        let Some(session) = entry.session_id else { return };
+        if self.live_view(id).is_some_and(|view| view.read().phase == Phase::Running) {
+            self.report(tr!("Stop the session before deleting it.").to_string());
+            return;
+        }
+        self.close(id);
+        self.delete_session(project, session);
+    }
+
     /// Puts the active session's sidebar row into rename mode. Nothing when the session cannot be
     /// renamed or its row is not in the list (the status filter hides it). A collapsed group still
     /// lists the active session's row, so only membership counts, not `collapsed`.

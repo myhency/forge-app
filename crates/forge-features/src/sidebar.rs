@@ -84,7 +84,8 @@ impl SidebarEntry {
 
 impl SidebarEntry {
     /// What the menu under the title of the open session offers: the row's actions, except that the
-    /// session can be archived while open (archiving closes it, as ⌥⌘A does) and there is no delete.
+    /// session can be archived and deleted while open (both close it first; the desktop app's title
+    /// menu has `보관 A` and `삭제 D`, round 37).
     pub fn title_menu_actions(&self) -> RowActions {
         let row = self.actions();
         let archive = match (self.session_id.is_some(), self.archived) {
@@ -92,7 +93,8 @@ impl SidebarEntry {
             (true, true) => ArchiveAction::Unarchive,
             (true, false) => ArchiveAction::Archive,
         };
-        RowActions { delete: DeleteAction::Unavailable, archive, ..row }
+        let delete = if self.session_id.is_some() { DeleteAction::Allowed } else { DeleteAction::Unavailable };
+        RowActions { delete, archive, ..row }
     }
 }
 
@@ -598,13 +600,13 @@ mod tests {
     }
 
     #[test]
-    fn the_title_menu_of_an_open_session_archives_and_closes_it_and_never_deletes() {
+    fn the_title_menu_of_an_open_session_archives_and_deletes_it() {
         let mut open = entry(EntryKey::Live(LiveSessionId(1)), Some("s"));
-        assert_eq!(open.title_menu_actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Unavailable, archive: ArchiveAction::Archive });
+        assert_eq!(open.title_menu_actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Allowed, archive: ArchiveAction::Archive });
 
         open.archived = true;
         assert_eq!(open.title_menu_actions().archive, ArchiveAction::Unarchive);
-        assert_eq!(menu_key_action("KeyD", false, open.title_menu_actions()), None);
+        assert_eq!(menu_key_action("KeyD", false, open.title_menu_actions()), Some(MenuKeyAction::Delete));
     }
 
     #[test]
