@@ -683,6 +683,40 @@ describe("SidecarSession", () => {
     expect(types).not.toContain("context_detail");
   });
 
+  it("sends context_usage and mcp_status once, early, at the turn's first assistant message", async () => {
+    const events: SidecarEvent[] = [];
+    let contextCalls = 0;
+    let mcpCalls = 0;
+    const query: QueryFn = () =>
+      toQueryHandle(
+        (async function* () {
+          yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-sonnet-5-5", content: [] } };
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-sonnet-5-5", content: [] } };
+          yield { type: "result", subtype: "success", usage: {} };
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        })(),
+        {
+          getContextUsage: async () => {
+            contextCalls += 1;
+            return { totalTokens: 1000, maxTokens: 200000, percentage: 1 };
+          },
+          mcpServerStatus: async () => {
+            mcpCalls += 1;
+            return [];
+          },
+        },
+      );
+    const session = new SidecarSession(query, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const types = events.map((e) => e.type);
+    // Once early (before the turn ends) and once after it.
+    expect(types.indexOf("context_usage")).toBeLessThan(types.indexOf("turn_complete"));
+    expect(contextCalls).toBe(2);
+    expect(mcpCalls).toBe(2);
+  });
+
   it("sends mcp_status after a turn", async () => {
     const events: SidecarEvent[] = [];
     const session = new SidecarSession(

@@ -1567,7 +1567,14 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .plan-body .dock-note { padding: var(--sp-8) 0; }
 .rail-close { display: none; position: absolute; top: 6px; right: 8px; z-index: 2; }
 .dock-float .rail-close { display: inline-flex; }
-.session-rail { position: relative; flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--sp-14); padding: var(--sp-2); }
+.session-rail { position: relative; flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0; padding: var(--sp-2) var(--sp-8); }
+/* The desktop app's details column (round 37): flat sections with a rule between them, not cards. */
+.session-rail .env-card { border: none; border-radius: 0; background: transparent; padding: var(--sp-10) 0 var(--sp-12); }
+.session-rail .env-card + .env-card { border-top: 1px solid var(--border); }
+.session-rail .env-card-head { padding-left: var(--sp-10); }
+/* The fold arrow shows on hover, and stays while the section is folded. */
+.session-rail .env-card-chevron { opacity: 0; }
+.session-rail .env-card-head:hover .env-card-chevron, .session-rail .env-card-head:focus-visible .env-card-chevron, .session-rail .env-card-chevron.folded { opacity: 1; }
 .env-card { flex: none; border: 1px solid var(--border); border-radius: var(--r-14); background: var(--bg-card); padding: var(--sp-10) var(--sp-8) var(--sp-12); }
 .env-card-head { display: flex; align-items: center; gap: var(--sp-4); width: 100%; padding: var(--sp-4) var(--sp-10) var(--sp-8); border: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold); text-align: left; cursor: pointer; }
 .env-card-chevron { display: inline-flex; color: var(--fg-muted); }

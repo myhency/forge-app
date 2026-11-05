@@ -33,14 +33,15 @@ fn last_texts(messages: &[Message]) -> Vec<usize> {
     found
 }
 
-/// The absolute paths the session produced, newest first, each once: files its Write, Edit,
-/// MultiEdit and NotebookEdit calls named (Read does not count), and files of a document type
+/// The absolute paths the session produced, newest first, each once: files its Write calls made
+/// (an edit to a file that was there is a change, not an output: the desktop app's card listed the
+/// written `summary.md` and not the edited `stats.py`, round 37), and files of a document type
 /// named in the last assistant text of each turn.
 pub fn output_paths(messages: &[Message]) -> Vec<String> {
     let closing = last_texts(messages);
     let mut mentions: Vec<String> = Vec::new();
     for (index, message) in messages.iter().enumerate() {
-        for call in message.tool_calls().filter(|call| matches!(call.name.as_str(), "Write" | "Edit" | "MultiEdit" | "NotebookEdit")) {
+        for call in message.tool_calls().filter(|call| call.name == "Write") {
             let path = ["file_path", "notebook_path"].iter().find_map(|key| call.input.get(*key).and_then(|value| value.as_str()));
             mentions.extend(path.filter(|path| is_absolute_path(path) && !path.contains(['"', '\'', '<', '>', '&']) && !path.chars().any(char::is_control)).map(str::to_string));
         }
@@ -81,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn write_tools_count_and_read_does_not() {
+    fn written_files_count_and_edits_and_reads_do_not() {
         let messages = vec![
             user(),
             tool("Write", "file_path", "/p/a.txt"),
@@ -91,7 +92,7 @@ mod tests {
             tool("Read", "file_path", "/p/e.rs"),
             tool("Write", "file_path", "relative.txt"),
         ];
-        assert_eq!(output_paths(&messages), vec!["/p/d.ipynb", "/p/c.rs", "/p/b.rs", "/p/a.txt"]);
+        assert_eq!(output_paths(&messages), vec!["/p/a.txt"]);
     }
 
     #[test]

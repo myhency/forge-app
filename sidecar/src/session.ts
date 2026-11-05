@@ -180,6 +180,9 @@ export class SidecarSession {
   private mainModel: string | null = null;
   // Web searches the WebSearch tool reported since the last result (that tool's own request is not in `result.usage`).
   private pendingSearches = 0;
+  // Whether this turn has already sent the details panel its context and connectors early. The
+  // desktop app fills both in seconds after a send (round 37), not only when the turn ends.
+  private turnDetailSent = false;
   private lastCommandsKey: string | null = null;
   private knownCommands = new Map<string, WireSlashCommand>();
   private readonly contextUsageTimeoutMs: number;
@@ -746,6 +749,11 @@ export class SidecarSession {
         return;
       }
       case "assistant": {
+        if (!message.parent_tool_use_id && !this.turnDetailSent) {
+          this.turnDetailSent = true;
+          void this.emitContextUsage();
+          void this.emitMcpStatus();
+        }
         const model = message.message?.model;
         if (!message.parent_tool_use_id && typeof model === "string" && model !== "" && !model.startsWith("<")) {
           this.mainModel = model;
@@ -793,6 +801,7 @@ export class SidecarSession {
         this.emit({ type: "turn_complete", usage: turnUsage(this.mainModel, message.usage, this.pendingSearches) });
         this.mainModel = null;
         this.pendingSearches = 0;
+        this.turnDetailSent = false;
         void this.emitContextUsage();
         void this.emitMcpStatus();
         return;

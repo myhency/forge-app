@@ -1593,6 +1593,8 @@ impl Workspace {
     pub fn refresh_change_counts(&self, id: LiveSessionId) {
         let Some(view) = self.live_view(id) else { return };
         let cwd = view.peek().project_path.clone();
+        // Not a git repository: the session's own edits are what changed (the desktop app shows them).
+        let own_edits = crate::details::session_edit_counts(&view.peek().session.messages);
         let mut tickets = self.change_count_tickets;
         let ticket = tickets.peek().get(&id).copied().unwrap_or(0).wrapping_add(1);
         tickets.write().insert(id, ticket);
@@ -1609,11 +1611,15 @@ impl Workspace {
             if workspace.change_count_tickets.peek().get(&id) != Some(&ticket) {
                 return;
             }
-            // A git error is dropped on purpose: the card just hides, there is no error UI.
-            let counts = read.ok().and_then(|files| {
-                let files: Vec<_> = files.into_iter().map(|change| change.file).collect();
-                change_counts(&files)
-            });
+            // A git error (most often: not a repository) falls back to the session's own edits; there
+            // is no error UI.
+            let counts = match read {
+                Ok(files) => {
+                    let files: Vec<_> = files.into_iter().map(|change| change.file).collect();
+                    change_counts(&files)
+                }
+                Err(_) => own_edits,
+            };
             let mut map = workspace.change_counts;
             match counts {
                 Some(counts) => {
