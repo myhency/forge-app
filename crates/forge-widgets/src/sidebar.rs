@@ -135,6 +135,8 @@ pub fn Sidebar() -> Element {
     let active = workspace.active();
     let shown_targets = workspace.pane_targets();
     let notice = workspace.notice();
+    // Groups the person opened with `더 보기`; kept while the app runs.
+    let mut expanded_groups = use_signal(std::collections::HashSet::<String>::new);
 
     rsx! {
         div { class: "sidebar", style: "width: {prefs.clamped_width()}px",
@@ -252,7 +254,17 @@ pub fn Sidebar() -> Element {
                             }
                         },
                     }
-                    for item in group.entries.iter().filter(|item| prefs.show_side_chats || !is_side_chat_session(&item.entry)) {
+                    {
+                        let visible: Vec<&forge_features::ArrangedEntry> = group.entries.iter().filter(|item| prefs.show_side_chats || !is_side_chat_session(&item.entry)).collect();
+                        let depths: Vec<u8> = visible.iter().map(|item| item.depth).collect();
+                        let active_at = visible.iter().position(|item| matches!(&item.entry.key, EntryKey::Live(id) if active == Active::Live(*id)));
+                        let expanded = expanded_groups.read().contains(&group.id);
+                        let cut = forge_features::group_cut(&depths, active_at, expanded);
+                        let foldable = forge_features::group_cut(&depths, None, false).is_some();
+                        let shown_rows: Vec<forge_features::ArrangedEntry> = visible.iter().take(cut.unwrap_or(visible.len())).map(|item| (*item).clone()).collect();
+                        let group_id = group.id.clone();
+                        rsx! {
+                    for item in shown_rows.iter() {
                         SessionRow {
                             key: "{item.entry.key.dom_key()}",
                             project: item.project.path.clone(),
@@ -297,6 +309,24 @@ pub fn Sidebar() -> Element {
                         }
                         if item.hidden_forks > 0 {
                             div { class: "fork-hidden", style: "margin-left: {fork_indent(item.depth.saturating_add(1))}px", {nested_label(item.hidden_forks)} }
+                        }
+                    }
+                    if foldable && !group.collapsed {
+                        button {
+                            class: "sidebar-more",
+                            r#type: "button",
+                            onclick: {
+                                let group_id = group_id.clone();
+                                move |_| {
+                                    let mut set = expanded_groups.write();
+                                    if !set.remove(&group_id) {
+                                        set.insert(group_id.clone());
+                                    }
+                                }
+                            },
+                            if cut.is_some() { {tr!("Show more")} } else { {tr!("Show less|connectors")} }
+                        }
+                    }
                         }
                     }
                 }

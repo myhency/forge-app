@@ -81,6 +81,25 @@ impl ArrangedEntry {
     }
 }
 
+/// How many sessions a sidebar group shows before `더 보기`: the desktop app lists five, then a
+/// `더 보기` row that opens the rest in place and a `간략히 보기` row that folds them back (round 37).
+pub const GROUP_ROWS: usize = 5;
+
+/// Where a group's list is cut: the index (into the rows as drawn) of the first row not shown, or
+/// `None` when every row shows. `depths` are the rows' nesting depths (forks nest under a session
+/// and go with it); only top-level rows count toward `GROUP_ROWS`. A group the person opened with
+/// `더 보기` is not cut, and neither is one whose cut would hide the open session (`active_at`).
+pub fn group_cut(depths: &[u8], active_at: Option<usize>, expanded: bool) -> Option<usize> {
+    if expanded {
+        return None;
+    }
+    let cut = depths.iter().enumerate().filter(|(_, depth)| **depth == 0).map(|(index, _)| index).nth(GROUP_ROWS)?;
+    match active_at {
+        Some(active) if active >= cut => None,
+        _ => Some(cut),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrangedGroup {
     /// Stable between draws; the key of the collapsed set in `SidebarPrefs`.
@@ -1152,4 +1171,19 @@ mod tests {
 
         assert_eq!(order, vec![LiveSessionId(2), LiveSessionId(1), LiveSessionId(3)]);
     }
+    #[test]
+    fn a_group_shows_five_sessions_with_their_forks_then_cuts() {
+        assert_eq!(group_cut(&[0, 0, 0, 0, 0], None, false), None);
+        assert_eq!(group_cut(&[0, 0, 0, 0, 0, 0, 0], None, false), Some(5));
+        // A fork under the second session goes with it.
+        assert_eq!(group_cut(&[0, 0, 1, 0, 0, 0, 0], None, false), Some(6));
+        assert_eq!(group_cut(&[0, 0, 0, 0, 0, 0, 0], None, true), None);
+    }
+
+    #[test]
+    fn a_cut_never_hides_the_open_session() {
+        assert_eq!(group_cut(&[0, 0, 0, 0, 0, 0, 0], Some(6), false), None);
+        assert_eq!(group_cut(&[0, 0, 0, 0, 0, 0, 0], Some(2), false), Some(5));
+    }
+
 }
