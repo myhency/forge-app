@@ -1603,7 +1603,9 @@ impl Workspace {
                     Phase::Idle if ran => {
                         let Some(handle) = this.handle(parent) else { return };
                         let reply: String = reply.unwrap_or_default().chars().take(2000).collect();
-                        handle.send_with(tr!("The session \"{title}\" you proposed has finished. Its last reply:\n\n{reply}", title = title, reply = reply), Vec::new());
+                        // Tagged so the transcript draws it as a received message, not as something the person said.
+                        let body = tr!("The session \"{title}\" you proposed has finished. Its last reply:\n\n{reply}", title = title, reply = reply);
+                        handle.send_with(forge_entities::session_report_message(&title, &body), Vec::new());
                         return;
                     }
                     Phase::Failed => return,

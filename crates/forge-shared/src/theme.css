@@ -180,6 +180,7 @@ button:not(:disabled):active { scale: 0.98; }
 .chapter-toc-item.current { color: var(--fg); font-weight: var(--weight-semibold); }
 .chapter-toc-dash { flex: none; width: 8px; height: 2px; background: currentColor; opacity: 0.6; }
 .chapter-toc-item.current .chapter-toc-dash { width: 14px; opacity: 1; }
+.received-text { padding: var(--sp-10) var(--sp-12); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
 .offer-card { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-card); overflow: hidden; }
 .offer-head { padding: var(--sp-8) var(--sp-16); background: var(--code-bg); color: var(--fg); }
 .offer-body { display: flex; align-items: flex-start; gap: var(--sp-10); padding: var(--sp-12) var(--sp-16) var(--sp-4); }

@@ -117,6 +117,26 @@ pub enum Item {
     Chapter(Chapter),
     /// Claude proposed a separate session with `start_session`: a card the person starts, takes here or closes.
     SessionOffer(SessionOffer),
+    /// A message another session sent here (a session this one proposed, reporting back): the desktop
+    /// app folds it as `수신 메시지 1개`.
+    Received { title: String, text: String },
+}
+
+const REPORT_OPEN: &str = "<session-report title=\"";
+const REPORT_CLOSE: &str = "</session-report>";
+
+/// The message a started session sends back to the session that proposed it.
+pub fn session_report_message(title: &str, body: &str) -> String {
+    let title = title.replace(['"', '<', '>'], "");
+    format!("{REPORT_OPEN}{title}\">\n{body}\n{REPORT_CLOSE}")
+}
+
+/// The title and text of a report message, when the text is one.
+fn session_report(text: &str) -> Option<(String, String)> {
+    let rest = text.trim().strip_prefix(REPORT_OPEN)?;
+    let (title, rest) = rest.split_once("\">")?;
+    let body = rest.trim().strip_suffix(REPORT_CLOSE)?.trim();
+    Some((title.to_string(), body.to_string()))
 }
 
 /// A separate session Claude proposed (the desktop app's `start_session` card, observed 2026-11-06).
@@ -804,8 +824,11 @@ pub fn build_turns(messages: &[Message], view: TranscriptView, live: Option<&Liv
             MessageRole::User => {
                 let text = message.text();
                 finish_turn(&mut items, std::mem::take(&mut blocks), at.take(), view, None, Next::Message(&text), &mut chapter_titles);
-                // What a run of a code block told the model is not something the person said.
-                if !is_run_message(&text) {
+                // What a run of a code block told the model is not something the person said, and
+                // neither is a report from another session.
+                if let Some((title, body)) = session_report(&text) {
+                    items.push(Item::Received { title, text: body });
+                } else if !is_run_message(&text) {
                     items.push(Item::User(message.clone()));
                 }
             }
@@ -900,6 +923,7 @@ mod tests {
                 Item::Answers(_) => "answers",
                 Item::Chapter(_) => "chapter",
                 Item::SessionOffer(_) => "offer",
+                Item::Received { .. } => "received",
                 Item::Live(_) => "live",
                 Item::Workflow(_) => "workflow",
                 Item::Plan(_) => "plan",
@@ -1782,6 +1806,17 @@ mod tests {
     fn a_start_session_call_without_a_prompt_draws_no_card() {
         let start = tool("s2", "mcp__ccd_session__start_session", json!({"proposal_id": "s1"}), Some(false));
         assert!(session_offer(match &start { Block::Tool(call) => call, _ => unreachable!() }).is_none());
+    }
+
+
+    #[test]
+    fn a_report_from_another_session_is_a_received_message_not_a_user_bubble() {
+        let report = session_report_message("Fix \"mean\"", "It is done.");
+        let messages = vec![Message::user("go"), assistant(vec![text("ok")]), Message::user(&report), assistant(vec![text("checked")])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        let received = items.iter().find_map(|item| if let Item::Received { title, text } = item { Some((title.clone(), text.clone())) } else { None });
+        assert_eq!(received, Some(("Fix mean".to_string(), "It is done.".to_string())));
+        assert_eq!(items.iter().filter(|item| matches!(item, Item::User(_))).count(), 1);
     }
 
 }

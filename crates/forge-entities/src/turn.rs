@@ -178,6 +178,7 @@ fn TurnItem(
         Item::FileCard(card) => rsx! { FileCardView { card, on_open_file } },
         Item::Footer(footer) => rsx! { FooterView { footer } },
         Item::Answers(pairs) => rsx! { AnswerCard { pairs } },
+        Item::Received { title, text } => rsx! { ReceivedMessage { title, text } },
         Item::SessionOffer(offer) => {
             let mark = offer_marks.get(&offer.id).copied();
             rsx! { SessionOfferCard { offer, mark, on_offer } }
@@ -437,6 +438,24 @@ pub fn Clock(started: Option<SystemTime>) -> Element {
     let seconds = now().duration_since(started).map(|elapsed| elapsed.as_secs()).unwrap_or(0);
     let label = elapsed_label(seconds);
     rsx! { span { class: "live-clock", "{label}" } }
+}
+
+/// A message another session sent here, folded as the desktop app does: `수신 메시지 1개 · <title> ›`,
+/// the text inside when opened.
+#[component]
+fn ReceivedMessage(title: String, text: String) -> Element {
+    let mut open = use_signal(|| false);
+    rsx! {
+        div { class: "activity",
+            button { class: "activity-head", r#type: "button", "aria-expanded": "{open()}", onclick: move |_| open.set(!open()),
+                span { class: "activity-summary", {tr!("Received {count} message", count = 1)} " · {title}" }
+                span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: open() } }
+            }
+            if open() {
+                div { class: "activity-box received-text", "{text}" }
+            }
+        }
+    }
 }
 
 /// A session Claude proposed, as the desktop app's card (observed 2026-11-06): a grey strip `새 세션`,

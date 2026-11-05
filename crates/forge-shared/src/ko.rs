@@ -624,6 +624,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Reading|view", "읽기"),
     ("Reads the commits of the last day and flags risky changes and missing tests.", "지난 하루의 커밋을 읽고 위험한 변경과 빠진 테스트를 짚어 줍니다."),
     ("Read|tool", "읽기"),
+    ("Received {count} message", "수신 메시지 {count}개"),
     ("Recent", "최근"),
     ("Recent items", "최근 항목"),
     ("Recommended", "추천"),
