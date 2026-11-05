@@ -5,7 +5,7 @@ describe("session tools", () => {
   it("offer mark_chapter and start_session under the desktop app's names", () => {
     expect(MARK_CHAPTER_TOOL).toBe("mcp__ccd_session__mark_chapter");
     expect(START_SESSION_TOOL).toBe("mcp__ccd_session__start_session");
-    expect(sessionToolDefinitions().map((t) => t.name)).toEqual(["mark_chapter", "start_session"]);
+    expect(sessionToolDefinitions().map((t) => t.name)).toEqual(["mark_chapter", "start_session", "dismiss_task"]);
   });
 
   it("accept a titled chapter and refuse a blank one", async () => {
@@ -41,5 +41,16 @@ describe("session tools", () => {
     expect(card.content[0].text).toContain("Shown to the user as a card");
     const ownWithoutPrompt = await sessionToolDefinitions("ask")[1].handler({ initiation: "own_initiative", title: "x" }, {});
     expect(ownWithoutPrompt.isError).toBe(true);
+  });
+
+  it("give each card a task_id that dismiss_task takes back", async () => {
+    const [, start, dismiss] = sessionToolDefinitions("ask");
+    const card = await start.handler({ initiation: "own_initiative", title: "Fix", prompt: "Fix it" }, {});
+    const taskId = /task_id: (task_[0-9a-f]{8})/.exec(card.content[0].text)?.[1];
+    expect(taskId).toBeDefined();
+    const ok = await dismiss.handler({ task_id: taskId, reason: "fixed here" }, {});
+    expect(ok.isError).toBeUndefined();
+    const bad = await dismiss.handler({ task_id: "nope" }, {});
+    expect(bad.isError).toBe(true);
   });
 });

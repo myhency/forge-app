@@ -7,6 +7,12 @@ import { z } from "zod";
 export const SESSION_SERVER_NAME = "ccd_session";
 export const MARK_CHAPTER_TOOL = `mcp__${SESSION_SERVER_NAME}__mark_chapter`;
 export const START_SESSION_TOOL = `mcp__${SESSION_SERVER_NAME}__start_session`;
+export const DISMISS_TASK_TOOL = `mcp__${SESSION_SERVER_NAME}__dismiss_task`;
+
+/** A proposal's handle, as the desktop app gives one (`task_ab12cd34`): dismiss_task names it. */
+function newTaskId(): string {
+  return `task_${Math.random().toString(16).slice(2, 10).padEnd(8, "0")}`;
+}
 
 // The desktop app's own description (read from its tool list, 2026-11-06).
 const MARK_CHAPTER_DESCRIPTION = [
@@ -86,21 +92,41 @@ export function sessionToolDefinitions(unrelated: UnrelatedTask = "ask"): SdkMcp
       if (prompt === "" && unrelated === "new_session") {
         return { content: [{ type: "text" as const, text: `Started "${title}" in a new session with the user's words. Say so in one short sentence and end your turn; do not do the work here.` }] };
       }
+      const taskId = newTaskId();
       if (prompt === "") {
-        return { content: [{ type: "text" as const, text: `Shown to the user as a card "${title}": they start it in a new session or have you do it here. Say so in one short sentence and end your turn; do not start the work.` }] };
+        return { content: [{ type: "text" as const, text: `Shown to the user as a card "${title}": they start it in a new session or have you do it here. Say so in one short sentence and end your turn; do not start the work. (task_id: ${taskId})` }] };
       }
       return {
         content: [
           {
             type: "text" as const,
-            text: `Shown to the user as a card "${title}". Nothing runs until they press Start or choose to do it here; carry on with your answer.`,
+            text: `Shown to the user as a card "${title}". Nothing runs until they press Start or choose to do it here; carry on with your answer. (task_id: ${taskId})`,
           },
         ],
       };
     },
     { alwaysLoad: true },
   );
-  return [markChapter, startSession];
+  // The desktop app's own description (loaded through a desktop session, 2026-11-06).
+  const dismissTask = tool(
+    "dismiss_task",
+    [
+      'Withdraw a proposal you made with start_session (initiation "own_initiative" or "offer") that the user has not started.',
+      'Call this when it went stale: the work was done here after all (by you or the user), it turned out unnecessary, or you proposed a better-scoped replacement (propose the new one first, then dismiss the old task_id). A card the user answered has already left, "Do it here" included, so it needs no call.',
+    ].join("\n\n"),
+    {
+      task_id: z.string().describe("The task_id the start_session proposal returned."),
+      reason: z.string().optional().describe('Optional one-line reason the suggestion is no longer needed, e.g. "fixed in this session" or "superseded by task_ab12cd34".'),
+    },
+    async (args) => {
+      if (!/^task_[0-9a-f]{8}$/.test(args.task_id.trim())) {
+        return { content: [{ type: "text" as const, text: "No proposal has that task_id." }], isError: true };
+      }
+      return { content: [{ type: "text" as const, text: `Withdrew ${args.task_id.trim()}: its card is gone.` }] };
+    },
+    { alwaysLoad: true },
+  );
+  return [markChapter, startSession, dismissTask];
 }
 
 export function createSessionToolsServer(unrelated: UnrelatedTask = "ask"): McpSdkServerConfigWithInstance {

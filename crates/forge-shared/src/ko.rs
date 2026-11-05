@@ -990,6 +990,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Whether Claude asks before starting a separate session, always works in the current one, or always starts a new session. Takes effect in new sessions.", "Claude가 별도 세션을 시작하기 전에 물어볼지, 항상 현재 세션에서 작업할지, 항상 새 세션을 시작할지 정합니다. 새 세션부터 적용됩니다."),
     ("Whole word", "단어 단위"),
     ("Wide", "넓게"),
+    ("Withdrew a proposal", "제안을 철회함"),
     ("Word wrap", "자동 줄바꿈"),
     ("Work", "작업"),
     ("Workflow", "워크플로우"),

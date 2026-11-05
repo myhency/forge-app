@@ -153,6 +153,8 @@ pub struct SessionOffer {
     /// instead of waiting for the card's Start (the sidecar's answer says `Started …`). An empty
     /// `brief` means the person's own message is the brief.
     pub auto_start: bool,
+    /// The handle the sidecar gave the card (`task_ab12cd34`), which `dismiss_task` names.
+    pub task_id: Option<String>,
 }
 
 /// What became of a proposed session's card.
@@ -180,6 +182,21 @@ pub enum OfferAction {
 /// does the work instead of splitting it off again.
 pub const SPLIT_OFF_PREAMBLE: &str = "This session was started from another session to do the request below. Do it here; do not start or propose another session for it.";
 
+/// The tool that withdraws a proposal Claude made (the desktop app's name).
+pub const DISMISS_TASK_TOOL: &str = "mcp__ccd_session__dismiss_task";
+
+/// The task ids Claude withdrew with `dismiss_task` in these messages.
+fn dismissed_tasks(messages: &[Message]) -> Vec<String> {
+    messages
+        .iter()
+        .flat_map(|message| message.blocks.iter())
+        .filter_map(|block| match block {
+            Block::Tool(call) if call.name == DISMISS_TASK_TOOL && call.result.as_ref().is_some_and(|result| !result.is_error) => call.input.get("task_id").and_then(Value::as_str).map(|id| id.trim().to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The tool the desktop app gives Claude to propose a session; Forge offers the same name.
 pub const START_SESSION_TOOL: &str = "mcp__ccd_session__start_session";
 
@@ -205,7 +222,8 @@ pub fn session_offer(call: &ToolCall) -> Option<SessionOffer> {
     let lead = prompt.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or(prompt).trim_start_matches('#').trim().to_string();
     // With `항상 새 세션 시작` on, the sidecar answers `Started …`: the session starts by itself.
     let auto_start = call.result.as_ref().is_some_and(|result| result.output.trim_start().starts_with("Started "));
-    Some(SessionOffer { id: call.id.clone(), title, brief, lead, auto_start })
+    let task_id = call.result.as_ref().and_then(|result| result.output.split("task_id: ").nth(1)).map(|rest| rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect::<String>()).filter(|id| !id.is_empty());
+    Some(SessionOffer { id: call.id.clone(), title, brief, lead, auto_start, task_id })
 }
 
 /// A chapter of the session (the desktop app's `mark_chapter`, observed 2026-11-06).
@@ -441,6 +459,10 @@ fn tool_row(call: &ToolCall) -> ToolRow {
         ToolKind::Other if call.name == SKILL_TOOL => {
             let name = call.input.get("skill").and_then(Value::as_str).unwrap_or_default();
             (tr!("Skill ran|tool").to_string(), format!("/{name}"), String::new())
+        }
+        ToolKind::Other if call.name == DISMISS_TASK_TOOL => {
+            let reason = call.input.get("reason").and_then(Value::as_str).map(str::trim).unwrap_or_default();
+            (tr!("Withdrew a proposal").to_string(), reason.to_string(), String::new())
         }
         ToolKind::Other if is_desktop_tool(&call.name) => {
             let verb = if call.result.is_some() { tr!("Controlled an app|tool") } else { tr!("Controlling an app") };
@@ -858,6 +880,11 @@ pub fn build_turns(messages: &[Message], view: TranscriptView, live: Option<&Liv
         }
     }
     finish_turn(&mut items, blocks, at, view, live, Next::End, &mut chapter_titles);
+    // A card Claude withdrew later with `dismiss_task` is gone.
+    let dismissed = dismissed_tasks(messages);
+    if !dismissed.is_empty() {
+        items.retain(|item| !matches!(item, Item::SessionOffer(offer) if offer.task_id.as_ref().is_some_and(|id| dismissed.contains(id))));
+    }
     // A running `/compact` has no tool call to name: the line says what it is doing.
     let compacting = messages.iter().rev().find(|message| message.role == MessageRole::User).is_some_and(|message| is_compact_command(&message.text()));
     if live.is_some() && compacting {
@@ -1840,6 +1867,22 @@ mod tests {
         assert_eq!(offer.brief, "", "the person's message is the brief");
         call.result = Some(forge_domain::ToolResult { output: "Shown to the user as a card".into(), is_error: false });
         assert!(!session_offer(&call).unwrap().auto_start);
+    }
+
+    #[test]
+    fn a_card_claude_withdrew_with_dismiss_task_is_gone() {
+        let start = tool("s1", START_SESSION_TOOL, json!({"initiation": "own_initiative", "title": "Fix", "prompt": "Fix it"}), Some(false));
+        let Block::Tool(mut start_call) = start else { unreachable!() };
+        start_call.result = Some(ToolResult { output: "Shown to the user as a card \"Fix\". (task_id: task_ab12cd34)".into(), is_error: false });
+        assert_eq!(session_offer(&start_call).unwrap().task_id.as_deref(), Some("task_ab12cd34"));
+        let offers = |messages: &[Message]| build_turns(messages, TranscriptView::Normal, None).into_iter().filter(|item| matches!(item, Item::SessionOffer(_))).count();
+        let first = vec![Message::user("go"), assistant(vec![Block::Tool(start_call.clone())])];
+        assert_eq!(offers(&first), 1);
+        let dismiss = tool("d1", DISMISS_TASK_TOOL, json!({"task_id": "task_ab12cd34"}), Some(false));
+        let later = vec![Message::user("go"), assistant(vec![Block::Tool(start_call)]), Message::user("done it here"), assistant(vec![dismiss])];
+        assert_eq!(offers(&later), 0);
+        let row = build_turns(&later, TranscriptView::Normal, None);
+        assert!(format!("{row:?}").contains("Withdrew a proposal"), "the row says what it did, not the JSON");
     }
 
     #[test]
