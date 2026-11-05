@@ -75,6 +75,13 @@ pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
             if input.get("pinned").and_then(Value::as_bool) == Some(false) { tr!("Allow Claude to unpin a session?") } else { tr!("Allow Claude to pin a session?") }.to_string(),
             None,
         )),
+        "mcp__ccd_session_mgmt__set_session_title" => Some((tr!("Allow Claude to rename a session?").to_string(), text("title"))),
+        "mcp__ccd_session_mgmt__set_session_model" => Some((tr!("Allow Claude to change another session's model?").to_string(), text("model"))),
+        "mcp__ccd_session_mgmt__set_session_effort" => Some((tr!("Allow Claude to change another session's effort?").to_string(), text("effort"))),
+        "mcp__ccd_session_mgmt__set_session_permission_mode" => Some((tr!("Allow Claude to change a session's permission mode?").to_string(), text("mode"))),
+        "mcp__ccd_session_mgmt__archive_session" => Some((tr!("Allow Claude to archive a session?").to_string(), text("reason"))),
+        "mcp__ccd_session_mgmt__unarchive_session" => Some((tr!("Allow Claude to restore an archived session?").to_string(), None)),
+        "mcp__ccd_session_mgmt__stop_session" => Some((tr!("Allow Claude to stop another session's turn?").to_string(), None)),
         _ => None,
     };
     if let Some((title, description)) = app_ask {

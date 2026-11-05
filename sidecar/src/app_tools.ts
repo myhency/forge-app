@@ -23,6 +23,8 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${SESSION_MGMT_SERVER}__list_sessions`,
   `mcp__${SESSION_MGMT_SERVER}__get_session`,
   `mcp__${SESSION_MGMT_SERVER}__search_session_transcripts`,
+  `mcp__${SESSION_MGMT_SERVER}__list_events`,
+  `mcp__${SESSION_MGMT_SERVER}__get_usage`,
   `mcp__${VIEW_SERVER}__set_transcript_view`,
   `mcp__${SETTINGS_SERVER}__get_settings`,
 ];
@@ -81,6 +83,78 @@ export function sessionMgmtTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
         limit: z.number().optional().describe("Max hits to return. Default 20."),
       },
       forward(ask, "search_session_transcripts"),
+    ),
+    tool(
+      "list_events",
+      "Read the recent transcript of another Forge session.\n\nReturns a compact plaintext rendering of the target session's user/assistant turns and tool calls, most recent last. Use this to understand what another session has been doing or what it concluded.",
+      {
+        session_id: z.string().describe("The sessionId whose transcript to read (from list_sessions / search_session_transcripts). Must not be the current session."),
+        limit: z.number().optional().describe("Max transcript messages to include (most recent). Default 40."),
+      },
+      forward(ask, "list_events"),
+    ),
+    tool(
+      "get_usage",
+      "How full a session's context window is (tokens used, percent, the window size) and, when the account reported it, how much of its usage limit is used and when it resets. `session_id` defaults to \"self\"; a session that is not open reports its context unavailable. For pacing side sessions and deciding when to wrap up, compact or hand off. Read-only.",
+      { session_id: z.string().optional().describe('A sessionId from list_sessions, or "self" (the default).') },
+      forward(ask, "get_usage"),
+    ),
+    tool(
+      "set_session_title",
+      "Rename a Forge session — another session, or this one.\n\nUse it when the user asks to rename a session, or after a session's scope has clearly changed and the old title is misleading. When the request didn't come from the user, prefer renaming only sessions whose titles are clearly stale.",
+      {
+        session_id: z.string().describe('The sessionId of the session to rename (from list_sessions / search_session_transcripts), or the literal string "self" to rename this session.'),
+        title: z.string().describe("New title for the session."),
+      },
+      forward(ask, "set_session_title"),
+    ),
+    tool(
+      "set_session_model",
+      "Switch the model another open Forge session uses, from its next turn on (a turn already in flight finishes on the current model). Refused for this session: a session must not silently re-price its own turns — if this session should run on a different model, ask the user to pick it in the model menu. The user is asked first.",
+      {
+        session_id: z.string().describe("The sessionId of the session to switch (from list_sessions). Must not be this session."),
+        model: z.string().describe("Model id as the app's model picker lists it (e.g. one returned in a get_session `model` field)."),
+      },
+      forward(ask, "set_session_model"),
+    ),
+    tool(
+      "set_session_effort",
+      "Set another open Forge session's effort level (low, medium, high, xhigh, max) from its next turn on. Refused for this session — a session must not silently re-price its own turns. The user is asked first.",
+      {
+        session_id: z.string().describe("The sessionId of the session to change (from list_sessions). Must not be this session."),
+        effort: z.enum(["low", "medium", "high", "xhigh", "max"]).describe("The effort level."),
+      },
+      forward(ask, "set_session_effort"),
+    ),
+    tool(
+      "set_session_permission_mode",
+      'Switch an open Forge session ("self" or another) to a permission mode: default, acceptEdits, plan, auto, bypassPermissions. Applies at once; for "self" the rest of this turn runs in the new mode. The user is asked first. Unavailable modes are refused.',
+      {
+        session_id: z.string().describe('The sessionId of the session to switch (from list_sessions), or the literal string "self" for this session.'),
+        mode: z.enum(["default", "acceptEdits", "plan", "auto", "bypassPermissions"]).describe("The permission mode, as get_session reports it in permissionMode."),
+      },
+      forward(ask, "set_session_permission_mode"),
+    ),
+    tool(
+      "archive_session",
+      'Archive a Forge session: it is closed and moves to the Archived list, from where it can be reopened later. Pass "self" to archive this session — the conversation ends after this tool result. A session that is still working is not archived and the call says so. The user is asked to approve each call. Only call it after the user has explicitly agreed to archive a specific session — never speculatively. Archiving is the reversible verb: unarchive_session brings a session back.',
+      {
+        session_id: z.string().describe('The sessionId of the session to archive (from list_sessions / search_session_transcripts), or the literal string "self" to archive this session (ends the conversation).'),
+        reason: z.string().optional().describe("Short human-readable reason shown in the approval prompt."),
+      },
+      forward(ask, "archive_session"),
+    ),
+    tool(
+      "unarchive_session",
+      "Restore an archived Forge session to the session list. Its conversation is intact. Use it when the user asks to bring back a session they (or you, via archive_session) archived — find it with list_sessions include_archived: true. The user is asked first.",
+      { session_id: z.string().describe("The sessionId of the archived session to restore (from list_sessions with include_archived: true).") },
+      forward(ask, "unarchive_session"),
+    ),
+    tool(
+      "stop_session",
+      "Interrupt another Forge session's in-flight turn — the same as the user pressing Stop there. The session stays open and idle afterwards; a message already queued in it runs next. Not for this session — you end your own turn by finishing your reply. A session that is idle is left alone and the result says so.",
+      { session_id: z.string().describe("The sessionId of the session whose turn to stop (from list_sessions). Must not be this session.") },
+      forward(ask, "stop_session"),
     ),
   ];
 }
