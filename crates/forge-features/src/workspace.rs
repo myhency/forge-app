@@ -422,6 +422,15 @@ impl Workspace {
             .iter()
             .map(|entry| LiveSummary::from_view(&entry.view.read()))
             .collect();
+        // A session a card started nests under the session that proposed it.
+        let parents: HashMap<LiveSessionId, LiveSessionId> = self.offer_sessions.read().iter().map(|((parent, _), child)| (*child, *parent)).collect();
+        let open: Vec<LiveSummary> = open
+            .into_iter()
+            .map(|mut summary| {
+                summary.started_from = parents.get(&summary.id).and_then(|parent| self.live_view(*parent)).and_then(|view| view.read().claude_session_id.clone());
+                summary
+            })
+            .collect();
         let mut groups = merge_sidebar(&self.past.read(), &open);
         mark_archived(&mut groups, &self.archived.read());
         groups
@@ -1565,12 +1574,43 @@ impl Workspace {
                         handle.send_with(offer.brief.clone(), Vec::new());
                         let mut sessions = self.offer_sessions;
                         sessions.write().insert((id, offer.id.clone()), child);
-                        self.mark_offer(id, offer.id, OfferMark::Started);
+                        self.mark_offer(id, offer.id.clone(), OfferMark::Started);
+                        self.report_back_when_done(id, child, offer.title);
                     }
                     Err(error) => self.report(error.to_string()),
                 }
             }
         }
+    }
+
+    /// When the session a card started ends its first turn, sends its last reply to the session that
+    /// proposed it, so that one can check the work and report back (the desktop app does this: the
+    /// parent shows `수신 메시지 1개` and carries on). Gives up if either session closes.
+    fn report_back_when_done(&self, parent: LiveSessionId, child: LiveSessionId, title: String) {
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            let mut ran = false;
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let Some(view) = this.live_view(child) else { return };
+                let (phase, reply) = {
+                    let view = view.peek();
+                    let reply = view.session.messages.iter().rev().find(|message| message.role == forge_domain::MessageRole::Assistant).map(|message| message.text());
+                    (view.phase, reply)
+                };
+                match phase {
+                    Phase::Running => ran = true,
+                    Phase::Idle if ran => {
+                        let Some(handle) = this.handle(parent) else { return };
+                        let reply: String = reply.unwrap_or_default().chars().take(2000).collect();
+                        handle.send_with(tr!("The session \"{title}\" you proposed has finished. Its last reply:\n\n{reply}", title = title, reply = reply), Vec::new());
+                        return;
+                    }
+                    Phase::Failed => return,
+                    _ => {}
+                }
+            }
+        });
     }
 
     /// The end cards of a session that were closed or already sent.

@@ -844,6 +844,7 @@ pub static KO: &[(&str, &str)] = &[
     ("The project folder no longer exists, so this session can only be viewed.", "프로젝트 폴더가 더 이상 없으므로 이 세션은 보기만 할 수 있습니다."),
     ("The rest of this session is checked automatically.", "이 세션의 나머지 작업을 자동으로 검토합니다."),
     ("The search covers the titles shown.", "검색은 표시된 제목을 대상으로 합니다."),
+    ("The session \"{title}\" you proposed has finished. Its last reply:\n\n{reply}", "제안한 세션 \"{title}\"이(가) 끝났습니다. 마지막 답변:\n\n{reply}"),
     ("The session cannot move before its first message.", "첫 메시지를 보내기 전에는 세션을 옮길 수 없습니다."),
     ("The session this card started is no longer open.", "이 카드로 시작한 세션이 더 이상 열려 있지 않습니다."),
     ("The session was closed, so its folder was not changed.", "세션이 닫혀 폴더를 변경하지 않았습니다."),

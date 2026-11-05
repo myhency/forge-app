@@ -231,6 +231,9 @@ pub struct LiveSummary {
     pub first_user_message: Option<String>,
     pub marker: SessionMarker,
     pub can_send: bool,
+    /// The session that proposed this one (`start_session`), by its Claude id: the sidebar nests it
+    /// there, as the desktop app does.
+    pub started_from: Option<SessionId>,
 }
 
 impl LiveSummary {
@@ -248,6 +251,7 @@ impl LiveSummary {
                 .map(|message| truncate_chars(&message.text(), MAX_TITLE_CHARS)),
             marker: marker_for(view),
             can_send: view.can_send,
+            started_from: None,
         }
     }
 
@@ -312,7 +316,7 @@ pub fn merge_sidebar(
                     created_at: Some(summary.created_at.clone()),
                     marker: open.marker,
                     archived: false,
-                    forked_from: summary.forked_from.clone(),
+                    forked_from: summary.forked_from.clone().or_else(|| open.started_from.clone()),
                 },
                 None => SidebarEntry {
                     key: EntryKey::Past { project: project.path.clone(), session: summary.id.clone() },
@@ -347,7 +351,7 @@ pub fn merge_sidebar(
             created_at: None,
             marker: open.marker,
             archived: false,
-            forked_from: None,
+            forked_from: open.started_from.clone(),
         };
         match extras.iter_mut().find(|(path, _, _)| *path == open.project_path) {
             Some((_, _, entries)) => entries.push(entry),
@@ -665,6 +669,7 @@ mod tests {
             first_user_message: None,
             marker,
             can_send: true,
+            started_from: None,
         }
     }
 
