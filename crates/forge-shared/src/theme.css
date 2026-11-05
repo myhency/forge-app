@@ -805,13 +805,25 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .palette-close { flex: none; width: 26px; height: 26px; border: none; border-radius: var(--r-6); background: transparent; color: var(--fg-muted); font: inherit; font-size: var(--text-xl); line-height: 1; cursor: pointer; }
 .palette-close:hover { background: var(--bg-hover); color: var(--fg); }
 .palette-results { overflow-y: auto; padding: var(--sp-6); }
-.palette-row { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-2) var(--sp-12); padding: var(--sp-8) var(--sp-10); border-radius: var(--r-8); cursor: pointer; }
+/* Icon, title, time and ↵, as the desktop app's rows; a matched snippet goes under the title. */
+.palette-row { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: var(--sp-2) var(--sp-10); padding: var(--sp-8) var(--sp-10); border-radius: var(--r-8); cursor: pointer; }
+.palette-icon { grid-row: 1; grid-column: 1; display: inline-flex; color: var(--fg-muted); }
+.palette-title { grid-row: 1; grid-column: 2; }
+.palette-enter { grid-row: 1; grid-column: 4; color: var(--fg-muted); font-size: var(--text-sm); }
+.palette-tabs { display: flex; gap: var(--sp-4); padding: var(--sp-8) var(--sp-14); border-bottom: 1px solid var(--border); }
+.palette-tab { appearance: none; border: none; border-radius: var(--r-8); background: none; padding: var(--sp-4) var(--sp-10); color: var(--fg); font: inherit; cursor: pointer; }
+.palette-tab:hover { background: var(--bg-hover); }
+.palette-tab.active { background: var(--bg-hover); font-weight: var(--weight-semibold); }
+.palette-heading { padding: var(--sp-10) var(--sp-10) var(--sp-4); font-size: var(--text-sm); color: var(--fg-muted); }
+.palette-footer { display: flex; gap: var(--sp-16); padding: var(--sp-8) var(--sp-14); border-top: 1px solid var(--border); font-size: var(--text-sm); color: var(--fg-muted); }
+.palette-footer > span { display: inline-flex; align-items: center; gap: var(--sp-4); }
+.palette-key { padding: 0 var(--sp-5); border: 1px solid var(--border); border-radius: var(--r-5); font-size: var(--text-xs); }
 .palette-row.selected { background: var(--bg-hover); }
 .palette-title { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .palette-title b, .palette-snippet b { font-weight: var(--weight-bold); color: var(--fg); }
 .palette-project { margin-left: var(--sp-8); font-size: var(--text-sm); color: var(--fg-muted); }
-.palette-date { grid-row: 1; grid-column: 2; font-size: var(--text-xs); color: var(--fg-muted); white-space: nowrap; }
-.palette-snippet { grid-column: 1 / -1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--text-sm); color: var(--fg-muted); }
+.palette-date { grid-row: 1; grid-column: 3; font-size: var(--text-xs); color: var(--fg-muted); white-space: nowrap; }
+.palette-snippet { grid-column: 2 / -1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--text-sm); color: var(--fg-muted); }
 
 /* Composer + menu, chips */
 .picker-submenu { left: calc(100% + 4px); bottom: 0; min-width: 220px; }
