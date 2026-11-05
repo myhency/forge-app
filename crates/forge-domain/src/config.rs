@@ -92,6 +92,18 @@ pub struct SidebarPrefs {
     /// Pinned sessions, in the order pinned: the desktop app's `고정` lists them in a `고정됨` group at
     /// the top of the sidebar.
     pub pinned: Vec<ArchivedRef>,
+    /// Chapters the person pinned on an answer (the desktop app's `챕터로 고정`).
+    #[serde(default)]
+    pub chapter_pins: Vec<ChapterPin>,
+}
+
+/// A chapter the person set on an answer: the session, the id of the message that began the turn,
+/// and the heading.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChapterPin {
+    pub session_id: String,
+    pub anchor: String,
+    pub title: String,
 }
 
 impl Default for SidebarPrefs {
@@ -108,6 +120,7 @@ impl Default for SidebarPrefs {
             width: DEFAULT_SIDEBAR_WIDTH,
             hidden: false,
             pinned: Vec::new(),
+            chapter_pins: Vec::new(),
         }
     }
 }
@@ -674,6 +687,7 @@ mod tests {
             width: 300,
             hidden: true,
             pinned: Vec::new(),
+            chapter_pins: Vec::new(),
         };
         let config = AppConfig { sidebar: prefs.clone(), ..AppConfig::default() };
 

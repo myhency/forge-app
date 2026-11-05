@@ -125,6 +125,9 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
         .as_ref()
         .is_some_and(|session| workspace.is_archived(&view.project_path, session));
     let dock_expanded = workspace.dock(id).expanded.is_some() && !archived;
+    // Chapters the person pinned are drawn as Claude's own.
+    let chapter_pins = view.claude_session_id.as_ref().map(|session| workspace.chapter_pins(session)).unwrap_or_default();
+    let shown_messages = forge_entities::with_pinned_chapters(&view.session.messages, &chapter_pins);
     let heading = view.session.title.as_deref().unwrap_or(tr!("Session")).to_string();
     let title_menu = workspace.active_title_menu();
     let tag = workspace.worktree_tag(&view.project_path).map(|tag| match tag.branch {
@@ -151,7 +154,9 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 StartLine { id }
                 ForkLine { id }
                 Turns {
-                    messages: view.session.messages.clone(),
+                    messages: shown_messages.clone(),
+                    pinned_chapters: chapter_pins.iter().map(|(anchor, _)| anchor.clone()).collect::<Vec<_>>(),
+                    on_pin_chapter: view.claude_session_id.clone().map(|session| EventHandler::new(move |(anchor, title): (String, String)| workspace.toggle_chapter_pin(session.clone(), anchor, title))),
                     view: mode,
                     live: (view.phase == Phase::Running).then(|| live_state(view.turn_started, view.pending_permissions.front(), view.turn_output_tokens)),
                     on_open_file: move |path: String| workspace.open_file(id, path),
@@ -199,7 +204,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 }
             }
             ScrollToEnd {}
-            ChapterToc { chapters: forge_entities::chapters(&view.session.messages) }
+            ChapterToc { chapters: forge_entities::chapters(&shown_messages) }
             if let Some(error) = view.last_error.as_ref() {
                 if error.contains(forge_domain::CONFIG_INCOMPLETE) {
                     div { class: "banner error",

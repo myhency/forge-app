@@ -370,6 +370,7 @@ mod tests {
             width: 300,
             hidden: true,
             pinned: Vec::new(),
+            chapter_pins: Vec::new(),
         };
 
         FilterChoice::Reset.apply(&mut prefs);

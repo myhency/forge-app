@@ -492,6 +492,23 @@ impl Workspace {
         });
     }
 
+    /// The chapters the person pinned in a session: (the id of the message that began the turn, the heading).
+    pub fn chapter_pins(&self, session: &SessionId) -> Vec<(String, String)> {
+        self.prefs.read().chapter_pins.iter().filter(|pin| pin.session_id == session.0).map(|pin| (pin.anchor.clone(), pin.title.clone())).collect()
+    }
+
+    /// Pins an answer as a chapter, or unpins it (the desktop app's `챕터로 고정`). Kept in the
+    /// sidebar preferences, so it stays after a restart.
+    pub fn toggle_chapter_pin(&self, session: SessionId, anchor: String, title: String) {
+        self.update_prefs(|prefs| {
+            if let Some(at) = prefs.chapter_pins.iter().position(|pin| pin.session_id == session.0 && pin.anchor == anchor) {
+                prefs.chapter_pins.remove(at);
+            } else {
+                prefs.chapter_pins.push(forge_domain::ChapterPin { session_id: session.0, anchor, title });
+            }
+        });
+    }
+
     /// Changes the preferences on screen only (a drag changes the width many times); call
     /// `save_prefs` when it ends.
     pub fn change_prefs_unsaved(&self, change: impl FnOnce(&mut SidebarPrefs)) {

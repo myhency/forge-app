@@ -294,6 +294,60 @@ fn chapter_input(block: &Block) -> Option<(String, Option<String>)> {
     Some((title.to_string(), summary))
 }
 
+/// The messages with the chapters the person pinned (`챕터로 고정`) put in as chapter marks at the
+/// start of each pinned answer, so headings and the table of contents treat them as Claude's own.
+/// `pins` are (the id of the message that began the turn, the heading).
+pub fn with_pinned_chapters(messages: &[Message], pins: &[(String, String)]) -> Vec<Message> {
+    if pins.is_empty() {
+        return messages.to_vec();
+    }
+    let mut out: Vec<Message> = Vec::with_capacity(messages.len());
+    let mut pending: Option<String> = None;
+    for message in messages {
+        let mut message = message.clone();
+        match message.role {
+            MessageRole::User => {
+                pending = message.uuid.as_ref().and_then(|uuid| pins.iter().find(|(anchor, _)| anchor == uuid)).map(|(_, title)| title.clone());
+            }
+            MessageRole::Assistant => {
+                if let Some(title) = pending.take() {
+                    let mark = Block::Tool(ToolCall {
+                        id: format!("pinned-chapter-{title}"),
+                        name: MARK_CHAPTER_TOOL.to_string(),
+                        input: serde_json::json!({ "title": title }),
+                        result: Some(forge_domain::ToolResult { output: String::new(), is_error: false }),
+                    });
+                    message.blocks.insert(0, mark);
+                }
+            }
+        }
+        out.push(message);
+    }
+    out
+}
+
+/// A heading for an answer the person pins as a chapter: its first sentence, without markdown
+/// marks, cut at a word to at most 48 characters.
+pub fn pinned_chapter_title(answer: &str) -> String {
+    const LIMIT: usize = 48;
+    let line = crate::turn::speech_text(answer).lines().next().unwrap_or_default().trim().to_string();
+    let sentence = line.split_inclusive(". ").next().unwrap_or(&line).trim().trim_end_matches('.').to_string();
+    if sentence.chars().count() <= LIMIT {
+        return sentence;
+    }
+    let mut cut = String::new();
+    for word in sentence.split_whitespace() {
+        if cut.chars().count() + word.chars().count() + 1 > LIMIT {
+            break;
+        }
+        if !cut.is_empty() {
+            cut.push(' ');
+        }
+        cut.push_str(word);
+    }
+    if cut.is_empty() { sentence.chars().take(LIMIT).collect::<String>() + "…" } else { cut + "…" }
+}
+
 /// The session's chapters in order. A call that repeats the previous chapter's title is the same
 /// chapter (the desktop app's transcripts record some calls twice).
 pub fn chapters(messages: &[Message]) -> Vec<Chapter> {
@@ -1943,6 +1997,19 @@ mod tests {
         assert_eq!(app_tool_words(&call), Some(("Sent a message".to_string(), "say hi".to_string())));
         let other = ToolCall { name: "mcp__ccd_window__close_split".into(), ..call };
         assert_eq!(app_tool_words(&other), None);
+    }
+
+    #[test]
+    fn a_pinned_chapter_heads_its_answer_and_counts_as_a_chapter() {
+        let mut question = Message::user("fix it");
+        question.uuid = Some("u1".into());
+        let messages = vec![question, assistant(vec![Block::Text("## Fixed the parser\nDone.".into())])];
+        let pinned = with_pinned_chapters(&messages, &[("u1".into(), pinned_chapter_title("## Fixed the parser\nDone."))]);
+        assert_eq!(chapters(&pinned).iter().map(|c| c.title.as_str()).collect::<Vec<_>>(), vec!["Fixed the parser"]);
+        assert!(build_turns(&pinned, TranscriptView::Normal, None).iter().any(|item| matches!(item, Item::Chapter(_))));
+        assert_eq!(with_pinned_chapters(&messages, &[]), messages);
+        assert_eq!(pinned_chapter_title("Fixed the failing test and wrote the totals.\n\nMore."), "Fixed the failing test and wrote the totals");
+        assert_eq!(pinned_chapter_title("This is a much longer opening line that goes on well past the limit of the heading"), "This is a much longer opening line that goes on…");
     }
 
     #[test]

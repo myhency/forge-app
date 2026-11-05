@@ -62,6 +62,11 @@ pub fn Turns(
     /// Asked to fork the session right after an answer (its footer's ⑂, the desktop app's `여기서
     /// 포크하기`): the id of the next user message to cut before, or `None` for the whole session.
     #[props(default)] on_fork_here: Option<EventHandler<Option<String>>>,
+    /// The turns the person pinned as chapters, by the id of the message that began them.
+    #[props(default)] pinned_chapters: Vec<String>,
+    /// Asked to pin or unpin an answer as a chapter (its footer's pin): the id of the message that
+    /// began the turn, and the heading. No pin without it.
+    #[props(default)] on_pin_chapter: Option<EventHandler<(String, String)>>,
     /// Asked to send this text as the next message (an end card's button); its buttons do nothing without it.
     #[props(default)] on_send: Option<EventHandler<String>>,
     /// What became of each end card of the session, by the `wrap_up` call's id.
@@ -88,10 +93,19 @@ pub fn Turns(
             upcoming = message.uuid.clone();
         }
     }
+    // And the id of the person's message that began the turn: what a pinned chapter hangs on.
+    let mut turn_user: Vec<Option<String>> = vec![None; items.len()];
+    let mut current: Option<String> = None;
+    for (index, item) in items.iter().enumerate() {
+        if let Item::User(message) = item {
+            current = message.uuid.clone();
+        }
+        turn_user[index] = current.clone();
+    }
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", next_user: next_user[index].clone(), on_fork_here, item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone(), on_open_changes, offer_marks: offer_marks.clone(), on_offer }
+                TurnItem { key: "{index}", next_user: next_user[index].clone(), turn_user: turn_user[index].clone(), pinned_chapters: pinned_chapters.clone(), on_pin_chapter, on_fork_here, item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone(), on_open_changes, offer_marks: offer_marks.clone(), on_offer }
             }
         }
     }
@@ -110,6 +124,9 @@ fn TurnItem(
     on_rewind: Option<EventHandler<String>>,
     on_fork: Option<EventHandler<String>>,
     next_user: Option<String>,
+    turn_user: Option<String>,
+    pinned_chapters: Vec<String>,
+    on_pin_chapter: Option<EventHandler<(String, String)>>,
     on_fork_here: Option<EventHandler<Option<String>>>,
     on_send: Option<EventHandler<String>>,
     card_marks: std::collections::HashMap<String, crate::turn_cards::CardMark>,
@@ -190,7 +207,11 @@ fn TurnItem(
         Item::Thinking(text) => rsx! { div { class: "thinking", "{text}" } },
         Item::Activity(activity) => rsx! { ActivityBlock { activity, detailed, on_open_file, on_open_changes } },
         Item::FileCard(card) => rsx! { FileCardView { card, on_open_file } },
-        Item::Footer(footer) => rsx! { FooterView { footer, next_user, on_fork_here } },
+        Item::Footer(footer) => {
+            // Only a turn whose message has an id can carry a pinned chapter.
+            let pin = turn_user.map(|anchor| (pinned_chapters.contains(&anchor), anchor));
+            rsx! { FooterView { footer, next_user, on_fork_here, pin, on_pin_chapter } }
+        }
         Item::Answers(pairs) => rsx! { AnswerCard { pairs } },
         Item::Received { title, text } => rsx! { ReceivedMessage { title, text } },
         Item::SessionOffer(offer) => {
@@ -418,7 +439,7 @@ fn FileCardView(card: FileCard, on_open_file: EventHandler<String>) -> Element {
 }
 
 #[component]
-fn FooterView(footer: Footer, next_user: Option<String>, on_fork_here: Option<EventHandler<Option<String>>>) -> Element {
+fn FooterView(footer: Footer, next_user: Option<String>, on_fork_here: Option<EventHandler<Option<String>>>, pin: Option<(bool, String)>, on_pin_chapter: Option<EventHandler<(String, String)>>) -> Element {
     let time = footer.at.as_deref().map(|at| relative_time(at, OffsetDateTime::now_utc())).unwrap_or_default();
     let text = footer.text.clone();
     let spoken = footer.text.clone();
@@ -440,6 +461,20 @@ fn FooterView(footer: Footer, next_user: Option<String>, on_fork_here: Option<Ev
                     "aria-label": tr!("Fork from here"),
                     onclick: move |_| on_fork_here.call(next_user.clone()),
                     Icon { kind: IconKind::Fork, size: IconSize::Small }
+                }
+            }
+            if let (Some(on_pin_chapter), Some((pinned, anchor))) = (on_pin_chapter, pin) {
+                button {
+                    class: if pinned { "icon-button active" } else { "icon-button" },
+                    r#type: "button",
+                    title: if pinned { tr!("Unpin chapter") } else { tr!("Pin as chapter") },
+                    "aria-label": if pinned { tr!("Unpin chapter") } else { tr!("Pin as chapter") },
+                    "aria-pressed": "{pinned}",
+                    onclick: {
+                        let title = crate::turn_view::pinned_chapter_title(&footer.text);
+                        move |_| on_pin_chapter.call((anchor.clone(), title.clone()))
+                    },
+                    Icon { kind: if pinned { IconKind::PinFilled } else { IconKind::Pin }, size: IconSize::Small }
                 }
             }
             button {

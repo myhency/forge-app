@@ -29,7 +29,7 @@ def add(claude_home, projects_root):
     )
     transcript = Path(claude_home) / "projects" / bf.escape_project_path(cwd) / f"{SESSION_ID}.jsonl"
     lines = [
-        {"type": "user", "cwd": str(cwd), "sessionId": SESSION_ID, "message": {"role": "user", "content": "Table and edits: fix stats and sum sales"}},
+        {"type": "user", "uuid": "00000000-0000-4000-8000-0000000007a1", "cwd": str(cwd), "sessionId": SESSION_ID, "message": {"role": "user", "content": "Table and edits: fix stats and sum sales"}},
         {"type": "assistant", "sessionId": SESSION_ID, "message": {"role": "assistant", "content": [
             {"type": "tool_use", "id": "e1", "name": "Edit", "input": edit},
             {"type": "tool_use", "id": "w1", "name": "Write", "input": write},
