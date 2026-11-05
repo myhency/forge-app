@@ -43,7 +43,7 @@ pub use config::{
 };
 pub use effort::{AvailableModel, EffortLevel};
 pub use environment::{environment_of, environment_of_session, new_environment_id, parse_env, EnvParseError, EnvParseReason, EnvVars, Environment, FolderChoice, SessionEnvironmentRef};
-pub use keys::{SHOW_IN_FILE_MANAGER, KEY_ADD_FILES, KEY_ALLOW_ALWAYS, KEY_ANSWER, KEY_CLOSE_SESSION, KEY_FIND, KEY_SEARCH, KEY_SETTINGS, KEY_SHORTCUTS};
+pub use keys::{SHOW_IN_FILE_MANAGER, KEY_ADD_FILES, KEY_ALLOW_ALWAYS, KEY_ANSWER, KEY_CLOSE_SESSION, KEY_FIND, KEY_NEW_SESSION, KEY_SEARCH, KEY_SETTINGS, KEY_SHORTCUTS};
 pub use paths::{extension_of, file_name, has_parent_part, has_program_extension, is_absolute_path, path_parts};
 pub use trusted::{add_trusted, is_trusted, without_extended_prefix};
 pub use layout::{

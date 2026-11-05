@@ -224,6 +224,8 @@ pub enum IconKind {
     Target,
     /// The Preview panel's button in the chat header (the desktop app draws a globe).
     Globe,
+    /// The sidebar toggle at the top of the sidebar (a window with a left column).
+    Sidebar,
     Chevron,
     ChevronLeft,
     Check,
@@ -248,7 +250,7 @@ pub enum IconKind {
 }
 
 impl IconKind {
-    pub const ALL: [IconKind; 42] = [
+    pub const ALL: [IconKind; 43] = [
         IconKind::Close,
         IconKind::Search,
         IconKind::Sparkle,
@@ -270,6 +272,7 @@ impl IconKind {
         IconKind::More,
         IconKind::Target,
         IconKind::Globe,
+        IconKind::Sidebar,
         IconKind::Chevron,
         IconKind::ChevronLeft,
         IconKind::Check,
@@ -316,6 +319,7 @@ impl IconKind {
             IconKind::Send => &[Shape::Path("M12.5 3.5v5h-9M3.5 8.5l3-3M3.5 8.5l3 3")],
             IconKind::More => &[Shape::Dot { cx: 3.5, cy: 8.0 }, Shape::Dot { cx: 8.0, cy: 8.0 }, Shape::Dot { cx: 12.5, cy: 8.0 }],
             IconKind::Target => &[Shape::Circle { cx: 8.0, cy: 8.0, r: 6.0 }, Shape::Circle { cx: 8.0, cy: 8.0, r: 2.0 }],
+            IconKind::Sidebar => &[Shape::Rect { x: 2.0, y: 3.0, width: 12.0, height: 10.0, rx: 2.0 }, Shape::Path("M6 3v10")],
             IconKind::Globe => &[Shape::Circle { cx: 8.0, cy: 8.0, r: 6.0 }, Shape::Path("M2 8h12M8 2c-1.8 1.7-2.7 3.7-2.7 6s.9 4.3 2.7 6M8 2c1.8 1.7 2.7 3.7 2.7 6s-.9 4.3-2.7 6")],
             IconKind::Chevron => &[Shape::Path("M6 3.5L10.5 8 6 12.5")],
             IconKind::ChevronLeft => &[Shape::Path("M10 3.5L5.5 8 10 12.5")],

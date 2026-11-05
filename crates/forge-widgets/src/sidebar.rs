@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_features::{use_workspace, Active, EntryKey, Heading};
-use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
+use forge_shared::{tr, Button, Icon, IconKind, IconSize};
 
 use crate::account_menu::AccountMenu;
 use crate::filter_menu::{use_filter_ui_provider, FilterButton, SidebarFilterMenu};
@@ -139,41 +139,45 @@ pub fn Sidebar() -> Element {
     rsx! {
         div { class: "sidebar", style: "width: {prefs.clamped_width()}px",
             SidebarFilterMenu {}
+            // The desktop app's sidebar top (round 37): the sidebar toggle and back / forward in one
+            // row, then plain rows `+ 새로 만들기 ⌘N`, `검색`, `예약됨`, `사용자 지정`.
             div { class: "sidebar-top",
-                NavButtons {}
-                button {
-                    class: "sidebar-search",
-                    title: tr!("Search sessions ({key})", key = forge_domain::KEY_SEARCH),
-                    onclick: move |_| workspace.open_search(),
-                    span { Icon { kind: IconKind::Search } }
-                    span { {tr!("Search")} }
-                    span { class: "keys", "{forge_domain::KEY_SEARCH}" }
-                }
                 button {
                     class: "icon-button sidebar-hide",
                     title: tr!("Hide the sidebar"),
+                    "aria-label": tr!("Hide the sidebar"),
                     onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = true),
-                    Icon { kind: IconKind::ChevronLeft }
+                    Icon { kind: IconKind::Sidebar }
                 }
+                NavButtons {}
+                forge_features::DragSpacer {}
             }
-            div { class: "sidebar-new",
-                Button {
-                    label: tr!("+ New session"),
-                    kind: ButtonKind::Primary,
-                    onclick: move |_| workspace.show_new_session(),
-                }
+            button {
+                class: "sidebar-link sidebar-new-row",
+                onclick: move |_| workspace.show_new_session(),
+                span { Icon { kind: IconKind::Plus } }
+                span { {tr!("New")} }
+                span { class: "sidebar-link-keys", "{forge_domain::KEY_NEW_SESSION}" }
+            }
+            button {
+                class: "sidebar-link",
+                title: tr!("Search sessions ({key})", key = forge_domain::KEY_SEARCH),
+                onclick: move |_| workspace.open_search(),
+                span { Icon { kind: IconKind::Search } }
+                span { {tr!("Search")} }
+                span { class: "sidebar-link-keys", "{forge_domain::KEY_SEARCH}" }
+            }
+            button {
+                class: if active == Active::Routines { "sidebar-link active" } else { "sidebar-link" },
+                onclick: move |_| workspace.show_routines(),
+                span { Icon { kind: IconKind::Clock } }
+                span { {tr!("Scheduled")} }
             }
             button {
                 class: if active == Active::Customize { "sidebar-link active" } else { "sidebar-link" },
                 onclick: move |_| workspace.show_customize(),
                 span { Icon { kind: IconKind::Sparkle } }
                 span { {tr!("Customize")} }
-            }
-            button {
-                class: if active == Active::Routines { "sidebar-link active" } else { "sidebar-link" },
-                onclick: move |_| workspace.show_routines(),
-                span { Icon { kind: IconKind::Clock } }
-                span { {tr!("Routines")} }
             }
             div { class: "sidebar-scroll",
             if let Some(message) = notice {

@@ -77,6 +77,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                         span { class: "pane-tag", "{tag}" }
                     }
                 }
+                forge_features::DragSpacer {}
                 SessionTools { id, terminal: !archived }
             }
             div { class: "messages",

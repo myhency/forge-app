@@ -32,15 +32,19 @@
   --shadow: var(--shadow-2);
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
-  --surface-0: oklch(0.982 0.003 84.6);
-  --surface-1: oklch(0.959 0.005 78.3);
+  /* The desktop app's light palette (round 37): a white main area, a light grey sidebar. */
+  --surface-0: oklch(1.000 0 0);
+  --surface-1: oklch(0.941 0.002 67.8);
   --surface-2: oklch(1.000 0 0);
   --surface-3: oklch(1.000 0 0);
-  --bg-hover: oklch(0.932 0.007 80.7);
+  --bg-hover: oklch(0.964 0 0);
   --bg-overlay: oklch(0.216 0.006 56.0 / 0.4);
   --fg: oklch(0.216 0.006 56.0);
   --fg-muted: oklch(0.500 0.015 71.2);
-  --border: oklch(0.914 0.009 78.3);
+  --border: oklch(0.922 0 0);
+  /* A sidebar row under the pointer and the open session's row, on the grey sidebar. */
+  --sidebar-hover: oklch(0.905 0.002 67.8);
+  --sidebar-active: oklch(0.868 0.001 17.2);
   --accent: oklch(0.535 0.174 38.4);
   --accent-soft: oklch(0.535 0.174 38.4 / 0.25);
   --accent-fg: oklch(1.000 0 0);
@@ -62,6 +66,8 @@
     --surface-2: oklch(0.251 0.008 59.3);
     --surface-3: oklch(0.285 0.009 62.0);
     --bg-hover: oklch(0.315 0.010 67.0);
+    --sidebar-hover: oklch(0.315 0.010 67.0);
+    --sidebar-active: oklch(0.315 0.010 67.0);
     --bg-overlay: oklch(0.000 0.000 0.0 / 0.55);
     --fg: oklch(0.970 0 0);
     --fg-muted: oklch(0.696 0.014 71.3);
@@ -86,6 +92,8 @@
   --surface-2: oklch(0.251 0.008 59.3);
   --surface-3: oklch(0.285 0.009 62.0);
   --bg-hover: oklch(0.315 0.010 67.0);
+  --sidebar-hover: oklch(0.315 0.010 67.0);
+  --sidebar-active: oklch(0.315 0.010 67.0);
   --bg-overlay: oklch(0.000 0.000 0.0 / 0.55);
   --fg: oklch(0.970 0 0);
   --fg-muted: oklch(0.696 0.014 71.3);
@@ -146,14 +154,15 @@ button:not(:disabled):active { scale: 0.98; }
 .sidebar-group-header:hover .group-add, .group-add:focus-visible { opacity: 1; }
 .group-add:hover { background: var(--bg-hover); color: var(--fg); }
 .sidebar-item { display: flex; align-items: center; gap: var(--sp-10); padding: var(--sp-6) var(--sp-8); border-radius: var(--r-8); cursor: pointer; }
-.sidebar-item:hover { background: var(--bg-hover); }
+.sidebar-item:hover { background: var(--sidebar-hover, var(--bg-hover)); }
 .title-skeleton { display: block; height: 0.9em; margin: 0.25em 0; border-radius: var(--r-4); background: linear-gradient(90deg, var(--bg-hover) 0%, var(--border) 50%, var(--bg-hover) 100%); background-size: 200% 100%; animation: title-shimmer 1.4s linear infinite; }
 @keyframes title-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 .env-missing-line { width: 100%; max-width: var(--chat-column); box-sizing: border-box; margin: 0 auto var(--sp-6); padding: 0 var(--sp-16); color: var(--danger); font-size: var(--text-sm); }
 .env-missing-line .link-button { appearance: none; border: none; background: none; padding: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.drag-spacer { flex: 1; align-self: stretch; min-width: var(--sp-8); }
 .attention-dot { flex: none; width: 8px; height: 8px; margin-left: auto; border-radius: var(--r-round); background: var(--warning); }
 .attention-dot.naming { background: var(--fg-muted); opacity: 0.5; }
-.sidebar-item.active { background: var(--bg-hover); }
+.sidebar-item.active { background: var(--sidebar-active, var(--bg-hover)); }
 .sidebar-item .item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .sidebar-item .title { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-item .item-meta { display: flex; align-items: center; gap: var(--sp-8); min-width: 0; font-size: var(--text-sm); color: var(--fg-muted); white-space: nowrap; }
@@ -215,7 +224,7 @@ button:not(:disabled):active { scale: 0.98; }
 .pane-header { display: flex; align-items: center; gap: var(--sp-12); padding: var(--sp-12) var(--sp-28); font-weight: var(--weight-semibold); }
 .pane-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pane-tag { flex: none; margin-left: var(--sp-8); padding: var(--sp-1) var(--sp-8); border-radius: var(--r-pill); background: var(--bg-hover); color: var(--fg-muted); font-size: var(--text-sm); font-weight: var(--weight-regular); white-space: nowrap; }
-.pane-titlebox { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-4); }
+.pane-titlebox { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--sp-4); }
 .pane-titlebox .pane-title { flex: 0 1 auto; }
 .pane-titlebox .pane-tag { margin-left: var(--sp-4); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; max-width: 14em; }
 .title-menu { position: relative; flex: none; }
@@ -245,7 +254,7 @@ button:not(:disabled):active { scale: 0.98; }
 .message-actions .footer-time { color: var(--fg-muted); font-size: var(--text-sm); margin-right: var(--sp-4); align-self: center; }
 .message-actions { display: flex; gap: var(--sp-2); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); margin-top: -2px; }
 .turn-user:hover .message-actions, .message-actions:focus-within { opacity: 1; }
-.user-bubble { max-width: 100%; box-sizing: border-box; padding: 9px var(--sp-14); background: var(--bg-hover); border-radius: var(--r-14); white-space: pre-wrap; overflow-wrap: anywhere; }
+.user-bubble { max-width: 85%; box-sizing: border-box; padding: 9px var(--sp-14); background: var(--bg-hover); border-radius: var(--r-14); white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn-text { overflow-wrap: anywhere; }
 .turn-text.markdown { white-space: normal; }
 
@@ -559,7 +568,7 @@ button:not(:disabled):active { scale: 0.98; }
 .legend-share { width: 48px; text-align: right; font-weight: var(--weight-semibold); }
 
 :root {
-  --code-bg: oklch(0.959 0.005 78.3);
+  --code-bg: oklch(0.955 0 0);
   --link: oklch(0.501 0.165 258.7);
   --hl-comment: oklch(0.500 0.015 71.2);
   --hl-keyword: oklch(0.518 0.226 323.9);
@@ -1392,7 +1401,13 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .lightbox-caption { max-width: 80vw; color: var(--on-overlay); font-size: var(--text-md); text-align: center; overflow-wrap: anywhere; }
 
 .sidebar-link { display: flex; align-items: center; gap: var(--sp-8); margin: 0 var(--sp-4) var(--sp-8); padding: var(--sp-6) var(--sp-8); border: none; border-radius: var(--r-8); background: transparent; color: var(--fg); font: inherit; cursor: pointer; text-align: left; }
-.sidebar-link:hover, .sidebar-link.active { background: var(--bg-hover); }
+.sidebar-link:hover, .sidebar-link.active { background: var(--sidebar-hover, var(--bg-hover)); }
+.sidebar-link.active { background: var(--sidebar-active, var(--bg-hover)); }
+/* The rows sit close together, as in the desktop app; a shortcut shows on hover. */
+.sidebar > .sidebar-link { margin-bottom: var(--sp-2); }
+.sidebar > .sidebar-link + :not(.sidebar-link) { margin-top: var(--sp-10); }
+.sidebar-link-keys { margin-left: auto; color: var(--fg-muted); font-size: var(--text-sm); opacity: 0; }
+.sidebar-link:hover .sidebar-link-keys { opacity: 1; }
 .customize { flex: 1; min-width: 0; overflow-y: auto; padding: var(--sp-24) 40px 40px; box-sizing: border-box; }
 .customize-title { margin: 0 0 var(--sp-16); font-size: var(--text-4xl); font-weight: var(--weight-semibold); }
 .customize-bar { display: flex; align-items: center; gap: var(--sp-12); flex-wrap: wrap; margin-bottom: var(--sp-16); }
