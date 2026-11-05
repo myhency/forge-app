@@ -57,6 +57,15 @@ pub fn SessionRow(
     let mut mode = use_signal(|| RowMode::Normal);
     let actions = entry.actions();
     let session_id = entry.session_id.clone();
+    // A new session that runs before Claude has named it: the desktop app draws a shimmering bar
+    // in place of the title until the name comes (round 37).
+    let naming = match &entry.key {
+        EntryKey::Live(id) => workspace.live_view(*id).is_some_and(|view| {
+            let view = view.read();
+            view.session.title.is_none() && view.phase == forge_application::Phase::Running
+        }),
+        _ => false,
+    };
 
     // ⌥⌘R asks the active session's row to start renaming.
     let own_key = entry.key.clone();
@@ -217,6 +226,7 @@ pub fn SessionRow(
                         marker: entry.marker,
                         active,
                         shown,
+                        naming,
                         onclick: click,
                         {buttons}
                     }

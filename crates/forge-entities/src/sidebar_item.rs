@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_shared::{tr, Icon, IconKind, IconSize, StatusDot, Tone};
+use forge_shared::{tr, Icon, IconKind, IconSize};
 
 /// What the marker beside a sidebar entry says. Defined here (not in `forge-application`) so this
 /// crate depends only on the domain and the UI kit; a widget maps a session's phase onto it.
@@ -8,18 +8,6 @@ pub enum SessionMarker {
     Idle,
     Running,
     NeedsAttention,
-}
-
-impl SessionMarker {
-    fn tone(self) -> Tone {
-        match self {
-            SessionMarker::Idle => Tone::Muted,
-            SessionMarker::Running => Tone::Active,
-            // Still a running session; the orange dot at the row's right end says it waits (the
-            // desktop app's row, round 37).
-            SessionMarker::NeedsAttention => Tone::Active,
-        }
-    }
 }
 
 #[component]
@@ -35,6 +23,8 @@ pub fn SidebarItem(
     #[props(default)] shown: bool,
     /// An archived session wears a small archive mark before its title.
     #[props(default)] archived: bool,
+    /// Claude has not named the session yet: a shimmering bar stands in for the title.
+    #[props(default)] naming: bool,
     onclick: EventHandler<MouseEvent>,
     #[props(default)] children: Element,
 ) -> Element {
@@ -45,12 +35,15 @@ pub fn SidebarItem(
     };
     rsx! {
         div { class, onclick: move |evt| onclick.call(evt),
-            StatusDot { tone: marker.tone() }
             if archived {
                 span { class: "archived-mark", title: tr!("Archived"), Icon { kind: IconKind::Archive, size: IconSize::Small } }
             }
             div { class: "item-text",
-                span { class: "title", "{title}" }
+                if naming {
+                    span { class: "title-skeleton", title: "{title}", "aria-label": "{title}" }
+                } else {
+                    span { class: "title", "{title}" }
+                }
                 if branch.is_some() || !subtitle.is_empty() {
                     div { class: "item-meta",
                         if let Some(branch) = branch {
@@ -65,8 +58,12 @@ pub fn SidebarItem(
                     }
                 }
             }
+            // The desktop app's rows have no mark at the left (round 37): an orange dot at the right
+            // while the session waits for the person, a grey one while a new session is being named.
             if marker == SessionMarker::NeedsAttention {
                 span { class: "attention-dot", title: tr!("Needs input") }
+            } else if naming {
+                span { class: "attention-dot naming" }
             }
             {children}
         }
