@@ -584,7 +584,8 @@ fn build_activity(blocks: &[Block], tool_rows: &[Option<ToolRow>], view: Transcr
     }
     let tools: Vec<&ToolRow> = rows.iter().filter_map(|row| if let Row::Tool(tool) = row { Some(tool) } else { None }).collect();
     let failed = tools.iter().filter(|row| row.failed).count();
-    let (added, removed) = tools.iter().fold((0, 0), |(a, r), row| (a + row.added, r + row.removed));
+    // A write that was refused or failed changed nothing: its lines are not counted.
+    let (added, removed) = tools.iter().filter(|row| !row.stopped && !row.failed).fold((0, 0), |(a, r), row| (a + row.added, r + row.removed));
     let summary = summarize(&tools, failed);
     let image = read_image(&tools);
     Activity { rows, summary, added, removed, failed, image }
@@ -593,7 +594,7 @@ fn build_activity(blocks: &[Block], tool_rows: &[Option<ToolRow>], view: Transcr
 fn build_card(tool_rows: &[Option<ToolRow>]) -> Option<FileCard> {
     let mut files: Vec<CardFile> = Vec::new();
     for row in tool_rows.iter().flatten() {
-        if !matches!(row.kind, ToolKind::Created | ToolKind::Edited) || !row.has_diff {
+        if !matches!(row.kind, ToolKind::Created | ToolKind::Edited) || !row.has_diff || row.stopped || row.failed {
             continue;
         }
         match files.iter_mut().find(|file| file.path == row.path) {
@@ -1484,6 +1485,19 @@ mod tests {
 
         let only_stop = build_turns(&[Message::user("go"), assistant(vec![Block::Stopped])], TranscriptView::Normal, None);
         assert!(!only_stop.iter().any(|item| matches!(item, Item::Footer(_))), "nothing to copy");
+    }
+
+    #[test]
+    fn a_refused_write_adds_no_lines_and_no_file_card() {
+        let denied = Block::Tool(ToolCall {
+            id: "t-1".to_string(),
+            name: "Write".to_string(),
+            input: json!({"file_path": "/p/haiku.txt", "content": "a\nb\nc"}),
+            result: Some(ToolResult { output: "The user doesn't want to proceed with this tool use. The tool use was rejected".to_string(), is_error: true }),
+        });
+        let items = build_turns(&[Message::user("go"), assistant(vec![denied, Block::Text("ok".into())])], TranscriptView::Normal, None);
+        assert_eq!((activity(&items).added, activity(&items).removed), (0, 0));
+        assert!(!items.iter().any(|item| matches!(item, Item::FileCard(_))), "nothing was written");
     }
 
     #[test]
