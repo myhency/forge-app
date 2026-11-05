@@ -42,6 +42,73 @@ fn ScrollToEnd() -> Element {
     }
 }
 
+/// The floating table of contents of a session with chapters (the desktop app's, observed 2026-11-06):
+/// short lines at the top left of the chat, one per chapter, the current one longer; the pointer on
+/// them opens a list (`세션 시작`, then each chapter, the current one in bold), and a click scrolls there.
+#[component]
+fn ChapterToc(chapters: Vec<forge_entities::Chapter>) -> Element {
+    let pane = forge_features::use_pane_index();
+    let mut open = use_signal(|| false);
+    // -1 is the session's start, before the first chapter.
+    let mut current = use_signal(|| -1_i64);
+    if chapters.is_empty() {
+        return rsx! {};
+    }
+    let find_current = move || async move {
+        let mut probe = document::eval(&format!(
+            "const list = document.querySelector('[data-pane=\"{pane}\"] .messages'); let cur = -1; if (list) {{ const top = list.getBoundingClientRect().top + 48; for (const h of list.querySelectorAll('.chapter-heading')) {{ if (h.getBoundingClientRect().top <= top) cur = Number(h.dataset.chapter); }} }} dioxus.send(cur);"
+        ));
+        if let Ok(value) = probe.recv::<i64>().await {
+            current.set(value);
+        }
+    };
+    let go = move |index: i64| {
+        let script = if index < 0 {
+            format!("document.querySelector('[data-pane=\"{pane}\"] .messages')?.scrollTo({{ top: 0, behavior: 'smooth' }});")
+        } else {
+            format!("document.querySelector('[data-pane=\"{pane}\"] .chapter-heading[data-chapter=\"{index}\"]')?.scrollIntoView({{ behavior: 'smooth', block: 'start' }});")
+        };
+        document::eval(&script);
+        let mut current = current;
+        current.set(index);
+    };
+    let entries: Vec<(i64, String, Option<String>)> = std::iter::once((-1, tr!("Session start").to_string(), None))
+        .chain(chapters.iter().map(|chapter| (chapter.index as i64, chapter.title.clone(), chapter.summary.clone())))
+        .collect();
+    let marks = entries.len();
+    rsx! {
+        div {
+            class: "chapter-toc",
+            onmouseenter: move |_| {
+                open.set(true);
+                spawn(find_current());
+            },
+            onmouseleave: move |_| open.set(false),
+            div { class: "chapter-toc-marks", "aria-label": tr!("Chapters"),
+                for index in 0..marks {
+                    span { key: "{index}", class: if index as i64 - 1 == current() { "chapter-toc-mark current" } else { "chapter-toc-mark" } }
+                }
+            }
+            if open() {
+                div { class: "chapter-toc-list", role: "menu",
+                    for (index, title, summary) in entries.clone() {
+                        button {
+                            key: "{index}",
+                            class: if index == current() { "chapter-toc-item current" } else { "chapter-toc-item" },
+                            r#type: "button",
+                            role: "menuitem",
+                            title: summary.unwrap_or_default(),
+                            onclick: move |_| go(index),
+                            span { class: "chapter-toc-dash" }
+                            span { "{title}" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// One open session: its messages, any permission request waiting for an answer, and the message box.
 #[component]
 pub fn ChatWindow(id: LiveSessionId) -> Element {
@@ -125,6 +192,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 }
             }
             ScrollToEnd {}
+            ChapterToc { chapters: forge_entities::chapters(&view.session.messages) }
             if let Some(error) = view.last_error.as_ref() {
                 if error.contains(forge_domain::CONFIG_INCOMPLETE) {
                     div { class: "banner error",

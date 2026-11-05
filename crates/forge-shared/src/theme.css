@@ -169,6 +169,18 @@ button:not(:disabled):active { scale: 0.98; }
 .workspace.sidebar-collapsed .pane:first-child .pane-header, .workspace.sidebar-collapsed .pane:first-child.chat-narrow .pane-header { padding-left: 120px; }
 .sidebar-more { display: block; width: 100%; padding: var(--sp-6) var(--sp-8); border: none; border-radius: var(--r-8); background: none; color: var(--fg-muted); font: inherit; text-align: left; cursor: pointer; }
 .sidebar-more:hover { background: var(--sidebar-hover, var(--bg-hover)); color: var(--fg); }
+.main-pane { position: relative; }
+.chapter-toc { position: absolute; top: 52px; left: var(--sp-12); z-index: 5; }
+.chapter-toc-marks { display: flex; flex-direction: column; gap: var(--sp-6); padding: var(--sp-6) var(--sp-4); cursor: pointer; }
+.chapter-toc-mark { display: block; width: 8px; height: 2px; border-radius: var(--r-2); background: var(--fg-muted); opacity: 0.6; }
+.chapter-toc-mark.current { width: 14px; background: var(--fg); opacity: 1; }
+.chapter-toc-list { position: absolute; top: 0; left: 0; min-width: 220px; max-width: 320px; padding: var(--sp-6); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.chapter-toc-item { display: flex; align-items: center; gap: var(--sp-10); width: 100%; padding: var(--sp-6) var(--sp-8); border: none; border-radius: var(--r-6); background: none; color: var(--fg-muted); font: inherit; text-align: left; cursor: pointer; }
+.chapter-toc-item:hover { background: var(--bg-hover); color: var(--fg); }
+.chapter-toc-item.current { color: var(--fg); font-weight: var(--weight-semibold); }
+.chapter-toc-dash { flex: none; width: 8px; height: 2px; background: currentColor; opacity: 0.6; }
+.chapter-toc-item.current .chapter-toc-dash { width: 14px; opacity: 1; }
+.chapter-heading { margin-top: var(--sp-10); font-weight: var(--weight-semibold); color: var(--fg); scroll-margin-top: var(--sp-16); }
 .attention-dot { flex: none; width: 8px; height: 8px; margin-left: auto; border-radius: var(--r-round); background: var(--warning); }
 .attention-dot.naming { background: var(--fg-muted); opacity: 0.5; }
 .sidebar-item.active { background: var(--sidebar-active, var(--bg-hover)); }

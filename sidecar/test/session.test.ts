@@ -45,7 +45,7 @@ function makeSkillDir(name: string): string {
 }
 
 describe("SidecarSession", () => {
-  it("adds the ccd_turn server and allows its two tools when turn_tools is on", async () => {
+  it("adds the ccd_turn and ccd_session servers and allows their tools when turn_tools is on", async () => {
     let captured: Record<string, any> | undefined;
     const queryFn: QueryFn = ({ options }) => {
       captured = options;
@@ -58,10 +58,10 @@ describe("SidecarSession", () => {
       mcp_servers: { files: { command: "npx", args: ["files-mcp"] } },
       allowed_tools: ["Read"],
     });
-    expect(Object.keys(captured!.mcpServers).sort()).toEqual(["ccd_turn", "files"]);
+    expect(Object.keys(captured!.mcpServers).sort()).toEqual(["ccd_session", "ccd_turn", "files"]);
     expect(captured!.allowedTools).toEqual(["Read"]);
     const signal = new AbortController().signal;
-    for (const tool of ["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]) {
+    for (const tool of ["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up", "mcp__ccd_session__mark_chapter"]) {
       await expect(captured!.canUseTool(tool, { a: 1 }, { requestId: "r", signal })).resolves.toEqual({ behavior: "allow", updatedInput: { a: 1 } });
     }
   });

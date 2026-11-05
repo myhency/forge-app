@@ -172,6 +172,16 @@ fn TurnItem(
         Item::FileCard(card) => rsx! { FileCardView { card, on_open_file } },
         Item::Footer(footer) => rsx! { FooterView { footer } },
         Item::Answers(pairs) => rsx! { AnswerCard { pairs } },
+        // A chapter's heading, as the desktop app draws it: the title in bold, the summary on hover.
+        // `data-chapter` lets the table of contents scroll to it.
+        Item::Chapter(chapter) => rsx! {
+            div {
+                class: "chapter-heading",
+                "data-chapter": "{chapter.index}",
+                title: chapter.summary.clone().unwrap_or_default(),
+                "{chapter.title}"
+            }
+        },
         Item::Live(line) => rsx! { RunningLine { line } },
         Item::Workflow(item) => {
             let running = workflows.iter().find(|workflow| workflow.task_id == item.task_id).cloned();

@@ -5,6 +5,7 @@ import { turnUsage } from "./usage.js";
 import { createDesktopServer, DESKTOP_SERVER_NAME } from "./agent_desktop.js";
 import { createGenerativeUiServer, GENERATE_UI_TOOL, UI_GUIDE_TOOL, UI_SERVER_NAME } from "./generative_ui.js";
 import { createTurnToolsServer, TURN_SERVER_NAME, UPDATE_PLAN_TOOL, WRAP_UP_TOOL } from "./turn_tools.js";
+import { createSessionToolsServer, MARK_CHAPTER_TOOL, SESSION_SERVER_NAME } from "./session_tools.js";
 import type { SidecarCommand, SidecarEvent, WireAvailableModel, WireEffort, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
 
 // The model Forge shows as `Default` in its picker (forge-entities model_catalog.rs DEFAULT_MODEL_ID). With no model
@@ -433,7 +434,7 @@ export class SidecarSession {
     const generativeUi = command.generative_ui === true;
     // Forge's own tools never ask. They are approved here, not in `allowedTools`, because the SDK warns
     // that a bare `allowedTools` entry shadows `canUseTool`.
-    const ownTools = new Set([...(turnTools ? [UPDATE_PLAN_TOOL, WRAP_UP_TOOL] : []), ...(generativeUi ? [UI_GUIDE_TOOL, GENERATE_UI_TOOL] : [])]);
+    const ownTools = new Set([...(turnTools ? [UPDATE_PLAN_TOOL, WRAP_UP_TOOL, MARK_CHAPTER_TOOL] : []), ...(generativeUi ? [UI_GUIDE_TOOL, GENERATE_UI_TOOL] : [])]);
     const canUseTool = async (
       toolName: string,
       input: Record<string, unknown>,
@@ -521,7 +522,7 @@ export class SidecarSession {
                 },
               }
             : {}),
-          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer() } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}), ...(desktopControl ? { [DESKTOP_SERVER_NAME]: createDesktopServer() } : {}) },
+          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer(), [SESSION_SERVER_NAME]: createSessionToolsServer() } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}), ...(desktopControl ? { [DESKTOP_SERVER_NAME]: createDesktopServer() } : {}) },
           additionalDirectories: command.additional_directories ?? [],
           allowedTools: command.allowed_tools ?? [],
           // Variables of the environment the session starts from, over Forge's own (the SDK would

@@ -112,6 +112,48 @@ pub enum Item {
     Compacted { before: Option<u64>, after: Option<u64> },
     /// The person stopped the turn here.
     Stopped,
+    /// Claude marked a new chapter here with `mark_chapter`: a heading in the transcript, an entry in
+    /// the table of contents. `index` counts the session's chapters from 0.
+    Chapter(Chapter),
+}
+
+/// A chapter of the session (the desktop app's `mark_chapter`, observed 2026-11-06).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chapter {
+    pub index: usize,
+    pub title: String,
+    pub summary: Option<String>,
+}
+
+/// The tool the desktop app gives Claude to start a chapter; Forge offers the same name.
+const MARK_CHAPTER_TOOL: &str = "mcp__ccd_session__mark_chapter";
+
+fn chapter_input(block: &Block) -> Option<(String, Option<String>)> {
+    let Block::Tool(call) = block else { return None };
+    if call.name != MARK_CHAPTER_TOOL || call.result.as_ref().is_some_and(|result| result.is_error) {
+        return None;
+    }
+    let title = call.input.get("title")?.as_str()?.trim();
+    if title.is_empty() {
+        return None;
+    }
+    let summary = call.input.get("summary").and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty()).map(str::to_string);
+    Some((title.to_string(), summary))
+}
+
+/// The session's chapters in order. A call that repeats the previous chapter's title is the same
+/// chapter (the desktop app's transcripts record some calls twice).
+pub fn chapters(messages: &[Message]) -> Vec<Chapter> {
+    let mut found: Vec<Chapter> = Vec::new();
+    for block in messages.iter().filter(|message| message.role == MessageRole::Assistant).flat_map(|message| message.blocks.iter()) {
+        if let Some((title, summary)) = chapter_input(block) {
+            if found.last().is_some_and(|last| last.title == title) {
+                continue;
+            }
+            found.push(Chapter { index: found.len(), title, summary });
+        }
+    }
+    found
 }
 
 /// The end-of-turn card Claude filled with `wrap_up`, and what became of it.
@@ -146,7 +188,7 @@ fn plan_proposal(call: &ToolCall) -> Option<PlanItem> {
 
 /// The calls that have a card of their own and so are neither counted nor listed in the folded line.
 fn is_turn_tool(call: &ToolCall) -> bool {
-    turn_tool(&call.name).is_some() || is_ui_call(call)
+    turn_tool(&call.name).is_some() || is_ui_call(call) || call.name == MARK_CHAPTER_TOOL
 }
 
 /// What follows a turn: nothing (it is the last one) or the next user message.
@@ -632,7 +674,7 @@ fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<Too
     }
 }
 
-fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, view: TranscriptView, live: Option<&LiveState>, next: Next<'_>) {
+fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, view: TranscriptView, live: Option<&LiveState>, next: Next<'_>, chapters: &mut Vec<String>) {
     if blocks.is_empty() && live.is_none() {
         return;
     }
@@ -645,6 +687,17 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
     // A question splits the turn: what came before it folds, the question becomes its answer card.
     let mut segment_start = 0;
     for (index, block) in blocks.iter().enumerate() {
+        // A chapter splits the turn too: what came before folds, then the chapter's heading.
+        if let Some((title, summary)) = chapter_input(block) {
+            if chapters.last() == Some(&title) {
+                continue;
+            }
+            push_segment(items, &blocks[segment_start..index], &tool_rows[segment_start..index], view, None, None);
+            items.push(Item::Chapter(Chapter { index: chapters.len(), title: title.clone(), summary }));
+            chapters.push(title);
+            segment_start = index + 1;
+            continue;
+        }
         if !is_question(block) {
             continue;
         }
@@ -681,11 +734,12 @@ pub fn build_turns(messages: &[Message], view: TranscriptView, live: Option<&Liv
     let mut items = Vec::new();
     let mut blocks: Vec<Block> = Vec::new();
     let mut at: Option<String> = None;
+    let mut chapter_titles: Vec<String> = Vec::new();
     for message in messages {
         match message.role {
             MessageRole::User => {
                 let text = message.text();
-                finish_turn(&mut items, std::mem::take(&mut blocks), at.take(), view, None, Next::Message(&text));
+                finish_turn(&mut items, std::mem::take(&mut blocks), at.take(), view, None, Next::Message(&text), &mut chapter_titles);
                 // What a run of a code block told the model is not something the person said.
                 if !is_run_message(&text) {
                     items.push(Item::User(message.clone()));
@@ -699,7 +753,7 @@ pub fn build_turns(messages: &[Message], view: TranscriptView, live: Option<&Liv
             }
         }
     }
-    finish_turn(&mut items, blocks, at, view, live, Next::End);
+    finish_turn(&mut items, blocks, at, view, live, Next::End, &mut chapter_titles);
     // A running `/compact` has no tool call to name: the line says what it is doing.
     let compacting = messages.iter().rev().find(|message| message.role == MessageRole::User).is_some_and(|message| is_compact_command(&message.text()));
     if live.is_some() && compacting {
@@ -780,6 +834,7 @@ mod tests {
                 Item::FileCard(_) => "card",
                 Item::Footer(_) => "footer",
                 Item::Answers(_) => "answers",
+                Item::Chapter(_) => "chapter",
                 Item::Live(_) => "live",
                 Item::Workflow(_) => "workflow",
                 Item::Plan(_) => "plan",
@@ -1617,4 +1672,28 @@ mod tests {
         cased.push(Message::user("Commit it"));
         assert!(!kinds(&build_turns(&cased, TranscriptView::Normal, None)).contains(&"endcard"));
     }
+
+    fn chapter_call(id: &str, title: &str) -> Block {
+        tool(id, "mcp__ccd_session__mark_chapter", json!({"title": title, "summary": "s"}), Some(false))
+    }
+
+    #[test]
+    fn a_chapter_splits_the_turn_into_a_fold_and_a_heading_and_repeats_collapse() {
+        let messages = vec![
+            Message::user("go"),
+            assistant(vec![chapter_call("c1", "Explore"), chapter_call("c1b", "Explore"), bash("b1", Some("List")), chapter_call("c2", "Test"), bash("b2", Some("Run")), text("done")]),
+        ];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        let kinds = kinds(&items);
+        assert_eq!(&kinds[..5], &["user", "chapter", "activity", "chapter", "activity"]);
+        let Item::Chapter(second) = &items[3] else { panic!() };
+        assert_eq!((second.index, second.title.as_str()), (1, "Test"));
+        let found = chapters(&messages);
+        assert_eq!(found.iter().map(|c| c.title.as_str()).collect::<Vec<_>>(), vec!["Explore", "Test"]);
+        assert_eq!(found[0].summary.as_deref(), Some("s"));
+        // The chapter call itself is not counted in a fold.
+        let Item::Activity(activity) = &items[2] else { panic!() };
+        assert_eq!(activity.rows.len(), 1);
+    }
+
 }
