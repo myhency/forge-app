@@ -125,6 +125,27 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
         .as_ref()
         .is_some_and(|session| workspace.is_archived(&view.project_path, session));
     let dock_expanded = workspace.dock(id).expanded.is_some() && !archived;
+    // What a proposed session's `옵션` offers, starting from this session's own choices.
+    let offer_choices = {
+        let mut models: Vec<(String, String)> = vec![(String::new(), tr!("Default").to_string())];
+        models.extend(view.available_models.iter().filter(|model| model.value != "default").map(|model| (model.value.clone(), model.display_name.clone())));
+        if let Some(own) = view.model.clone().filter(|own| !models.iter().any(|(value, _)| value == own)) {
+            models.push((own.clone(), own));
+        }
+        let mut efforts: Vec<(String, String)> = vec![(String::new(), tr!("Default").to_string())];
+        efforts.extend(forge_domain::EffortLevel::ALL.into_iter().map(|level| (forge_features::effort_value(level).to_string(), forge_shared::i18n::text(level.label()).to_string())));
+        forge_entities::OfferChoices {
+            folder: view.project_path.display().to_string(),
+            models,
+            efforts,
+            modes: forge_features::mode_options(settings.allow_bypass_mode()),
+            current: forge_entities::OfferStart {
+                model: view.model.clone().unwrap_or_default(),
+                effort: view.effort.map(|level| forge_features::effort_value(level).to_string()).unwrap_or_default(),
+                mode: forge_features::mode_value(view.session.permission_mode).to_string(),
+            },
+        }
+    };
     // Chapters the person pinned are drawn as Claude's own.
     let chapter_pins = view.claude_session_id.as_ref().map(|session| workspace.chapter_pins(session)).unwrap_or_default();
     let shown_messages = forge_entities::with_pinned_chapters(&view.session.messages, &chapter_pins);
@@ -166,6 +187,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     on_open_plan: move |_| workspace.change_dock(id, |dock| dock.open(Panel::Plan)),
                     on_open_changes: EventHandler::new(move |_| workspace.change_dock(id, |dock| dock.open(Panel::Changes))),
                     offer_marks: workspace.offer_marks(id),
+                    offer_choices: offer_choices.clone(),
                     // No buttons on an archived or view-only session.
                     on_offer: (!archived && view.can_send).then(|| {
                         EventHandler::new(move |(offer, action): (forge_entities::SessionOffer, forge_entities::OfferAction)| workspace.act_on_offer(id, offer, action))

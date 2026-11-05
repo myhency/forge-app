@@ -158,6 +158,29 @@ pub struct SessionOffer {
     /// A hand-off (`hand_off_to_session`): the new session is a fork of this conversation, started
     /// at once with the remaining plan.
     pub fork: bool,
+    /// What the card's `옵션` set for the new session; `None` starts it like this one.
+    pub start_with: Option<OfferStart>,
+}
+
+/// The model, effort and permission mode a proposed session starts with, as values: a model id
+/// (empty: the default), an effort (`low` … `max`, empty: the default) and a mode (`default`, …).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferStart {
+    pub model: String,
+    pub effort: String,
+    pub mode: String,
+}
+
+/// What a proposed session's `옵션` popover offers (the desktop app's, observed 2026-11-06: 환경,
+/// the folder, 워크트리, 모델, 노력, 권한): the folder it starts in, the choices as (value, label),
+/// and this session's own values to start from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferChoices {
+    pub folder: String,
+    pub models: Vec<(String, String)>,
+    pub efforts: Vec<(String, String)>,
+    pub modes: Vec<(String, String)>,
+    pub current: OfferStart,
 }
 
 /// What became of a proposed session's card.
@@ -246,7 +269,7 @@ pub fn session_offer(call: &ToolCall) -> Option<SessionOffer> {
         call.result.as_ref().filter(|result| !result.is_error)?;
         let title = text("title")?.to_string();
         let plan = text("remaining_plan")?.to_string();
-        return Some(SessionOffer { id: call.id.clone(), title, brief: plan, lead: String::new(), auto_start: true, task_id: None, fork: true });
+        return Some(SessionOffer { id: call.id.clone(), title, brief: plan, lead: String::new(), auto_start: true, task_id: None, fork: true, start_with: None });
     }
     if call.name != START_SESSION_TOOL || call.result.as_ref().is_some_and(|result| result.is_error) {
         return None;
@@ -267,7 +290,7 @@ pub fn session_offer(call: &ToolCall) -> Option<SessionOffer> {
     // With `항상 새 세션 시작` on, the sidecar answers `Started …`: the session starts by itself.
     let auto_start = call.result.as_ref().is_some_and(|result| result.output.trim_start().starts_with("Started "));
     let task_id = call.result.as_ref().and_then(|result| result.output.split("task_id: ").nth(1)).map(|rest| rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect::<String>()).filter(|id| !id.is_empty());
-    Some(SessionOffer { id: call.id.clone(), title, brief, lead, auto_start, task_id, fork: false })
+    Some(SessionOffer { id: call.id.clone(), title, brief, lead, auto_start, task_id, fork: false, start_with: None })
 }
 
 /// A chapter of the session (the desktop app's `mark_chapter`, observed 2026-11-06).

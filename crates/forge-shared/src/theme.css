@@ -181,8 +181,8 @@ button:not(:disabled):active { scale: 0.98; }
 .chapter-toc-dash { flex: none; width: 8px; height: 2px; background: currentColor; opacity: 0.6; }
 .chapter-toc-item.current .chapter-toc-dash { width: 14px; opacity: 1; }
 .received-text { padding: var(--sp-10) var(--sp-12); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
-.offer-card { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-card); overflow: hidden; }
-.offer-head { padding: var(--sp-8) var(--sp-16); background: var(--code-bg); color: var(--fg); }
+.offer-card { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-card); }
+.offer-head { padding: var(--sp-8) var(--sp-16); background: var(--code-bg); color: var(--fg); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
 .offer-body { display: flex; align-items: flex-start; gap: var(--sp-10); padding: var(--sp-12) var(--sp-16) var(--sp-4); }
 .offer-text { flex: 1; min-width: 0; }
 .offer-title { font-weight: var(--weight-semibold); }
@@ -195,6 +195,15 @@ button:not(:disabled):active { scale: 0.98; }
 .offer-started:hover { background: var(--bg-hover); }
 .offer-started-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .offer-dismissed { color: var(--fg-muted); cursor: default; }
+/* The proposal card's 옵션 and its popover (desktop app, 2026-11-06): above the card, rows of label and choice. */
+.offer-actions-gap { flex: 1; }
+.offer-options-wrap { position: relative; }
+.offer-options-button { padding: var(--sp-4) var(--sp-10); border: 0; border-radius: var(--r-8); background: none; color: var(--fg); font: inherit; cursor: pointer; }
+.offer-options-button:hover, .offer-options-button.open { background: var(--bg-hover); }
+.offer-options { position: absolute; left: 0; bottom: calc(100% + var(--sp-6)); z-index: 30; width: 320px; display: flex; flex-direction: column; gap: var(--sp-8); padding: var(--sp-12) var(--sp-14); border: 1px solid var(--border); border-radius: var(--r-12); background: var(--bg-card); box-shadow: var(--shadow-menu); }
+.offer-options-folder { display: flex; align-items: center; gap: var(--sp-8); color: var(--fg); overflow-wrap: anywhere; }
+.offer-options-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-12); color: var(--fg-muted); }
+.offer-options-row .select { max-width: 60%; }
 .offer-dismissed:hover { background: var(--bg-card); }
 .offer-dismissed-note { flex-shrink: 0; font-size: var(--text-sm); }
 .chapter-heading { margin-top: var(--sp-10); font-weight: var(--weight-semibold); color: var(--fg); scroll-margin-top: var(--sp-16); }

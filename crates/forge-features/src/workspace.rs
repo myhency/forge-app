@@ -1712,10 +1712,16 @@ impl Workspace {
             OfferAction::Start if offer.fork => self.hand_off(id, offer),
             OfferAction::Start => {
                 let Some(view) = self.live_view(id) else { return };
-                let (project_path, mode, model, effort) = {
+                let (project_path, mut mode, mut model, mut effort) = {
                     let view = view.peek();
                     (view.project_path.clone(), view.session.permission_mode, view.model.clone(), view.effort)
                 };
+                // The card's `옵션`, when the person changed something there.
+                if let Some(start) = &offer.start_with {
+                    mode = crate::permission_mode::parse_mode(&start.mode);
+                    model = (!start.model.is_empty()).then(|| start.model.clone());
+                    effort = forge_domain::EffortLevel::ALL.into_iter().find(|level| effort_value(*level) == start.effort);
+                }
                 let services = (*self.services.peek()).clone();
                 let project = ProjectSummary { path: project_path, last_active: String::new(), session_count: 0, exists: true };
                 // A title-only offer is the person's own request: the new session starts with their words.
@@ -4192,5 +4198,16 @@ mod plan_text_tests {
         reply.blocks = vec![Block::Tool(ToolCall { id: "t".into(), name: "ExitPlanMode".into(), input: serde_json::json!({"plan": "# Old"}), result: None })];
         let messages = vec![Message::user("go"), reply];
         assert_eq!(plan_text_of_view(&view(messages, Vec::new())), Some("# Old".to_string()));
+    }
+}
+
+/// An effort level as the option popovers write it (`low` … `max`).
+pub fn effort_value(level: forge_domain::EffortLevel) -> &'static str {
+    match level {
+        forge_domain::EffortLevel::Low => "low",
+        forge_domain::EffortLevel::Medium => "medium",
+        forge_domain::EffortLevel::High => "high",
+        forge_domain::EffortLevel::XHigh => "xhigh",
+        forge_domain::EffortLevel::Max => "max",
     }
 }

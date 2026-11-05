@@ -79,6 +79,8 @@ pub fn Turns(
     #[props(default)] offer_marks: std::collections::HashMap<String, crate::turn_view::OfferMark>,
     /// The person acted on a proposed session's card; the cards have no buttons without it.
     #[props(default)] on_offer: Option<EventHandler<(crate::turn_view::SessionOffer, crate::turn_view::OfferAction)>>,
+    /// What a proposed session's `옵션` offers; no `옵션` without it.
+    #[props(default)] offer_choices: Option<crate::turn_view::OfferChoices>,
 ) -> Element {
     let known = known_paths(&messages);
     let forkable: Vec<String> = messages.iter().filter_map(|message| message.uuid.clone()).filter(|uuid| forge_domain::can_fork_before(&messages, uuid)).collect();
@@ -105,7 +107,7 @@ pub fn Turns(
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", next_user: next_user[index].clone(), turn_user: turn_user[index].clone(), pinned_chapters: pinned_chapters.clone(), on_pin_chapter, on_fork_here, item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone(), on_open_changes, offer_marks: offer_marks.clone(), on_offer }
+                TurnItem { key: "{index}", next_user: next_user[index].clone(), turn_user: turn_user[index].clone(), pinned_chapters: pinned_chapters.clone(), on_pin_chapter, on_fork_here, item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone(), on_open_changes, offer_marks: offer_marks.clone(), on_offer, offer_choices: offer_choices.clone() }
             }
         }
     }
@@ -135,6 +137,7 @@ fn TurnItem(
     on_open_changes: Option<EventHandler<()>>,
     offer_marks: std::collections::HashMap<String, crate::turn_view::OfferMark>,
     on_offer: Option<EventHandler<(crate::turn_view::SessionOffer, crate::turn_view::OfferAction)>>,
+    offer_choices: Option<crate::turn_view::OfferChoices>,
 ) -> Element {
     match item {
         Item::User(message) => {
@@ -216,7 +219,7 @@ fn TurnItem(
         Item::Received { title, text } => rsx! { ReceivedMessage { title, text } },
         Item::SessionOffer(offer) => {
             let mark = offer_marks.get(&offer.id).copied();
-            rsx! { SessionOfferCard { offer, mark, on_offer } }
+            rsx! { SessionOfferCard { offer, mark, on_offer, choices: offer_choices } }
         }
         // A chapter's heading, as the desktop app draws it: the title in bold, the summary on hover.
         // `data-chapter` lets the table of contents scroll to it.
@@ -564,14 +567,19 @@ fn ReceivedMessage(title: String, text: String) -> Element {
 /// the title, the brief's first line, `×`, and `여기서 하기` / a black `시작`. Started, it becomes one
 /// line with the title and `›` that opens the new session; closed or taken here, it goes.
 #[component]
-fn SessionOfferCard(offer: crate::turn_view::SessionOffer, mark: Option<crate::turn_view::OfferMark>, on_offer: Option<EventHandler<(crate::turn_view::SessionOffer, crate::turn_view::OfferAction)>>) -> Element {
-    use crate::turn_view::{OfferAction, OfferMark};
+fn SessionOfferCard(offer: crate::turn_view::SessionOffer, mark: Option<crate::turn_view::OfferMark>, on_offer: Option<EventHandler<(crate::turn_view::SessionOffer, crate::turn_view::OfferAction)>>, choices: Option<crate::turn_view::OfferChoices>) -> Element {
+    use crate::turn_view::{OfferAction, OfferMark, OfferStart};
+    let mut options_open = use_signal(|| false);
+    // What `옵션` picked; `None` until the person changes something, so Start is like this session.
+    let picked: Signal<Option<OfferStart>> = use_signal(|| None);
     let source = offer.clone();
     let act = move |action: OfferAction| {
         let offer = source.clone();
         move |_| {
             if let Some(on_offer) = on_offer {
-                on_offer.call((offer.clone(), action));
+                let mut offer = offer.clone();
+                offer.start_with = picked.peek().clone();
+                on_offer.call((offer, action));
             }
         }
     };
@@ -609,12 +617,77 @@ fn SessionOfferCard(offer: crate::turn_view::SessionOffer, mark: Option<crate::t
                 }
                 if on_offer.is_some() {
                     div { class: "offer-actions",
+                        if let Some(choices) = choices.clone() {
+                            div { class: "offer-options-wrap",
+                                button {
+                                    class: if options_open() { "offer-options-button open" } else { "offer-options-button" },
+                                    r#type: "button",
+                                    "aria-expanded": "{options_open()}",
+                                    onclick: move |_| options_open.set(!options_open()),
+                                    {tr!("Options")}
+                                }
+                                if options_open() {
+                                    div { class: "menu-backdrop", onclick: move |_| options_open.set(false) }
+                                    OfferOptions { choices, picked }
+                                }
+                            }
+                        }
+                        span { class: "offer-actions-gap" }
                         button { class: "offer-here", r#type: "button", onclick: act(OfferAction::Here), {tr!("Do it here")} }
                         button { class: "offer-start", r#type: "button", onclick: act(OfferAction::Start), {tr!("Start")} }
                     }
                 }
             }
         },
+    }
+}
+
+/// The popover of a proposed session's `옵션`: the folder it starts in, then 모델, 노력 and 권한, each
+/// starting from this session's own. A change is kept in `picked` for the card's Start.
+#[component]
+fn OfferOptions(choices: crate::turn_view::OfferChoices, picked: Signal<Option<crate::turn_view::OfferStart>>) -> Element {
+    let mut picked = picked;
+    let now = picked().unwrap_or_else(|| choices.current.clone());
+    let set = move |change: Box<dyn Fn(&mut crate::turn_view::OfferStart)>| {
+        let mut next = picked.peek().clone().unwrap_or_else(|| choices.current.clone());
+        change(&mut next);
+        picked.set(Some(next));
+    };
+    let rows: [(String, Vec<(String, String)>, String, u8); 3] = [
+        (tr!("Model").to_string(), choices.models.clone(), now.model.clone(), 0),
+        (tr!("Effort").to_string(), choices.efforts.clone(), now.effort.clone(), 1),
+        (tr!("Permission").to_string(), choices.modes.clone(), now.mode.clone(), 2),
+    ];
+    rsx! {
+        div { class: "offer-options", role: "dialog",
+            div { class: "offer-options-folder",
+                Icon { kind: IconKind::Folder, size: IconSize::Small }
+                span { "{choices.folder}" }
+            }
+            for (label, options, value, which) in rows {
+                label { key: "{which}", class: "offer-options-row",
+                    span { "{label}" }
+                    select {
+                        class: "select",
+                        value: "{value}",
+                        onchange: {
+                            let mut set = set.clone();
+                            move |event: Event<FormData>| {
+                                let chosen = event.value();
+                                set(Box::new(move |start: &mut crate::turn_view::OfferStart| match which {
+                                    0 => start.model = chosen.clone(),
+                                    1 => start.effort = chosen.clone(),
+                                    _ => start.mode = chosen.clone(),
+                                }));
+                            }
+                        },
+                        for (option, text) in options {
+                            option { key: "{option}", value: "{option}", selected: option == value, "{text}" }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
