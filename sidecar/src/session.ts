@@ -183,6 +183,14 @@ export class SidecarSession {
   // Whether this turn has already sent the details panel its context and connectors early. The
   // desktop app fills both in seconds after a send (round 37), not only when the turn ends.
   private turnDetailSent = false;
+  // The running turn's output tokens, for the progress line (the desktop app: `•• 3초 · 7 토큰`).
+  // Finished messages count exactly (their `message_delta` usage); the one streaming is estimated
+  // from its characters until its own count comes.
+  private outputFinished = 0;
+  private outputCurrentExact: number | null = null;
+  private outputCurrentChars = 0;
+  private outputSentAt = 0;
+  private outputSent = -1;
   private lastCommandsKey: string | null = null;
   private knownCommands = new Map<string, WireSlashCommand>();
   private readonly contextUsageTimeoutMs: number;
@@ -679,6 +687,30 @@ export class SidecarSession {
     }
   }
 
+  private countOutput(event: any): void {
+    if (event?.type === "message_start") {
+      this.outputFinished += this.outputCurrentExact ?? Math.round(this.outputCurrentChars / 4);
+      this.outputCurrentExact = null;
+      this.outputCurrentChars = 0;
+      return;
+    } else if (event?.type === "content_block_delta") {
+      const delta = event.delta;
+      const text = delta?.text ?? delta?.thinking ?? delta?.partial_json;
+      if (typeof text === "string") this.outputCurrentChars += text.length;
+    } else if (event?.type === "message_delta" && typeof event.usage?.output_tokens === "number") {
+      this.outputCurrentExact = event.usage.output_tokens;
+    } else {
+      return;
+    }
+    const tokens = this.outputFinished + (this.outputCurrentExact ?? Math.round(this.outputCurrentChars / 4));
+    const now = Date.now();
+    // At most twice a second, and never the same number twice.
+    if (tokens === this.outputSent || (now - this.outputSentAt < 500 && event?.type === "content_block_delta")) return;
+    this.outputSent = tokens;
+    this.outputSentAt = now;
+    this.emit({ type: "output_tokens", tokens });
+  }
+
   private forwardMessage(message: any): void {
     switch (message.type) {
       case "system":
@@ -741,6 +773,7 @@ export class SidecarSession {
         return;
       case "stream_event": {
         const event = message.event;
+        if (!message.parent_tool_use_id) this.countOutput(event);
         if (event?.type === "content_block_delta" && event.delta?.type === "text_delta") {
           this.emit({ type: "assistant_delta", text: event.delta.text });
         } else if (event?.type === "content_block_delta" && event.delta?.type === "thinking_delta" && typeof event.delta.thinking === "string") {
@@ -802,6 +835,11 @@ export class SidecarSession {
         this.mainModel = null;
         this.pendingSearches = 0;
         this.turnDetailSent = false;
+        this.outputFinished = 0;
+        this.outputCurrentExact = null;
+        this.outputCurrentChars = 0;
+        this.outputSent = -1;
+        this.outputSentAt = 0;
         void this.emitContextUsage();
         void this.emitMcpStatus();
         return;

@@ -297,7 +297,7 @@ describe("SidecarSession", () => {
     const session = new SidecarSession(queryFn, (e) => events.push(e));
     await session.handle(startCommand);
 
-    expect(events).toEqual([
+    expect(events.filter((e) => e.type !== "output_tokens")).toEqual([
       { type: "session_started", session_id: "s-1" },
       { type: "assistant_delta", text: "Hello" },
       { type: "session_ended" },
@@ -321,7 +321,8 @@ describe("SidecarSession", () => {
     const session = new SidecarSession(queryFn, (e) => events.push(e));
     await session.handle(startCommand);
 
-    expect(events).toEqual([{ type: "thinking_delta", text: "Let me see" }, { type: "session_ended" }]);
+    // The running token count is tested on its own.
+    expect(events.filter((e) => e.type !== "output_tokens")).toEqual([{ type: "thinking_delta", text: "Let me see" }, { type: "session_ended" }]);
   });
 
   it("forwards a tool_use content block from an assistant message", async () => {
@@ -715,6 +716,29 @@ describe("SidecarSession", () => {
     expect(types.indexOf("context_usage")).toBeLessThan(types.indexOf("turn_complete"));
     expect(contextCalls).toBe(2);
     expect(mcpCalls).toBe(2);
+  });
+
+  it("counts the turn's output tokens: exact per finished message, estimated while one streams", async () => {
+    const events: SidecarEvent[] = [];
+    const stream = (event: unknown) => ({ type: "stream_event", parent_tool_use_id: null, event });
+    const query: QueryFn = () =>
+      toQueryHandle(
+        (async function* () {
+          yield stream({ type: "message_start" });
+          yield stream({ type: "content_block_delta", delta: { type: "text_delta", text: "abcdefgh" } });
+          yield stream({ type: "message_delta", usage: { output_tokens: 30 } });
+          yield stream({ type: "message_start" });
+          yield stream({ type: "message_delta", usage: { output_tokens: 12 } });
+          // A sub-agent's stream does not count.
+          yield { type: "stream_event", parent_tool_use_id: "t", event: { type: "message_delta", usage: { output_tokens: 999 } } };
+          yield { type: "result", subtype: "success", usage: {} };
+        })(),
+      );
+    const session = new SidecarSession(query, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const counts = events.filter((e) => e.type === "output_tokens").map((e) => (e as { tokens: number }).tokens);
+    expect(counts).toEqual([2, 30, 42]);
   });
 
   it("sends mcp_status after a turn", async () => {

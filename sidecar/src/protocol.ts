@@ -86,6 +86,8 @@ export type SidecarEvent =
   | { type: "session_started"; session_id: string }
   | { type: "assistant_delta"; text: string }
   | { type: "thinking_delta"; text: string }
+  /** The output tokens of the running turn so far: exact for finished model messages, estimated for the one streaming. */
+  | { type: "output_tokens"; tokens: number }
   | { type: "tool_use"; tool_call_id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_call_id: string; output: string; is_error: boolean }
   | { type: "permission_request"; permission_request_id: string; tool_name: string; input: unknown; rules?: string[] }

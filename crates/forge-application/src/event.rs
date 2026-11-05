@@ -6,6 +6,8 @@ pub enum SessionUpdate {
     SessionStarted { session_id: SessionId },
     MessageDelta { text: String },
     ThinkingDelta { text: String },
+    /// The running turn's output tokens so far.
+    OutputTokens(u64),
     /// A compaction line was added to the transcript.
     Compacted,
     SideAnswer { request_id: String, result: Result<String, String> },
@@ -189,6 +191,7 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             }
             SessionUpdate::TurnCompleted
         }
+        SidecarEvent::OutputTokens { tokens } => SessionUpdate::OutputTokens(*tokens),
         SidecarEvent::ContextUsage { total_tokens, max_tokens } => SessionUpdate::ContextUsage(ContextUsage {
             total_tokens: *total_tokens,
             max_tokens: *max_tokens,

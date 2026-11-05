@@ -366,6 +366,7 @@ impl Actor {
             Ok(()) => {
                 self.view.phase = Phase::Running;
                 self.view.turn_started = Some(std::time::SystemTime::now());
+                self.view.turn_output_tokens = None;
                 self.view.suggestion = None;
                 self.view.last_error = None;
                 self.refusal_shown = false;
@@ -567,6 +568,8 @@ impl Actor {
             SessionUpdate::TurnCompleted => {
                 self.view.phase = Phase::Idle;
                 self.view.turn_started = None;
+        self.view.turn_output_tokens = None;
+                self.view.turn_output_tokens = None;
                 // The next queued message starts the next turn.
                 if !self.view.queued.is_empty() {
                     let message = self.view.queued.remove(0);
@@ -609,6 +612,7 @@ impl Actor {
             }
             SessionUpdate::PromptSuggestion(text) => self.view.suggestion = Some(text),
             SessionUpdate::ContextUsage(context) => self.view.context = Some(context),
+            SessionUpdate::OutputTokens(tokens) => self.view.turn_output_tokens = Some(tokens),
             // A breakdown with no rows is "nothing measured", not a value: the last good one stays.
             SessionUpdate::ContextDetail(detail) => {
                 if !detail.rows.is_empty() {
@@ -702,6 +706,7 @@ impl Actor {
         self.discard_sidecar(shutdown).await;
         self.view.phase = Phase::Failed;
         self.view.turn_started = None;
+        self.view.turn_output_tokens = None;
         self.view.last_error = Some(message);
         self.refusal_shown = false;
         self.view.pending_permissions.clear();

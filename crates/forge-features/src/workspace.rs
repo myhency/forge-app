@@ -3829,6 +3829,7 @@ mod plan_text_tests {
             available_models: Vec::new(),
             phase: Phase::Idle,
             turn_started: None,
+            turn_output_tokens: None,
             background_tasks: Vec::new(),
             suggestion: None,
             pending_permissions: VecDeque::from(pending),

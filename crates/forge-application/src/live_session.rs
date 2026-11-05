@@ -44,6 +44,8 @@ pub struct LiveSessionView {
     pub phase: Phase,
     /// When the running turn was sent; `None` while no turn runs.
     pub turn_started: Option<std::time::SystemTime>,
+    /// The running turn's output tokens so far, for the progress line; `None` until the first count.
+    pub turn_output_tokens: Option<u64>,
     /// The background tasks the SDK reports as running, with when each was first seen.
     pub background_tasks: Vec<forge_domain::RunningTask>,
     /// The SDK's guess at the next prompt; cleared by a send.
@@ -365,6 +367,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         available_models: Vec::new(),
         phase: Phase::Idle,
         turn_started: None,
+        turn_output_tokens: None,
         background_tasks: Vec::new(),
         suggestion: None,
         pending_permissions: VecDeque::new(),

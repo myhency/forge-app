@@ -85,7 +85,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 Turns {
                     messages: view.session.messages.clone(),
                     view: mode,
-                    live: (view.phase == Phase::Running).then(|| live_state(view.turn_started, view.pending_permissions.front())),
+                    live: (view.phase == Phase::Running).then(|| live_state(view.turn_started, view.pending_permissions.front(), view.turn_output_tokens)),
                     on_open_file: move |path: String| workspace.open_file(id, path),
                     workflows: workflows(),
                     finished: view.session.finished_tasks.clone(),

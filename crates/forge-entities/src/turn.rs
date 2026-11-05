@@ -402,6 +402,18 @@ pub fn Clock(started: Option<SystemTime>) -> Element {
     rsx! { span { class: "live-clock", "{label}" } }
 }
 
+/// The running turn's output tokens after the clock: `· 474 토큰`. Nothing before the first count.
+#[component]
+fn LiveTokens(tokens: Option<u64>) -> Element {
+    match tokens.filter(|count| *count > 0) {
+        Some(count) => {
+            let amount = crate::details_view::format_tokens_short(count);
+            rsx! { span { class: "live-tokens", "· " {tr!("{amount} tokens", amount = amount)} } }
+        }
+        None => rsx! {},
+    }
+}
+
 /// What the running turn is doing right now: a tool, the model writing, or a question for the person.
 #[component]
 fn RunningLine(line: LiveLine) -> Element {
@@ -414,6 +426,7 @@ fn RunningLine(line: LiveLine) -> Element {
                     span { class: "live-subject", "{line.subject}" }
                 }
                 Clock { started: line.started }
+                LiveTokens { tokens: line.tokens }
             }
         },
         LiveKind::Thinking if line.starting => rsx! {
@@ -429,6 +442,7 @@ fn RunningLine(line: LiveLine) -> Element {
                     span { class: "live-label", "{line.label}" }
                 }
                 Clock { started: line.started }
+                LiveTokens { tokens: line.tokens }
             }
         },
         LiveKind::NeedsInput => rsx! {

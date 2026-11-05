@@ -217,11 +217,13 @@ pub struct LiveState {
     /// When it was sent; the clock counts from here.
     pub started: Option<SystemTime>,
     pub waiting: Option<Waiting>,
+    /// The turn's output tokens so far, shown after the clock.
+    pub output_tokens: Option<u64>,
 }
 
 /// The live state of a session from what its view holds: the start time and the request on top of
 /// the queue.
-pub fn live_state(turn_started: Option<SystemTime>, pending: Option<&PermissionRequest>) -> LiveState {
+pub fn live_state(turn_started: Option<SystemTime>, pending: Option<&PermissionRequest>, output_tokens: Option<u64>) -> LiveState {
     let waiting = pending.map(|request| {
         if request.tool_name == QUESTION_TOOL {
             Waiting::Question
@@ -229,7 +231,7 @@ pub fn live_state(turn_started: Option<SystemTime>, pending: Option<&PermissionR
             Waiting::Permission { tool_name: request.tool_name.clone(), input: request.input.clone() }
         }
     });
-    LiveState { started: turn_started, waiting }
+    LiveState { started: turn_started, waiting, output_tokens }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -253,6 +255,8 @@ pub struct LiveLine {
     pub started: Option<SystemTime>,
     /// The session has not answered yet: a red dot and no clock.
     pub starting: bool,
+    /// The turn's output tokens so far (the desktop app: `•• 3초 · 7 토큰`).
+    pub tokens: Option<u64>,
 }
 
 pub fn tool_kind(name: &str) -> ToolKind {
@@ -528,17 +532,17 @@ fn live_line(blocks: &[Block], tool_rows: &[Option<ToolRow>], live: &LiveState) 
             Waiting::Permission { tool_name, input } => diff_for_tool(tool_name, input).map_or((0, 0), |diff| (diff.added, diff.removed)),
             Waiting::Question => (0, 0),
         };
-        return LiveLine { kind: LiveKind::NeedsInput, label: tr!("Input needed").to_string(), subject: String::new(), added, removed, started, starting: false };
+        return LiveLine { kind: LiveKind::NeedsInput, label: tr!("Input needed").to_string(), subject: String::new(), added, removed, started, starting: false, tokens: live.output_tokens };
     }
     // The turn's own tools (task list, next-step card) never name what is running.
     let last = blocks.iter().rposition(|block| !matches!(block, Block::Tool(call) if is_turn_tool(call)));
     if let (Some(Block::Tool(call)), Some(Some(row))) = (last.map(|index| &blocks[index]), last.and_then(|index| tool_rows.get(index))) {
         if call.result.is_none() {
             let (label, subject) = live_label(row);
-            return LiveLine { kind: LiveKind::Tool, label, subject, added: 0, removed: 0, started, starting: false };
+            return LiveLine { kind: LiveKind::Tool, label, subject, added: 0, removed: 0, started, starting: false, tokens: live.output_tokens };
         }
     }
-    LiveLine { kind: LiveKind::Thinking, label: String::new(), subject: String::new(), added: 0, removed: 0, started, starting: false }
+    LiveLine { kind: LiveKind::Thinking, label: String::new(), subject: String::new(), added: 0, removed: 0, started, starting: false, tokens: live.output_tokens }
 }
 
 fn is_question(block: &Block) -> bool {
@@ -1393,7 +1397,7 @@ mod tests {
     #[test]
     fn a_new_sessions_first_turn_says_it_is_starting_until_something_comes_back() {
         let messages = vec![Message::user("hi")];
-        let live = LiveState { started: Some(SystemTime::now()), waiting: None };
+        let live = LiveState { started: Some(SystemTime::now()), waiting: None, output_tokens: None };
         let items = build_turns(&messages, TranscriptView::Normal, Some(&live));
         let Some(Item::Live(line)) = items.last() else { panic!() };
         assert_eq!(line.label, "Starting the session");
@@ -1473,7 +1477,7 @@ mod tests {
     fn waiting_for_a_permission_shows_needs_input_with_the_pending_changes() {
         let input = json!({"file_path": "/p/a.py", "content": "a\nb\nc\n"});
         let waiting = Waiting::Permission { tool_name: "Write".to_string(), input: input.clone() };
-        let items = live_items(vec![unfinished("Write", input)], LiveState { started: None, waiting: Some(waiting) });
+        let items = live_items(vec![unfinished("Write", input)], LiveState { started: None, waiting: Some(waiting), output_tokens: None });
         let line = live_line(&items);
         assert_eq!(line.kind, LiveKind::NeedsInput);
         assert_eq!(line.label, "Input needed");
@@ -1483,28 +1487,28 @@ mod tests {
     #[test]
     fn waiting_for_a_command_or_a_question_has_no_changes() {
         let command = Waiting::Permission { tool_name: "Bash".to_string(), input: json!({"command": "ls"}) };
-        let items = live_items(vec![], LiveState { started: None, waiting: Some(command) });
+        let items = live_items(vec![], LiveState { started: None, waiting: Some(command), output_tokens: None });
         assert_eq!((live_line(&items).added, live_line(&items).removed), (0, 0));
-        let question = live_items(vec![], LiveState { started: None, waiting: Some(Waiting::Question) });
+        let question = live_items(vec![], LiveState { started: None, waiting: Some(Waiting::Question), output_tokens: None });
         assert_eq!(live_line(&question).kind, LiveKind::NeedsInput);
     }
 
     #[test]
     fn the_start_time_travels_to_the_live_line() {
         let started = std::time::UNIX_EPOCH + std::time::Duration::from_secs(5);
-        let items = live_items(vec![], LiveState { started: Some(started), waiting: None });
+        let items = live_items(vec![], LiveState { started: Some(started), waiting: None, output_tokens: None });
         assert_eq!(live_line(&items).started, Some(started));
     }
 
     #[test]
     fn live_state_follows_the_first_pending_request() {
         let started = std::time::UNIX_EPOCH;
-        assert_eq!(live_state(Some(started), None), LiveState { started: Some(started), waiting: None });
+        assert_eq!(live_state(Some(started), None, None), LiveState { started: Some(started), waiting: None, output_tokens: None });
         let question = forge_domain::PermissionRequest { id: "q".to_string(), tool_name: "AskUserQuestion".to_string(), input: json!({}), rules: Vec::new() };
-        assert_eq!(live_state(None, Some(&question)).waiting, Some(Waiting::Question));
+        assert_eq!(live_state(None, Some(&question), None).waiting, Some(Waiting::Question));
         let write = forge_domain::PermissionRequest { id: "p".to_string(), tool_name: "Write".to_string(), input: json!({"file_path": "/p/a"}), rules: Vec::new() };
         assert_eq!(
-            live_state(None, Some(&write)).waiting,
+            live_state(None, Some(&write), None).waiting,
             Some(Waiting::Permission { tool_name: "Write".to_string(), input: json!({"file_path": "/p/a"}) })
         );
     }
@@ -1530,7 +1534,7 @@ mod tests {
 
     #[test]
     fn a_pending_question_draws_nothing_but_the_needs_input_line() {
-        let items = live_items(vec![text("Let me ask."), ask("q-1", None)], LiveState { started: None, waiting: Some(Waiting::Question) });
+        let items = live_items(vec![text("Let me ask."), ask("q-1", None)], LiveState { started: None, waiting: Some(Waiting::Question), output_tokens: None });
         assert_eq!(kinds(&items), vec!["user", "text", "live"]);
         assert_eq!(live_line(&items).kind, LiveKind::NeedsInput);
     }
