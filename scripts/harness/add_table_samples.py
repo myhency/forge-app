@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Adds a session "Table and edits" to the harness fixture: a turn that edits one file and writes another, then answers
-with a markdown table, so the table look and the end card's file rows can be checked.
+with a markdown table and a python code block, so the table look, the code colours and the end card's file rows
+can be checked.
 
 Run it through launch.sh:  FORGE_HARNESS_EXTRA=scripts/harness/add_table_samples.py scripts/harness/launch.sh
 """
@@ -23,6 +24,7 @@ def add(claude_home, projects_root):
     text = (
         "Fixed the failing test and wrote the totals.\n\n"
         "| Region | Total |\n|---|---:|\n| Seoul | 255 |\n| Busan | 175 |\n| All | 430 |\n\n"
+        "The fix:\n\n```python\ndef mean(xs):\n    # the old code divided by len - 1\n    return sum(xs) / len(xs)  # 3 tests pass\n```\n\n"
         "No commit was made."
     )
     transcript = Path(claude_home) / "projects" / bf.escape_project_path(cwd) / f"{SESSION_ID}.jsonl"

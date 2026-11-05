@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_domain::{ChatWidth, FontChoice, MotionPref, OutputStyle, TextSize, Theme, TranscriptView};
+use forge_domain::{ChatWidth, CodeTheme, FontChoice, MotionPref, OutputStyle, TextSize, Theme, TranscriptView, CODE_SIZES, DEFAULT_CODE_SIZE};
 use forge_entities::{model_from_value, model_options, model_value};
 use forge_features::{nav_groups, search_hits, use_settings, use_workspace, DesktopToolView, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
 use crate::developer_section::DeveloperSection;
@@ -179,6 +179,7 @@ fn GeneralSection() -> Element {
                 onchange: move |on| settings.set_motion(if on { MotionPref::Reduced } else { MotionPref::System }),
             }
         }
+        CodeLookRows {}
         h3 { class: "settings-group", {tr!("Work")} }
         SettingRow {
             title: tr!("Trusted folders"),
@@ -197,6 +198,68 @@ fn GeneralSection() -> Element {
         }
         SettingRow { title: tr!("Permission request"), description: tr!("When a session you are not looking at asks for approval."),
             Switch { on: notes.permission_request, onchange: move |on| settings.set_notification(NotificationKind::PermissionRequest, on) }
+        }
+    }
+}
+
+/// The desktop app's `코드 모양`: a code theme for light mode and one for dark, a code font and a
+/// code size. Theme names are the same in every language, as in the desktop app.
+#[component]
+fn CodeLookRows() -> Element {
+    let settings = use_settings();
+    let look = settings.code_look();
+    let theme_options = |dark: bool| -> Vec<(String, String)> {
+        let themes: &[CodeTheme] = if dark { &CodeTheme::DARK } else { &CodeTheme::LIGHT };
+        themes.iter().map(|theme| (theme.value().to_string(), theme.label(dark).to_string())).collect()
+    };
+    let default_size = tr!("Default · {size}px", size = DEFAULT_CODE_SIZE);
+    let mut size_options = vec![(String::new(), default_size)];
+    size_options.extend(CODE_SIZES.iter().map(|size| (size.to_string(), format!("{size}px"))));
+    rsx! {
+        h3 { class: "settings-group", {tr!("Code look")} }
+        SettingRow { title: tr!("Light code theme"), description: tr!("The colours of code in light mode."),
+            Select {
+                value: look.light.value().to_string(),
+                options: theme_options(false),
+                onchange: move |value: String| {
+                    if let Some(theme) = CodeTheme::from_value(&value) {
+                        settings.set_code_theme(false, theme);
+                    }
+                },
+            }
+        }
+        SettingRow { title: tr!("Dark code theme"), description: tr!("The colours of code in dark mode."),
+            Select {
+                value: look.dark.value().to_string(),
+                options: theme_options(true),
+                onchange: move |value: String| {
+                    if let Some(theme) = CodeTheme::from_value(&value) {
+                        settings.set_code_theme(true, theme);
+                    }
+                },
+            }
+        }
+        SettingRow { title: tr!("Code font"), description: tr!("A custom monospace font for code and the terminal."),
+            // Saved when the field is left or Enter is pressed, not on every key.
+            input {
+                class: "text-input",
+                r#type: "text",
+                value: "{look.font.clone().unwrap_or_default()}",
+                placeholder: tr!("e.g. JetBrains Mono"),
+                autocomplete: "off",
+                spellcheck: "false",
+                onchange: move |event| {
+                    let text = event.value();
+                    settings.set_code_font((!text.trim().is_empty()).then_some(text));
+                },
+            }
+        }
+        SettingRow { title: tr!("Code font size"), description: tr!("Used in open files, diffs, code blocks and command output."),
+            Select {
+                value: look.size.map(|size| size.to_string()).unwrap_or_default(),
+                options: size_options,
+                onchange: move |value: String| settings.set_code_size(value.parse::<u8>().ok()),
+            }
         }
     }
 }

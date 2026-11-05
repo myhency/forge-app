@@ -373,6 +373,9 @@ pub struct AppConfig {
     pub desktop_control: bool,
     #[serde(default)]
     pub appearance: Appearance,
+    /// Code colours, font and size (the desktop app's `코드 모양`).
+    #[serde(default)]
+    pub code_look: crate::CodeLook,
     #[serde(default)]
     pub notifications: NotificationPrefs,
     /// Bounce the Dock icon when a notification says Claude needs the person.
@@ -414,6 +417,15 @@ fn default_generative_ui() -> bool {
 
 // A value this Forge does not know (a hand edit, or a newer Forge) reads as the default, so the
 // rest of the config still loads.
+/// `lenient` for other modules of the crate.
+pub(crate) fn lenient_value<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    lenient(deserializer)
+}
+
 fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -462,6 +474,7 @@ impl Default for AppConfig {
             generative_ui: default_generative_ui(),
             desktop_control: false,
             appearance: Appearance::default(),
+            code_look: crate::CodeLook::default(),
             notifications: NotificationPrefs::default(),
             attention_bounce: false,
             language: None,

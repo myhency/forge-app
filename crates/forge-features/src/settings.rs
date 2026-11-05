@@ -68,6 +68,10 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::TextSize(value) => config.appearance.text_size = value,
         CodeChange::ChatWidth(value) => config.appearance.chat_width = value,
         CodeChange::Motion(value) => config.appearance.motion = value,
+        CodeChange::CodeThemeLight(theme) => config.code_look.light = theme,
+        CodeChange::CodeThemeDark(theme) => config.code_look.dark = theme,
+        CodeChange::CodeFont(font) => config.code_look.font = font.as_deref().and_then(forge_domain::clean_font_name),
+        CodeChange::CodeSize(size) => config.code_look.size = size,
         CodeChange::Notification(kind, on) => match kind {
             NotificationKind::ReplyDone => config.notifications.reply_done = on,
             NotificationKind::ScheduledTask => config.notifications.scheduled_task = on,
@@ -120,6 +124,10 @@ pub(crate) enum CodeChange {
     TextSize(TextSize),
     ChatWidth(ChatWidth),
     Motion(MotionPref),
+    CodeThemeLight(forge_domain::CodeTheme),
+    CodeThemeDark(forge_domain::CodeTheme),
+    CodeFont(Option<String>),
+    CodeSize(Option<u8>),
     Notification(NotificationKind, bool),
     AttentionBounce(bool),
     Language(Language),
@@ -520,6 +528,22 @@ impl Settings {
         self.change_code(CodeChange::Motion(value));
     }
 
+    pub fn code_look(&self) -> forge_domain::CodeLook {
+        self.saved.read().code_look.clone()
+    }
+
+    pub fn set_code_theme(&self, dark: bool, theme: forge_domain::CodeTheme) {
+        self.change_code(if dark { CodeChange::CodeThemeDark(theme) } else { CodeChange::CodeThemeLight(theme) });
+    }
+
+    pub fn set_code_font(&self, font: Option<String>) {
+        self.change_code(CodeChange::CodeFont(font));
+    }
+
+    pub fn set_code_size(&self, size: Option<u8>) {
+        self.change_code(CodeChange::CodeSize(size));
+    }
+
     pub fn set_notification(&self, kind: NotificationKind, on: bool) {
         self.change_code(CodeChange::Notification(kind, on));
     }
@@ -752,6 +776,7 @@ impl Settings {
         let mut base_url = self.base_url;
         let mut api_key = self.api_key;
         crate::appearance::apply_appearance(&config.appearance);
+        crate::appearance::apply_code_look(&config.code_look);
         forge_shared::i18n::set_current(forge_shared::i18n::effective_language(config.language));
         saved.set(config);
         base_url.set(draft.base_url);
@@ -799,12 +824,14 @@ impl Settings {
             current.worktree_location = config.worktree_location;
             current.auto_archive_days = config.auto_archive_days;
             current.appearance = config.appearance;
+            current.code_look = config.code_look.clone();
             current.notifications = config.notifications;
             current.attention_bounce = config.attention_bounce;
             current.language = config.language;
             current.trusted_folders = config.trusted_folders;
         }
         crate::appearance::apply_appearance(&config.appearance);
+        crate::appearance::apply_code_look(&config.code_look);
         status.set(Some((*self.section.peek(), SettingsStatus::Saved)));
     }
 
