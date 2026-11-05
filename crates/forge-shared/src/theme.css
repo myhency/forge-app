@@ -252,6 +252,11 @@ button:not(:disabled):active { scale: 0.98; }
 .count-added, .count-removed { padding: 0 var(--sp-5); line-height: 1.6; }
 .count-added { background: var(--diff-added-bg); border-radius: var(--r-5) 0 0 var(--r-5); }
 .count-removed { background: var(--diff-removed-bg); border-radius: 0 var(--r-5) var(--r-5) 0; }
+/* On a fold line the desktop app writes the counts as coloured text, not chips (round 37). */
+.activity-head .count-chips { gap: var(--sp-4); font-family: inherit; font-size: inherit; }
+.activity-head .count-added, .activity-head .count-removed { padding: 0; background: none; }
+.activity-head .count-added { color: var(--success); }
+.activity-head .count-removed { color: var(--danger); }
 .activity-box { margin-top: var(--sp-6); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .activity-row + .activity-row { border-top: 1px solid var(--border); }
 .activity-row-head { appearance: none; display: flex; align-items: center; gap: var(--sp-8); width: 100%; box-sizing: border-box; padding: var(--sp-8) var(--sp-12); border: none; background: none; color: var(--fg-muted); font: inherit; text-align: left; cursor: pointer; }
@@ -611,12 +616,15 @@ button:not(:disabled):active { scale: 0.98; }
 .markdown li:has(> input:checked) { color: var(--fg-muted); text-decoration: line-through; }
 .markdown blockquote { padding: var(--sp-2) 0 var(--sp-2) var(--sp-14); border-left: 3px solid var(--border); color: var(--fg-muted); }
 .markdown blockquote > :last-child { margin-bottom: 0; }
-/* A table wider than the column scrolls sideways instead of being cut off; a narrow one still fills the column. */
-.markdown table { display: block; width: max-content; min-width: 100%; max-width: 100%; overflow-x: auto; border-collapse: collapse; border: 1px solid var(--border); border-radius: var(--radius); }
-.markdown th, .markdown td { padding: var(--sp-8) var(--sp-12); border: none; border-top: 1px solid var(--border); text-align: left; }
+/* The desktop app's table (round 37): the columns spread over the full width, no frame, a rule under
+   the header and between rows. Long cells break inside (below) instead of scrolling sideways. */
+.markdown table { display: table; width: 100%; border-collapse: collapse; border: none; }
+.markdown th, .markdown td { padding: var(--sp-10) var(--sp-12) var(--sp-10) 0; border: none; border-bottom: 1px solid var(--border); text-align: left; }
+.markdown tr > :last-child { padding-right: 0; }
+.markdown tbody tr:last-child td { border-bottom: none; }
 /* A narrow chat squeezes a column with a long cell down to one letter per line; a cell keeps room for a few characters, and the long text breaks inside the others. */
 .markdown th, .markdown td { min-width: 5ch; overflow-wrap: anywhere; }
-.markdown thead th { background: var(--bg-hover); border-top: none; font-weight: var(--weight-semibold); }
+.markdown thead th { font-weight: var(--weight-semibold); }
 .markdown img { max-width: 100%; height: auto; border-radius: var(--r-8); }
 .markdown hr { border: none; border-top: 1px solid var(--border); margin: var(--sp-16) 0; }
 .code-wrap { position: relative; width: fit-content; max-width: 100%; margin: 0 0 var(--sp-10); }
@@ -830,9 +838,9 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 /* A narrow chat (under 560 pt): the header and the side margins shrink. */
 .menu-narrow { display: none; }
 /* The panel icons stay in the header as in the desktop app (round 37: all five at 1133 pt with the
-   details column open); only a header too narrow for them and a title moves them into `⋯`. */
+   details column open); only a header under 300 pt (room for the title and the icons) moves them into `⋯`. */
 .pane-header { container-type: inline-size; }
-@container (max-width: 400px) {
+@container (max-width: 300px) {
   .picker-item.menu-narrow { display: flex; }
   .pane-tools > .icon-button { display: none; }
   .pane-tools > .icon-button.pane-close { display: inline-flex; }
@@ -971,6 +979,9 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .live-clock { color: var(--fg-muted); font-variant-numeric: tabular-nums; }
 .live-dots { color: var(--accent); font-weight: var(--weight-bold); letter-spacing: 2px; animation: live-pulse 1.2s ease-in-out infinite; }
 .live-spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: var(--r-round); animation: live-spin 0.8s linear infinite; flex: none; }
+.activity-sep { color: var(--fg-muted); }
+.activity-changes-link { color: var(--fg-muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.activity-changes-link:hover { color: var(--fg); }
 .live-tokens { color: var(--fg-muted); font-variant-numeric: tabular-nums; }
 .live-starting { flex: none; width: 8px; height: 8px; border-radius: var(--r-round); background: var(--accent); }
 .live-ring { width: 12px; height: 12px; border: 2px solid var(--accent); border-radius: var(--r-round); box-sizing: border-box; flex: none; }
@@ -1126,9 +1137,10 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue-action { appearance: none; border: none; background: none; color: inherit; cursor: pointer; padding: var(--sp-2) var(--sp-6); border-radius: var(--r-6); }
 .queue-action:hover { background: var(--bg-hover); outline: 1px solid var(--border); }
-.stop-button { appearance: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 2px solid var(--fg); border-radius: var(--r-round); background: none; cursor: pointer; flex: none; }
+/* The desktop app's stop button: a filled square (round 37). */
+.stop-button { appearance: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; border-radius: var(--r-8); background: none; cursor: pointer; flex: none; }
 .stop-button:hover { background: var(--bg-hover); }
-.stop-dot { width: 8px; height: 8px; border-radius: var(--r-round); background: var(--fg); }
+.stop-dot { width: 16px; height: 16px; border-radius: var(--r-4); background: var(--fg); }
 .scroll-end { display: none; align-self: center; width: 32px; height: 32px; margin: -44px 0 var(--sp-12); position: relative; z-index: 3; border: 1px solid var(--border); border-radius: var(--r-round); background: var(--bg-card); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; }
 .main-pane[data-away="true"] .scroll-end { display: inline-flex; align-items: center; justify-content: center; }
 
@@ -1233,7 +1245,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .files-menu-sub { position: absolute; top: 0; right: calc(100% + 4px); left: auto; bottom: auto; min-width: 90px; }
 .file-link { cursor: pointer; color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
 .file-link code { color: inherit; }
-.file-name-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: transparent; }
+.file-name-link { appearance: none; border: none; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: transparent; }
 .file-name-link:hover { text-decoration-color: currentColor; }
 
 .tasks-body { display: flex; flex-direction: column; gap: var(--sp-10); padding: var(--sp-12); overflow-y: auto; }

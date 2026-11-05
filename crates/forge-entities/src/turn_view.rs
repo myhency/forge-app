@@ -408,9 +408,10 @@ fn summarize(tools: &[&ToolRow], failed: usize) -> String {
         let loaded_tools = count(Counted::LoadedTools);
         // One sentence per count, so a language with other plural rules can word each one.
         let parts = [
-            (created, if created == 1 { tr!("Created {count} file") } else { tr!("Created {count} files") }),
-            (edited, if edited == 1 { tr!("Edited {count} file") } else { tr!("Edited {count} files") }),
+            // The desktop app's order (round 37): commands, edited, created.
             (commands, if commands == 1 { tr!("Ran {count} command") } else { tr!("Ran {count} commands") }),
+            (edited, if edited == 1 { tr!("Edited {count} file") } else { tr!("Edited {count} files") }),
+            (created, if created == 1 { tr!("Created {count} file") } else { tr!("Created {count} files") }),
             (background, if background == 1 { tr!("Started {count} background task") } else { tr!("Started {count} background tasks") }),
             (read, if read == 1 { tr!("Read {count} file") } else { tr!("Read {count} files") }),
             (memory, if memory == 1 { tr!("Loaded {count} memory file") } else { tr!("Loaded {count} memory files") }),
@@ -1080,7 +1081,7 @@ mod tests {
         ];
         let items = build_turns(&messages, TranscriptView::Normal, None);
         let a = activity(&items);
-        assert_eq!(a.summary, "Created 2 files, Edited 1 file, Ran 2 commands, Read 1 file, Used 1 other tool");
+        assert_eq!(a.summary, "Ran 2 commands, Edited 1 file, Created 2 files, Read 1 file, Used 1 other tool");
         assert_eq!(a.failed, 0);
         let Item::FileCard(card) = items.iter().find(|i| matches!(i, Item::FileCard(_))).unwrap() else { panic!() };
         let names: Vec<_> = card.files.iter().map(|f| f.name.as_str()).collect();

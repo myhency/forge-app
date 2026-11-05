@@ -65,6 +65,8 @@ pub fn Turns(
     #[props(default)] card_marks: std::collections::HashMap<String, crate::turn_cards::CardMark>,
     /// Asked to record a mark (closed, or sent) for the end card with this id.
     #[props(default)] on_card_mark: Option<EventHandler<(String, crate::turn_cards::CardMark)>>,
+    /// Asked to open the Changes panel (a fold line's `변경 사항 보기`); no link without it.
+    #[props(default)] on_open_changes: Option<EventHandler<()>>,
 ) -> Element {
     let known = known_paths(&messages);
     let forkable: Vec<String> = messages.iter().filter_map(|message| message.uuid.clone()).filter(|uuid| forge_domain::can_fork_before(&messages, uuid)).collect();
@@ -73,7 +75,7 @@ pub fn Turns(
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone() }
+                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone(), on_open_changes }
             }
         }
     }
@@ -95,6 +97,7 @@ fn TurnItem(
     card_marks: std::collections::HashMap<String, crate::turn_cards::CardMark>,
     on_card_mark: Option<EventHandler<(String, crate::turn_cards::CardMark)>>,
     forkable: Vec<String>,
+    on_open_changes: Option<EventHandler<()>>,
 ) -> Element {
     match item {
         Item::User(message) => {
@@ -165,7 +168,7 @@ fn TurnItem(
             rsx! { div { class: "turn-text markdown", dangerous_inner_html: "{html}" } }
         }
         Item::Thinking(text) => rsx! { div { class: "thinking", "{text}" } },
-        Item::Activity(activity) => rsx! { ActivityBlock { activity, detailed, on_open_file } },
+        Item::Activity(activity) => rsx! { ActivityBlock { activity, detailed, on_open_file, on_open_changes } },
         Item::FileCard(card) => rsx! { FileCardView { card, on_open_file } },
         Item::Footer(footer) => rsx! { FooterView { footer } },
         Item::Answers(pairs) => rsx! { AnswerCard { pairs } },
@@ -245,9 +248,10 @@ fn WorkflowLine(item: WorkflowItem, running: Option<RunningWorkflow>, ended: Opt
 }
 
 #[component]
-fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<String>) -> Element {
+fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<String>, on_open_changes: Option<EventHandler<()>>) -> Element {
     let mut open = use_signal(|| false);
     let shown = open() || detailed;
+    let changed = activity.added + activity.removed > 0;
     rsx! {
         div { class: "activity",
             button {
@@ -257,6 +261,19 @@ fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<
                 onclick: move |_| open.set(!shown),
                 span { class: "activity-summary", "{activity.summary}" }
                 CountChips { added: activity.added, removed: activity.removed }
+                // The desktop app's fold line ends with `· 변경 사항 보기` when the turn changed files (round 37).
+                if let (true, Some(open_changes)) = (changed, on_open_changes) {
+                    span { class: "activity-sep", "·" }
+                    span {
+                        class: "activity-changes-link",
+                        role: "link",
+                        onclick: move |event: MouseEvent| {
+                            event.stop_propagation();
+                            open_changes.call(());
+                        },
+                        {tr!("View changes")}
+                    }
+                }
                 span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: shown } }
                 if let Some(path) = activity.image.clone() {
                     ReadThumbnail { path }

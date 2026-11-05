@@ -7,6 +7,8 @@ pub enum ComposerAction {
     /// `ready` shows the arrow in full colour (something to send); `disabled` makes it inert.
     Send { ready: bool, disabled: bool },
     Stop,
+    /// Nothing at the right of the box.
+    Hidden,
 }
 
 /// A turn that is running shows Stop; otherwise the arrow, lit when there is something to send.
@@ -54,6 +56,7 @@ pub fn ComposerShell(
                                     Icon { kind: IconKind::Send }
                                 }
                             },
+                            ComposerAction::Hidden => rsx! {},
                             ComposerAction::Stop => rsx! {
                                 button {
                                     class: "stop-button",

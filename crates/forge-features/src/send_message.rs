@@ -6,7 +6,7 @@ use forge_shared::tr;
 
 use crate::cards::line_count;
 use crate::composer_cards::ComposerCards;
-use crate::composer_shell::{composer_action, ComposerShell};
+use crate::composer_shell::{composer_action, ComposerAction, ComposerShell};
 use crate::composer_state::{use_composer_state_provider, ComposerChips, TrustCard};
 use crate::suggestion::{composer_placeholder, end_card_reply, suggestion_to_accept};
 
@@ -50,6 +50,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay:
     let end_card = view
         .and_then(|view| forge_entities::offered(forge_entities::live_end_card(&view.read().session.messages), &workspace.end_card_marks(id)))
         .filter(|_| !running);
+    let waiting = view.as_ref().is_some_and(|view| !view.read().pending_permissions.is_empty());
     let suggestion = if end_card.is_some() { None } else { view.and_then(|view| view.read().suggestion.clone()) };
     let accept = suggestion.clone();
 
@@ -173,7 +174,9 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay:
                 CommandTextArea {
                     value: draft(),
                     commands: arrange_commands(&view.map(|view| view.read().commands.clone()).unwrap_or_default(), local_commands()),
-                    placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, if running { tr!("⏎ to send, ⌘⏎ to queue and send later") } else { tr!("Message Claude…") }),
+                    // The desktop app (round 37): the queue hint while the model works, and the slash hint
+                    // when the turn waits for a card or nothing runs.
+                    placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, if running && !waiting { tr!("⏎ to send, ⌘⏎ to queue and send later") } else { tr!("Type / for commands") }),
                     disabled: !can_send,
                     open_token: composer.popup_token(),
                     oninput: move |text| draft.set(text),
@@ -198,7 +201,8 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay:
                     },
                 }
             },
-            action: composer_action(running, ready, !can_send),
+            // An empty box in an idle session has no arrow: the desktop app shows none there.
+            action: if !running && !ready { ComposerAction::Hidden } else { composer_action(running, ready, !can_send) },
             onsend: move |_| submit(),
             onstop: stop,
             start: rsx! {},
