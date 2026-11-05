@@ -61,7 +61,7 @@ describe("SidecarSession", () => {
     expect(Object.keys(captured!.mcpServers).sort()).toEqual(["ccd_session", "ccd_turn", "files"]);
     expect(captured!.allowedTools).toEqual(["Read"]);
     const signal = new AbortController().signal;
-    for (const tool of ["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up", "mcp__ccd_session__mark_chapter"]) {
+    for (const tool of ["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up", "mcp__ccd_session__mark_chapter", "mcp__ccd_session__start_session"]) {
       await expect(captured!.canUseTool(tool, { a: 1 }, { requestId: "r", signal })).resolves.toEqual({ behavior: "allow", updatedInput: { a: 1 } });
     }
   });

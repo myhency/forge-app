@@ -115,6 +115,61 @@ pub enum Item {
     /// Claude marked a new chapter here with `mark_chapter`: a heading in the transcript, an entry in
     /// the table of contents. `index` counts the session's chapters from 0.
     Chapter(Chapter),
+    /// Claude proposed a separate session with `start_session`: a card the person starts, takes here or closes.
+    SessionOffer(SessionOffer),
+}
+
+/// A separate session Claude proposed (the desktop app's `start_session` card, observed 2026-11-06).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionOffer {
+    /// The tool call's id: the card's key in the session's marks.
+    pub id: String,
+    pub title: String,
+    /// The brief the new session starts with: the prompt, with the background before it.
+    pub brief: String,
+    /// The first line of the prompt, shown under the title.
+    pub lead: String,
+}
+
+/// What became of a proposed session's card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OfferMark {
+    /// Closed with `×`: the card goes.
+    Dismissed,
+    /// Taken here (`여기서 하기`): the card goes, the work continues in this session.
+    Here,
+    /// Started as its own session: the card becomes a line that opens it.
+    Started,
+}
+
+/// What the person did with a proposed session's card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OfferAction {
+    Start,
+    Here,
+    Dismiss,
+    /// Open the session the card started.
+    Open,
+}
+
+/// The tool the desktop app gives Claude to propose a session; Forge offers the same name.
+pub const START_SESSION_TOOL: &str = "mcp__ccd_session__start_session";
+
+/// The offer a `start_session` call makes, when it is one Forge draws: the call succeeded and names
+/// a title and a prompt. A call that only starts an earlier proposal (`proposal_id`) is not a card.
+pub fn session_offer(call: &ToolCall) -> Option<SessionOffer> {
+    if call.name != START_SESSION_TOOL || call.result.as_ref().is_some_and(|result| result.is_error) {
+        return None;
+    }
+    let text = |key: &str| call.input.get(key).and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty());
+    let title = text("title")?.to_string();
+    let prompt = text("prompt")?;
+    let brief = match text("background") {
+        Some(background) => format!("{background}\n\n{prompt}"),
+        None => prompt.to_string(),
+    };
+    let lead = prompt.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or(prompt).trim_start_matches('#').trim().to_string();
+    Some(SessionOffer { id: call.id.clone(), title, brief, lead })
 }
 
 /// A chapter of the session (the desktop app's `mark_chapter`, observed 2026-11-06).
@@ -188,7 +243,7 @@ fn plan_proposal(call: &ToolCall) -> Option<PlanItem> {
 
 /// The calls that have a card of their own and so are neither counted nor listed in the folded line.
 fn is_turn_tool(call: &ToolCall) -> bool {
-    turn_tool(&call.name).is_some() || is_ui_call(call) || call.name == MARK_CHAPTER_TOOL
+    turn_tool(&call.name).is_some() || is_ui_call(call) || call.name == MARK_CHAPTER_TOOL || call.name == START_SESSION_TOOL
 }
 
 /// What follows a turn: nothing (it is the last one) or the next user message.
@@ -715,6 +770,15 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
     // The task list is the whole turn's, even when a question split it into segments.
     let steps = live.and_then(|_| plan_of(blocks.iter().filter_map(|block| if let Block::Tool(call) = block { Some(call) } else { None })));
     push_segment(items, &blocks[segment_start..], &tool_rows[segment_start..], view, live, steps);
+    // Proposed sessions come after the turn's text, as the desktop app draws them.
+    let offers: Vec<Item> = blocks.iter().filter_map(|block| if let Block::Tool(call) = block { session_offer(call) } else { None }).map(Item::SessionOffer).collect();
+    if !offers.is_empty() {
+        // While the turn runs the live line stays last.
+        let at = if matches!(items.last(), Some(Item::Live(_))) { items.len() - 1 } else { items.len() };
+        for (offset, offer) in offers.into_iter().enumerate() {
+            items.insert(at + offset, offer);
+        }
+    }
     // A turn that is only a compaction or a stop has nothing to copy.
     let has_content = blocks.iter().any(|block| matches!(block, Block::Text(_) | Block::Tool(_) | Block::Thinking(_)));
     if live.is_none() && items.len() > start && has_content {
@@ -835,6 +899,7 @@ mod tests {
                 Item::Footer(_) => "footer",
                 Item::Answers(_) => "answers",
                 Item::Chapter(_) => "chapter",
+                Item::SessionOffer(_) => "offer",
                 Item::Live(_) => "live",
                 Item::Workflow(_) => "workflow",
                 Item::Plan(_) => "plan",
@@ -1694,6 +1759,29 @@ mod tests {
         // The chapter call itself is not counted in a fold.
         let Item::Activity(activity) = &items[2] else { panic!() };
         assert_eq!(activity.rows.len(), 1);
+    }
+
+
+    #[test]
+    fn a_start_session_call_is_a_card_after_the_text_and_not_a_fold_row() {
+        let offer = tool("s1", "mcp__ccd_session__start_session", json!({"initiation": "own_initiative", "title": "Fix stats", "background": "Two tests fail.", "prompt": "Fix mean in stats.py\nThen run pytest."}), Some(false));
+        let messages = vec![Message::user("go"), assistant(vec![bash("b1", Some("Run")), offer, text("done")])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        let kinds = kinds(&items);
+        let at = kinds.iter().position(|kind| *kind == "offer").expect("an offer");
+        assert!(kinds[..at].contains(&"text"), "{kinds:?}");
+        let Item::SessionOffer(card) = &items[at] else { panic!() };
+        assert_eq!(card.title, "Fix stats");
+        assert_eq!(card.lead, "Fix mean in stats.py");
+        assert_eq!(card.brief, "Two tests fail.\n\nFix mean in stats.py\nThen run pytest.");
+        let Item::Activity(activity) = items.iter().find(|item| matches!(item, Item::Activity(_))).unwrap() else { panic!() };
+        assert_eq!(activity.rows.len(), 1);
+    }
+
+    #[test]
+    fn a_start_session_call_without_a_prompt_draws_no_card() {
+        let start = tool("s2", "mcp__ccd_session__start_session", json!({"proposal_id": "s1"}), Some(false));
+        assert!(session_offer(match &start { Block::Tool(call) => call, _ => unreachable!() }).is_none());
     }
 
 }

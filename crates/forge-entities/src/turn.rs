@@ -67,6 +67,10 @@ pub fn Turns(
     #[props(default)] on_card_mark: Option<EventHandler<(String, crate::turn_cards::CardMark)>>,
     /// Asked to open the Changes panel (a fold line's `변경 사항 보기`); no link without it.
     #[props(default)] on_open_changes: Option<EventHandler<()>>,
+    /// What became of each proposed session's card, by the `start_session` call's id.
+    #[props(default)] offer_marks: std::collections::HashMap<String, crate::turn_view::OfferMark>,
+    /// The person acted on a proposed session's card; the cards have no buttons without it.
+    #[props(default)] on_offer: Option<EventHandler<(crate::turn_view::SessionOffer, crate::turn_view::OfferAction)>>,
 ) -> Element {
     let known = known_paths(&messages);
     let forkable: Vec<String> = messages.iter().filter_map(|message| message.uuid.clone()).filter(|uuid| forge_domain::can_fork_before(&messages, uuid)).collect();
@@ -75,7 +79,7 @@ pub fn Turns(
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone(), on_open_changes }
+                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone(), on_open_changes, offer_marks: offer_marks.clone(), on_offer }
             }
         }
     }
@@ -98,6 +102,8 @@ fn TurnItem(
     on_card_mark: Option<EventHandler<(String, crate::turn_cards::CardMark)>>,
     forkable: Vec<String>,
     on_open_changes: Option<EventHandler<()>>,
+    offer_marks: std::collections::HashMap<String, crate::turn_view::OfferMark>,
+    on_offer: Option<EventHandler<(crate::turn_view::SessionOffer, crate::turn_view::OfferAction)>>,
 ) -> Element {
     match item {
         Item::User(message) => {
@@ -172,6 +178,10 @@ fn TurnItem(
         Item::FileCard(card) => rsx! { FileCardView { card, on_open_file } },
         Item::Footer(footer) => rsx! { FooterView { footer } },
         Item::Answers(pairs) => rsx! { AnswerCard { pairs } },
+        Item::SessionOffer(offer) => {
+            let mark = offer_marks.get(&offer.id).copied();
+            rsx! { SessionOfferCard { offer, mark, on_offer } }
+        }
         // A chapter's heading, as the desktop app draws it: the title in bold, the summary on hover.
         // `data-chapter` lets the table of contents scroll to it.
         Item::Chapter(chapter) => rsx! {
@@ -427,6 +437,54 @@ pub fn Clock(started: Option<SystemTime>) -> Element {
     let seconds = now().duration_since(started).map(|elapsed| elapsed.as_secs()).unwrap_or(0);
     let label = elapsed_label(seconds);
     rsx! { span { class: "live-clock", "{label}" } }
+}
+
+/// A session Claude proposed, as the desktop app's card (observed 2026-11-06): a grey strip `새 세션`,
+/// the title, the brief's first line, `×`, and `여기서 하기` / a black `시작`. Started, it becomes one
+/// line with the title and `›` that opens the new session; closed or taken here, it goes.
+#[component]
+fn SessionOfferCard(offer: crate::turn_view::SessionOffer, mark: Option<crate::turn_view::OfferMark>, on_offer: Option<EventHandler<(crate::turn_view::SessionOffer, crate::turn_view::OfferAction)>>) -> Element {
+    use crate::turn_view::{OfferAction, OfferMark};
+    let source = offer.clone();
+    let act = move |action: OfferAction| {
+        let offer = source.clone();
+        move |_| {
+            if let Some(on_offer) = on_offer {
+                on_offer.call((offer.clone(), action));
+            }
+        }
+    };
+    match mark {
+        Some(OfferMark::Dismissed | OfferMark::Here) => rsx! {},
+        Some(OfferMark::Started) => rsx! {
+            button { class: "offer-started", r#type: "button", onclick: act(OfferAction::Open),
+                span { class: "offer-started-title", "{offer.title}" }
+                Icon { kind: IconKind::Chevron, size: IconSize::Small }
+            }
+        },
+        None => rsx! {
+            div { class: "offer-card",
+                div { class: "offer-head", {tr!("New session")} }
+                div { class: "offer-body",
+                    div { class: "offer-text",
+                        div { class: "offer-title", "{offer.title}" }
+                        div { class: "offer-lead", "{offer.lead}" }
+                    }
+                    if on_offer.is_some() {
+                        button { class: "icon-button offer-close", r#type: "button", title: tr!("Close"), "aria-label": tr!("Close"), onclick: act(OfferAction::Dismiss),
+                            Icon { kind: IconKind::Close, size: IconSize::Small }
+                        }
+                    }
+                }
+                if on_offer.is_some() {
+                    div { class: "offer-actions",
+                        button { class: "offer-here", r#type: "button", onclick: act(OfferAction::Here), {tr!("Do it here")} }
+                        button { class: "offer-start", r#type: "button", onclick: act(OfferAction::Start), {tr!("Start")} }
+                    }
+                }
+            }
+        },
+    }
 }
 
 /// The running turn's output tokens after the clock: `· 474 토큰`. Nothing before the first count.

@@ -205,6 +205,10 @@ pub struct Workspace {
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
     /// What became of each session's end cards (by the `wrap_up` call's id): closed, or already sent.
     end_card_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::CardMark>>>,
+    /// What became of each session's proposed-session cards, by the `start_session` call's id.
+    offer_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::OfferMark>>>,
+    /// The session a card started, by (the proposing session, the call's id).
+    offer_sessions: Signal<HashMap<(LiveSessionId, String), LiveSessionId>>,
     /// The `/status` and `/usage` cards of each session, oldest first; a send takes them away.
     local_cards: Signal<HashMap<LiveSessionId, Vec<forge_entities::LocalCard>>>,
     /// The `/stats` card of each session: what was read from every session and the range chosen on the card. It is drawn
@@ -317,6 +321,8 @@ pub fn use_workspace_provider() -> Workspace {
             queued_files: root_signal(HashMap::new()),
             rewind_requests: root_signal(HashMap::new()),
             end_card_marks: root_signal(HashMap::new()),
+            offer_marks: root_signal(HashMap::new()),
+            offer_sessions: root_signal(HashMap::new()),
             local_cards: root_signal(HashMap::new()),
             stats_cards: root_signal(HashMap::new()),
             code_runs: root_signal(HashMap::new()),
@@ -1512,6 +1518,58 @@ impl Workspace {
         let mut all = marks.write();
         if let Some(session) = all.get_mut(&id) {
             session.retain(|_, mark| *mark != forge_entities::CardMark::Sent);
+        }
+    }
+
+    /// What became of a session's proposed-session cards.
+    pub fn offer_marks(&self, id: LiveSessionId) -> HashMap<String, forge_entities::OfferMark> {
+        self.offer_marks.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    fn mark_offer(&self, id: LiveSessionId, call_id: String, mark: forge_entities::OfferMark) {
+        let mut marks = self.offer_marks;
+        marks.write().entry(id).or_default().insert(call_id, mark);
+    }
+
+    /// Acts on a card Claude drew with `start_session` (the desktop app's `새 세션` card): starts the
+    /// proposed session beside this one (same folder, mode, model and effort; it stays in the
+    /// background, as in the desktop app), takes the work here, closes the card, or opens the session
+    /// the card started.
+    pub fn act_on_offer(&self, id: LiveSessionId, offer: forge_entities::SessionOffer, action: forge_entities::OfferAction) {
+        use forge_entities::{OfferAction, OfferMark};
+        match action {
+            OfferAction::Dismiss => self.mark_offer(id, offer.id, OfferMark::Dismissed),
+            OfferAction::Here => {
+                let Some(handle) = self.handle(id) else { return };
+                self.mark_offer(id, offer.id.clone(), OfferMark::Here);
+                handle.send_with(tr!("Do this here instead of in a new session: {title}", title = offer.title), Vec::new());
+            }
+            OfferAction::Open => {
+                let child = self.offer_sessions.peek().get(&(id, offer.id.clone())).copied();
+                match child {
+                    Some(child) if self.live_view(child).is_some() => self.open_session(child),
+                    _ => self.report(tr!("The session this card started is no longer open.").to_string()),
+                }
+            }
+            OfferAction::Start => {
+                let Some(view) = self.live_view(id) else { return };
+                let (project_path, mode, model, effort) = {
+                    let view = view.peek();
+                    (view.project_path.clone(), view.session.permission_mode, view.model.clone(), view.effort)
+                };
+                let services = (*self.services.peek()).clone();
+                let project = ProjectSummary { path: project_path, last_active: String::new(), session_count: 0, exists: true };
+                match services.registry.open_new_with_effort(&project, mode, model, effort, Vec::new()) {
+                    Ok(handle) => {
+                        let child = self.attach(handle.clone());
+                        handle.send_with(offer.brief.clone(), Vec::new());
+                        let mut sessions = self.offer_sessions;
+                        sessions.write().insert((id, offer.id.clone()), child);
+                        self.mark_offer(id, offer.id, OfferMark::Started);
+                    }
+                    Err(error) => self.report(error.to_string()),
+                }
+            }
         }
     }
 
