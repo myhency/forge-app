@@ -473,6 +473,9 @@ fn SessionOfferCard(offer: crate::turn_view::SessionOffer, mark: Option<crate::t
             }
         }
     };
+    // A hand-off starts by itself, so it is always the line, never a card with buttons (a fork's
+    // copy of the conversation holds the call with no mark of its own).
+    let mark = if offer.fork { Some(OfferMark::Started) } else { mark };
     match mark {
         Some(OfferMark::Dismissed | OfferMark::Here) => rsx! {},
         Some(OfferMark::Started) => rsx! {

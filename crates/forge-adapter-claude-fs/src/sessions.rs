@@ -457,6 +457,13 @@ fn apply_line(session: &mut Session, line: &Value) {
     if flagged("isSidechain") || flagged("isMeta") || flagged("isCompactSummary") {
         return;
     }
+    // Claude Code writes "No response requested." itself when it resumes a transcript copied in
+    // the middle of a turn (a hand-off's fork); nobody said it.
+    let synthetic = line.pointer("/message/model").and_then(Value::as_str) == Some("<synthetic>");
+    let text = line.pointer("/message/content/0/text").and_then(Value::as_str).unwrap_or_default();
+    if synthetic && text.trim() == "No response requested." {
+        return;
+    }
     match line.get("type").and_then(Value::as_str) {
         Some("user") => apply_user_line(session, line),
         Some("assistant") => apply_assistant_line(session, line),
@@ -3006,5 +3013,25 @@ mod tests {
         adapter.delete_session(second, &SessionId("b-1".to_string())).await.unwrap();
         assert!(adapter.list_sessions(second).await.unwrap().is_empty());
         assert_eq!(ids(&adapter.list_sessions(first).await.unwrap()), ["a-1"], "the other folder keeps its session");
+    }
+
+    #[test]
+    fn the_no_response_line_claude_code_writes_itself_is_left_out() {
+        let mut session = Session {
+            forked_at: None,
+            forked_from: None,
+            finished_tasks: Vec::new(),
+            id: SessionId("s1".to_string()),
+            project_path: std::path::PathBuf::from("/p"),
+            title: None,
+            messages: Vec::new(),
+            permission_mode: PermissionMode::Default,
+            usage: forge_domain::SessionUsage::default(),
+        };
+        apply_line(&mut session, &json!({"type": "user", "isSidechain": false, "message": {"role": "user", "content": "go"}}));
+        apply_line(&mut session, &json!({"type": "assistant", "message": {"model": "<synthetic>", "role": "assistant", "content": [{"type": "text", "text": "No response requested."}]}}));
+        assert_eq!(session.messages.len(), 1, "{:?}", session.messages);
+        apply_line(&mut session, &json!({"type": "assistant", "message": {"model": "<synthetic>", "role": "assistant", "content": [{"type": "text", "text": "API Error: 529"}]}}));
+        assert_eq!(session.messages.len(), 2, "other lines Claude Code writes still show");
     }
 }

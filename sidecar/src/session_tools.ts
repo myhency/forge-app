@@ -8,6 +8,7 @@ export const SESSION_SERVER_NAME = "ccd_session";
 export const MARK_CHAPTER_TOOL = `mcp__${SESSION_SERVER_NAME}__mark_chapter`;
 export const START_SESSION_TOOL = `mcp__${SESSION_SERVER_NAME}__start_session`;
 export const DISMISS_TASK_TOOL = `mcp__${SESSION_SERVER_NAME}__dismiss_task`;
+export const HAND_OFF_TOOL = `mcp__${SESSION_SERVER_NAME}__hand_off_to_session`;
 
 /** A proposal's handle, as the desktop app gives one (`task_ab12cd34`): dismiss_task names it. */
 function newTaskId(): string {
@@ -126,7 +127,24 @@ export function sessionToolDefinitions(unrelated: UnrelatedTask = "ask"): SdkMcp
     },
     { alwaysLoad: true },
   );
-  return [markChapter, startSession, dismissTask];
+  // The desktop app's own description (loaded through a desktop session, 2026-11-06); Forge has no
+  // worktree branch to cut from, so the fork is a copy of this conversation in the same folder.
+  const handOff = tool(
+    "hand_off_to_session",
+    "Move the task you are in the middle of into its own session (a fork of this conversation plus your remaining plan) so you can answer the user now. Use it when a new user message about something else arrives mid-task — not for small corrections or when the user said to keep the work here. Bold title line and one sentence right before the call; after it, stop that task here and answer the new message — no recap.",
+    {
+      title: z.string().describe("Under 60 chars; names the task being moved."),
+      remaining_plan: z.string().describe("What is left to do: steps, files, what done looks like."),
+    },
+    async (args) => {
+      if (args.title.trim() === "" || args.remaining_plan.trim() === "") {
+        return { content: [{ type: "text" as const, text: "A hand-off needs a title and the remaining plan." }], isError: true };
+      }
+      return { content: [{ type: "text" as const, text: `Handed off "${args.title.trim()}": a fork of this conversation carries on with your plan beside this session. Stop that task here and answer the new message — no recap.` }] };
+    },
+    { alwaysLoad: true },
+  );
+  return [markChapter, startSession, dismissTask, handOff];
 }
 
 export function createSessionToolsServer(unrelated: UnrelatedTask = "ask"): McpSdkServerConfigWithInstance {

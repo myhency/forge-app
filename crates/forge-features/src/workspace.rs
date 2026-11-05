@@ -1659,6 +1659,7 @@ impl Workspace {
                     _ => self.report(tr!("The session this card started is no longer open.").to_string()),
                 }
             }
+            OfferAction::Start if offer.fork => self.hand_off(id, offer),
             OfferAction::Start => {
                 let Some(view) = self.live_view(id) else { return };
                 let (project_path, mode, model, effort) = {
@@ -1688,6 +1689,41 @@ impl Workspace {
                 }
             }
         }
+    }
+
+    /// Claude's `hand_off_to_session`: forks this conversation in the background, sends the fork the
+    /// remaining plan and nests it under this session; the line `title ›` opens it. Marked at once,
+    /// so the watcher never starts it twice while the copy is being made.
+    fn hand_off(&self, id: LiveSessionId, offer: forge_entities::SessionOffer) {
+        let Some(view) = self.live_view(id) else { return };
+        let (project_path, session_id) = {
+            let view = view.peek();
+            (view.project_path.clone(), view.claude_session_id.clone())
+        };
+        let Some(session_id) = session_id else { return };
+        self.mark_offer(id, offer.id.clone(), forge_entities::OfferMark::Started);
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let mut past = self.past;
+        dioxus::core::spawn_forever(async move {
+            let new_id = match services.registry.fork_titled(&project_path, &session_id, &offer.title).await {
+                Ok(new_id) => new_id,
+                Err(error) => return this.report(error.to_string()),
+            };
+            if let Ok(sessions) = services.sessions.list_sessions(&project_path).await {
+                replace_project_sessions(&mut past.write(), &project_path, sessions);
+            }
+            let project = project_for_open(&past.peek(), &project_path);
+            match services.registry.open_existing(&project, new_id).await {
+                Ok(outcome) => {
+                    let child = this.ensure_attached(outcome.handle.clone());
+                    outcome.handle.send_with(format!("{}\n\n{}", forge_entities::HAND_OFF_PREAMBLE, offer.brief), Vec::new());
+                    let mut sessions = this.offer_sessions;
+                    sessions.write().insert((id, offer.id.clone()), child);
+                }
+                Err(error) => this.report(error.to_string()),
+            }
+        });
     }
 
     /// When the session a card started ends its first turn, sends its last reply to the session that

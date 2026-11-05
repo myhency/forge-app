@@ -5,7 +5,7 @@ describe("session tools", () => {
   it("offer mark_chapter and start_session under the desktop app's names", () => {
     expect(MARK_CHAPTER_TOOL).toBe("mcp__ccd_session__mark_chapter");
     expect(START_SESSION_TOOL).toBe("mcp__ccd_session__start_session");
-    expect(sessionToolDefinitions().map((t) => t.name)).toEqual(["mark_chapter", "start_session", "dismiss_task"]);
+    expect(sessionToolDefinitions().map((t) => t.name)).toEqual(["mark_chapter", "start_session", "dismiss_task", "hand_off_to_session"]);
   });
 
   it("accept a titled chapter and refuse a blank one", async () => {
@@ -52,5 +52,13 @@ describe("session tools", () => {
     expect(ok.isError).toBeUndefined();
     const bad = await dismiss.handler({ task_id: "nope" }, {});
     expect(bad.isError).toBe(true);
+  });
+
+  it("hand off with a title and a plan, and refuse an empty one", async () => {
+    const handOff = sessionToolDefinitions()[3];
+    const ok = await handOff.handler({ title: "Finish parser", remaining_plan: "Add tests" }, {});
+    expect(ok.content[0].text).toMatch(/^Handed off "Finish parser"/);
+    const empty = await handOff.handler({ title: "x", remaining_plan: " " }, {});
+    expect(empty.isError).toBe(true);
   });
 });

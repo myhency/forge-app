@@ -356,6 +356,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Group by", "그룹화 기준"),
     ("Group files by folder", "폴더별 파일 그룹화"),
     ("HEAD is detached: choose a branch first", "HEAD가 분리되어 있습니다. 먼저 브랜치를 선택하세요"),
+    ("Handed off", "다른 세션으로 넘김"),
     ("Header name", "헤더 이름"),
     ("Headers", "헤더"),
     ("Heavier use", "많음"),

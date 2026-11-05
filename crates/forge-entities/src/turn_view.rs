@@ -155,6 +155,9 @@ pub struct SessionOffer {
     pub auto_start: bool,
     /// The handle the sidecar gave the card (`task_ab12cd34`), which `dismiss_task` names.
     pub task_id: Option<String>,
+    /// A hand-off (`hand_off_to_session`): the new session is a fork of this conversation, started
+    /// at once with the remaining plan.
+    pub fork: bool,
 }
 
 /// What became of a proposed session's card.
@@ -182,6 +185,13 @@ pub enum OfferAction {
 /// does the work instead of splitting it off again.
 pub const SPLIT_OFF_PREAMBLE: &str = "This session was started from another session to do the request below. Do it here; do not start or propose another session for it.";
 
+/// The tool that moves the task in progress into a fork of the session (the desktop app's name).
+pub const HAND_OFF_TOOL: &str = "mcp__ccd_session__hand_off_to_session";
+
+/// What a hand-off's fork reads before the remaining plan, so it carries on rather than handing
+/// off again.
+pub const HAND_OFF_PREAMBLE: &str = "This session is a fork that takes over the task the other session handed off, so that one can answer the user. Carry on with the plan below here; do not hand it off again.";
+
 /// The tool that withdraws a proposal Claude made (the desktop app's name).
 pub const DISMISS_TASK_TOOL: &str = "mcp__ccd_session__dismiss_task";
 
@@ -203,10 +213,17 @@ pub const START_SESSION_TOOL: &str = "mcp__ccd_session__start_session";
 /// The offer a `start_session` call makes, when it is one Forge draws: the call succeeded and names
 /// a title and a prompt. A call that only starts an earlier proposal (`proposal_id`) is not a card.
 pub fn session_offer(call: &ToolCall) -> Option<SessionOffer> {
+    let text = |key: &str| call.input.get(key).and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty());
+    // A hand-off starts as soon as the sidecar has answered it: the line opens the fork.
+    if call.name == HAND_OFF_TOOL {
+        call.result.as_ref().filter(|result| !result.is_error)?;
+        let title = text("title")?.to_string();
+        let plan = text("remaining_plan")?.to_string();
+        return Some(SessionOffer { id: call.id.clone(), title, brief: plan, lead: String::new(), auto_start: true, task_id: None, fork: true });
+    }
     if call.name != START_SESSION_TOOL || call.result.as_ref().is_some_and(|result| result.is_error) {
         return None;
     }
-    let text = |key: &str| call.input.get(key).and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty());
     let title = text("title")?.to_string();
     // A title-only "offer" is the person's own unrelated request: its brief is their message, which
     // the workspace finds when it starts the session.
@@ -223,7 +240,7 @@ pub fn session_offer(call: &ToolCall) -> Option<SessionOffer> {
     // With `항상 새 세션 시작` on, the sidecar answers `Started …`: the session starts by itself.
     let auto_start = call.result.as_ref().is_some_and(|result| result.output.trim_start().starts_with("Started "));
     let task_id = call.result.as_ref().and_then(|result| result.output.split("task_id: ").nth(1)).map(|rest| rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect::<String>()).filter(|id| !id.is_empty());
-    Some(SessionOffer { id: call.id.clone(), title, brief, lead, auto_start, task_id })
+    Some(SessionOffer { id: call.id.clone(), title, brief, lead, auto_start, task_id, fork: false })
 }
 
 /// A chapter of the session (the desktop app's `mark_chapter`, observed 2026-11-06).
@@ -459,6 +476,10 @@ fn tool_row(call: &ToolCall) -> ToolRow {
         ToolKind::Other if call.name == SKILL_TOOL => {
             let name = call.input.get("skill").and_then(Value::as_str).unwrap_or_default();
             (tr!("Skill ran|tool").to_string(), format!("/{name}"), String::new())
+        }
+        ToolKind::Other if call.name == HAND_OFF_TOOL => {
+            let title = call.input.get("title").and_then(Value::as_str).map(str::trim).unwrap_or_default();
+            (tr!("Handed off").to_string(), title.to_string(), String::new())
         }
         ToolKind::Other if call.name == DISMISS_TASK_TOOL => {
             let reason = call.input.get("reason").and_then(Value::as_str).map(str::trim).unwrap_or_default();
@@ -1883,6 +1904,16 @@ mod tests {
         assert_eq!(offers(&later), 0);
         let row = build_turns(&later, TranscriptView::Normal, None);
         assert!(format!("{row:?}").contains("Withdrew a proposal"), "the row says what it did, not the JSON");
+    }
+
+    #[test]
+    fn a_hand_off_is_an_offer_that_forks_and_starts_at_once() {
+        let call = ToolCall { id: "h1".into(), name: HAND_OFF_TOOL.into(), input: json!({"title": "Finish the parser", "remaining_plan": "Add tests"}), result: Some(ToolResult { output: "Handed off".into(), is_error: false }) };
+        let offer = session_offer(&call).unwrap();
+        assert!(offer.fork && offer.auto_start);
+        assert_eq!(offer.brief, "Add tests");
+        let pending = ToolCall { result: None, ..call };
+        assert!(session_offer(&pending).is_none(), "nothing starts before the sidecar answers");
     }
 
     #[test]
