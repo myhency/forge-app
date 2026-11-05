@@ -147,6 +147,7 @@ button:not(:disabled):active { scale: 0.98; }
 .group-add:hover { background: var(--bg-hover); color: var(--fg); }
 .sidebar-item { display: flex; align-items: center; gap: var(--sp-10); padding: var(--sp-6) var(--sp-8); border-radius: var(--r-8); cursor: pointer; }
 .sidebar-item:hover { background: var(--bg-hover); }
+.attention-dot { flex: none; width: 8px; height: 8px; margin-left: auto; border-radius: var(--r-round); background: var(--warning); }
 .sidebar-item.active { background: var(--bg-hover); }
 .sidebar-item .item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .sidebar-item .title { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -961,8 +962,12 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .live-clock { color: var(--fg-muted); font-variant-numeric: tabular-nums; }
 .live-dots { color: var(--accent); font-weight: var(--weight-bold); letter-spacing: 2px; animation: live-pulse 1.2s ease-in-out infinite; }
 .live-spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: var(--r-round); animation: live-spin 0.8s linear infinite; flex: none; }
+.live-starting { flex: none; width: 8px; height: 8px; border-radius: var(--r-round); background: var(--accent); }
 .live-ring { width: 12px; height: 12px; border: 2px solid var(--accent); border-radius: var(--r-round); box-sizing: border-box; flex: none; }
-.needs-input { padding: var(--sp-1) var(--sp-10); border-radius: var(--r-pill); background: color-mix(in srgb, var(--warning) 14%, transparent); color: var(--accent); }
+.needs-input { padding: var(--sp-1) var(--sp-10); border-radius: var(--r-pill); background: color-mix(in srgb, var(--warning) 14%, transparent); color: color-mix(in srgb, var(--warning) 70%, var(--fg)); }
+/* The desktop app's waiting mark: orange dots that turn into a ring and back. */
+.live-ring.waiting { border-color: var(--warning); animation: waiting-ring 1.6s steps(1) infinite; }
+@keyframes waiting-ring { 50% { border-style: dotted; } }
 @keyframes live-spin { to { transform: rotate(360deg); } }
 @keyframes live-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .live-dots, .live-spinner { animation: none; } }
@@ -978,34 +983,61 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .input-value { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .input-path { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
 
-.permission-panel { display: flex; flex-direction: column; gap: var(--sp-10); width: calc(100% - 56px); max-width: var(--chat-column); max-height: 60vh; box-sizing: border-box; margin: 0 auto var(--sp-8); padding: var(--sp-16); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); outline: none; }
-.perm-title { font-weight: var(--weight-bold); }
+.permission-panel { display: flex; flex-direction: column; gap: var(--sp-10); width: calc(100% - 56px); max-width: var(--chat-column); max-height: 60vh; box-sizing: border-box; margin: 0 auto var(--sp-8); padding: 0 var(--sp-16) var(--sp-16); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); outline: none; }
+/* The desktop app's card (round 37): the question sits in a grey strip across the top. */
+.perm-title { margin: 0 calc(-1 * var(--sp-16)); padding: var(--sp-12) var(--sp-16); background: var(--code-bg); color: var(--fg); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
 .perm-subject { color: var(--fg); }
-.perm-description { color: var(--fg); }
+.perm-description { color: var(--fg-muted); }
 .perm-note { padding: var(--sp-10) var(--sp-12); background: var(--code-bg); border-radius: var(--r-8); color: var(--fg-muted); font-size: var(--text-base); }
 .perm-box { padding: var(--sp-10) var(--sp-12); background: var(--code-bg); border-radius: var(--r-8); font-family: var(--mono); font-size: var(--text-base); overflow-wrap: anywhere; white-space: pre-wrap; }
+.perm-path { color: var(--fg-muted); }
+.perm-command { background: var(--bg-card); border: 1px solid var(--border); padding-left: calc(var(--sp-12) + 2ch); text-indent: -2ch; }
+.perm-prompt { color: var(--fg-muted); user-select: none; }
 .permission-panel > * { flex: none; }
 /* Only the diff or the command scrolls; the title and the buttons stay in view (Claude caps the card at 60% of the window). */
-.permission-panel .diff, .permission-panel .perm-command { flex: 0 1 auto; min-height: 5em; overflow-y: auto; }
+.permission-panel .diff, .permission-panel .ndiff, .permission-panel .perm-command { flex: 0 1 auto; min-height: 5em; overflow-y: auto; }
+/* A command is as tall as its text (the desktop app's box), and scrolls only when the card runs out of room. */
+.permission-panel .perm-command { min-height: 2.6em; }
 .permission-panel .diff { max-width: none; margin: 0; }
 .permission-panel .diff-header { flex-wrap: wrap; }
-/* A short window: the file name and the path text repeat the path box, so they go; the buttons must stay inside the card. */
+/* A short window: the buttons must stay inside the card. */
 @media (max-height: 520px) {
-  .permission-panel .perm-subject { display: none; }
-  .permission-panel .diff, .permission-panel .perm-command { min-height: 3em; }
+  .permission-panel .perm-subject, .permission-panel .perm-description { display: none; }
+  .permission-panel .diff, .permission-panel .ndiff, .permission-panel .perm-command { min-height: 3em; }
 }
+/* A file change placed in its file: gutter mark, line number, coloured text, changed words stronger. */
+.ndiff { border: 1px solid var(--border); border-radius: var(--r-8); background: var(--bg-card); font-family: var(--mono); font-size: var(--text-sm); padding: var(--sp-4) 0; }
+.ndiff-hunk + .ndiff-hunk { border-top: 1px dashed var(--border); }
+.ndiff-line { display: flex; line-height: 1.6; }
+.ndiff-mark { flex: none; width: 4px; }
+.ndiff-line.removed .ndiff-mark { background: repeating-linear-gradient(135deg, var(--danger) 0 2px, transparent 2px 4px); }
+.ndiff-line.added .ndiff-mark { background: var(--hl-string); }
+.ndiff-number { flex: none; width: 4ch; padding-right: var(--sp-10); text-align: right; color: var(--fg-muted); user-select: none; font-variant-numeric: tabular-nums; }
+.ndiff-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; padding-right: var(--sp-10); }
+.ndiff-line.added { background: var(--diff-added-bg); }
+.ndiff-line.removed { background: var(--diff-removed-bg); }
+.ndiff-line.removed .diff-word { background: color-mix(in srgb, var(--danger) 22%, transparent); border-radius: var(--r-3); }
+.ndiff-line.added .diff-word { background: color-mix(in srgb, var(--success) 24%, transparent); border-radius: var(--r-3); }
 .diff-note, .diff-counts { white-space: nowrap; }
-.perm-buttons { display: flex; align-items: center; gap: var(--sp-8); margin-top: var(--sp-4); }
-.perm-buttons .spacer { flex: 1; }
+/* Two full-width rows, as in the desktop app: a grey "Deny" over a black split button. */
+.perm-buttons { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-8); margin-top: var(--sp-4); }
+.perm-buttons .spacer { display: none; }
+.perm-buttons .perm-button { justify-content: center; }
+.perm-button.perm-deny { background: var(--code-bg); border-color: transparent; }
+.perm-button.perm-deny:hover { background: var(--bg-hover); }
 .perm-button { white-space: nowrap; appearance: none; display: inline-flex; align-items: center; gap: var(--sp-8); padding: var(--sp-6) var(--sp-12); border: 1px solid var(--border); border-radius: var(--r-8); background: var(--bg-card); color: var(--fg); font: inherit; cursor: pointer; }
 .perm-button:hover { background: var(--bg-hover); }
 .perm-button.primary { background: var(--fg); color: var(--bg-card); border-color: var(--fg); }
 .perm-key { padding: 0 var(--sp-6); border: 1px solid var(--border); border-radius: var(--r-5); font-size: var(--text-xs); color: var(--fg-muted); background: var(--bg-card); }
 .perm-button.primary .perm-key { background: transparent; color: inherit; border-color: color-mix(in srgb, var(--accent-fg) 35%, transparent); }
-.perm-primary { position: relative; display: inline-flex; }
+.perm-primary { position: relative; display: flex; }
+.perm-primary .perm-button:first-child { flex: 1; }
 .perm-primary .perm-button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .perm-more { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 1px solid color-mix(in srgb, var(--accent-fg) 25%, transparent); padding: var(--sp-6) var(--sp-10); }
-.perm-menu { position: absolute; right: 0; bottom: calc(100% + 6px); min-width: 260px; padding: var(--sp-6); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 5; }
+.perm-menu-backdrop { position: fixed; inset: 0; z-index: 4; }
+.perm-menu-row { display: flex; align-items: baseline; gap: var(--sp-12); }
+.perm-menu-keys { margin-left: auto; color: var(--fg-muted); font-size: var(--text-sm); white-space: nowrap; }
+.perm-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 260px; padding: var(--sp-6); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 5; }
 .perm-menu-item { appearance: none; display: block; width: 100%; padding: var(--sp-8) var(--sp-10); border: none; border-radius: var(--r-6); background: none; text-align: left; font: inherit; color: var(--fg); cursor: pointer; }
 .perm-menu-item:hover { background: var(--bg-hover); }
 .plan-comments { display: flex; flex-direction: column; gap: var(--sp-6); margin-top: var(--sp-14); }

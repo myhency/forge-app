@@ -416,6 +416,12 @@ fn RunningLine(line: LiveLine) -> Element {
                 Clock { started: line.started }
             }
         },
+        LiveKind::Thinking if line.starting => rsx! {
+            div { class: "live-line",
+                span { class: "live-starting" }
+                span { class: "live-label", "{line.label}" }
+            }
+        },
         LiveKind::Thinking => rsx! {
             div { class: "live-line",
                 span { class: "live-dots", "···" }
@@ -426,10 +432,10 @@ fn RunningLine(line: LiveLine) -> Element {
             }
         },
         LiveKind::NeedsInput => rsx! {
+            // The desktop app's waiting mark: an amber pill with an animated ring, nothing else.
             div { class: "live-line",
-                span { class: "live-ring" }
-                span { class: "needs-input", "{line.label} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
-                CountChips { added: line.added, removed: line.removed }
+                span { class: "live-ring waiting" }
+                span { class: "needs-input", "{line.label}" }
             }
         },
     }

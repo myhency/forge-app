@@ -15,7 +15,9 @@ impl SessionMarker {
         match self {
             SessionMarker::Idle => Tone::Muted,
             SessionMarker::Running => Tone::Active,
-            SessionMarker::NeedsAttention => Tone::Warning,
+            // Still a running session; the orange dot at the row's right end says it waits (the
+            // desktop app's row, round 37).
+            SessionMarker::NeedsAttention => Tone::Active,
         }
     }
 }
@@ -62,6 +64,9 @@ pub fn SidebarItem(
                         }
                     }
                 }
+            }
+            if marker == SessionMarker::NeedsAttention {
+                span { class: "attention-dot", title: tr!("Needs input") }
             }
             {children}
         }

@@ -251,6 +251,8 @@ pub struct LiveLine {
     pub added: usize,
     pub removed: usize,
     pub started: Option<SystemTime>,
+    /// The session has not answered yet: a red dot and no clock.
+    pub starting: bool,
 }
 
 pub fn tool_kind(name: &str) -> ToolKind {
@@ -476,11 +478,47 @@ fn live_label(row: &ToolRow) -> (String, String) {
         ToolKind::Created => (tr!("Creating").to_string(), row.subject.clone()),
         ToolKind::Edited => (tr!("Editing").to_string(), row.subject.clone()),
         ToolKind::Read => (tr!("Reading").to_string(), row.subject.clone()),
-        ToolKind::Command => (row.subject.clone(), String::new()),
+        // The desktop app turns the command's description into what is happening now
+        // ("List project files" → "Listing project files", round 37).
+        ToolKind::Command => {
+            let described = row.call.input.get("description").and_then(Value::as_str).is_some_and(|text| !text.is_empty());
+            let label = if described { progressive(&row.subject) } else { row.subject.clone() };
+            (label, String::new())
+        }
         ToolKind::Other if matches!(row.call.name.as_str(), "Grep" | "Glob") => (tr!("Searching").to_string(), row.subject.clone()),
         ToolKind::Other if is_desktop_tool(&row.call.name) => (tr!("Controlling an app").to_string(), row.subject.clone()),
         ToolKind::Other => (tr!("Using {name}", name = short_tool_name(&row.call.name)), row.subject.clone()),
     }
+}
+
+/// An imperative English description in the "-ing" form of its first word: "List files" → "Listing
+/// files", "Rerun tests" → "Rerunning tests", "Create a.py" → "Creating a.py". Text that does not
+/// start with a capitalised English word (a Korean description) or already does is left alone.
+pub(crate) fn progressive(description: &str) -> String {
+    let (word, rest) = match description.find(' ') {
+        Some(space) => description.split_at(space),
+        None => (description, ""),
+    };
+    let starts_upper = word.chars().next().is_some_and(|c| c.is_ascii_uppercase());
+    if !starts_upper || !word.chars().all(|c| c.is_ascii_alphabetic()) || word.len() < 2 || word.ends_with("ing") {
+        return description.to_string();
+    }
+    let lower = word.to_ascii_lowercase();
+    // Short verbs that double their last consonant.
+    const DOUBLE: &[&str] = &[
+        "run", "rerun", "set", "reset", "get", "put", "stop", "cut", "sit", "plan", "scan", "ship", "drop", "swap", "step",
+        "chop", "skip", "strip", "tap", "map", "wrap", "zip", "commit", "submit", "grep", "dig", "log", "tag", "pin", "trim",
+    ];
+    let stem = if DOUBLE.contains(&lower.as_str()) {
+        format!("{word}{}", &word[word.len() - 1..])
+    } else if lower.ends_with("ie") {
+        format!("{}y", &word[..word.len() - 2])
+    } else if lower.ends_with('e') && !lower.ends_with("ee") && !lower.ends_with("ye") && !lower.ends_with("oe") && lower != "be" {
+        word[..word.len() - 1].to_string()
+    } else {
+        word.to_string()
+    };
+    format!("{stem}ing{rest}")
 }
 
 fn live_line(blocks: &[Block], tool_rows: &[Option<ToolRow>], live: &LiveState) -> LiveLine {
@@ -490,17 +528,17 @@ fn live_line(blocks: &[Block], tool_rows: &[Option<ToolRow>], live: &LiveState) 
             Waiting::Permission { tool_name, input } => diff_for_tool(tool_name, input).map_or((0, 0), |diff| (diff.added, diff.removed)),
             Waiting::Question => (0, 0),
         };
-        return LiveLine { kind: LiveKind::NeedsInput, label: tr!("Input needed").to_string(), subject: String::new(), added, removed, started };
+        return LiveLine { kind: LiveKind::NeedsInput, label: tr!("Input needed").to_string(), subject: String::new(), added, removed, started, starting: false };
     }
     // The turn's own tools (task list, next-step card) never name what is running.
     let last = blocks.iter().rposition(|block| !matches!(block, Block::Tool(call) if is_turn_tool(call)));
     if let (Some(Block::Tool(call)), Some(Some(row))) = (last.map(|index| &blocks[index]), last.and_then(|index| tool_rows.get(index))) {
         if call.result.is_none() {
             let (label, subject) = live_label(row);
-            return LiveLine { kind: LiveKind::Tool, label, subject, added: 0, removed: 0, started };
+            return LiveLine { kind: LiveKind::Tool, label, subject, added: 0, removed: 0, started, starting: false };
         }
     }
-    LiveLine { kind: LiveKind::Thinking, label: String::new(), subject: String::new(), added: 0, removed: 0, started }
+    LiveLine { kind: LiveKind::Thinking, label: String::new(), subject: String::new(), added: 0, removed: 0, started, starting: false }
 }
 
 fn is_question(block: &Block) -> bool {
@@ -663,6 +701,17 @@ pub fn build_turns(messages: &[Message], view: TranscriptView, live: Option<&Liv
         if let Some(Item::Live(line)) = items.last_mut() {
             if line.kind == LiveKind::Thinking && line.label.is_empty() {
                 line.label = tr!("Compacting the session").to_string();
+            }
+        }
+    }
+    // A new session's first message before anything has come back: the desktop app says the
+    // session is starting (round 37: a red dot and "세션 시작 중").
+    let first_and_silent = messages.len() == 1 && messages[0].role == MessageRole::User;
+    if live.is_some() && first_and_silent && !compacting {
+        if let Some(Item::Live(line)) = items.last_mut() {
+            if line.kind == LiveKind::Thinking && line.label.is_empty() {
+                line.label = tr!("Starting the session").to_string();
+                line.starting = true;
             }
         }
     }
@@ -1299,7 +1348,7 @@ mod tests {
         assert_eq!(kinds(&items), vec!["user", "text", "live"]);
         let Item::Live(line) = &items[2] else { panic!() };
         assert_eq!(line.kind, LiveKind::Tool);
-        assert_eq!(line.label, "List");
+        assert_eq!(line.label, "Listing");
         assert_eq!(line.subject, "");
     }
 
@@ -1318,6 +1367,43 @@ mod tests {
     fn live_items(blocks: Vec<Block>, live: LiveState) -> Vec<Item> {
         build_turns(&[Message::user("go"), assistant(blocks)], TranscriptView::Normal, Some(&live))
     }
+    #[test]
+    fn a_description_reads_as_what_is_happening_now() {
+        assert_eq!(progressive("List project and calc folder"), "Listing project and calc folder");
+        assert_eq!(progressive("Show files and run tests"), "Showing files and run tests");
+        assert_eq!(progressive("Rerun tests and sum sales"), "Rerunning tests and sum sales");
+        assert_eq!(progressive("Create the app"), "Creating the app");
+        assert_eq!(progressive("See logs"), "Seeing logs");
+        assert_eq!(progressive("Tie it"), "Tying it");
+        assert_eq!(progressive("Check"), "Checking");
+        assert_eq!(progressive("Installing deps"), "Installing deps");
+        assert_eq!(progressive("테스트 실행"), "테스트 실행");
+        assert_eq!(progressive("ls -la"), "ls -la");
+        assert_eq!(progressive("npm install"), "npm install");
+    }
+
+    #[test]
+    fn a_running_command_with_a_description_names_it_in_the_ing_form() {
+        let line = live_line(&live_items(vec![unfinished("Bash", json!({"command": "ls", "description": "List files"}))], LiveState::default()));
+        assert_eq!(line.label, "Listing files");
+        let bare = live_line(&live_items(vec![unfinished("Bash", json!({"command": "ls -la"}))], LiveState::default()));
+        assert_eq!(bare.label, "ls -la");
+    }
+
+    #[test]
+    fn a_new_sessions_first_turn_says_it_is_starting_until_something_comes_back() {
+        let messages = vec![Message::user("hi")];
+        let live = LiveState { started: Some(SystemTime::now()), waiting: None };
+        let items = build_turns(&messages, TranscriptView::Normal, Some(&live));
+        let Some(Item::Live(line)) = items.last() else { panic!() };
+        assert_eq!(line.label, "Starting the session");
+        assert!(line.starting);
+        let replied = vec![Message::user("hi"), assistant(vec![text("hel")])];
+        let items = build_turns(&replied, TranscriptView::Normal, Some(&live));
+        let Some(Item::Live(line)) = items.last() else { panic!() };
+        assert!(!line.starting);
+    }
+
     fn live_line(items: &[Item]) -> LiveLine {
         let Item::Live(line) = items.last().unwrap() else { panic!("a live line last") };
         line.clone()
@@ -1331,8 +1417,9 @@ mod tests {
         let running = LiveState::default();
         let items = build_turns(&[Message::user("/compact")], TranscriptView::Normal, Some(&running));
         assert_eq!(live_line(&items).label, "Compacting the session");
+        // Any other first message of a session says the session is starting.
         let other = build_turns(&[Message::user("hello")], TranscriptView::Normal, Some(&running));
-        assert_eq!(live_line(&other).label, "");
+        assert_eq!(live_line(&other).label, "Starting the session");
         let finished = build_turns(&[Message::user("/compact")], TranscriptView::Normal, None);
         assert!(!finished.iter().any(|item| matches!(item, Item::Live(_))));
     }
@@ -1361,7 +1448,7 @@ mod tests {
         let read = line("Read", json!({"file_path": "/p/a.py"}));
         assert_eq!((read.label.as_str(), read.subject.as_str()), ("Reading", "a.py"));
         let bash = line("Bash", json!({"command": "ls -la", "description": "List files"}));
-        assert_eq!((bash.label.as_str(), bash.subject.as_str()), ("List files", ""));
+        assert_eq!((bash.label.as_str(), bash.subject.as_str()), ("Listing files", ""));
         let bare = line("Bash", json!({"command": "ls -la"}));
         assert_eq!(bare.label, "ls -la");
         let grep = line("Grep", json!({"pattern": "fn main"}));
@@ -1491,7 +1578,7 @@ mod tests {
         let items = live_items(vec![running_bash, update_plan("p", two_steps(), false)], running());
         let line = live_line(&items);
         assert_eq!(line.kind, LiveKind::Tool);
-        assert_eq!(line.label, "List files");
+        assert_eq!(line.label, "Listing files");
     }
 
     #[test]
