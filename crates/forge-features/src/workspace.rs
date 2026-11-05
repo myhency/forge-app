@@ -205,6 +205,8 @@ pub struct Workspace {
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
     /// What became of each session's end cards (by the `wrap_up` call's id): closed, or already sent.
     end_card_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::CardMark>>>,
+    /// Folders whose start-line environment hint the person put off; kept while the app runs.
+    env_hint_dismissed: Signal<std::collections::HashSet<PathBuf>>,
     /// What became of each session's proposed-session cards, by the `start_session` call's id.
     offer_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::OfferMark>>>,
     /// The session a card started, by (the proposing session, the call's id).
@@ -322,6 +324,7 @@ pub fn use_workspace_provider() -> Workspace {
             rewind_requests: root_signal(HashMap::new()),
             end_card_marks: root_signal(HashMap::new()),
             offer_marks: root_signal(HashMap::new()),
+            env_hint_dismissed: root_signal(std::collections::HashSet::new()),
             offer_sessions: root_signal(HashMap::new()),
             local_cards: root_signal(HashMap::new()),
             stats_cards: root_signal(HashMap::new()),
@@ -1528,6 +1531,21 @@ impl Workspace {
         if let Some(session) = all.get_mut(&id) {
             session.retain(|_, mark| *mark != forge_entities::CardMark::Sent);
         }
+    }
+
+    /// How many sessions the folder holds, as listed (this one included once it is on disk).
+    pub fn folder_session_count(&self, folder: &Path) -> usize {
+        self.past.read().iter().filter(|(project, _)| project.path == folder).map(|(_, sessions)| sessions.len()).sum()
+    }
+
+    /// Whether the person put off the start line's environment hint for this folder (`나중에`).
+    pub fn env_hint_dismissed(&self, folder: &Path) -> bool {
+        self.env_hint_dismissed.read().contains(folder)
+    }
+
+    pub fn dismiss_env_hint(&self, folder: PathBuf) {
+        let mut dismissed = self.env_hint_dismissed;
+        dismissed.write().insert(folder);
     }
 
     /// What became of a session's proposed-session cards.
