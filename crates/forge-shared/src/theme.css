@@ -194,6 +194,9 @@ button:not(:disabled):active { scale: 0.98; }
 .offer-started { display: flex; align-items: center; gap: var(--sp-8); width: 100%; padding: var(--sp-10) var(--sp-12); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .offer-started:hover { background: var(--bg-hover); }
 .offer-started-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.offer-dismissed { color: var(--fg-muted); cursor: default; }
+.offer-dismissed:hover { background: var(--bg-card); }
+.offer-dismissed-note { flex-shrink: 0; font-size: var(--text-sm); }
 .chapter-heading { margin-top: var(--sp-10); font-weight: var(--weight-semibold); color: var(--fg); scroll-margin-top: var(--sp-16); }
 .pinned-heading { cursor: default; }
 .pinned-mark { flex: none; display: inline-flex; color: var(--fg-muted); }

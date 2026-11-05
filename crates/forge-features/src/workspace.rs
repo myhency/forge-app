@@ -1091,6 +1091,39 @@ impl Workspace {
         });
     }
 
+    /// An answer's `여기서 포크하기`: copies the open session as it was right after that answer —
+    /// before `next_user`, the person's next message, or the whole of it when the answer is the
+    /// last — and opens the copy. Unlike a fork from a message, nothing goes back into the box.
+    pub fn fork_after(&self, id: LiveSessionId, next_user: Option<String>) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let mut past = self.past;
+        let Some(view) = self.live_view(id) else { return };
+        let (project, session_id, title) = {
+            let view = view.peek();
+            (view.project_path.clone(), view.claude_session_id.clone(), view.session.title.clone().unwrap_or_default())
+        };
+        let Some(session_id) = session_id else {
+            return self.report(tr!("This message cannot be forked yet.").to_string());
+        };
+        dioxus::core::spawn_forever(async move {
+            let made = match next_user {
+                Some(uuid) => services.registry.fork_before(&project, &session_id, &uuid, &title).await,
+                None => services.registry.fork(&project, &session_id, &title).await,
+            };
+            let new_id = match made {
+                Ok(id) => id,
+                Err(error) => return this.report(error.to_string()),
+            };
+            match services.sessions.list_sessions(&project).await {
+                Ok(sessions) => replace_project_sessions(&mut past.write(), &project, sessions),
+                Err(error) => return this.report(format!("{}: {error}", project.display())),
+            }
+            let summary = project_for_open(&past.peek(), &project);
+            this.open_past(summary, new_id);
+        });
+    }
+
     /// The origin of the open session when it is a fork and the origin is listed (the `포크 원본` line).
     pub fn fork_origin(&self, id: LiveSessionId) -> Option<ForkOrigin> {
         let view = self.live_view(id)?;

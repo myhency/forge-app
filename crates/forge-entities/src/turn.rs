@@ -59,6 +59,9 @@ pub fn Turns(
     #[props(default)] on_rewind: Option<EventHandler<String>>,
     /// Asked to fork the session before the user message with this id (its action row's ⑂); no ⑂ without it.
     #[props(default)] on_fork: Option<EventHandler<String>>,
+    /// Asked to fork the session right after an answer (its footer's ⑂, the desktop app's `여기서
+    /// 포크하기`): the id of the next user message to cut before, or `None` for the whole session.
+    #[props(default)] on_fork_here: Option<EventHandler<Option<String>>>,
     /// Asked to send this text as the next message (an end card's button); its buttons do nothing without it.
     #[props(default)] on_send: Option<EventHandler<String>>,
     /// What became of each end card of the session, by the `wrap_up` call's id.
@@ -76,10 +79,19 @@ pub fn Turns(
     let forkable: Vec<String> = messages.iter().filter_map(|message| message.uuid.clone()).filter(|uuid| forge_domain::can_fork_before(&messages, uuid)).collect();
     let items = build_turns(&messages, view, live.as_ref());
     let detailed = view.expands_tool_calls();
+    // For each item, the id of the next person's message after it: where a fork from an answer cuts.
+    let mut next_user: Vec<Option<String>> = vec![None; items.len()];
+    let mut upcoming: Option<String> = None;
+    for (index, item) in items.iter().enumerate().rev() {
+        next_user[index] = upcoming.clone();
+        if let Item::User(message) = item {
+            upcoming = message.uuid.clone();
+        }
+    }
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone(), on_open_changes, offer_marks: offer_marks.clone(), on_offer }
+                TurnItem { key: "{index}", next_user: next_user[index].clone(), on_fork_here, item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone(), on_open_changes, offer_marks: offer_marks.clone(), on_offer }
             }
         }
     }
@@ -97,6 +109,8 @@ fn TurnItem(
     on_open_plan: EventHandler<()>,
     on_rewind: Option<EventHandler<String>>,
     on_fork: Option<EventHandler<String>>,
+    next_user: Option<String>,
+    on_fork_here: Option<EventHandler<Option<String>>>,
     on_send: Option<EventHandler<String>>,
     card_marks: std::collections::HashMap<String, crate::turn_cards::CardMark>,
     on_card_mark: Option<EventHandler<(String, crate::turn_cards::CardMark)>>,
@@ -176,7 +190,7 @@ fn TurnItem(
         Item::Thinking(text) => rsx! { div { class: "thinking", "{text}" } },
         Item::Activity(activity) => rsx! { ActivityBlock { activity, detailed, on_open_file, on_open_changes } },
         Item::FileCard(card) => rsx! { FileCardView { card, on_open_file } },
-        Item::Footer(footer) => rsx! { FooterView { footer } },
+        Item::Footer(footer) => rsx! { FooterView { footer, next_user, on_fork_here } },
         Item::Answers(pairs) => rsx! { AnswerCard { pairs } },
         Item::Received { title, text } => rsx! { ReceivedMessage { title, text } },
         Item::SessionOffer(offer) => {
@@ -404,9 +418,10 @@ fn FileCardView(card: FileCard, on_open_file: EventHandler<String>) -> Element {
 }
 
 #[component]
-fn FooterView(footer: Footer) -> Element {
+fn FooterView(footer: Footer, next_user: Option<String>, on_fork_here: Option<EventHandler<Option<String>>>) -> Element {
     let time = footer.at.as_deref().map(|at| relative_time(at, OffsetDateTime::now_utc())).unwrap_or_default();
     let text = footer.text.clone();
+    let spoken = footer.text.clone();
     rsx! {
         div { class: "turn-footer",
             button {
@@ -416,11 +431,63 @@ fn FooterView(footer: Footer) -> Element {
                 onclick: move |_| crate::clipboard::copy_text(&text),
                 Icon { kind: IconKind::Copy, size: IconSize::Small }
             }
+            // The desktop app's footer (observed 2026-11-06): 여기서 포크하기, 소리 내어 읽기.
+            if let Some(on_fork_here) = on_fork_here {
+                button {
+                    class: "icon-button",
+                    r#type: "button",
+                    title: tr!("Fork from here: starts a new session from this point; this session stays as it is."),
+                    "aria-label": tr!("Fork from here"),
+                    onclick: move |_| on_fork_here.call(next_user.clone()),
+                    Icon { kind: IconKind::Fork, size: IconSize::Small }
+                }
+            }
+            button {
+                class: "icon-button",
+                r#type: "button",
+                title: tr!("Read aloud"),
+                "aria-label": tr!("Read aloud"),
+                onclick: move |_| read_aloud(&spoken),
+                Icon { kind: IconKind::Speaker, size: IconSize::Small }
+            }
             if !time.is_empty() {
                 span { class: "footer-time", "{time}" }
             }
         }
     }
+}
+
+/// The words of an answer without its markdown marks, for speech.
+pub fn speech_text(markdown: &str) -> String {
+    let mut out = String::new();
+    let mut in_code = false;
+    for line in markdown.lines() {
+        if line.trim_start().starts_with("```") {
+            in_code = !in_code;
+            continue;
+        }
+        if in_code {
+            continue;
+        }
+        let line = line.trim_start_matches(|c: char| c == '#' || c == '>' || c == ' ');
+        let line = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")).unwrap_or(line);
+        let cleaned: String = line.chars().filter(|c| !matches!(c, '*' | '`' | '_' | '|')).collect();
+        if !cleaned.trim().is_empty() {
+            out.push_str(cleaned.trim());
+            out.push('\n');
+        }
+    }
+    out.trim().to_string()
+}
+
+/// Reads an answer out loud with the system voice through the web view's speech API, or stops
+/// the reading when one is going (the desktop app's `소리 내어 읽기`).
+fn read_aloud(markdown: &str) {
+    let text = serde_json::to_string(&speech_text(markdown)).unwrap_or_else(|_| "\"\"".to_string());
+    let script = format!(
+        "if (window.speechSynthesis) {{ if (speechSynthesis.speaking) {{ speechSynthesis.cancel(); }} else {{ const u = new SpeechSynthesisUtterance({text}); u.lang = document.documentElement.lang || navigator.language; speechSynthesis.speak(u); }} }}"
+    );
+    document::eval(&script);
 }
 
 /// The seconds of a running turn. Only this component re-renders each second; the transcript above
@@ -477,7 +544,14 @@ fn SessionOfferCard(offer: crate::turn_view::SessionOffer, mark: Option<crate::t
     // copy of the conversation holds the call with no mark of its own).
     let mark = if offer.fork { Some(OfferMark::Started) } else { mark };
     match mark {
-        Some(OfferMark::Dismissed | OfferMark::Here) => rsx! {},
+        Some(OfferMark::Here) => rsx! {},
+        // The desktop app keeps a closed card as a quiet line (observed 2026-11-06).
+        Some(OfferMark::Dismissed) => rsx! {
+            div { class: "offer-started offer-dismissed",
+                span { class: "offer-started-title", "{offer.title}" }
+                span { class: "offer-dismissed-note", {tr!("Dismissed")} }
+            }
+        },
         Some(OfferMark::Started) => rsx! {
             button { class: "offer-started", r#type: "button", onclick: act(OfferAction::Open),
                 span { class: "offer-started-title", "{offer.title}" }
@@ -615,5 +689,14 @@ fn UserBubble(text: String) -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod speech_tests {
+    #[test]
+    fn speech_leaves_out_code_blocks_and_markdown_marks() {
+        let text = "## Done\n\nThe **fix** is in `stats.py`:\n\n```python\nx = 1\n```\n- one\n| a | b |";
+        assert_eq!(super::speech_text(text), "Done\nThe fix is in stats.py:\none\na  b");
     }
 }

@@ -167,6 +167,8 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     }),
                     on_rewind: move |uuid: String| workspace.request_rewind(id, uuid),
                     on_fork: move |uuid: String| workspace.fork_from_message(id, uuid),
+                    // Only a session that is on disk can be copied.
+                    on_fork_here: view.claude_session_id.is_some().then(|| EventHandler::new(move |next: Option<String>| workspace.fork_after(id, next))),
                     // No buttons on an archived or view-only session: it cannot send.
                     on_send: (!archived && view.can_send).then(|| {
                         EventHandler::new(move |text: String| {

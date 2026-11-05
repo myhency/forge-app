@@ -163,7 +163,7 @@ pub struct SessionOffer {
 /// What became of a proposed session's card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OfferMark {
-    /// Closed with `×`: the card goes.
+    /// Closed with `×`: the card becomes a quiet line saying so.
     Dismissed,
     /// Taken here (`여기서 하기`): the card goes, the work continues in this session.
     Here,
