@@ -143,6 +143,19 @@ pub fn PlusMenu(project: Option<PathBuf>, add_folder_enabled: bool) -> Element {
                                     disabled,
                                     title: if disabled { tr!("Choose folders before the first message") } else { "" },
                                     onclick: move |_| pick(action),
+                                    // The desktop app's `+` menu has an icon on every row.
+                                    span { class: "picker-icon",
+                                        Icon {
+                                            kind: match action {
+                                                PlusAction::AddFolder => IconKind::Folder,
+                                                PlusAction::SlashCommands => IconKind::Slash,
+                                                PlusAction::Connectors => IconKind::Plug,
+                                                PlusAction::Plugins => IconKind::Package,
+                                                _ => IconKind::Paperclip,
+                                            },
+                                            size: IconSize::Small,
+                                        }
+                                    }
                                     span { class: "picker-text",
                                         span { class: "picker-label", "{row.label}" }
                                     }

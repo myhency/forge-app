@@ -197,6 +197,7 @@ button:not(:disabled):active { scale: 0.98; }
 .chapter-heading { margin-top: var(--sp-10); font-weight: var(--weight-semibold); color: var(--fg); scroll-margin-top: var(--sp-16); }
 .pinned-heading { cursor: default; }
 .pinned-mark { flex: none; display: inline-flex; color: var(--fg-muted); }
+.picker-icon { flex: none; display: inline-flex; color: var(--fg-muted); margin-right: var(--sp-8); }
 .attention-dot { flex: none; width: 8px; height: 8px; margin-left: auto; border-radius: var(--r-round); background: var(--warning); }
 .attention-dot.unread { background: var(--link); }
 .attention-dot.naming { background: var(--fg-muted); opacity: 0.5; }

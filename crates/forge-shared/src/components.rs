@@ -226,6 +226,10 @@ pub enum IconKind {
     Globe,
     /// The sidebar toggle at the top of the sidebar (a window with a left column).
     Sidebar,
+    /// The composer `+` menu's file row.
+    Paperclip,
+    /// The composer `+` menu's slash-command row.
+    Slash,
     Chevron,
     ChevronLeft,
     Check,
@@ -250,7 +254,7 @@ pub enum IconKind {
 }
 
 impl IconKind {
-    pub const ALL: [IconKind; 43] = [
+    pub const ALL: [IconKind; 45] = [
         IconKind::Close,
         IconKind::Search,
         IconKind::Sparkle,
@@ -273,6 +277,8 @@ impl IconKind {
         IconKind::Target,
         IconKind::Globe,
         IconKind::Sidebar,
+        IconKind::Paperclip,
+        IconKind::Slash,
         IconKind::Chevron,
         IconKind::ChevronLeft,
         IconKind::Check,
@@ -319,6 +325,8 @@ impl IconKind {
             IconKind::Send => &[Shape::Path("M12.5 3.5v5h-9M3.5 8.5l3-3M3.5 8.5l3 3")],
             IconKind::More => &[Shape::Dot { cx: 3.5, cy: 8.0 }, Shape::Dot { cx: 8.0, cy: 8.0 }, Shape::Dot { cx: 12.5, cy: 8.0 }],
             IconKind::Target => &[Shape::Circle { cx: 8.0, cy: 8.0, r: 6.0 }, Shape::Circle { cx: 8.0, cy: 8.0, r: 2.0 }],
+            IconKind::Paperclip => &[Shape::Path("M12.5 7.5l-4.6 4.6a2.6 2.6 0 0 1-3.7-3.7l5-5a1.75 1.75 0 0 1 2.5 2.5l-5 5a.9.9 0 0 1-1.3-1.3l4.6-4.6")],
+            IconKind::Slash => &[Shape::Rect { x: 2.5, y: 2.5, width: 11.0, height: 11.0, rx: 2.5 }, Shape::Path("M9.5 5L6.5 11")],
             IconKind::Sidebar => &[Shape::Rect { x: 2.0, y: 3.0, width: 12.0, height: 10.0, rx: 2.0 }, Shape::Path("M6 3v10")],
             IconKind::Globe => &[Shape::Circle { cx: 8.0, cy: 8.0, r: 6.0 }, Shape::Path("M2 8h12M8 2c-1.8 1.7-2.7 3.7-2.7 6s.9 4.3 2.7 6M8 2c1.8 1.7 2.7 3.7 2.7 6s-.9 4.3-2.7 6")],
             IconKind::Chevron => &[Shape::Path("M6 3.5L10.5 8 6 12.5")],
