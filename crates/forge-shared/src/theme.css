@@ -160,6 +160,10 @@ button:not(:disabled):active { scale: 0.98; }
 .env-missing-line { width: 100%; max-width: var(--chat-column); box-sizing: border-box; margin: 0 auto var(--sp-6); padding: 0 var(--sp-16); color: var(--danger); font-size: var(--text-sm); }
 .env-missing-line .link-button { appearance: none; border: none; background: none; padding: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .drag-spacer { flex: 1; align-self: stretch; min-width: var(--sp-8); }
+.inline-permission { max-width: var(--chat-column); margin: var(--sp-14) auto 0; font-size: var(--chat-size); }
+.inline-permission .permission-panel { width: 100%; max-width: none; max-height: none; margin: 0; box-shadow: none; }
+.chat-narrow .inline-permission .permission-panel { width: 100%; }
+.inline-permission .ndiff, .inline-permission .diff, .inline-permission .perm-command { max-height: 40vh; }
 .attention-dot { flex: none; width: 8px; height: 8px; margin-left: auto; border-radius: var(--r-round); background: var(--warning); }
 .attention-dot.naming { background: var(--fg-muted); opacity: 0.5; }
 .sidebar-item.active { background: var(--sidebar-active, var(--bg-hover)); }

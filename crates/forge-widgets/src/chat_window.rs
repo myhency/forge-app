@@ -116,6 +116,13 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     },
                 }
                 LocalCards { id }
+                // A permission card sits in the conversation, under the turn that asks, as in the desktop
+                // app (round 37); a question keeps its place above the box.
+                if let Some(request) = view.pending_permissions.front().filter(|request| request.tool_name != forge_entities::QUESTION_TOOL) {
+                    div { class: "inline-permission",
+                        PermissionPanel { key: "{request.id}", id, request: request.clone() }
+                    }
+                }
             }
             ScrollToEnd {}
             if let Some(error) = view.last_error.as_ref() {
@@ -151,8 +158,6 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
             if let Some(request) = view.pending_permissions.front() {
                 if request.tool_name == forge_entities::QUESTION_TOOL {
                     QuestionPanel { key: "{request.id}", id, request: request.clone() }
-                } else {
-                    PermissionPanel { key: "{request.id}", id, request: request.clone() }
                 }
             }
             if archived {
