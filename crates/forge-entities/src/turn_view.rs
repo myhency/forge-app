@@ -614,15 +614,20 @@ fn tool_row(call: &ToolCall) -> ToolRow {
         }
         ToolKind::Command if is_background_start(call) => (tr!("Background task").to_string(), summary.clone(), String::new()),
         ToolKind::Command => {
-            let label = call
-                .input
-                .get("description")
-                .and_then(Value::as_str)
-                .filter(|text| !text.is_empty())
-                .map(str::to_string)
-                .unwrap_or_else(|| summary.clone());
-            let verb = if call.result.is_some() { tr!("Ran|tool") } else { tr!("Running|tool") };
-            (verb.to_string(), label, String::new())
+            let description = call.input.get("description").and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty());
+            match description {
+                // The desktop app shows the description alone, in the past once the command ran:
+                // "Run pytest in calc folder" → "Ran pytest in calc folder" (observed 2026-11-06).
+                Some(text) if starts_english_verb(text) => (String::new(), if call.result.is_some() { past(text) } else { progressive(text) }, String::new()),
+                Some(text) => {
+                    let verb = if call.result.is_some() { tr!("Ran|tool") } else { tr!("Running|tool") };
+                    (verb.to_string(), text.to_string(), String::new())
+                }
+                None => {
+                    let verb = if call.result.is_some() { tr!("Ran|tool") } else { tr!("Running|tool") };
+                    (verb.to_string(), summary.clone(), String::new())
+                }
+            }
         }
         ToolKind::Other if call.name == SKILL_TOOL => {
             let name = call.input.get("skill").and_then(Value::as_str).unwrap_or_default();
@@ -826,6 +831,48 @@ fn live_label(row: &ToolRow) -> (String, String) {
         ToolKind::Other if is_desktop_tool(&row.call.name) => (tr!("Controlling an app").to_string(), row.subject.clone()),
         ToolKind::Other => (tr!("Using {name}", name = short_tool_name(&row.call.name)), row.subject.clone()),
     }
+}
+
+// Whether a description starts with a capitalised English word, the imperative a command's
+// description is written in ("Run tests"); a Korean one is left as it is.
+fn starts_english_verb(description: &str) -> bool {
+    let word = description.split(' ').next().unwrap_or_default();
+    word.len() >= 2 && word.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && word.chars().all(|c| c.is_ascii_alphabetic())
+}
+
+/// An imperative English description in the past form of its first word: "Run tests" → "Ran tests",
+/// "List files" → "Listed files", "Stop server" → "Stopped server". Other text is left alone.
+pub(crate) fn past(description: &str) -> String {
+    let (word, rest) = match description.find(' ') {
+        Some(space) => description.split_at(space),
+        None => (description, ""),
+    };
+    if !starts_english_verb(description) || word.ends_with("ed") {
+        return description.to_string();
+    }
+    let lower = word.to_ascii_lowercase();
+    const IRREGULAR: &[(&str, &str)] = &[
+        ("run", "ran"), ("rerun", "reran"), ("read", "read"), ("write", "wrote"), ("rewrite", "rewrote"), ("make", "made"), ("find", "found"),
+        ("get", "got"), ("build", "built"), ("rebuild", "rebuilt"), ("set", "set"), ("reset", "reset"), ("put", "put"), ("send", "sent"),
+        ("take", "took"), ("show", "showed"), ("give", "gave"), ("begin", "began"), ("do", "did"), ("redo", "redid"), ("undo", "undid"),
+        ("go", "went"), ("see", "saw"), ("keep", "kept"), ("leave", "left"), ("cut", "cut"), ("split", "split"), ("hit", "hit"),
+        ("fetch", "fetched"), ("bring", "brought"), ("seek", "sought"), ("spin", "spun"), ("feed", "fed"), ("lead", "led"),
+    ];
+    const DOUBLE: &[&str] = &["stop", "plan", "scan", "ship", "drop", "swap", "step", "chop", "skip", "strip", "tap", "map", "wrap", "zip", "commit", "submit", "grep", "dig", "log", "tag", "pin", "trim"];
+    let done = if let Some((_, gone)) = IRREGULAR.iter().find(|(now, _)| *now == lower) {
+        gone.to_string()
+    } else if DOUBLE.contains(&lower.as_str()) {
+        format!("{lower}{}ed", &lower[lower.len() - 1..])
+    } else if lower.ends_with('e') {
+        format!("{lower}d")
+    } else if lower.ends_with('y') && !lower.ends_with("ay") && !lower.ends_with("ey") && !lower.ends_with("oy") {
+        format!("{}ied", &lower[..lower.len() - 1])
+    } else {
+        format!("{lower}ed")
+    };
+    let mut chars = done.chars();
+    let capital: String = chars.next().map(|c| c.to_ascii_uppercase()).into_iter().chain(chars).collect();
+    format!("{capital}{rest}")
 }
 
 /// An imperative English description in the "-ing" form of its first word: "List files" → "Listing
@@ -1605,7 +1652,13 @@ mod tests {
         let rows = &activity(&items).rows;
         let Row::Tool(done) = &rows[0] else { panic!() };
         let Row::Tool(running) = &rows[1] else { panic!() };
-        assert_eq!((done.verb.as_str(), running.verb.as_str()), ("Ran", "Running"));
+        // An English description stands alone, in the past; a bare command keeps the verb.
+        assert_eq!((done.verb.as_str(), done.subject.as_str()), ("", "Listed"));
+        assert_eq!(running.verb.as_str(), "Running");
+        let korean = vec![Message::user("go"), assistant(vec![bash("t-1", Some("파일 목록"))])];
+        let items = build_turns(&korean, TranscriptView::Normal, None);
+        let Row::Tool(row) = &activity(&items).rows[0] else { panic!() };
+        assert_eq!((row.verb.as_str(), row.subject.as_str()), ("Ran", "파일 목록"));
     }
 
     #[test]
@@ -1749,6 +1802,19 @@ mod tests {
     fn live_items(blocks: Vec<Block>, live: LiveState) -> Vec<Item> {
         build_turns(&[Message::user("go"), assistant(blocks)], TranscriptView::Normal, Some(&live))
     }
+    #[test]
+    fn a_finished_command_reads_in_the_past_like_the_desktop_app() {
+        assert_eq!(past("Run pytest in calc folder"), "Ran pytest in calc folder");
+        assert_eq!(past("List project files"), "Listed project files");
+        assert_eq!(past("Stop the server"), "Stopped the server");
+        assert_eq!(past("Create the venv"), "Created the venv");
+        assert_eq!(past("Copy files"), "Copied files");
+        assert_eq!(past("Read the log"), "Read the log");
+        assert_eq!(past("Write notes"), "Wrote notes");
+        assert_eq!(past("테스트 실행"), "테스트 실행");
+        assert_eq!(past("Installed deps"), "Installed deps");
+    }
+
     #[test]
     fn a_description_reads_as_what_is_happening_now() {
         assert_eq!(progressive("List project and calc folder"), "Listing project and calc folder");
