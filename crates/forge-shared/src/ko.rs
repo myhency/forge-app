@@ -817,6 +817,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Search folders…", "폴더 검색…"),
     ("Search sessions", "세션 검색"),
     ("Search sessions ({key})", "세션 검색 ({key})"),
+    ("Searched a page", "페이지 검색함"),
     ("Searched the sessions", "세션 검색함"),
     ("Searching", "검색 중"),
     ("Searching…", "검색 중…"),

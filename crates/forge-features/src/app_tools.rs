@@ -130,6 +130,16 @@ impl Workspace {
                 }
                 other => Err(format!("Forge's browser tool does not do \"{other}\"; use read_page with form_input, or javascript_tool.")),
             },
+            "find" => {
+                let query = text("query").unwrap_or_default().to_string();
+                if query.trim().is_empty() {
+                    Err("Say what to find, e.g. \"login button\".".to_string())
+                } else {
+                    let args = json!({ "interactive": false, "depth": 60, "ref": Value::Null, "max": 400_000 });
+                    let script = READ_PAGE_SCRIPT.replace("__ARGS__", &args.to_string());
+                    return self.eval_then(id, request.clone(), input.get("tabId").and_then(Value::as_u64), script, move |outline| find_in_outline(&outline, &query));
+                }
+            }
             "read_page" => {
                 let args = json!({
                     "interactive": text("filter") == Some("interactive"),
@@ -805,6 +815,11 @@ impl Workspace {
 
     /// Runs a script in the tab's page and answers with what it gave back.
     fn eval_by_tool(&self, id: LiveSessionId, request: AppRequest, wanted: Option<u64>, script: String) {
+        self.eval_then(id, request, wanted, script, |text| text);
+    }
+
+    /// Runs a script in the tab's page and answers with `shape` of what it gave back.
+    fn eval_then(&self, id: LiveSessionId, request: AppRequest, wanted: Option<u64>, script: String, shape: impl FnOnce(String) -> String + 'static) {
         let tab = match self.tool_tab(id, wanted) {
             Ok(tab) => tab,
             Err(message) => return self.answer(id, &request, Err(message)),
@@ -814,7 +829,7 @@ impl Workspace {
         let this = *self;
         dioxus::core::spawn_forever(async move {
             let result = match tokio::time::timeout(std::time::Duration::from_secs(20), receiver).await {
-                Ok(Ok(result)) => result.map(|json| page_result(&json)),
+                Ok(Ok(result)) => result.map(|json| shape(page_result(&json))),
                 _ => Err("The page did not answer in time.".to_string()),
             };
             this.answer(id, &request, result);
@@ -1049,6 +1064,27 @@ fn page_result(json: &str) -> String {
     }
 }
 
+/// `find`: the outline lines of `read_page` that share the most words with the query (at most 20),
+/// best first. The desktop app asks a model; this matches words.
+fn find_in_outline(outline: &str, query: &str) -> String {
+    let words: Vec<String> = query.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|word| word.len() > 1).map(str::to_string).collect();
+    let mut hits: Vec<(usize, usize, &str)> = outline
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains("[ref_"))
+        .filter_map(|(at, line)| {
+            let lower = line.to_lowercase();
+            let score = words.iter().filter(|word| lower.contains(word.as_str())).count();
+            (score > 0).then_some((score, at, line.trim()))
+        })
+        .collect();
+    hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    if hits.is_empty() {
+        return format!("Nothing on the page matches \"{query}\". Try read_page.");
+    }
+    hits.into_iter().take(20).map(|(_, _, line)| line).collect::<Vec<_>>().join("\n")
+}
+
 /// `preview_logs`: the last 8 KB of a server's output, only the lines with an error when `level` is
 /// "error", only those holding `search` when it is given.
 fn server_log(output: &str, level: Option<&str>, search: Option<&str>) -> String {
@@ -1114,6 +1150,13 @@ mod export_limit_tests {
         assert_eq!(super::page_result("42"), "42");
         let script = super::script_runner("document.title + \"'\"");
         assert!(script.contains(r#"(0,eval)("document.title + \"'\"")"#), "{script}");
+    }
+
+    #[test]
+    fn find_ranks_outline_lines_by_shared_words() {
+        let outline = "Title: x\n\nbutton \"Log in\" [ref_1]\nlink \"Login help\" [ref_2]\ntextbox \"Search\" [ref_3]";
+        assert_eq!(super::find_in_outline(outline, "log in button"), "button \"Log in\" [ref_1]\nlink \"Login help\" [ref_2]");
+        assert!(super::find_in_outline(outline, "basket").starts_with("Nothing"));
     }
 
     #[test]

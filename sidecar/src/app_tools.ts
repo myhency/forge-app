@@ -42,6 +42,7 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${BROWSER_SERVER}__read_page`,
   `mcp__${BROWSER_SERVER}__computer`,
   `mcp__${BROWSER_SERVER}__read_network_requests`,
+  `mcp__${BROWSER_SERVER}__find`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -364,6 +365,15 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
         max_chars: z.number().optional().describe("Maximum characters (default 50000)."),
       },
       forward(ask, "read_page"),
+    ),
+    tool(
+      "find",
+      'Find elements on the page of a Browser pane tab by what they say or are (e.g. "login button", "search bar"). Returns up to 20 matching elements, best first, with refs for form_input and scroll_to. Forge matches words against the page outline; when nothing fits, read_page shows everything.',
+      {
+        query: z.string().describe("What to find."),
+        tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
+      },
+      forward(ask, "find"),
     ),
     tool(
       "form_input",
