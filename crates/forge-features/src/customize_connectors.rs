@@ -196,11 +196,24 @@ pub(crate) struct Connectors {
     sign_in_tap: Signal<Option<TapHandle>>,
     /// The newest refresh of the list wins (see `refresh_connectors`).
     refreshes: Signal<Latest>,
+    bundles: Signal<Arc<dyn forge_ports::ExtensionBundlePort>>,
+    /// A desktop extension unpacked and waiting for its settings.
+    pending_extension: Signal<Option<PendingExtension>>,
+}
+
+/// A desktop extension that is unpacked and not added yet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PendingExtension {
+    pub manifest: forge_domain::BundleManifest,
+    pub dir: PathBuf,
+    pub node: Option<PathBuf>,
 }
 
 impl Connectors {
-    pub(crate) fn new(usecase: Arc<ConnectorCatalogUseCase>) -> Self {
+    pub(crate) fn new(usecase: Arc<ConnectorCatalogUseCase>, bundles: Arc<dyn forge_ports::ExtensionBundlePort>) -> Self {
         Self {
+            bundles: Signal::new_in_scope(bundles, ScopeId::ROOT),
+            pending_extension: Signal::new_in_scope(None, ScopeId::ROOT),
             usecase: Signal::new_in_scope(usecase, ScopeId::ROOT),
             view: Signal::new_in_scope(None, ScopeId::ROOT),
             busy: Signal::new_in_scope(false, ScopeId::ROOT),
@@ -369,6 +382,69 @@ impl Customize {
         });
     }
 
+    /// `+ Add › Install extension…`: a desktop extension (`.mcpb` or `.dxt`, as the desktop app's
+    /// Settings › 확장 프로그램 takes) is unpacked into Forge's folder; one with settings asks for them first,
+    /// then it is added as a connector.
+    pub fn install_extension(&self) {
+        if self.connectors_busy() {
+            return;
+        }
+        let picker = (*self.file_picker.peek()).clone();
+        let bundles = (*self.connectors.bundles.peek()).clone();
+        let this = *self;
+        let mut busy = self.connectors.busy;
+        dioxus::core::spawn_forever(async move {
+            let Some(archive) = picker.pick_files().await.into_iter().next() else { return };
+            let known = archive.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("mcpb") || ext.eq_ignore_ascii_case("dxt"));
+            if !known {
+                this.set_error(Some(tr!("Choose a desktop extension (.mcpb or .dxt).").to_string()));
+                return;
+            }
+            busy.set(true);
+            let unpacked = bundles.unpack(&archive).await.and_then(|(dir, text)| forge_domain::read_manifest(&text).map(|manifest| (dir, manifest)));
+            busy.set(false);
+            match unpacked.map_err(|message| bundle_error_text(&message)) {
+                Ok((dir, manifest)) => {
+                    let pending = PendingExtension { manifest, dir, node: bundles.node_program() };
+                    let asks = !pending.manifest.settings.is_empty();
+                    let mut slot = this.connectors.pending_extension;
+                    slot.set(Some(pending));
+                    if asks {
+                        this.set_dialog_error(None);
+                        this.open_dialog(Dialog::InstallExtension);
+                    } else {
+                        this.finish_extension(std::collections::BTreeMap::new());
+                    }
+                }
+                Err(message) => this.set_error(Some(message)),
+            }
+        });
+    }
+
+    pub fn pending_extension(&self) -> Option<PendingExtension> {
+        self.connectors.pending_extension.read().clone()
+    }
+
+    /// Adds the unpacked extension as a connector with the settings the person gave.
+    pub fn finish_extension(&self, values: std::collections::BTreeMap<String, Vec<String>>) {
+        let Some(pending) = self.pending_extension() else { return };
+        let places = forge_domain::BundlePlaces {
+            dir: pending.dir.to_string_lossy().into_owned(),
+            home: directories_home(),
+            separator: std::path::MAIN_SEPARATOR,
+            node: pending.node.as_ref().map(|node| node.to_string_lossy().into_owned()),
+        };
+        let resolved = forge_domain::resolve_bundle(&pending.manifest, &places, &values).map_err(|message| bundle_error_text(&message)).and_then(|(command, args, env)| {
+            let args = forge_domain::join_args(&args).ok_or_else(|| tr!("An argument of the extension has both kinds of quote.").to_string())?;
+            Ok(ConnectorDraft { name: forge_domain::bundle_server_name(&pending.manifest.name), kind: forge_domain::ConnectorKind::Stdio, command, args, env, ..ConnectorDraft::default() })
+        });
+        match resolved {
+            Ok(draft) => self.add_connector(draft),
+            Err(message) if self.dialog() == Some(Dialog::InstallExtension) => self.set_dialog_error(Some(message)),
+            Err(message) => self.set_error(Some(message)),
+        }
+    }
+
     /// The Add dialog's button. A second press while one add runs does nothing.
     pub fn add_connector(&self, draft: ConnectorDraft) {
         if self.connectors_busy() {
@@ -400,9 +476,11 @@ impl Customize {
         busy.set(false);
         match result {
             Ok(added) => {
-                if self.dialog() == Some(Dialog::AddConnector) {
+                if matches!(self.dialog(), Some(Dialog::AddConnector | Dialog::InstallExtension)) {
                     self.close_dialog();
                 }
+                let mut pending = self.connectors.pending_extension;
+                pending.set(None);
                 // A later check of a connector that was removed and added again must not carry the old answer.
                 let mut checked = self.connectors.checked;
                 checked.write().remove(&added.name);
@@ -414,7 +492,7 @@ impl Customize {
                 }
             }
             Err(error) => {
-                if self.dialog() == Some(Dialog::AddConnector) {
+                if matches!(self.dialog(), Some(Dialog::AddConnector | Dialog::InstallExtension)) {
                     self.set_dialog_error(Some(error.to_string()));
                 } else {
                     self.set_error(Some(error.to_string()));
@@ -633,5 +711,33 @@ mod tests {
         assert!(refreshes_on_tab(CustomizeTab::Connectors));
         assert!(!refreshes_on_tab(CustomizeTab::Plugins));
         assert!(!refreshes_on_tab(CustomizeTab::Skills));
+    }
+}
+
+// The person's home folder, for `${HOME}` in an extension's manifest.
+fn directories_home() -> String {
+    std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default()
+}
+
+/// An extension's English error (from the manifest reader or the unpacker) in the person's language.
+fn bundle_error_text(message: &str) -> String {
+    let known = [
+        ("The extension's manifest.json is not valid JSON.", tr!("The extension's manifest.json is not valid JSON.")),
+        ("The extension's manifest has no name.", tr!("The extension's manifest has no name.")),
+        ("The extension's manifest names no server to run (server.mcp_config).", tr!("The extension's manifest names no server to run (server.mcp_config).")),
+        ("The extension's manifest names no command to run.", tr!("The extension's manifest names no command to run.")),
+        ("The file has no manifest.json at its top: it is not a desktop extension.", tr!("The file has no manifest.json at its top: it is not a desktop extension.")),
+        ("That file is not a desktop extension (.mcpb or .dxt).", tr!("That file is not a desktop extension (.mcpb or .dxt).")),
+        ("The extension has too many files.", tr!("The extension has too many files.")),
+        ("The extension is too large.", tr!("The extension is too large.")),
+        ("The extension has a file outside its own folder.", tr!("The extension has a file outside its own folder.")),
+        ("The extension has a link in it.", tr!("The extension has a link in it.")),
+    ];
+    if let Some((_, shown)) = known.iter().find(|(english, _)| *english == message) {
+        return shown.to_string();
+    }
+    match message.strip_suffix(" is needed.") {
+        Some(title) => tr!("{title} is needed.", title = title),
+        None => message.to_string(),
     }
 }

@@ -3,7 +3,7 @@ use forge_domain::Marketplace;
 use forge_features::{connector_dialog_busy, use_customize, Busy, Dialog, Job, Loaded};
 use forge_shared::{tr, Button, ButtonKind, Icon, IconKind};
 
-use crate::customize_connector_dialogs::{AddConnector, ConfirmRemoveConnector, SignInConnector};
+use crate::customize_connector_dialogs::{AddConnector, ConfirmRemoveConnector, InstallExtension, SignInConnector};
 
 /// Whichever dialog is open, over the page. A click on the backdrop closes it.
 #[component]
@@ -31,6 +31,7 @@ pub fn CustomizeDialogs() -> Element {
                     Dialog::ConfirmRemoveMarketplace(name) => rsx! { ConfirmRemove { name } },
                     Dialog::CreateSkill => rsx! { CreateSkill {} },
                     Dialog::AddConnector => rsx! { AddConnector {} },
+                    Dialog::InstallExtension => rsx! { InstallExtension {} },
                     Dialog::ConfirmRemoveConnector(name) => rsx! { ConfirmRemoveConnector { name } },
                     Dialog::SignInConnector(name) => rsx! { SignInConnector { name } },
                 }

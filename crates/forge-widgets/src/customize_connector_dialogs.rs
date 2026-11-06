@@ -162,3 +162,108 @@ pub fn SignInConnector(name: String) -> Element {
         }
     }
 }
+
+/// The settings a desktop extension asks for (`user_config`), as the desktop app shows them before it
+/// turns the extension on: folders are picked, the rest typed; a sensitive value is hidden.
+#[component]
+pub fn InstallExtension() -> Element {
+    let customize = use_customize();
+    let Some(pending) = customize.pending_extension() else {
+        return rsx! {};
+    };
+    let mut values: Signal<std::collections::BTreeMap<String, Vec<String>>> = use_signal(|| {
+        pending.manifest.settings.iter().map(|setting| (setting.key.clone(), setting.default.clone())).collect()
+    });
+    let adding = customize.connectors_busy();
+    let manifest = pending.manifest.clone();
+    rsx! {
+        h2 { {tr!("Install {name}", name = manifest.display_name.clone())} }
+        if !manifest.description.is_empty() {
+            p { class: "hint", "{manifest.description}" }
+        }
+        for setting in manifest.settings.clone() {
+            div { key: "{setting.key}", class: "extension-setting",
+                label { class: "env-label",
+                    "{setting.title}"
+                    if setting.required { span { class: "hint", " *" } }
+                }
+                if !setting.description.is_empty() {
+                    p { class: "hint", "{setting.description}" }
+                }
+                if setting.kind == "directory" || setting.kind == "file" {
+                    for (at, folder) in values.read().get(&setting.key).cloned().unwrap_or_default().into_iter().enumerate() {
+                        div { key: "{at}", class: "extension-folder",
+                            span { class: "extension-folder-path", "{folder}" }
+                            button {
+                                class: "env-add",
+                                r#type: "button",
+                                disabled: adding,
+                                onclick: {
+                                    let key = setting.key.clone();
+                                    move |_| {
+                                        if let Some(list) = values.write().get_mut(&key) {
+                                            if at < list.len() {
+                                                list.remove(at);
+                                            }
+                                        }
+                                    }
+                                },
+                                {tr!("Remove")}
+                            }
+                        }
+                    }
+                    if setting.multiple || values.read().get(&setting.key).is_none_or(|list| list.is_empty()) {
+                        button {
+                            class: "env-add",
+                            r#type: "button",
+                            disabled: adding,
+                            onclick: {
+                                let key = setting.key.clone();
+                                let multiple = setting.multiple;
+                                move |_| {
+                                    let picker = customize.folder_picker();
+                                    let key = key.clone();
+                                    spawn(async move {
+                                        if let Some(folder) = picker.pick_folder().await {
+                                            let folder = folder.to_string_lossy().into_owned();
+                                            let mut all = values.write();
+                                            let list = all.entry(key).or_default();
+                                            if !multiple {
+                                                list.clear();
+                                            }
+                                            if !list.contains(&folder) {
+                                                list.push(folder);
+                                            }
+                                        }
+                                    });
+                                }
+                            },
+                            {tr!("Add folder…")}
+                        }
+                    }
+                } else {
+                    input {
+                        class: "customize-field",
+                        r#type: if setting.sensitive { "password" } else { "text" },
+                        disabled: adding,
+                        value: "{values.read().get(&setting.key).and_then(|list| list.first().cloned()).unwrap_or_default()}",
+                        oninput: {
+                            let key = setting.key.clone();
+                            move |event: FormEvent| {
+                                values.write().insert(key.clone(), vec![event.value()]);
+                            }
+                        },
+                    }
+                }
+            }
+        }
+        if let Some(message) = customize.dialog_error() {
+            div { class: "status-line error customize-wrap", "{message}" }
+        }
+        div { class: "customize-dialog-buttons",
+            if adding { span { class: "spinner", title: tr!("Adding…") } }
+            Button { label: tr!("Cancel"), disabled: adding, onclick: move |_| customize.close_dialog() }
+            Button { label: tr!("Install"), kind: ButtonKind::Primary, disabled: adding, onclick: move |_| customize.finish_extension(values()) }
+        }
+    }
+}

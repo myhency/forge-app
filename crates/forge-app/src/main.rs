@@ -266,6 +266,11 @@ fn build_services() -> WorkspaceServices {
         files: Arc::new(LocalFiles::new()),
         browser: Arc::new(SystemBrowser::new()),
         dictation: Arc::new(forge_adapter_dictation::SystemDictation),
+        // Desktop extensions live beside the config, so the harness's moved config moves them too.
+        bundles: Arc::new(forge_adapter_claude_fs::ExtensionBundles::new(
+            config_path_for_tools.parent().unwrap_or_else(|| std::path::Path::new(".")).join("extensions"),
+            Some(std::path::PathBuf::from(&node)),
+        )),
         webviews: webviews(),
         usage_stats: Arc::new(ClaudeUsageStatsAdapter::new(claude_home.clone())),
         mcp_logs: Arc::new(ClaudeMcpLogAdapter::new(default_cli_cache_dir(), claude_json)),

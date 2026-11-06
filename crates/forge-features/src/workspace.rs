@@ -94,6 +94,8 @@ pub struct WorkspaceServices {
     pub git: Arc<dyn GitPort>,
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
+    /// Desktop extensions (`.mcpb`, `.dxt`), installed as connectors.
+    pub bundles: Arc<dyn forge_ports::ExtensionBundlePort>,
     /// The system's dictation, for the message box's microphone button.
     pub dictation: Arc<dyn forge_ports::DictationPort>,
     pub webviews: Arc<dyn WebViewPort>,
