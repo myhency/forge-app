@@ -1663,6 +1663,7 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .env-variables { box-sizing: border-box; width: 100%; min-height: 180px; padding: var(--sp-10); border: 1px solid var(--border); border-radius: var(--r-10); font-family: var(--mono, monospace); font-size: var(--text-base); background: transparent; color: inherit; resize: vertical; }
 .env-buttons { display: flex; align-items: center; gap: var(--sp-8); margin-top: var(--sp-18); }
 .env-buttons .spacer { flex: 1; }
+.setting-row.setting-flash { background: var(--bg-hover); border-radius: var(--r-6); transition: background 0.3s; }
 .dev-servers { display: flex; flex-direction: column; align-items: center; gap: var(--sp-10); margin-top: var(--sp-16); }
 .dev-servers-ask { margin: 0; color: var(--fg-muted); text-align: center; }
 .dev-server { display: flex; align-items: center; gap: var(--sp-12); width: min(420px, 100%); box-sizing: border-box; padding: var(--sp-10) var(--sp-12); border: 1px solid var(--border); border-radius: var(--r-10); }

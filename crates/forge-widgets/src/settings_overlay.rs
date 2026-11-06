@@ -74,9 +74,13 @@ pub fn SettingsOverlay() -> Element {
                                             button {
                                                 key: "{at}",
                                                 class: "settings-nav-item settings-hit-row",
-                                                onclick: move |_| {
-                                                    settings.set_section(hit.section);
-                                                    settings.set_search(String::new());
+                                                onclick: {
+                                                    let title = format!("{}{}{}", row.before, row.matched, row.after);
+                                                    move |_| {
+                                                        settings.set_section(hit.section);
+                                                        settings.set_search(String::new());
+                                                        reveal_setting(&title);
+                                                    }
                                                 },
                                                 "{row.before}" b { class: "settings-match", "{row.matched}" } "{row.after}"
                                             }
@@ -661,4 +665,12 @@ fn CodePreview(theme: CodeTheme, dark: bool, font: String, size: u8) -> Element 
             }
         }
     }
+}
+
+/// Brings the row a search hit named into view on its page and marks it for a moment.
+fn reveal_setting(title: &str) {
+    let quoted = serde_json::to_string(title).unwrap_or_else(|_| "\"\"".to_string());
+    document::eval(&format!(
+        "setTimeout(function(){{var want={quoted};var all=document.querySelectorAll('.setting-title, .settings-subheading, h3');for(var i=0;i<all.length;i++){{if(all[i].textContent.trim()===want){{var row=all[i].closest('.setting-row')||all[i];row.scrollIntoView({{block:'center'}});row.classList.add('setting-flash');setTimeout(function(){{row.classList.remove('setting-flash');}},1600);return;}}}}}},60);"
+    ));
 }
