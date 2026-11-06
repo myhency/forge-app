@@ -1829,3 +1829,67 @@ Change ONE of the user's Code tab preferences, by its get_settings key: for exam
 ```json
 {"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"_consent": {"description": "Set by the app. Never set this yourself.", "type": "string"}, "key": {"description": "The setting to change, as get_settings names it.", "enum": ["auto_archive_on_pr_close", "auto_archive_inactive_days", "branch_prefix", "permission_request_notifications", "question_notifications", "task_complete_notifications", "connect_new_sessions_to_remote_control", "output_style", "draw_attention_on_notifications", "notification_sound", "keep_awake_while_working", "keep_awake_on_battery", "prompt_suggestions"], "type": "string"}, "value": {"description": "The new value: true or false for switches, a whole number of days for auto_archive_inactive_days, or a string (a notification level, a branch prefix, an output style name). get_settings lists what each key accepts."}}, "required": ["key", "value"], "type": "object"}
 ```
+
+### View tool and delete_session schemas (read 2026-11-06, same way)
+
+#### mcp__ccd_view__show_pane
+
+##### Description
+
+```
+Show one of this session's side panes in the user's view of the Claude desktop app, beside the conversation.
+
+Panes: "diff" (the session's changes; optional `path` scrolls to that file, `diff_scope` picks all branch changes, uncommitted changes only, or one commit), "file" (`path` opens that file in the Files pane at `line`; must be inside the session's working directory or a folder the user granted), "terminal" (optional `tab_id` switches to that open tab), "pr" (the session's pull request), "tasks" (background tasks), "plan", "preview" (the Browser pane, once this session has a page open in it), "artifact" (the artifacts this session published). A page in a hidden Browser pane runs as a background page: animation may not run at all, and on some systems timers slow down once you haven't touched the page for a while. Showing the pane with that page's tab in front helps only while the Claude window is itself in view (not minimized or covered by another app), so don't rely on timing or performance numbers from the page unless the user is watching it.
+
+Prefer showing over describing: after finishing a set of edits, show the diff; when pointing the user at code, open the file at the line. It only changes what is on screen for this session — if the session isn't open in any window it does nothing and says so (tell the user what to look at instead), and it never takes focus from another session. A pane in a window of its own is left where it is, never raised, reopened here or changed, and the result says so: tell the user to look there.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"diff_scope": {"description": "For \"diff\": \"all\" (branch changes, the default), \"uncommitted\", or a commit SHA.", "type": "string"}, "line": {"description": "For \"file\": 1-based line to scroll to.", "type": "number"}, "pane": {"enum": ["diff", "file", "terminal", "pr", "tasks", "plan", "artifact", "preview"], "type": "string"}, "path": {"description": "For \"file\": the file to open (absolute, or relative to the working directory). For \"diff\": the changed file to scroll to.", "type": "string"}, "tab_id": {"description": "For \"terminal\": the open tab to switch to, by the tab_id a terminal tool or an attached terminal snippet gave you. Omit to show the terminal as it is.", "type": "string"}}, "required": ["pane"], "type": "object"}
+```
+
+#### mcp__ccd_view__close_pane
+
+##### Description
+
+```
+Close one of this session's side panes in the user's view. No-op when it is not open or the session isn't on screen. A pane in a window of its own stays open (closing that window is the user's to do) and the result says so.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"pane": {"enum": ["diff", "file", "terminal", "pr", "tasks", "plan", "artifact", "preview"], "type": "string"}}, "required": ["pane"], "type": "object"}
+```
+
+#### mcp__ccd_view__get_layout
+
+##### Description
+
+```
+Report where this session is on screen in the Claude desktop app (the main window, a split-view pane, or a pop-out window), which of its side panes are open (`popped_out_panes` names those that are only in a window of their own), and which transcript view it shows (`transcript_view`: normal, thinking or verbose; left out while its windows show different views). An empty `views` list means the user does not have this session open anywhere right now.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {}, "type": "object"}
+```
+
+#### mcp__ccd_session_mgmt__delete_session
+
+##### Description
+
+```
+Delete CCD sessions. Each session's transcript, record and worktree (with its branch) are removed and cannot be recovered — archive_session is the reversible alternative, so prefer it unless the user explicitly asked to delete.
+
+Up to 25 session_ids per call. The app shows the user one approval card that lists every session by title, in every permission mode (auto and bypass permissions included), and nothing is deleted until they approve it. From a session on a remote (SSH) host only an approval in the Claude app on the user's computer counts, not one from another device. Never this session. A session that is working, still starting, pinned, open on the user's screen, or whose worktree another live session is working in is skipped, and so is one whose worktree has uncommitted changes, could not be checked, or lives on a remote host — unless force_worktree_cleanup is true, which discards that work; pass it only after telling the user, in your own message, which sessions' uncommitted changes will be lost (the card shows the flag). A deleted session's side sessions are archived (not deleted) with it, except those still at work, which stay live under the session above it; a branch holding commits that exist nowhere else is kept (on a remote host the branch is always left in place). The result names what was deleted, what was archived with it, which side sessions stayed live, and what was skipped and why. Unavailable in unattended sessions.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"_consent": {"description": "Set by the app. Do not set it.", "type": "string"}, "force_worktree_cleanup": {"description": "Also delete sessions whose worktree holds uncommitted changes, could not be checked, or is on a remote host — discarding that work. Default false. Shown to the user on the approval card.", "type": "boolean"}, "reason": {"description": "Short human-readable reason shown on the approval card (e.g. 'PRs merged; user asked to clean up').", "type": "string"}, "session_ids": {"description": "The sessionIds to delete (from list_sessions / search_session_transcripts), at most 25. Archived sessions are allowed.", "items": {"type": "string"}, "type": "array"}}, "required": ["session_ids"], "type": "object"}
+```

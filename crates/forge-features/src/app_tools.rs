@@ -89,6 +89,8 @@ impl Workspace {
             "set_transcript_view" => self.set_view_by_tool(id, text("session_id").unwrap_or("self"), text("view").unwrap_or_default()),
             "get_settings" => Ok(settings_json(config)),
             "list_sections" => Ok(self.sections_json()),
+            "show_pane" | "close_pane" => self.pane_by_tool(id, request.tool == "show_pane", text("pane").unwrap_or_default(), text("path")),
+            "get_layout" => Ok(self.layout_json(id)),
             "create_section" => self.create_section_by_tool(text("name").unwrap_or_default()),
             "rename_section" => {
                 let section = text("section_id").unwrap_or_default().to_string();
@@ -548,7 +550,68 @@ fn render_events(messages: &[forge_domain::Message], limit: usize) -> String {
     }
 }
 
+/// The pane a view tool names, as Forge's dock has it.
+fn pane_of(name: &str) -> Option<crate::Panel> {
+    Some(match name {
+        "diff" => crate::Panel::Changes,
+        "file" => crate::Panel::Files,
+        "terminal" => crate::Panel::Terminal,
+        "tasks" => crate::Panel::Tasks,
+        "plan" => crate::Panel::Plan,
+        "preview" => crate::Panel::Preview,
+        "details" => crate::Panel::Details,
+        _ => return None,
+    })
+}
+
+const PANE_NAMES: [(&str, crate::Panel); 7] = [
+    ("diff", crate::Panel::Changes),
+    ("file", crate::Panel::Files),
+    ("terminal", crate::Panel::Terminal),
+    ("tasks", crate::Panel::Tasks),
+    ("plan", crate::Panel::Plan),
+    ("preview", crate::Panel::Preview),
+    ("details", crate::Panel::Details),
+];
+
 impl Workspace {
+    fn pane_by_tool(&self, id: LiveSessionId, show: bool, name: &str, path: Option<&str>) -> Result<String, String> {
+        let pane = pane_of(name).ok_or_else(|| format!("Forge has no {name} pane."))?;
+        if !self.pane_targets().contains(&crate::Active::Live(id)) {
+            return Ok("This session is not on screen, so nothing changed; tell the user what to look at.".to_string());
+        }
+        if !show {
+            self.change_dock(id, |dock| dock.close(pane));
+            return Ok(format!("Closed the {name} pane."));
+        }
+        if let (crate::Panel::Files, Some(path)) = (pane, path) {
+            let folder = self.live_view(id).map(|view| view.peek().project_path.clone()).unwrap_or_default();
+            let full = if std::path::Path::new(path).is_absolute() { PathBuf::from(path) } else { folder.join(path) };
+            if !full.starts_with(&folder) {
+                return Err("That file is outside the session's folder.".to_string());
+            }
+            if !full.is_file() {
+                return Err(format!("There is no file {}.", full.display()));
+            }
+            self.open_file(id, full.display().to_string());
+            return Ok(format!("Opened {} in the Files pane.", full.display()));
+        }
+        self.change_dock(id, |dock| dock.open(pane));
+        Ok(format!("Showing the {name} pane."))
+    }
+
+    fn layout_json(&self, id: LiveSessionId) -> String {
+        let on_screen = self.pane_targets().contains(&crate::Active::Live(id));
+        let dock = self.dock(id);
+        let open: Vec<&str> = PANE_NAMES.iter().filter(|(_, pane)| dock.is_open(*pane)).map(|(name, _)| *name).collect();
+        let view = match self.transcript_view(id, TranscriptView::Normal) {
+            TranscriptView::Normal => "normal",
+            TranscriptView::Thinking => "thinking",
+            TranscriptView::Detailed => "detailed",
+        };
+        json!({ "on_screen": on_screen, "open_panes": if on_screen { open } else { Vec::new() }, "transcript_view": view }).to_string()
+    }
+
     fn sections_json(&self) -> String {
         let prefs = self.prefs();
         let mut out = vec![json!({ "id": "pinned", "kind": "builtin", "name": "", "order": 0, "session_count": prefs.pinned.len() })];

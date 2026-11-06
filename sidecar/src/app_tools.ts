@@ -28,6 +28,9 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${VIEW_SERVER}__set_transcript_view`,
   `mcp__${SETTINGS_SERVER}__get_settings`,
   `mcp__${SIDEBAR_SERVER}__list_sections`,
+  `mcp__${VIEW_SERVER}__show_pane`,
+  `mcp__${VIEW_SERVER}__close_pane`,
+  `mcp__${VIEW_SERVER}__get_layout`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -225,8 +228,31 @@ export function sidebarTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
   ];
 }
 
+const PANES = ["diff", "file", "terminal", "tasks", "plan", "preview", "details"] as const;
+
 export function viewTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
   return [
+    tool(
+      "show_pane",
+      'Show one of this session\'s side panes in the user\'s view of Forge, beside the conversation.\n\nPanes: "diff" (the session\'s changes), "file" (`path` opens that file in the Files pane; it must be inside the session\'s folder), "terminal", "tasks" (background tasks), "plan", "preview" (the Browser pane), "details" (the session\'s environment, context and connectors).\n\nPrefer showing over describing: after finishing a set of edits, show the diff; when pointing the user at code, open the file. It only changes what is on screen for this session; if the session isn\'t open it does nothing and says so.',
+      {
+        pane: z.enum(PANES),
+        path: z.string().optional().describe('For "file": the file to open (absolute, or relative to the working directory).'),
+      },
+      forward(ask, "show_pane"),
+    ),
+    tool(
+      "close_pane",
+      "Close one of this session's side panes in the user's view. No-op when it is not open.",
+      { pane: z.enum(PANES) },
+      forward(ask, "close_pane"),
+    ),
+    tool(
+      "get_layout",
+      "Report whether this session is on screen in Forge, which of its side panes are open, and which transcript view it shows (normal, thinking or detailed).",
+      {},
+      forward(ask, "get_layout"),
+    ),
     tool(
       "set_transcript_view",
       'Switch the transcript view of this session\'s conversation, as its title menu\'s "Transcript view" does: "normal" (tool calls collapsed, the default), "thinking" (also shows Claude\'s thinking summaries), "verbose" (every tool call expanded, thinking shown). It changes only how the conversation is displayed, never what the session does, and the user can switch it back from the same menu. session_id is "self" (the default) or a session this session started. Use it when the user asks to see (or hide) thinking or the full tool detail; not a setting — the default view for new sessions stays the user\'s in Settings.',
