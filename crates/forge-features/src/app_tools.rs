@@ -622,10 +622,17 @@ impl Workspace {
         let Some(session) = row.session_id.clone() else {
             return self.answer(id, &request, Err("That session has no transcript yet.".to_string()));
         };
+        let caller = format!("{id:?}");
+        if let Err(refusal) = export_limits().lock().map_err(|_| "Exports are unavailable just now.".to_string()).and_then(|mut limits| limits.entry(caller.clone()).or_default().begin(std::time::Instant::now())) {
+            return self.answer(id, &request, Err(refusal));
+        }
         let this = *self;
         let services = self.services_snapshot();
         dioxus::core::spawn_forever(async move {
             let result = services.sessions.export_session(&row.folder, &session).await.map(|path| format!("Exported to {}", path.display())).map_err(|error| error.to_string());
+            if let Ok(mut limits) = export_limits().lock() {
+                limits.entry(caller).or_default().finish();
+            }
             this.answer(id, &request, result);
         });
     }
@@ -763,5 +770,59 @@ mod tests {
         let text = render_events(&[Message::user("fix it"), answer], 40);
         assert_eq!(text, "User: fix it\n  [tool Bash, failed]\nClaude: Done.\n");
         assert_eq!(render_events(&[], 40), "The session has no messages yet.");
+    }
+}
+
+/// The desktop app's limits on `export_transcript`, per calling session: one export at a time and
+/// at most six in an hour (its answer points the person at the files already in Downloads).
+#[derive(Debug, Default)]
+struct ExportLimit {
+    started: Vec<std::time::Instant>,
+    in_flight: bool,
+}
+
+impl ExportLimit {
+    fn begin(&mut self, now: std::time::Instant) -> Result<(), String> {
+        let hour = std::time::Duration::from_secs(3600);
+        self.started.retain(|at| now.duration_since(*at) < hour);
+        if self.in_flight {
+            return Err("An export from this session is still being written; wait for it to finish before exporting again.".to_string());
+        }
+        if self.started.len() >= 6 {
+            return Err("This session has already exported 6 transcripts in the past hour. Point the user at the files already in their Downloads folder, or at the session menu's Export, instead of exporting again.".to_string());
+        }
+        self.started.push(now);
+        self.in_flight = true;
+        Ok(())
+    }
+
+    fn finish(&mut self) {
+        self.in_flight = false;
+    }
+}
+
+fn export_limits() -> &'static std::sync::Mutex<std::collections::HashMap<String, ExportLimit>> {
+    static LIMITS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, ExportLimit>>> = std::sync::OnceLock::new();
+    LIMITS.get_or_init(Default::default)
+}
+
+#[cfg(test)]
+mod export_limit_tests {
+    use super::ExportLimit;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn one_export_at_a_time_and_six_an_hour() {
+        let start = Instant::now();
+        let mut limit = ExportLimit::default();
+        assert!(limit.begin(start).is_ok());
+        assert!(limit.begin(start).unwrap_err().contains("still being written"));
+        limit.finish();
+        for n in 1..6 {
+            assert!(limit.begin(start + Duration::from_secs(n)).is_ok());
+            limit.finish();
+        }
+        assert!(limit.begin(start + Duration::from_secs(10)).unwrap_err().contains("6 transcripts"));
+        assert!(limit.begin(start + Duration::from_secs(3601)).is_ok(), "an hour later the first export no longer counts");
     }
 }
