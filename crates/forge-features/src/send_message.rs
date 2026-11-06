@@ -99,6 +99,23 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay:
             draft.set(String::new());
             return;
         }
+        // `/fork`, `/model`, `/effort`, `/permissions`, `/plan`, `/mcp` and `/plugin` act in the app, as
+        // in the desktop app: they are not sent as messages.
+        let app = forge_entities::app_command(&draft.read());
+        if let Some(command) = app {
+            use forge_entities::AppCommand;
+            match command {
+                AppCommand::Fork => workspace.fork_active(),
+                AppCommand::Model => workspace.request_picker(crate::PickerKind::Model),
+                AppCommand::Effort => workspace.request_picker(crate::PickerKind::Effort),
+                AppCommand::Permissions => workspace.request_picker(crate::PickerKind::Mode),
+                AppCommand::Plan => workspace.set_permission_mode(id, forge_domain::PermissionMode::Plan),
+                AppCommand::Mcp => workspace.open_connectors_page(),
+                AppCommand::Plugin => workspace.open_plugins_page(),
+            }
+            draft.set(String::new());
+            return;
+        }
         // `/tasks`, `/diff`, `/status` and `/usage` are answered here: they are not sent as messages.
         let local = local_command(&draft.read());
         if let Some(command) = local {

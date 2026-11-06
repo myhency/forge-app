@@ -2194,6 +2194,10 @@ impl Workspace {
         self.open_customize_on(CustomizeTab::Skills);
     }
 
+    pub fn open_plugins_page(&self) {
+        self.open_customize_on(CustomizeTab::Plugins);
+    }
+
     pub fn open_connectors_page(&self) {
         self.open_customize_on(CustomizeTab::Connectors);
     }

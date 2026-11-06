@@ -50,6 +50,32 @@ pub fn is_rewind(input: &str) -> bool {
     input.trim() == "/rewind"
 }
 
+/// A command the app does itself, as the desktop app does, rather than sending it to Claude.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppCommand {
+    Fork,
+    Model,
+    Effort,
+    Permissions,
+    Plan,
+    Mcp,
+    Plugin,
+}
+
+/// The app command the message is, if it is just that command.
+pub fn app_command(input: &str) -> Option<AppCommand> {
+    match input.trim() {
+        "/fork" => Some(AppCommand::Fork),
+        "/model" => Some(AppCommand::Model),
+        "/effort" => Some(AppCommand::Effort),
+        "/permissions" => Some(AppCommand::Permissions),
+        "/plan" => Some(AppCommand::Plan),
+        "/mcp" => Some(AppCommand::Mcp),
+        "/plugin" | "/plugins" => Some(AppCommand::Plugin),
+        _ => None,
+    }
+}
+
 /// The names the desktop app lists first, in its order.
 const DESKTOP_ORDER: [&str; 13] =
     ["btw", "ultrareview", "rewind", "fork", "subtask", "mcp", "plugin", "feedback", "model", "effort", "fast", "plan", "permissions"];
@@ -133,6 +159,14 @@ pub fn typed_after_change(typed: Option<&str>, value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_commands_are_known_only_alone() {
+        assert_eq!(app_command(" /fork "), Some(AppCommand::Fork));
+        assert_eq!(app_command("/plugins"), Some(AppCommand::Plugin));
+        assert_eq!(app_command("/model opus"), None);
+        assert_eq!(app_command("/forks"), None);
+    }
 
     fn cmd(name: &str) -> SlashCommand {
         SlashCommand { name: name.to_string(), description: None, argument_hint: None }
