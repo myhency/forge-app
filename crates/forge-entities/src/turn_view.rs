@@ -196,6 +196,8 @@ pub enum OfferMark {
     Here,
     /// Started as its own session: the card becomes a line that opens it.
     Started,
+    /// Taken to the new-session screen (one of its chips): the card becomes a quiet line.
+    Drafted,
 }
 
 /// What the person did with a proposed session's card.
@@ -294,6 +296,19 @@ pub const START_SESSION_TOOL: &str = "mcp__ccd_session__start_session";
 
 /// The offer a `start_session` call makes, when it is one Forge draws: the call succeeded and names
 /// a title and a prompt. A call that only starts an earlier proposal (`proposal_id`) is not a card.
+/// The proposals of a conversation that wait for the person: not started by themselves, not hand-offs,
+/// not withdrawn by Claude (`dismiss_task`). The new-session screen lists them as chips, as the
+/// desktop app does (observed 2026-11-06).
+pub fn open_offers(messages: &[Message]) -> Vec<SessionOffer> {
+    let dismissed = dismissed_tasks(messages);
+    messages
+        .iter()
+        .flat_map(|message| message.tool_calls())
+        .filter_map(session_offer)
+        .filter(|offer| !offer.auto_start && !offer.fork && !offer.task_id.as_ref().is_some_and(|task| dismissed.contains(task)))
+        .collect()
+}
+
 pub fn session_offer(call: &ToolCall) -> Option<SessionOffer> {
     let text = |key: &str| call.input.get(key).and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty());
     // A hand-off starts as soon as the sidecar has answered it: the line opens the fork.

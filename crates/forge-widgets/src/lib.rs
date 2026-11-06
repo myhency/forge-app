@@ -37,6 +37,7 @@ mod plan_card;
 mod start_line;
 mod plus_menu;
 mod auto_mode_card;
+mod offer_chips;
 mod environment_card;
 mod local_card;
 mod preview_panel;

@@ -1809,6 +1809,47 @@ impl Workspace {
         self.offer_marks.read().get(&id).cloned().unwrap_or_default()
     }
 
+    /// The proposals open sessions are waiting on (no card button pressed yet), newest session first:
+    /// the new-session screen's chips.
+    pub fn pending_offers(&self) -> Vec<(LiveSessionId, forge_entities::SessionOffer)> {
+        let marks = self.offer_marks.read();
+        let started = self.offer_sessions.read();
+        let mut out = Vec::new();
+        for (id, view) in self.live_views().into_iter().rev() {
+            if self.is_routine_session(id) {
+                continue;
+            }
+            for offer in forge_entities::open_offers(&view.read().session.messages) {
+                let handled = marks.get(&id).is_some_and(|marks| marks.contains_key(&offer.id)) || started.contains_key(&(id, offer.id.clone()));
+                if !handled {
+                    out.push((id, offer));
+                }
+            }
+        }
+        out
+    }
+
+    /// A chip pressed: the proposal's brief goes into the new session's box, in its session's folder,
+    /// and its card in the session says it moved.
+    pub fn draft_offer(&self, id: LiveSessionId, offer: forge_entities::SessionOffer) {
+        // The desktop app's brief: what the session that proposed it knew, then the task.
+        let text = if !offer.brief.trim().is_empty() {
+            offer.brief.clone()
+        } else {
+            match self.message_before_call(id, &offer.id) {
+                Some(asked) => format!("Background (from the session that started this one):\n{}\n\nTask:\n{}", asked.trim(), offer.title),
+                None => offer.title.clone(),
+            }
+        };
+        if let Some(view) = self.live_view(id) {
+            let folder = view.peek().project_path.clone();
+            self.set_new_folder(Some(folder));
+        }
+        self.mark_offer(id, offer.id, forge_entities::OfferMark::Drafted);
+        let mut unsent = self.new_unsent;
+        unsent.set(Some(text));
+    }
+
     fn mark_offer(&self, id: LiveSessionId, call_id: String, mark: forge_entities::OfferMark) {
         let mut marks = self.offer_marks;
         marks.write().entry(id).or_default().insert(call_id, mark);

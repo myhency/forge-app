@@ -602,6 +602,12 @@ fn SessionOfferCard(offer: crate::turn_view::SessionOffer, mark: Option<crate::t
                 span { class: "offer-dismissed-note", {tr!("Dismissed")} }
             }
         },
+        Some(OfferMark::Drafted) => rsx! {
+            div { class: "offer-started offer-dismissed",
+                span { class: "offer-started-title", "{offer.title}" }
+                span { class: "offer-dismissed-note", {tr!("Moved to a new session")} }
+            }
+        },
         Some(OfferMark::Started) => rsx! {
             button { class: "offer-started", r#type: "button", onclick: act(OfferAction::Open),
                 span { class: "offer-started-title", "{offer.title}" }

@@ -552,6 +552,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Move to section", "섹션으로 이동"),
     ("Move to the Trash?", "휴지통으로 이동할까요?"),
     ("Moved sessions", "세션 옮김"),
+    ("Moved to a new session", "새 세션으로 옮김"),
     ("My routines", "내 루틴"),
     ("NAME", "이름"),
     ("Name", "이름"),

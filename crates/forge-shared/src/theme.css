@@ -1663,6 +1663,9 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .env-variables { box-sizing: border-box; width: 100%; min-height: 180px; padding: var(--sp-10); border: 1px solid var(--border); border-radius: var(--r-10); font-family: var(--mono, monospace); font-size: var(--text-base); background: transparent; color: inherit; resize: vertical; }
 .env-buttons { display: flex; align-items: center; gap: var(--sp-8); margin-top: var(--sp-18); }
 .env-buttons .spacer { flex: 1; }
+.offer-chip { display: flex; align-items: center; }
+.offer-chip .picker-item { flex: 1; min-width: 0; }
+.offer-chip-close { flex: none; margin-right: var(--sp-4); }
 .extension-setting { margin-top: var(--sp-12); }
 .extension-setting .hint { margin: var(--sp-2) 0 var(--sp-6); }
 .extension-folder { display: flex; align-items: center; gap: var(--sp-8); padding: var(--sp-4) 0; }
