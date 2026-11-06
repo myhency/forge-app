@@ -41,6 +41,7 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${BROWSER_SERVER}__read_console_messages`,
   `mcp__${BROWSER_SERVER}__read_page`,
   `mcp__${BROWSER_SERVER}__computer`,
+  `mcp__${BROWSER_SERVER}__read_network_requests`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -385,6 +386,17 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
         limit: z.number().optional().describe("Maximum number of messages (the latest). Default 100."),
       },
       forward(ask, "read_console_messages"),
+    ),
+    tool(
+      "read_network_requests",
+      "Read the HTTP requests of the page in a Browser pane tab: the document, the scripts, images and other loads it made, and its fetch and XHR calls with method and status. Credential-like query values are shown as REDACTED. They start over when the page loads again.",
+      {
+        tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
+        urlPattern: z.string().optional().describe("Only requests whose URL contains this text, e.g. '/api/'."),
+        clear: z.boolean().optional().describe("Clear the kept requests after reading. Default false."),
+        limit: z.number().optional().describe("Maximum number of requests (the latest). Default 100."),
+      },
+      forward(ask, "read_network_requests"),
     ),
     tool(
       "javascript_tool",

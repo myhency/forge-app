@@ -63,6 +63,33 @@ fn png_of(image: &objc2_app_kit::NSImage) -> Option<Vec<u8>> {
     Some(png.to_vec())
 }
 
+// Keeps the page's network requests (the last 500) for `read_network_requests`: fetch and XHR with
+// their method and status, and every other load the page made (documents, scripts, images) from
+// the resource timing list when asked. Query values named like credentials are shown as REDACTED.
+const NETWORK_SCRIPT: &str = r#"(function () {
+  if (window.__forgeNetwork) return;
+  const kept = [];
+  Object.defineProperty(window, '__forgeNetwork', { value: kept, enumerable: false });
+  const redact = function (url) {
+    try { const u = new URL(url, location.href); u.searchParams.forEach(function (v, k) { if (/token|key|secret|pass|auth|session|sig/i.test(k)) u.searchParams.set(k, 'REDACTED'); }); return u.href; } catch (e) { return String(url); }
+  };
+  const keep = function (entry) { kept.push(entry); if (kept.length > 500) kept.shift(); return entry; };
+  const fetchOriginal = window.fetch && window.fetch.bind(window);
+  if (fetchOriginal) {
+    window.fetch = function (input, init) {
+      const url = redact(typeof input === 'string' ? input : (input && input.url) || String(input));
+      const entry = keep({ type: 'fetch', method: ((init && init.method) || (input && input.method) || 'GET').toUpperCase(), url: url, status: null, time: Date.now() });
+      return fetchOriginal(input, init).then(function (r) { entry.status = r.status; entry.ms = Date.now() - entry.time; return r; }, function (e) { entry.status = 'failed: ' + (e && e.message || e); throw e; });
+    };
+  }
+  const open = XMLHttpRequest.prototype.open, send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (method, url) { this.__forge = { type: 'xhr', method: String(method).toUpperCase(), url: redact(url), status: null }; return open.apply(this, arguments); };
+  XMLHttpRequest.prototype.send = function () {
+    const entry = this.__forge; if (entry) { entry.time = Date.now(); keep(entry); this.addEventListener('loadend', function () { entry.status = this.status || 'failed'; entry.ms = Date.now() - entry.time; }); }
+    return send.apply(this, arguments);
+  };
+})();"#;
+
 // A random token for one web view: two numbers from the standard library's randomly keyed hasher.
 fn fresh_nonce() -> String {
     use std::hash::{BuildHasher, Hasher};
@@ -163,6 +190,7 @@ impl WebViewPort for WryWebViews {
             .with_devtools(cfg!(debug_assertions))
             .with_initialization_script(key_script(&nonce))
             .with_initialization_script(CONSOLE_SCRIPT)
+            .with_initialization_script(NETWORK_SCRIPT)
             .with_navigation_handler(|url| navigation_allowed(&url))
             .with_new_window_req_handler(move |url, _| {
                 if web_address(&url) {

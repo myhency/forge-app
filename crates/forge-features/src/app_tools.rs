@@ -153,6 +153,14 @@ impl Workspace {
                 let limit = input.get("limit").and_then(Value::as_u64).unwrap_or(100).clamp(1, 500);
                 return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), console_script(pattern, only_errors, clear, limit));
             }
+            "read_network_requests" => {
+                let args = json!({
+                    "pattern": text("urlPattern").unwrap_or_default(),
+                    "clear": input.get("clear").and_then(Value::as_bool).unwrap_or(false),
+                    "limit": input.get("limit").and_then(Value::as_u64).unwrap_or(100).clamp(1, 500),
+                });
+                return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), NETWORK_READ_SCRIPT.replace("__ARGS__", &args.to_string()));
+            }
             "javascript_tool" => {
                 let code = text("text").unwrap_or_default();
                 if code.trim().is_empty() {
@@ -1011,6 +1019,10 @@ const READ_PAGE_SCRIPT: &str = include_str!("page_scripts/read_page.js");
 /// `computer`'s mouse and keyboard actions, done with page events: a coordinate is in screenshot
 /// pixels (divided by the page's pixel ratio), typing goes to the focused field.
 const COMPUTER_SCRIPT: &str = include_str!("page_scripts/computer.js");
+/// `read_network_requests`: the page's document, its loads from the resource timing list, and the
+/// fetch and XHR calls the start script kept (with method and status), oldest first.
+const NETWORK_READ_SCRIPT: &str = r#"(function(){var A=__ARGS__;var kept=window.__forgeNetwork||[];var rows=[];var nav=performance.getEntriesByType('navigation')[0];rows.push({t:0,line:'document GET '+location.href+(nav&&nav.responseStatus?' '+nav.responseStatus:'')});var seen={};kept.forEach(function(e){seen[e.url]=1;});performance.getEntriesByType('resource').forEach(function(r){if(r.initiatorType==='fetch'||r.initiatorType==='xmlhttprequest')return;rows.push({t:r.startTime,line:r.initiatorType+' GET '+r.name+(r.responseStatus?' '+r.responseStatus:'')+' '+Math.round(r.duration)+'ms'});});var origin=performance.timeOrigin;kept.forEach(function(e){rows.push({t:e.time-origin,line:e.type+' '+e.method+' '+e.url+' '+(e.status===null?'pending':e.status)+(e.ms!=null?' '+e.ms+'ms':'')});});rows.sort(function(a,b){return a.t-b.t;});var out=rows.map(function(r){return r.line;}).filter(function(l){return !A.pattern||l.indexOf(A.pattern)>=0;});out=out.slice(-A.limit);if(A.clear){kept.length=0;if(performance.clearResourceTimings)performance.clearResourceTimings();}return out.length?out.join('\n'):'No requests'+(A.pattern?' match '+A.pattern:'')+'.';})()"#;
+
 /// `form_input`: sets the field a `ref_N` names and fires its input and change events.
 const FORM_INPUT_SCRIPT: &str = include_str!("page_scripts/form_input.js");
 

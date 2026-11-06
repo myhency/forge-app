@@ -236,6 +236,7 @@ fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
         "mcp__Claude_Browser__computer" => (tr!("Used a page").to_string(), call.input.get("action").and_then(Value::as_str).unwrap_or_default().to_string()),
         "mcp__Claude_Browser__read_page" => (tr!("Read a page").to_string(), String::new()),
         "mcp__Claude_Browser__form_input" => (tr!("Filled in a field").to_string(), text("ref")),
+        "mcp__Claude_Browser__read_network_requests" => (tr!("Read the network requests").to_string(), text("urlPattern")),
         "mcp__Claude_Browser__javascript_tool" => (tr!("Ran a script in a page").to_string(), first_line(text("text"))),
         "mcp__Claude_Browser__preview_stop" => (tr!("Stopped a dev server").to_string(), String::new()),
         "mcp__Claude_Browser__preview_logs" => (tr!("Read a dev server's output").to_string(), text("search")),
