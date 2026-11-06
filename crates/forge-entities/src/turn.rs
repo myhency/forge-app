@@ -705,6 +705,23 @@ fn OfferOptions(choices: crate::turn_view::OfferChoices, picked: Signal<Option<c
                 Icon { kind: IconKind::Folder, size: IconSize::Small }
                 span { "{folder}" }
             }
+            // A new worktree of the folder, offered only for this computer's folder that is a repository.
+            if choices.git && now.environment.is_empty() {
+                label { class: "offer-options-row offer-options-check",
+                    span { {tr!("Worktree")} }
+                    input {
+                        r#type: "checkbox",
+                        checked: now.worktree,
+                        onchange: {
+                            let mut set = set.clone();
+                            move |event: Event<FormData>| {
+                                let on = event.checked();
+                                set(Box::new(move |start: &mut crate::turn_view::OfferStart| start.worktree = on));
+                            }
+                        },
+                    }
+                }
+            }
             for (label, options, value, which) in rows {
                 label { key: "{which}", class: "offer-options-row",
                     span { "{label}" }

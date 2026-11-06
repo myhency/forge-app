@@ -1988,8 +1988,6 @@ impl Workspace {
                         }
                     }
                 }
-                let services = (*self.services.peek()).clone();
-                let project = ProjectSummary { path: project_path, last_active: String::new(), session_count: 0, exists: true };
                 // A title-only offer is the person's own request: the new session starts with their words.
                 // It is framed so the new session does the work rather than splitting it off again.
                 let brief = if offer.brief.is_empty() {
@@ -1998,26 +1996,64 @@ impl Workspace {
                 } else {
                     offer.brief.clone()
                 };
-                match services.registry.open_new_with_effort(&project, mode, model, effort, Vec::new()) {
-                    Ok(handle) => {
-                        let child = self.attach(handle.clone());
-                        if let Some(plan) = plan {
-                            if !plan.env.0.is_empty() {
-                                handle.set_env(plan.env.clone());
-                            }
-                            if !plan.extra.is_empty() {
-                                handle.add_directories(plan.extra.clone());
-                            }
-                        }
-                        handle.send_with(brief, Vec::new());
-                        let mut sessions = self.offer_sessions;
-                        sessions.write().insert((id, offer.id.clone()), child);
-                        self.mark_offer(id, offer.id.clone(), OfferMark::Started);
-                        self.report_back_when_done(id, child, offer.title);
-                    }
-                    Err(error) => self.report(error.to_string()),
+                let wants_worktree = offer.start_with.as_ref().is_some_and(|start| start.worktree && start.environment.is_empty());
+                if !wants_worktree {
+                    return self.start_offer_session(id, offer, project_path, mode, model, effort, plan, brief);
                 }
+                // `워크트리` in `옵션`: a new worktree first, then the session in it. A session that already
+                // runs in a worktree makes the new one from its repository, not inside its own worktree.
+                let project_path = self.worktrees.peek().iter().find(|record| record.path == project_path).map(|record| record.repo.clone()).unwrap_or(project_path);
+                let this = *self;
+                let services = (*self.services.peek()).clone();
+                dioxus::core::spawn_forever(async move {
+                    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_nanos() as u64).unwrap_or(0);
+                    let created_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis() as i64).unwrap_or(0);
+                    match services.worktrees.create(&project_path, None, &offer.title, seed, created_at).await {
+                        Ok(record) => {
+                            let mut records = this.worktrees;
+                            records.write().push(record.clone());
+                            this.start_offer_session(id, offer, record.path, mode, model, effort, plan, brief);
+                        }
+                        Err(error) => this.report(tr!("Could not create the worktree: {error}", error = crate::worktree_view::creation_error_text(&error))),
+                    }
+                });
             }
+        }
+    }
+
+    // Opens the session a proposal card's Start asked for, in `folder`, sends it the brief and marks the card.
+    #[allow(clippy::too_many_arguments)]
+    fn start_offer_session(
+        &self,
+        id: LiveSessionId,
+        offer: forge_entities::SessionOffer,
+        folder: PathBuf,
+        mode: PermissionMode,
+        model: Option<String>,
+        effort: Option<EffortLevel>,
+        plan: Option<crate::EnvironmentStart>,
+        brief: String,
+    ) {
+        let services = (*self.services.peek()).clone();
+        let project = ProjectSummary { path: folder, last_active: String::new(), session_count: 0, exists: true };
+        match services.registry.open_new_with_effort(&project, mode, model, effort, Vec::new()) {
+            Ok(handle) => {
+                let child = self.attach(handle.clone());
+                if let Some(plan) = plan {
+                    if !plan.env.0.is_empty() {
+                        handle.set_env(plan.env.clone());
+                    }
+                    if !plan.extra.is_empty() {
+                        handle.add_directories(plan.extra.clone());
+                    }
+                }
+                handle.send_with(brief, Vec::new());
+                let mut sessions = self.offer_sessions;
+                sessions.write().insert((id, offer.id.clone()), child);
+                self.mark_offer(id, offer.id.clone(), forge_entities::OfferMark::Started);
+                self.report_back_when_done(id, child, offer.title);
+            }
+            Err(error) => self.report(error.to_string()),
         }
     }
 

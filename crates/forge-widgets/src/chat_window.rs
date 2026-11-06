@@ -145,7 +145,9 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 effort: view.effort.map(|level| forge_features::effort_value(level).to_string()).unwrap_or_default(),
                 mode: forge_features::mode_value(view.session.permission_mode).to_string(),
                 environment: String::new(),
+                worktree: false,
             },
+            git: view.project_path.join(".git").exists(),
         }
     };
     // Chapters the person pinned are drawn as Claude's own.
