@@ -94,6 +94,8 @@ pub struct WorkspaceServices {
     pub git: Arc<dyn GitPort>,
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
+    /// The system's dictation, for the message box's microphone button.
+    pub dictation: Arc<dyn forge_ports::DictationPort>,
     pub webviews: Arc<dyn WebViewPort>,
     pub usage_stats: Arc<dyn UsageStatsPort>,
     pub mcp_logs: Arc<dyn McpLogPort>,
@@ -2207,6 +2209,21 @@ impl Workspace {
     pub fn open_session_folder_in(&self, id: LiveSessionId, app: Option<&'static str>) {
         let Some(folder) = self.live_view(id).map(|view| view.peek().project_path.clone()) else { return };
         self.open_with_app(&folder, app);
+    }
+
+    /// Whether the message box shows the microphone (the system has dictation Forge can start).
+    pub fn dictation_available(&self) -> bool {
+        self.services.peek().dictation.available()
+    }
+
+    /// The microphone button: the system's dictation types into the focused message box; a failure becomes a notice.
+    pub fn start_dictation(&self) {
+        let dictation = self.services.peek().dictation.clone();
+        if let Err(message) = dictation.start() {
+            forge_log::warn("dictation", &message);
+            let shown = if cfg!(windows) { tr!("Voice typing could not start. Press Windows+H.") } else { tr!("Dictation could not start. Turn it on in System Settings > Keyboard > Dictation.") };
+            self.report(shown.to_string());
+        }
     }
 
     /// Opens a file with the default app or a named one; a failure becomes a notice.

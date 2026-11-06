@@ -1,6 +1,7 @@
 mod browser_port;
 mod config_port;
 mod desktop_tool_port;
+mod dictation_port;
 mod connector_catalog_port;
 mod extension_ports;
 mod file_picker_port;
@@ -25,6 +26,7 @@ mod webview_port;
 mod worktree_port;
 
 pub use browser_port::BrowserPort;
+pub use dictation_port::DictationPort;
 pub use webview_port::{KeyForward, Surface, WebViewEvent, WebViewEventKind, WebViewPort, WebViewTabId};
 pub use worktree_port::{BranchList, WorktreeError, WorktreePort, WorktreeState};
 pub use config_port::{ConfigError, ConfigRepositoryPort};

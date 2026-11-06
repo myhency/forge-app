@@ -1051,6 +1051,8 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .send-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: none; border-radius: var(--r-round); background: transparent; color: var(--fg-muted); opacity: 0.5; cursor: default; }
 .send-icon.ready { color: var(--fg); opacity: 1; cursor: pointer; }
 .send-icon.ready:hover { background: var(--bg-hover); }
+.send-icon.mic { color: var(--fg); opacity: 1; cursor: pointer; }
+.send-icon.mic:hover { background: var(--bg-hover); }
 .picker-heading { padding: var(--sp-6) var(--sp-8) var(--sp-4); font-size: var(--text-xs); color: var(--fg-muted); }
 
 .live-line { display: flex; align-items: center; gap: var(--sp-8); color: var(--fg-muted); min-height: 24px; }

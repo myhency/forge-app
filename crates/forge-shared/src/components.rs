@@ -220,6 +220,8 @@ pub enum IconKind {
     ArrowLeft,
     ArrowRight,
     Send,
+    /// The message box's dictation button.
+    Mic,
     More,
     Target,
     /// The Preview panel's button in the chat header (the desktop app draws a globe).
@@ -263,7 +265,7 @@ pub enum IconKind {
 }
 
 impl IconKind {
-    pub const ALL: [IconKind; 50] = [
+    pub const ALL: [IconKind; 51] = [
         IconKind::Close,
         IconKind::Search,
         IconKind::Sparkle,
@@ -282,6 +284,7 @@ impl IconKind {
         IconKind::ArrowLeft,
         IconKind::ArrowRight,
         IconKind::Send,
+        IconKind::Mic,
         IconKind::More,
         IconKind::Target,
         IconKind::Globe,
@@ -336,6 +339,7 @@ impl IconKind {
             IconKind::ArrowDown => &[Shape::Path("M8 3v10M8 13L4 9M8 13l4-4")],
             IconKind::ArrowLeft => &[Shape::Path("M13 8H3M3 8l4-4M3 8l4 4")],
             IconKind::ArrowRight => &[Shape::Path("M3 8h10M13 8l-4-4M13 8l-4 4")],
+            IconKind::Mic => &[Shape::Rect { x: 6.0, y: 1.5, width: 4.0, height: 8.0, rx: 2.0 }, Shape::Path("M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5")],
             IconKind::Send => &[Shape::Path("M12.5 3.5v5h-9M3.5 8.5l3-3M3.5 8.5l3 3")],
             IconKind::More => &[Shape::Dot { cx: 3.5, cy: 8.0 }, Shape::Dot { cx: 8.0, cy: 8.0 }, Shape::Dot { cx: 12.5, cy: 8.0 }],
             IconKind::Target => &[Shape::Circle { cx: 8.0, cy: 8.0, r: 6.0 }, Shape::Circle { cx: 8.0, cy: 8.0, r: 2.0 }],

@@ -265,6 +265,7 @@ fn build_services() -> WorkspaceServices {
         git: git.clone(),
         files: Arc::new(LocalFiles::new()),
         browser: Arc::new(SystemBrowser::new()),
+        dictation: Arc::new(forge_adapter_dictation::SystemDictation),
         webviews: webviews(),
         usage_stats: Arc::new(ClaudeUsageStatsAdapter::new(claude_home.clone())),
         mcp_logs: Arc::new(ClaudeMcpLogAdapter::new(default_cli_cache_dir(), claude_json)),

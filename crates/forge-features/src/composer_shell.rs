@@ -7,7 +7,7 @@ pub enum ComposerAction {
     /// `ready` shows the arrow in full colour (something to send); `disabled` makes it inert.
     Send { ready: bool, disabled: bool },
     Stop,
-    /// Nothing at the right of the box.
+    /// Nothing to send at the right of the box (the microphone where the system has dictation).
     Hidden,
 }
 
@@ -36,6 +36,8 @@ pub fn ComposerShell(
     start: Element,
     end: Element,
 ) -> Element {
+    let workspace = crate::use_workspace();
+    let dictation = workspace.dictation_available();
     rsx! {
         div { class: "composer-wrap",
             div { class: "composer", onkeydown: move |event| onkeydown.call(event),
@@ -45,6 +47,22 @@ pub fn ComposerShell(
                     div { class: "composer-field", {input} }
                     div { class: "composer-action",
                         match action {
+                            // An empty box offers the system's dictation where the desktop app has its
+                            // microphone; the arrow comes back with something to send.
+                            ComposerAction::Send { ready: false, .. } | ComposerAction::Hidden if dictation => rsx! {
+                                button {
+                                    class: "send-icon mic",
+                                    r#type: "button",
+                                    title: tr!("Dictate"),
+                                    "aria-label": tr!("Dictate"),
+                                    onclick: move |_| async move {
+                                        // The system types into the focused field: the message box.
+                                        let _ = document::eval("document.querySelector('.composer-field textarea')?.focus()").await;
+                                        workspace.start_dictation();
+                                    },
+                                    Icon { kind: IconKind::Mic }
+                                }
+                            },
                             ComposerAction::Send { ready, disabled } => rsx! {
                                 button {
                                     class: if ready { "send-icon ready" } else { "send-icon" },
