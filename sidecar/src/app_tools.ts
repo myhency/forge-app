@@ -332,9 +332,20 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
     ),
     tool(
       "computer",
-      'See the page of a Browser pane tab. Forge supports action "screenshot" (a picture of the visible page) and "scroll" (scroll_direction up/down/left/right, scroll_amount in ticks); to click or type, use read_page with form_input, or javascript_tool.',
+      [
+        "Use a mouse and keyboard on the page of a Browser pane tab, and take screenshots.",
+        '* "screenshot": a picture of the visible page. Coordinates of the other actions are pixels of that picture.',
+        '* "left_click", "double_click", "triple_click", "right_click", "hover": at `coordinate` [x, y]. Click the center of an element; consult a screenshot first.',
+        '* "type": `text` into the field that has the keyboard (click it first). "key": `text` keys separated by spaces, e.g. "Enter" or "Tab".',
+        '* "scroll": scroll_direction up/down/left/right, scroll_amount in ticks. "scroll_to": bring the element `ref` (from read_page) into view. "wait": `duration` seconds.',
+        "The actions are page events, so a page that checks for real (trusted) input may ignore them; read_page with form_input, or javascript_tool, are the other ways.",
+      ].join("\n"),
       {
-        action: z.enum(["screenshot", "scroll"]).describe('"screenshot" or "scroll".'),
+        action: z.enum(["screenshot", "left_click", "double_click", "triple_click", "right_click", "hover", "type", "key", "scroll", "scroll_to", "wait"]).describe("The action to perform."),
+        coordinate: z.array(z.number()).length(2).optional().describe("[x, y] in screenshot pixels, for clicks and hover."),
+        text: z.string().optional().describe('For "type": the text. For "key": the keys, space-separated.'),
+        ref: z.string().optional().describe('For "scroll_to": an element ref from read_page.'),
+        duration: z.number().optional().describe('For "wait": seconds (at most 30).'),
         tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
         scroll_direction: z.enum(["up", "down", "left", "right"]).optional(),
         scroll_amount: z.number().optional().describe("Scroll ticks (100 px each). Default 3."),

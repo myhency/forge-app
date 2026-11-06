@@ -114,7 +114,21 @@ impl Workspace {
                     };
                     return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), format!("(function(){{window.scrollBy({x},{y});return 'Scrolled to '+Math.round(window.scrollX)+','+Math.round(window.scrollY)+' of '+document.documentElement.scrollWidth+'x'+document.documentElement.scrollHeight;}})()"));
                 }
-                other => Err(format!("Forge's browser tool does not do \"{other}\"; take a screenshot, or use read_page with form_input, or javascript_tool.")),
+                "wait" => {
+                    let seconds = input.get("duration").and_then(Value::as_f64).unwrap_or(1.0).clamp(0.0, 30.0);
+                    let this = *self;
+                    let request = request.clone();
+                    dioxus::core::spawn_forever(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs_f64(seconds)).await;
+                        this.answer(id, &request, Ok(format!("Waited {seconds} seconds.")));
+                    });
+                    return;
+                }
+                action @ ("left_click" | "double_click" | "triple_click" | "right_click" | "hover" | "type" | "key" | "scroll_to") => {
+                    let args = json!({ "action": action, "coordinate": input.get("coordinate"), "text": text("text"), "ref": text("ref") });
+                    return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), COMPUTER_SCRIPT.replace("__ARGS__", &args.to_string()));
+                }
+                other => Err(format!("Forge's browser tool does not do \"{other}\"; use read_page with form_input, or javascript_tool.")),
             },
             "read_page" => {
                 let args = json!({
@@ -994,6 +1008,9 @@ fn script_runner(code: &str) -> String {
 /// `read_page`: an outline of the page, one element per line with its role, name and a `ref_N`
 /// that stays the element's for the page's life (form_input and ref_id take it).
 const READ_PAGE_SCRIPT: &str = include_str!("page_scripts/read_page.js");
+/// `computer`'s mouse and keyboard actions, done with page events: a coordinate is in screenshot
+/// pixels (divided by the page's pixel ratio), typing goes to the focused field.
+const COMPUTER_SCRIPT: &str = include_str!("page_scripts/computer.js");
 /// `form_input`: sets the field a `ref_N` names and fires its input and change events.
 const FORM_INPUT_SCRIPT: &str = include_str!("page_scripts/form_input.js");
 

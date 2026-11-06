@@ -1077,6 +1077,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Use one line.", "한 줄로 입력하세요."),
     ("Use per day, the last weeks", "최근 몇 주의 일별 사용량"),
     ("Use this", "이것 사용"),
+    ("Used a page", "페이지 조작함"),
     ("Used for the whole interface, the chat and code. OpenDyslexic must be installed on the computer.", "인터페이스 전체, 대화, 코드에 사용됩니다. OpenDyslexic은 컴퓨터에 설치되어 있어야 합니다."),
     ("Used in open files, diffs, code blocks and command output.", "열린 파일, 변경 사항 비교, 코드 블록, 명령 출력에 적용됩니다."),
     ("Used {count} other tool", "다른 도구 {count}개 사용"),
