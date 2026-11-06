@@ -26,6 +26,7 @@ mod search;
 mod session;
 mod auto_mode_model;
 mod output_style;
+mod dev_server;
 mod session_defaults;
 mod transcript_view;
 mod usage;
@@ -59,6 +60,7 @@ pub use plugin_catalog::{plugin_id, split_plugin_id, Marketplace, PluginEntry, P
 pub use skill_catalog::{skill_id, SkillEntry, SkillFile, SkillFileList, SkillOrigin, SkillSnapshot};
 pub use auto_mode_model::AutoModeModel;
 pub use output_style::OutputStyle;
+pub use dev_server::{candidates as dev_server_candidates, files_to_check as dev_server_files, saved_servers, with_server, LaunchJsonError, ServerCandidate, LAUNCH_JSON};
 pub use session_defaults::{SessionDefaults, UnrelatedTask};
 pub use rate_limit::{local_moment, LocalMoment, RateLevel, RateLimit, RateWindow};
 pub use transcript_view::TranscriptView;

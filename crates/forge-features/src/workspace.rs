@@ -1338,6 +1338,59 @@ impl Workspace {
         self.preview_load(id, tab, &url)
     }
 
+    /// The Preview panel's `개발 서버 감지`: the servers the session's folder offers (saved ones in
+    /// `.claude/launch.json` first, then the package.json scripts), as the desktop app finds them.
+    pub fn detect_dev_servers(&self, id: LiveSessionId) -> Vec<forge_domain::ServerCandidate> {
+        let Some(folder) = self.live_view(id).map(|view| view.peek().project_path.clone()) else { return Vec::new() };
+        let read = |name: &str| std::fs::read_to_string(folder.join(name)).ok();
+        let exists = |name: &str| folder.join(name).is_file();
+        forge_domain::dev_server_candidates(&exists, read("package.json").as_deref(), read(forge_domain::LAUNCH_JSON).as_deref())
+    }
+
+    /// `이것 사용`: keeps the server in `.claude/launch.json`, starts it in the Terminal panel unless
+    /// something already answers on its port, and shows it in the tab once it does. The error is a
+    /// message for the person.
+    pub fn use_dev_server(&self, id: LiveSessionId, tab: PreviewTabId, server: forge_domain::ServerCandidate) -> Result<(), String> {
+        let folder = self.live_view(id).map(|view| view.peek().project_path.clone()).ok_or_else(|| tr!("This session is not open.").to_string())?;
+        if !server.saved {
+            let path = folder.join(forge_domain::LAUNCH_JSON);
+            let existing = std::fs::read_to_string(&path).ok();
+            match forge_domain::with_server(existing.as_deref(), &server) {
+                Ok(text) => {
+                    let written = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| std::fs::write(&path, text));
+                    if let Err(error) = written {
+                        forge_log::warn("preview", &format!("launch.json not written: {error}"));
+                        return Err(tr!("This configuration could not be saved. Try again.").to_string());
+                    }
+                }
+                // The same name is there already: that entry stands, the server still starts.
+                Err(forge_domain::LaunchJsonError::NameExists) => {}
+                Err(forge_domain::LaunchJsonError::Unreadable) => return Err(tr!("This configuration could not be saved. Try again.").to_string()),
+            }
+        }
+        let url = server.url();
+        if port_answers(server.port) {
+            return self.preview_load(id, tab, &url);
+        }
+        if !self.code_run_available() {
+            return Err(tr!("Run {command} in a terminal, then open {url}.", command = server.command_line(), url = url).to_string());
+        }
+        self.run_code(id, &server.command_line());
+        let this = *self;
+        let port = server.port;
+        dioxus::core::spawn_forever(async move {
+            // A dev server takes a few seconds to listen; give up after two minutes.
+            for _ in 0..240 {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if tokio::task::spawn_blocking(move || port_answers(port)).await.unwrap_or(false) {
+                    let _ = this.preview_load(id, tab, &url);
+                    return;
+                }
+            }
+        });
+        Ok(())
+    }
+
     fn preview_load(&self, id: LiveSessionId, tab: PreviewTabId, url: &str) -> Result<(), String> {
         let (webviews, browser, surface) = (self.webviews(), self.browser(), self.surface());
         let mut previews = self.previews;
@@ -4389,4 +4442,12 @@ pub fn effort_value(level: forge_domain::EffortLevel) -> &'static str {
         forge_domain::EffortLevel::XHigh => "xhigh",
         forge_domain::EffortLevel::Max => "max",
     }
+}
+
+/// Whether a server listens on this port of this computer (IPv4 or IPv6: Vite on newer Node listens on `::1` only).
+fn port_answers(port: u16) -> bool {
+    let wait = std::time::Duration::from_millis(300);
+    [std::net::SocketAddr::from(([127, 0, 0, 1], port)), std::net::SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, port))]
+        .iter()
+        .any(|address| std::net::TcpStream::connect_timeout(address, wait).is_ok())
 }
