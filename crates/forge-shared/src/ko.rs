@@ -369,6 +369,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Files", "파일"),
     ("Files and conversation", "코드와 대화"),
     ("Files only", "코드만"),
+    ("Filled in a field", "필드 입력함"),
     ("Filter", "필터"),
     ("Filter, or start with ? to search inside files", "필터 입력, 또는 ?로 시작해 파일 내용 검색"),
     ("Filter, sort and group sessions", "세션 필터, 정렬, 그룹화"),

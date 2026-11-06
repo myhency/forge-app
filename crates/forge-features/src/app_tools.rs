@@ -102,6 +102,22 @@ impl Workspace {
             }
             "navigate" => self.navigate_by_tool(id, input.get("tabId").and_then(Value::as_u64), text("url").unwrap_or_default()),
             "get_page_text" => return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), PAGE_TEXT_SCRIPT.to_string()),
+            "read_page" => {
+                let args = json!({
+                    "interactive": text("filter") == Some("interactive"),
+                    "depth": input.get("depth").and_then(Value::as_u64).unwrap_or(15).clamp(1, 60),
+                    "ref": text("ref_id"),
+                    "max": input.get("max_chars").and_then(Value::as_u64).unwrap_or(50_000).clamp(1_000, 500_000),
+                });
+                return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), READ_PAGE_SCRIPT.replace("__ARGS__", &args.to_string()));
+            }
+            "form_input" => match (text("ref"), input.get("value")) {
+                (Some(reference), Some(value)) => {
+                    let args = json!({ "ref": reference, "value": value });
+                    return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), FORM_INPUT_SCRIPT.replace("__ARGS__", &args.to_string()));
+                }
+                _ => Err("Pass ref (from read_page) and value.".to_string()),
+            },
             "read_console_messages" => {
                 let pattern = text("pattern").unwrap_or_default();
                 let only_errors = input.get("onlyErrors").and_then(Value::as_bool).unwrap_or(false);
@@ -936,8 +952,14 @@ const PAGE_TEXT_SCRIPT: &str = "(function(){var root=document.querySelector('art
 /// (at most 20,000 characters), a thrown error as its message.
 fn script_runner(code: &str) -> String {
     let quoted = serde_json::to_string(code).unwrap_or_else(|_| "\"\"".to_string());
-    format!("(function(){{try{{var value=(0,eval)({quoted});if(value===undefined)return 'undefined';var json=JSON.stringify(value);return (json===undefined?String(value):json).slice(0,20000);}}catch(error){{return 'Error: '+(error&&error.message||String(error));}}}})()")
+    format!("(function(){{try{{var value=(0,eval)({quoted});if(value===undefined)return 'undefined';if(typeof value==='string')return value.slice(0,20000);var json=JSON.stringify(value);return (json===undefined?String(value):json).slice(0,20000);}}catch(error){{return 'Error: '+(error&&error.message||String(error));}}}})()")
 }
+
+/// `read_page`: an outline of the page, one element per line with its role, name and a `ref_N`
+/// that stays the element's for the page's life (form_input and ref_id take it).
+const READ_PAGE_SCRIPT: &str = include_str!("page_scripts/read_page.js");
+/// `form_input`: sets the field a `ref_N` names and fires its input and change events.
+const FORM_INPUT_SCRIPT: &str = include_str!("page_scripts/form_input.js");
 
 /// `read_console_messages`: the kept messages that match, oldest first, one per line.
 fn console_script(pattern: &str, only_errors: bool, clear: bool, limit: u64) -> String {

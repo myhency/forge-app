@@ -39,6 +39,7 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${BROWSER_SERVER}__tabs_context_mcp`,
   `mcp__${BROWSER_SERVER}__get_page_text`,
   `mcp__${BROWSER_SERVER}__read_console_messages`,
+  `mcp__${BROWSER_SERVER}__read_page`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -321,6 +322,28 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
       "Extract the text of the page in a Browser pane tab, its article or main content when it has one. Returns plain text with the title and URL first.",
       { tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab.") },
       forward(ask, "get_page_text"),
+    ),
+    tool(
+      "read_page",
+      "Get an accessibility-tree-like outline of the page in a Browser pane tab: one element per line with its role, name and a ref (ref_1, ref_2…) that form_input and ref_id take. Limited to 50000 characters by default; use depth or ref_id to focus on part of the page. filter \"interactive\" keeps only buttons, links and inputs.",
+      {
+        tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
+        filter: z.enum(["interactive", "all"]).optional().describe('"interactive" for buttons/links/inputs only, "all" for all elements (default).'),
+        depth: z.number().optional().describe("Maximum depth of the tree (default 15)."),
+        ref_id: z.string().optional().describe("A ref from an earlier read_page: return that element and its children."),
+        max_chars: z.number().optional().describe("Maximum characters (default 50000)."),
+      },
+      forward(ask, "read_page"),
+    ),
+    tool(
+      "form_input",
+      "Set the value of a form field by its ref from read_page (fires input and change events). For checkboxes use a boolean, for selects the option value or text.",
+      {
+        ref: z.string().describe('The element ref from read_page, e.g. "ref_3".'),
+        value: z.union([z.string(), z.boolean(), z.number()]).describe("The value to set."),
+        tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
+      },
+      forward(ask, "form_input"),
     ),
     tool(
       "read_console_messages",
