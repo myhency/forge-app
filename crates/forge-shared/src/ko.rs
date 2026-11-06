@@ -330,6 +330,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Done", "완료"),
     ("Done|status", "완료됨"),
     ("Drafts release notes for users from the commits since the last tag. Run it by hand.", "마지막 태그 이후의 커밋으로 사용자용 릴리스 노트 초안을 만듭니다. 직접 실행하세요."),
+    ("Drag here to pin", "드래그하여 고정"),
     ("Drawing the page…", "페이지를 그리는 중…"),
     ("Dynamic workflows", "동적 워크플로우"),
     ("Edit", "편집"),

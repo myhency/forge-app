@@ -238,13 +238,23 @@ pub fn Sidebar() -> Element {
                 // Without a session there is no heading to carry the menu, and the empty groups may be what the person wants.
                 div { class: "sidebar-group-header empty", FilterButton {} }
             }
-            if !pinned_items.is_empty() {
-                div { class: "pinned-group",
+            if !pinned_items.is_empty() || workspace.pin_drag().is_some() {
+                div {
+                    class: if workspace.pin_drag().is_some() { "pinned-group drop-target" } else { "pinned-group" },
+                    ondragover: move |event| event.prevent_default(),
+                    ondragenter: move |event| event.prevent_default(),
+                    ondrop: move |event| {
+                        event.prevent_default();
+                        workspace.drop_to_pin();
+                    },
                     div { class: "sidebar-group-header",
                         span { class: "group-toggle pinned-heading",
                             span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true } }
                             span { class: "sidebar-group-title", {tr!("Pinned")} }
                         }
+                    }
+                    if pinned_items.is_empty() {
+                        div { class: "pin-drop-hint", {tr!("Drag here to pin")} }
                     }
                     for item in pinned_items.iter() {
                         SessionRow {

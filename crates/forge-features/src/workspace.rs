@@ -246,6 +246,8 @@ pub struct Workspace {
     change_count_tickets: Signal<HashMap<LiveSessionId, u64>>,
     /// The Outputs card's files per session, and the ticket of its latest read.
     outputs: Signal<OutputsStore>,
+    /// The session row being dragged, for the `고정됨` group to take it.
+    pin_drag: Signal<Option<(PathBuf, SessionId)>>,
     /// Dev servers each session started in the background (see `use_dev_server`).
     background_servers: Signal<HashMap<LiveSessionId, Vec<BackgroundServer>>>,
     /// The `@` mention's file list per session.
@@ -353,6 +355,7 @@ pub fn use_workspace_provider() -> Workspace {
             change_counts: root_signal(HashMap::new()),
             change_count_tickets: root_signal(HashMap::new()),
             outputs: root_signal(OutputsStore::default()),
+            pin_drag: root_signal(None),
             background_servers: root_signal(HashMap::new()),
             file_lists: root_signal(FileListStore::default()),
             outside_file: root_signal(None),
@@ -488,6 +491,29 @@ impl Workspace {
     /// Whether the session is pinned (`고정`).
     pub fn is_pinned(&self, project: &Path, session: &SessionId) -> bool {
         self.prefs.read().pinned.iter().any(|pin| pin.project == project && pin.session_id == session.0)
+    }
+
+    /// A session row's drag started (`Some`) or ended (`None`).
+    pub fn set_pin_drag(&self, dragged: Option<(PathBuf, SessionId)>) {
+        let mut drag = self.pin_drag;
+        if *drag.peek() != dragged {
+            drag.set(dragged);
+        }
+    }
+
+    pub fn pin_drag(&self) -> Option<(PathBuf, SessionId)> {
+        self.pin_drag.read().clone()
+    }
+
+    /// A row dropped on the `고정됨` group: it is pinned (the desktop app's `드래그하여 고정`).
+    pub fn drop_to_pin(&self) {
+        let dragged = self.pin_drag.peek().clone();
+        self.set_pin_drag(None);
+        if let Some((project, session)) = dragged {
+            if !self.is_pinned(&project, &session) {
+                self.toggle_pin(project, session);
+            }
+        }
     }
 
     /// Pins or unpins a session; pinned sessions sit in the `고정됨` group at the top of the sidebar.
