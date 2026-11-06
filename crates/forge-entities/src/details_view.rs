@@ -215,8 +215,14 @@ fn capitalized(name: &str) -> String {
 }
 
 /// Servers that need action first, then the rest in the SDK's order, `claudeai` ones last.
+/// Forge's own tool servers (the turn tools, the app tools, the browser tools, interactive pages,
+/// app control): part of the app, not connectors, so the desktop app does not list its own either.
+pub fn is_app_server(name: &str) -> bool {
+    name.starts_with("ccd_") || matches!(name, "forge_ui" | "forge_desktop" | "Claude_Browser")
+}
+
 pub fn connector_rows(servers: &[McpServerState]) -> Vec<ConnectorRowView> {
-    let mut ordered: Vec<&McpServerState> = servers.iter().collect();
+    let mut ordered: Vec<&McpServerState> = servers.iter().filter(|server| !is_app_server(&server.name)).collect();
     ordered.sort_by_key(|server| {
         if matches!(server.status, McpStatus::NeedsAuth | McpStatus::Failed) {
             0
@@ -303,6 +309,13 @@ mod tests {
 
     fn server(name: &str, status: McpStatus, scope: Option<&str>) -> McpServerState {
         McpServerState { name: name.into(), status, scope: scope.map(String::from), source: None, remote: None, tool_count: 0, error: None }
+    }
+
+    #[test]
+    fn forges_own_tool_servers_are_not_listed_as_connectors() {
+        let servers = vec![server("ccd_turn", McpStatus::Connected, None), server("Claude_Browser", McpStatus::Connected, None), server("forge_ui", McpStatus::Connected, None), server("figma", McpStatus::Connected, None)];
+        let rows = connector_rows(&servers);
+        assert_eq!(rows.iter().map(|row| row.name.as_str()).collect::<Vec<_>>(), vec!["Figma"]);
     }
 
     #[test]
