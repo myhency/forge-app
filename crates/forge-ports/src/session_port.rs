@@ -47,6 +47,16 @@ pub trait SessionRepositoryPort: Send + Sync {
         session_id: &SessionId,
         title: &str,
     ) -> Result<(), SessionRepositoryError>;
+    /// Writes a zip of the session (its transcript, the sub-agent transcripts kept beside it and a
+    /// short metadata file) to the Downloads folder, and returns the zip's path (the desktop app's
+    /// Export). Nothing is uploaded.
+    async fn export_session(
+        &self,
+        _project_path: &Path,
+        session_id: &SessionId,
+    ) -> Result<std::path::PathBuf, SessionRepositoryError> {
+        Err(SessionRepositoryError::LoadFailed(format!("this store cannot export {}", session_id.0)))
+    }
     /// Moves the session's transcript (and the data kept beside it) to the OS trash. Nothing is
     /// removed permanently.
     async fn delete_session(

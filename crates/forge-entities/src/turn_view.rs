@@ -230,6 +230,7 @@ fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
         "mcp__ccd_view__set_transcript_view" => (tr!("Changed the transcript view").to_string(), text("view")),
         "mcp__ccd_settings__get_settings" => (tr!("Read the settings").to_string(), String::new()),
         "mcp__ccd_session_mgmt__list_events" => (tr!("Read another session").to_string(), String::new()),
+        "mcp__ccd_session_mgmt__export_transcript" => (tr!("Exported a session").to_string(), String::new()),
         "mcp__ccd_session_mgmt__get_usage" => (tr!("Checked the usage").to_string(), String::new()),
         "mcp__ccd_session_mgmt__set_session_title" => (tr!("Renamed a session").to_string(), text("title")),
         "mcp__ccd_session_mgmt__set_session_model" => (tr!("Changed a session's model").to_string(), text("model")),

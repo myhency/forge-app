@@ -135,6 +135,15 @@ pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: Transcript
                                 span { {tr!("Output style")} }
                                 span { class: "menu-key", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                             }
+                            button {
+                                class: "row-menu-item",
+                                role: "menuitem",
+                                onclick: move |_| {
+                                    close();
+                                    workspace.export_active_session(id);
+                                },
+                                span { {tr!("Export")} }
+                            }
                             if actions.archive != ArchiveAction::Unavailable || can_delete {
                                 div { class: "row-menu-separator" }
                             }

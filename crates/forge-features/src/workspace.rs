@@ -1204,6 +1204,27 @@ impl Workspace {
         });
     }
 
+    /// Exports the open session as a zip in the Downloads folder (the desktop app's Export) and says
+    /// where it went. Nothing is uploaded.
+    pub fn export_active_session(&self, id: LiveSessionId) {
+        let Some(view) = self.live_view(id) else { return };
+        let (project, session) = {
+            let view = view.peek();
+            (view.project_path.clone(), view.claude_session_id.clone())
+        };
+        let Some(session) = session else {
+            return self.report(tr!("This session has no transcript to export yet.").to_string());
+        };
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        dioxus::core::spawn_forever(async move {
+            match services.sessions.export_session(&project, &session).await {
+                Ok(path) => this.report_info(tr!("Exported to {path}", path = path.display()).to_string()),
+                Err(error) => this.report(error.to_string()),
+            }
+        });
+    }
+
     /// The origin of the open session when it is a fork and the origin is listed (the `포크 원본` line).
     pub fn fork_origin(&self, id: LiveSessionId) -> Option<ForkOrigin> {
         let view = self.live_view(id)?;

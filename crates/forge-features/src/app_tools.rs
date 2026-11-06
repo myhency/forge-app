@@ -89,6 +89,7 @@ impl Workspace {
             "set_transcript_view" => self.set_view_by_tool(id, text("session_id").unwrap_or("self"), text("view").unwrap_or_default()),
             "get_settings" => Ok(settings_json(config)),
             "list_sections" => Ok(self.sections_json()),
+            "export_transcript" => return self.export_by_tool(id, request.clone(), text("session_id").unwrap_or("self").to_string()),
             "show_pane" | "close_pane" => self.pane_by_tool(id, request.tool == "show_pane", text("pane").unwrap_or_default(), text("path")),
             "get_layout" => Ok(self.layout_json(id)),
             "create_section" => self.create_section_by_tool(text("name").unwrap_or_default()),
@@ -610,6 +611,21 @@ impl Workspace {
             TranscriptView::Detailed => "detailed",
         };
         json!({ "on_screen": on_screen, "open_panes": if on_screen { open } else { Vec::new() }, "transcript_view": view }).to_string()
+    }
+
+    fn export_by_tool(&self, id: LiveSessionId, request: AppRequest, wanted: String) {
+        let Some(row) = self.find_row(id, &wanted) else {
+            return self.answer(id, &request, Err(format!("No session {wanted}.")));
+        };
+        let Some(session) = row.session_id.clone() else {
+            return self.answer(id, &request, Err("That session has no transcript yet.".to_string()));
+        };
+        let this = *self;
+        let services = self.services_snapshot();
+        dioxus::core::spawn_forever(async move {
+            let result = services.sessions.export_session(&row.folder, &session).await.map(|path| format!("Exported to {}", path.display())).map_err(|error| error.to_string());
+            this.answer(id, &request, result);
+        });
     }
 
     fn sections_json(&self) -> String {

@@ -359,7 +359,7 @@ button:not(:disabled):active { scale: 0.98; }
 .permission-card .input { font-family: var(--mono); font-size: var(--text-sm); color: var(--fg-muted); margin: var(--sp-4) 0 var(--sp-10); overflow-wrap: anywhere; }
 .permission-actions { display: flex; gap: var(--sp-8); }
 
-.banner { max-width: 760px; margin: var(--sp-8) auto; padding: var(--sp-8) var(--sp-12); border-radius: var(--radius); font-size: var(--text-base); box-sizing: border-box; width: calc(100% - 56px); }
+.banner { max-width: 760px; margin: var(--sp-8) auto; padding: var(--sp-8) var(--sp-12); border-radius: var(--radius); font-size: var(--text-base); box-sizing: border-box; width: calc(100% - 56px); overflow-wrap: anywhere; }
 .sidebar .banner { width: auto; margin: var(--sp-8) var(--sp-4); }
 .banner.error { border: 1px solid var(--danger); color: var(--danger); }
 .banner.info { border: 1px solid var(--border); color: var(--fg-muted); }

@@ -782,6 +782,31 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         file.flush().await.map_err(|e| rename_error(&path, e))
     }
 
+    async fn export_session(
+        &self,
+        project_path: &Path,
+        session_id: &SessionId,
+    ) -> Result<std::path::PathBuf, SessionRepositoryError> {
+        let id = session_id.0.clone();
+        if !valid_session_id(&id) {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+        let dir = self.project_dir(project_path).await;
+        let transcript = dir.join(format!("{id}.jsonl"));
+        if !tokio::fs::try_exists(&transcript).await.unwrap_or(false) {
+            return Err(SessionRepositoryError::NotFound(session_id.clone()));
+        }
+        let downloads = directories::UserDirs::new()
+            .and_then(|dirs| dirs.download_dir().map(Path::to_path_buf).or_else(|| Some(dirs.home_dir().to_path_buf())))
+            .ok_or_else(|| SessionRepositoryError::LoadFailed("no Downloads folder".to_string()))?;
+        let project = project_path.to_path_buf();
+        let sibling = dir.join(&id);
+        tokio::task::spawn_blocking(move || export_zip(&transcript, &sibling, &id, &project, &downloads))
+            .await
+            .map_err(|error| SessionRepositoryError::LoadFailed(error.to_string()))?
+            .map_err(|error| SessionRepositoryError::LoadFailed(error.to_string()))
+    }
+
     async fn delete_session(
         &self,
         project_path: &Path,
@@ -1068,6 +1093,46 @@ impl SessionRepositoryPort for ClaudeSessionAdapter {
         }
         Ok(hits)
     }
+}
+
+/// The zip `export_session` writes: `<id>.jsonl`, the sub-agent files under `<id>/`, and
+/// `metadata.json`. Named `claude-session-<first 8 of id>-<unix seconds>.zip`; an existing file is
+/// never overwritten.
+fn export_zip(transcript: &Path, sibling: &Path, id: &str, project: &Path, downloads: &Path) -> std::io::Result<std::path::PathBuf> {
+    use std::io::Write;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_secs()).unwrap_or(0);
+    let short: String = id.chars().take(8).collect();
+    let mut target = downloads.join(format!("claude-session-{short}-{stamp}.zip"));
+    let mut n = 1;
+    while target.exists() {
+        target = downloads.join(format!("claude-session-{short}-{stamp}-{n}.zip"));
+        n += 1;
+    }
+    let file = std::fs::File::create(&target)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+    let to_io = |error: zip::result::ZipError| std::io::Error::other(error.to_string());
+    zip.start_file(format!("{id}.jsonl"), options).map_err(to_io)?;
+    zip.write_all(&std::fs::read(transcript)?)?;
+    if sibling.is_dir() {
+        let mut stack = vec![sibling.to_path_buf()];
+        while let Some(folder) = stack.pop() {
+            for entry in std::fs::read_dir(&folder)?.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if let Ok(relative) = path.strip_prefix(sibling) {
+                    zip.start_file(format!("{id}/{}", relative.to_string_lossy().replace('\\', "/")), options).map_err(to_io)?;
+                    zip.write_all(&std::fs::read(&path)?)?;
+                }
+            }
+        }
+    }
+    let metadata = serde_json::json!({ "session_id": id, "project": project.display().to_string(), "exported_at_unix": stamp, "exported_by": "Forge" });
+    zip.start_file("metadata.json", options).map_err(to_io)?;
+    zip.write_all(serde_json::to_string_pretty(&metadata).unwrap_or_default().as_bytes())?;
+    zip.finish().map_err(to_io)?;
+    Ok(target)
 }
 
 #[cfg(test)]
@@ -3033,5 +3098,22 @@ mod tests {
         assert_eq!(session.messages.len(), 1, "{:?}", session.messages);
         apply_line(&mut session, &json!({"type": "assistant", "message": {"model": "<synthetic>", "role": "assistant", "content": [{"type": "text", "text": "API Error: 529"}]}}));
         assert_eq!(session.messages.len(), 2, "other lines Claude Code writes still show");
+    }
+
+    #[test]
+    fn an_export_holds_the_transcript_the_subagents_and_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        let transcript = root.path().join("abc.jsonl");
+        std::fs::write(&transcript, "{}\n").unwrap();
+        let sibling = root.path().join("abc");
+        std::fs::create_dir_all(sibling.join("subagents")).unwrap();
+        std::fs::write(sibling.join("subagents/agent-1.jsonl"), "{}\n").unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let zip_path = export_zip(&transcript, &sibling, "abc", Path::new("/p"), out.path()).unwrap();
+        let mut names: Vec<String> = zip::ZipArchive::new(std::fs::File::open(&zip_path).unwrap()).unwrap().file_names().map(str::to_string).collect();
+        names.sort();
+        assert_eq!(names, ["abc.jsonl", "abc/subagents/agent-1.jsonl", "metadata.json"]);
+        let again = export_zip(&transcript, &sibling, "abc", Path::new("/p"), out.path()).unwrap();
+        assert_ne!(zip_path, again, "an earlier export is never overwritten");
     }
 }
