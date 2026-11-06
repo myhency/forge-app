@@ -232,23 +232,27 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
         None => rsx! {},
     };
 
+    // Outside Git there is nothing to pick or search: the desktop app shows neither.
+    let in_git = !matches!(result(), Some((_, Err(GitError::NotARepository))));
     let tools = rsx! {
-        BranchButton {
-            id,
-            info: info().and_then(|read| read.ok()),
-            base: base_memo(),
-            commits: commits().unwrap_or_default(),
-            view: session.view.clone(),
-            dirty: dirty(),
-            fallback: missing_base().is_some(),
-        }
-        button {
-            class: "icon-button",
-            r#type: "button",
-            title: tr!("Search changed files"),
-            "aria-label": tr!("Search changed files"),
-            onclick: move |_| searching.set(true),
-            Icon { kind: IconKind::Search }
+        if in_git {
+            BranchButton {
+                id,
+                info: info().and_then(|read| read.ok()),
+                base: base_memo(),
+                commits: commits().unwrap_or_default(),
+                view: session.view.clone(),
+                dirty: dirty(),
+                fallback: missing_base().is_some(),
+            }
+            button {
+                class: "icon-button",
+                r#type: "button",
+                title: tr!("Search changed files"),
+                "aria-label": tr!("Search changed files"),
+                onclick: move |_| searching.set(true),
+                Icon { kind: IconKind::Search }
+            }
         }
         ViewMenu {
             id,
