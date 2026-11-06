@@ -189,18 +189,23 @@ pub fn Sidebar() -> Element {
                 span { {tr!("Search")} }
                 span { class: "sidebar-link-keys", "{forge_domain::KEY_SEARCH}" }
             }
-            button {
-                class: if active == Active::Routines { "sidebar-link active" } else { "sidebar-link" },
-                onclick: move |_| workspace.show_routines(),
-                span { Icon { kind: IconKind::Clock } }
-                span { {tr!("Scheduled")} }
+            if !prefs.hidden_links.iter().any(|link| link == "scheduled") {
+                button {
+                    class: if active == Active::Routines { "sidebar-link active" } else { "sidebar-link" },
+                    onclick: move |_| workspace.show_routines(),
+                    span { Icon { kind: IconKind::Clock } }
+                    span { {tr!("Scheduled")} }
+                }
             }
-            button {
-                class: if active == Active::Customize { "sidebar-link active" } else { "sidebar-link" },
-                onclick: move |_| workspace.show_customize(),
-                span { Icon { kind: IconKind::Sparkle } }
-                span { {tr!("Customize")} }
+            if !prefs.hidden_links.iter().any(|link| link == "customize") {
+                button {
+                    class: if active == Active::Customize { "sidebar-link active" } else { "sidebar-link" },
+                    onclick: move |_| workspace.show_customize(),
+                    span { Icon { kind: IconKind::Sparkle } }
+                    span { {tr!("Customize")} }
+                }
             }
+            SidebarMore {}
             div { class: "sidebar-scroll",
             if let Some(message) = notice {
                 div { class: if workspace.notice_is_info() { "banner info" } else { "banner error" },
@@ -556,5 +561,75 @@ mod tests {
             labels(&["/a/app", "/b/app", "/c/app"]),
             ["app (a)", "app (b)", "app (c)"]
         );
+    }
+}
+
+/// The desktop app's `··· 더 보기` row (observed 2026-11-06): a menu with `사이드바 편집…`, which
+/// opens a dialog to choose the top rows the sidebar shows (Forge has 예약됨 and 사용자 지정; the
+/// desktop's 아티팩트 is claude.ai's).
+#[component]
+fn SidebarMore() -> Element {
+    let workspace = use_workspace();
+    let mut menu = use_signal(|| false);
+    let mut editing = use_signal(|| false);
+    let hidden = workspace.prefs().hidden_links;
+    let rows: [(&'static str, IconKind, String); 2] = [("scheduled", IconKind::Clock, tr!("Scheduled").to_string()), ("customize", IconKind::Sparkle, tr!("Customize").to_string())];
+    rsx! {
+        div { class: "sidebar-more-wrap",
+            button {
+                class: "sidebar-link",
+                "aria-haspopup": "menu",
+                "aria-expanded": "{menu()}",
+                onclick: move |_| menu.set(!menu()),
+                span { Icon { kind: IconKind::MoreHorizontal } }
+                span { {tr!("More")} }
+            }
+            if menu() {
+                div { class: "menu-backdrop", onclick: move |_| menu.set(false) }
+                div { class: "row-menu sidebar-more-menu", role: "menu",
+                    button {
+                        class: "row-menu-item",
+                        role: "menuitem",
+                        onclick: move |_| {
+                            menu.set(false);
+                            editing.set(true);
+                        },
+                        span { {tr!("Edit sidebar…")} }
+                    }
+                }
+            }
+        }
+        if editing() {
+            div { class: "settings-backdrop edit-sidebar-backdrop", onclick: move |_| editing.set(false),
+                div { class: "shortcuts-panel edit-sidebar", role: "dialog", "aria-label": tr!("Edit sidebar"),
+                    onclick: move |event| event.stop_propagation(),
+                    button { class: "settings-close", title: tr!("Close"), onclick: move |_| editing.set(false), Icon { kind: IconKind::Close } }
+                    h2 { {tr!("Edit sidebar")} }
+                    p { class: "edit-sidebar-note", {tr!("Choose what the sidebar shows.")} }
+                    for (id, icon, label) in rows {
+                        label { key: "{id}", class: "edit-sidebar-row",
+                            input {
+                                r#type: "checkbox",
+                                checked: !hidden.iter().any(|link| link == id),
+                                onchange: move |event: Event<FormData>| {
+                                    let show = event.checked();
+                                    workspace.update_prefs(|prefs| {
+                                        prefs.hidden_links.retain(|link| link != id);
+                                        if !show {
+                                            prefs.hidden_links.push(id.to_string());
+                                        }
+                                    });
+                                },
+                            }
+                            Icon { kind: icon }
+                            span { "{label}" }
+                        }
+                    }
+                    div { class: "edit-sidebar-actions",
+                        button { class: "button primary", r#type: "button", onclick: move |_| editing.set(false), {tr!("Done")} }
+                    }
+                }
+            }
+        }
     }
 }

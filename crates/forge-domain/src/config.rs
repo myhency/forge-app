@@ -95,6 +95,9 @@ pub struct SidebarPrefs {
     /// Chapters the person pinned on an answer (the desktop app's `챕터로 고정`).
     #[serde(default)]
     pub chapter_pins: Vec<ChapterPin>,
+    /// Top rows the person took off the sidebar with `사이드바 편집` (`scheduled`, `customize`).
+    #[serde(default)]
+    pub hidden_links: Vec<String>,
 }
 
 /// A chapter the person set on an answer: the session, the id of the message that began the turn,
@@ -121,6 +124,7 @@ impl Default for SidebarPrefs {
             hidden: false,
             pinned: Vec::new(),
             chapter_pins: Vec::new(),
+            hidden_links: Vec::new(),
         }
     }
 }
@@ -688,6 +692,7 @@ mod tests {
             hidden: true,
             pinned: Vec::new(),
             chapter_pins: Vec::new(),
+            hidden_links: Vec::new(),
         };
         let config = AppConfig { sidebar: prefs.clone(), ..AppConfig::default() };
 

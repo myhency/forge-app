@@ -1824,3 +1824,12 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .low-disk { position: fixed; right: var(--sp-16); bottom: var(--sp-16); z-index: 40; display: flex; align-items: center; gap: var(--sp-10); max-width: 360px; padding: var(--sp-12) var(--sp-14); border: 1px solid var(--border); border-radius: var(--r-12); background: var(--bg-card); box-shadow: var(--shadow-menu); color: var(--fg); }
 .low-disk-sign { color: var(--warning); display: inline-flex; }
 .low-disk-text { flex: 1; }
+
+/* The sidebar's 더 보기 menu and 사이드바 편집 dialog (desktop app, 2026-11-06). */
+.sidebar-more-wrap { position: relative; }
+.sidebar-more-menu { left: var(--sp-12); right: auto; min-width: 180px; }
+.edit-sidebar-backdrop { position: fixed; z-index: 50; }
+.edit-sidebar { width: min(420px, calc(100% - 64px)); }
+.edit-sidebar-note { margin: 0 0 var(--sp-12); color: var(--fg-muted); }
+.edit-sidebar-row { display: flex; align-items: center; gap: var(--sp-10); padding: var(--sp-6) 0; cursor: pointer; }
+.edit-sidebar-actions { display: flex; justify-content: flex-end; margin-top: var(--sp-16); }
