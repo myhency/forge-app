@@ -1404,7 +1404,19 @@ impl Workspace {
         self.open_preview_tab(id, &forge_entities::file_address(absolute_path));
     }
 
-    fn open_preview_tab(&self, id: LiveSessionId, url: &str) {
+    /// Opens the Preview panel with a new empty tab, for a page that comes later.
+    pub(crate) fn open_empty_preview_tab(&self, id: LiveSessionId) -> Option<PreviewTabId> {
+        self.change_dock(id, |dock| {
+            if !dock.is_open(Panel::Preview) {
+                dock.toggle(Panel::Preview);
+            }
+        });
+        let mut tab = None;
+        self.change_previews(id, |tabs| tab = Some(tabs.open()));
+        tab
+    }
+
+    pub(crate) fn open_preview_tab(&self, id: LiveSessionId, url: &str) {
         self.change_dock(id, |dock| {
             if !dock.is_open(Panel::Preview) {
                 dock.toggle(Panel::Preview);
@@ -4442,6 +4454,10 @@ pub fn effort_value(level: forge_domain::EffortLevel) -> &'static str {
         forge_domain::EffortLevel::XHigh => "xhigh",
         forge_domain::EffortLevel::Max => "max",
     }
+}
+
+pub(crate) fn port_is_answering(port: u16) -> bool {
+    port_answers(port)
 }
 
 /// Whether a server listens on this port of this computer (IPv4 or IPv6: Vite on newer Node listens on `::1` only).

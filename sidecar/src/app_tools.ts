@@ -17,6 +17,8 @@ export const SESSION_MGMT_SERVER = "ccd_session_mgmt";
 export const SIDEBAR_SERVER = "ccd_sidebar";
 export const VIEW_SERVER = "ccd_view";
 export const SETTINGS_SERVER = "ccd_settings";
+/** The desktop app's in-app browser server; Forge offers its dev-server tools. */
+export const BROWSER_SERVER = "Claude_Browser";
 
 /** Tools that only read or change how this session looks: they never ask. */
 export const READ_ONLY_APP_TOOLS = [
@@ -32,6 +34,7 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${VIEW_SERVER}__show_pane`,
   `mcp__${VIEW_SERVER}__close_pane`,
   `mcp__${VIEW_SERVER}__get_layout`,
+  `mcp__${BROWSER_SERVER}__preview_list`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -272,6 +275,31 @@ export function viewTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
   ];
 }
 
+const LAUNCH_FORMAT = '{\n  "version": "0.0.1",\n  "configurations": [\n    {\n      "name": "<unique-name>",\n      "runtimeExecutable": "<command>",\n      "runtimeArgs": ["<args>"],\n      "port": <port>\n    }\n  ]\n}';
+
+export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
+  return [
+    tool(
+      "preview_start",
+      [
+        "Open the Browser pane: pass `url` to open a browser tab at a URL (no dev server needed: use this for external sites, staging, docs, or your deployed app), OR pass `name` to show a dev server from .claude/launch.json.",
+        `With \`name\`, a server that already listens on its port opens in a tab; otherwise preview_start starts it first in the Terminal panel and the tab shows it once it answers. If .claude/launch.json doesn't exist, create it first with this format:\n${LAUNCH_FORMAT}\nSet "runtimeExecutable" to the command (e.g. "npm"), "runtimeArgs" to the arguments (e.g. ["run", "dev"]), and "port" to the server port. ALWAYS use this instead of Bash for running dev servers the user should see.`,
+      ].join("\n\n"),
+      {
+        name: z.string().optional().describe("The name of a server in .claude/launch.json."),
+        url: z.string().optional().describe("URL to open in the Browser pane without a dev server (instead of starting one by `name`)."),
+      },
+      forward(ask, "preview_start"),
+    ),
+    tool(
+      "preview_list",
+      "List the entries of .claude/launch.json with their command, port, url and whether something already answers on the port.",
+      {},
+      forward(ask, "preview_list"),
+    ),
+  ];
+}
+
 export function settingsTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
   return [
     tool(
@@ -300,5 +328,6 @@ export function createAppToolsServers(ask: AskApp): Record<string, McpSdkServerC
     [SIDEBAR_SERVER]: createSdkMcpServer({ name: SIDEBAR_SERVER, tools: sidebarTools(ask) }),
     [VIEW_SERVER]: createSdkMcpServer({ name: VIEW_SERVER, tools: viewTools(ask) }),
     [SETTINGS_SERVER]: createSdkMcpServer({ name: SETTINGS_SERVER, tools: settingsTools(ask) }),
+    [BROWSER_SERVER]: createSdkMcpServer({ name: BROWSER_SERVER, tools: browserTools(ask) }),
   };
 }

@@ -5,7 +5,7 @@ import type { SidecarEvent } from "../src/protocol.js";
 
 describe("app tools", () => {
   it("offer the desktop app's server and tool names", () => {
-    expect(Object.keys(createAppToolsServers(async () => ({ output: "", is_error: false })))).toEqual(["ccd_session_mgmt", "ccd_sidebar", "ccd_view", "ccd_settings"]);
+    expect(Object.keys(createAppToolsServers(async () => ({ output: "", is_error: false })))).toEqual(["ccd_session_mgmt", "ccd_sidebar", "ccd_view", "ccd_settings", "Claude_Browser"]);
     expect(sessionMgmtTools(async () => ({ output: "", is_error: false })).map((t) => t.name)).toEqual(["list_sessions", "get_session", "send_message", "search_session_transcripts", "list_events", "get_usage", "export_transcript", "set_session_title", "set_session_model", "set_session_effort", "set_session_permission_mode", "set_session_output_style", "archive_session", "unarchive_session", "stop_session"]);
     expect(READ_ONLY_APP_TOOLS).not.toContain("mcp__ccd_session_mgmt__send_message");
   });

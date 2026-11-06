@@ -213,7 +213,7 @@ pub enum OfferAction {
 pub const SPLIT_OFF_PREAMBLE: &str = "This session was started from another session to do the request below. Do it here; do not start or propose another session for it.";
 
 /// The row words for the app's own tools (`ccd_session_mgmt`, `ccd_sidebar`, `ccd_view`,
-/// `ccd_settings`): what was done, and to what.
+/// `ccd_settings`, `Claude_Browser`): what was done, and to what.
 fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
     let text = |key: &str| call.input.get(key).and_then(Value::as_str).map(str::trim).unwrap_or_default().to_string();
     let first_line = |value: String| value.lines().next().unwrap_or_default().to_string();
@@ -225,6 +225,8 @@ fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
         "mcp__ccd_sidebar__set_pinned" if call.input.get("pinned").and_then(Value::as_bool) == Some(false) => (tr!("Unpinned a session").to_string(), String::new()),
         "mcp__ccd_sidebar__set_pinned" => (tr!("Pinned a session").to_string(), String::new()),
         "mcp__ccd_view__show_pane" => (tr!("Opened a pane").to_string(), text("pane")),
+        "mcp__Claude_Browser__preview_start" => (tr!("Opened a preview").to_string(), if text("name").is_empty() { text("url") } else { text("name") }),
+        "mcp__Claude_Browser__preview_list" => (tr!("Listed the dev servers").to_string(), String::new()),
         "mcp__ccd_view__close_pane" => (tr!("Closed a pane").to_string(), text("pane")),
         "mcp__ccd_view__get_layout" => (tr!("Checked the layout").to_string(), String::new()),
         "mcp__ccd_view__set_transcript_view" => (tr!("Changed the transcript view").to_string(), text("view")),
@@ -597,7 +599,7 @@ fn tool_row(call: &ToolCall) -> ToolRow {
             let name = call.input.get("skill").and_then(Value::as_str).unwrap_or_default();
             (tr!("Skill ran|tool").to_string(), format!("/{name}"), String::new())
         }
-        ToolKind::Other if call.name.starts_with("mcp__ccd_") && app_tool_words(call).is_some() => {
+        ToolKind::Other if (call.name.starts_with("mcp__ccd_") || call.name.starts_with("mcp__Claude_Browser__")) && app_tool_words(call).is_some() => {
             let (verb, subject) = app_tool_words(call).unwrap_or_default();
             (verb, subject, String::new())
         }

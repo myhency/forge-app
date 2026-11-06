@@ -92,6 +92,8 @@ impl Workspace {
             "export_transcript" => return self.export_by_tool(id, request.clone(), text("session_id").unwrap_or("self").to_string()),
             "show_pane" | "close_pane" => self.pane_by_tool(id, request.tool == "show_pane", text("pane").unwrap_or_default(), text("path")),
             "get_layout" => Ok(self.layout_json(id)),
+            "preview_start" => self.preview_start_by_tool(id, text("name"), text("url")),
+            "preview_list" => Ok(self.preview_list_json(id)),
             "create_section" => self.create_section_by_tool(text("name").unwrap_or_default()),
             "rename_section" => {
                 let section = text("section_id").unwrap_or_default().to_string();
@@ -635,6 +637,38 @@ impl Workspace {
             }
             this.answer(id, &request, result);
         });
+    }
+
+    /// The desktop app's `preview_start`: a `url` opens in a new Preview tab; a `name` from
+    /// `.claude/launch.json` starts that server (unless its port answers) and shows it.
+    fn preview_start_by_tool(&self, id: LiveSessionId, name: Option<&str>, url: Option<&str>) -> Result<String, String> {
+        if let Some(url) = url.filter(|url| !url.trim().is_empty()) {
+            let address = crate::preview_tabs::normalize_url(url).ok_or_else(|| format!("{url} is not a web address."))?;
+            self.open_preview_tab(id, &address);
+            return Ok(format!("The Browser pane shows {address}."));
+        }
+        let name = name.filter(|name| !name.trim().is_empty()).ok_or_else(|| "Pass url, or name (a server from .claude/launch.json).".to_string())?;
+        let servers: Vec<_> = self.detect_dev_servers(id).into_iter().filter(|server| server.saved).collect();
+        let server = servers.iter().find(|server| server.name.eq_ignore_ascii_case(name)).cloned().ok_or_else(|| {
+            if servers.is_empty() {
+                format!("No server called {name}: .claude/launch.json has none. Create it first with this format: {{\"version\": \"0.0.1\", \"configurations\": [{{\"name\": \"<unique-name>\", \"runtimeExecutable\": \"<command>\", \"runtimeArgs\": [\"<args>\"], \"port\": <port>}}]}}")
+            } else {
+                format!("No server called {name}. Available servers: {}.", servers.iter().map(|server| server.name.as_str()).collect::<Vec<_>>().join(", "))
+            }
+        })?;
+        let tab = self.open_empty_preview_tab(id).ok_or_else(|| "This session is not open on screen.".to_string())?;
+        self.use_dev_server(id, tab, server.clone())?;
+        Ok(format!("{} ({}) shows in the Browser pane at {} once it answers.", server.name, server.command_line(), server.url()))
+    }
+
+    fn preview_list_json(&self, id: LiveSessionId) -> String {
+        let servers: Vec<Value> = self
+            .detect_dev_servers(id)
+            .into_iter()
+            .filter(|server| server.saved)
+            .map(|server| json!({ "name": server.name, "command": server.command_line(), "port": server.port, "url": server.url(), "running": crate::workspace::port_is_answering(server.port) }))
+            .collect();
+        json!({ "launch_json": servers }).to_string()
     }
 
     fn sections_json(&self) -> String {
