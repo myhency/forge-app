@@ -152,6 +152,17 @@ impl Workspace {
             }),
             "set_session_permission_mode" => self.set_mode_by_tool(id, text("session_id").unwrap_or("self"), text("mode").unwrap_or_default(), config),
             "archive_session" => self.archive_by_tool(id, text("session_id").unwrap_or_default()),
+            "set_session_output_style" => {
+                let wanted = text("session_id").unwrap_or("self");
+                let name = text("style").unwrap_or_default();
+                let style = if name.eq_ignore_ascii_case("default") { Ok(None) } else { forge_domain::OutputStyle::ALL.into_iter().find(|style| style.name().eq_ignore_ascii_case(name)).map(Some).ok_or_else(|| format!("No output style called {name}.")) };
+                style.and_then(|style| {
+                    let row = self.find_row(id, wanted).ok_or_else(|| format!("No session {wanted}."))?;
+                    let handle = row.live.and_then(|live| self.handle(live)).ok_or_else(|| format!("{} is not open; open it first.", row.title))?;
+                    handle.set_output_style(style);
+                    Ok(format!("{} answers in the {} style from now on.", row.title, style.map(|style| style.name()).unwrap_or("default")))
+                })
+            }
             "unarchive_session" => self.unarchive_by_tool(id, text("session_id").unwrap_or_default()),
             "stop_session" => self.open_other(id, text("session_id").unwrap_or_default()).map(|(handle, title)| {
                 if self.live_view(handle.id()).is_some_and(|view| view.peek().phase == Phase::Running) {

@@ -137,6 +137,15 @@ export function sessionMgmtTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
       forward(ask, "set_session_permission_mode"),
     ),
     tool(
+      "set_session_output_style",
+      'Switch an open Forge session\'s output style ("self" or another): "default", "Proactive", "Concise", "Explanatory" or "Learning", from its next answer on. The user is asked first.',
+      {
+        session_id: z.string().describe('The sessionId of the session to switch (from list_sessions), or "self" for this session.'),
+        style: z.string().describe('"default", or a style name: Proactive, Concise, Explanatory, Learning.'),
+      },
+      forward(ask, "set_session_output_style"),
+    ),
+    tool(
       "archive_session",
       'Archive a Forge session: it is closed and moves to the Archived list, from where it can be reopened later. Pass "self" to archive this session — the conversation ends after this tool result. A session that is still working is not archived and the call says so. The user is asked to approve each call. Only call it after the user has explicitly agreed to archive a specific session — never speculatively. Archiving is the reversible verb: unarchive_session brings a session back.',
       {

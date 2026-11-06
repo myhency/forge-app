@@ -228,6 +228,7 @@ fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
         "mcp__ccd_session_mgmt__set_session_model" => (tr!("Changed a session's model").to_string(), text("model")),
         "mcp__ccd_session_mgmt__set_session_effort" => (tr!("Changed a session's effort").to_string(), text("effort")),
         "mcp__ccd_session_mgmt__set_session_permission_mode" => (tr!("Changed a session's mode").to_string(), text("mode")),
+        "mcp__ccd_session_mgmt__set_session_output_style" => (tr!("Changed a session's output style").to_string(), text("style")),
         "mcp__ccd_session_mgmt__archive_session" => (tr!("Archived a session").to_string(), text("reason")),
         "mcp__ccd_session_mgmt__unarchive_session" => (tr!("Restored a session").to_string(), String::new()),
         "mcp__ccd_session_mgmt__stop_session" => (tr!("Stopped a session").to_string(), String::new()),
