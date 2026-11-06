@@ -1,7 +1,7 @@
 //! How code looks: the syntax colours for light and dark mode, a code font and a code size. The
 //! desktop app has these on its Claude Code settings page under `코드 모양` (observed 2026-11-06:
 //! a theme menu for light and one for dark — Claude Light, GitHub Light, One Light, Solarized
-//! Light, Catppuccin Latte, VS Code Light and more — a font field `예: JetBrains Mono` and a size
+//! Light, Catppuccin Latte, VS Code Light, Vitesse Light, Min Light, Pierre Light — a font field `예: JetBrains Mono` and a size
 //! menu `기본값 · 13px`, 11 to 20 px).
 
 use serde::{Deserialize, Serialize};
@@ -17,15 +17,18 @@ pub enum CodeTheme {
     Solarized,
     Catppuccin,
     VsCode,
+    GithubHighContrast,
+    Vitesse,
+    Min,
     /// Dark only.
     Dracula,
 }
 
 impl CodeTheme {
     /// The themes the light menu offers.
-    pub const LIGHT: [CodeTheme; 6] = [CodeTheme::Claude, CodeTheme::Github, CodeTheme::One, CodeTheme::Solarized, CodeTheme::Catppuccin, CodeTheme::VsCode];
+    pub const LIGHT: [CodeTheme; 9] = [CodeTheme::Claude, CodeTheme::Github, CodeTheme::GithubHighContrast, CodeTheme::One, CodeTheme::Solarized, CodeTheme::Catppuccin, CodeTheme::VsCode, CodeTheme::Vitesse, CodeTheme::Min];
     /// The themes the dark menu offers.
-    pub const DARK: [CodeTheme; 7] = [CodeTheme::Claude, CodeTheme::Github, CodeTheme::One, CodeTheme::Solarized, CodeTheme::Catppuccin, CodeTheme::VsCode, CodeTheme::Dracula];
+    pub const DARK: [CodeTheme; 10] = [CodeTheme::Claude, CodeTheme::Github, CodeTheme::GithubHighContrast, CodeTheme::One, CodeTheme::Solarized, CodeTheme::Catppuccin, CodeTheme::VsCode, CodeTheme::Vitesse, CodeTheme::Min, CodeTheme::Dracula];
 
     pub fn value(self) -> &'static str {
         match self {
@@ -35,6 +38,9 @@ impl CodeTheme {
             CodeTheme::Solarized => "solarized",
             CodeTheme::Catppuccin => "catppuccin",
             CodeTheme::VsCode => "vs-code",
+            CodeTheme::GithubHighContrast => "github-high-contrast",
+            CodeTheme::Vitesse => "vitesse",
+            CodeTheme::Min => "min",
             CodeTheme::Dracula => "dracula",
         }
     }
@@ -58,6 +64,12 @@ impl CodeTheme {
             (CodeTheme::Catppuccin, true) => "Catppuccin Mocha",
             (CodeTheme::VsCode, false) => "VS Code Light",
             (CodeTheme::VsCode, true) => "VS Code Dark",
+            (CodeTheme::GithubHighContrast, false) => "GitHub Light High Contrast",
+            (CodeTheme::GithubHighContrast, true) => "GitHub Dark High Contrast",
+            (CodeTheme::Vitesse, false) => "Vitesse Light",
+            (CodeTheme::Vitesse, true) => "Vitesse Dark",
+            (CodeTheme::Min, false) => "Min Light",
+            (CodeTheme::Min, true) => "Min Dark",
             (CodeTheme::Dracula, _) => "Dracula",
         }
     }
@@ -77,6 +89,12 @@ impl CodeTheme {
             (CodeTheme::Catppuccin, true) => ["#6c7086", "#cba6f7", "#a6e3a1", "#fab387", "#89b4fa", "#f9e2af"],
             (CodeTheme::VsCode, false) => ["#008000", "#0000ff", "#a31515", "#098658", "#795e26", "#267f99"],
             (CodeTheme::VsCode, true) => ["#6a9955", "#569cd6", "#ce9178", "#b5cea8", "#dcdcaa", "#4ec9b0"],
+            (CodeTheme::GithubHighContrast, false) => ["#66707b", "#a0111f", "#032563", "#023b95", "#622cbc", "#702c00"],
+            (CodeTheme::GithubHighContrast, true) => ["#bdc4cc", "#ff9492", "#addcff", "#91cbff", "#dbb7ff", "#ffb757"],
+            (CodeTheme::Vitesse, false) => ["#a0ada0", "#1e754f", "#b56959", "#2f798a", "#59873a", "#2e8f82"],
+            (CodeTheme::Vitesse, true) => ["#758575", "#4d9375", "#c98a7d", "#4c9a91", "#80a665", "#5da9a7"],
+            (CodeTheme::Min, false) => ["#c2c3c5", "#d32f2f", "#22863a", "#1976d2", "#6f42c1", "#1976d2"],
+            (CodeTheme::Min, true) => ["#6b737c", "#f97583", "#ffab70", "#f8f8f8", "#b392f0", "#79b8ff"],
             (CodeTheme::Dracula, false) => return None,
             (CodeTheme::Dracula, true) => ["#6272a4", "#ff79c6", "#f1fa8c", "#bd93f9", "#50fa7b", "#8be9fd"],
         })

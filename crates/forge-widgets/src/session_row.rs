@@ -238,11 +238,21 @@ pub fn SessionRow(
                     }
                 },
             };
+            let (drag_project, drag_session) = (project.clone(), session_id.clone());
+            let draggable = page.is_none() && depth == 0 && drag_session.is_some();
             rsx! {
                 div {
                     class: "sidebar-row",
                     style: "margin-left: {fork_indent(depth)}px",
                     title: "{plan_hint}",
+                    // A sidebar row can be dragged onto the `고정됨` group to pin it.
+                    draggable: if draggable { "true" } else { "false" },
+                    ondragstart: move |_| {
+                        if let Some(session) = drag_session.clone() {
+                            workspace.set_pin_drag(Some((drag_project.clone(), session)));
+                        }
+                    },
+                    ondragend: move |_| workspace.set_pin_drag(None),
                     {item}
                     if menu_open {
                         // A click anywhere outside closes the menu, as the filter menu's does.

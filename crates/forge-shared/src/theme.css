@@ -1666,6 +1666,8 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .env-variables { box-sizing: border-box; width: 100%; min-height: 180px; padding: var(--sp-10); border: 1px solid var(--border); border-radius: var(--r-10); font-family: var(--mono, monospace); font-size: var(--text-base); background: transparent; color: inherit; resize: vertical; }
 .env-buttons { display: flex; align-items: center; gap: var(--sp-8); margin-top: var(--sp-18); }
 .env-buttons .spacer { flex: 1; }
+.pinned-group.drop-target { border: 1px dashed var(--border); border-radius: var(--r-6); }
+.pin-drop-hint { padding: var(--sp-6) var(--sp-12); color: var(--fg-muted); font-size: var(--text-sm); }
 .changes-no-git { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-4); padding: var(--sp-24) var(--sp-16); text-align: center; }
 .changes-no-git-title { color: var(--fg); font-size: var(--text-base); }
 .changes-no-git-note { color: var(--fg-muted); font-size: var(--text-sm); }
@@ -1902,3 +1904,9 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 
 /* The read mark before a sent message's time (desktop app, 2026-11-06). */
 .read-mark { display: inline-flex; align-items: center; color: var(--fg-muted); }
+
+/* A desktop extension dragged over the connectors tab. */
+.extension-drop-hint { margin: var(--sp-4) 0 var(--sp-12); padding: var(--sp-10) var(--sp-12); border: 1px dashed var(--border); border-radius: var(--r-8); color: var(--fg-muted); font-size: var(--text-sm); text-align: center; transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
+.customize.drop-over .extension-drop-hint { border-color: var(--accent); background: var(--bg-hover); color: var(--fg); }
+/* Files dragged over the message box. */
+.composer.drop-over { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }

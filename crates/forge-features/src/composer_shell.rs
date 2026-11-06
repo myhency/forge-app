@@ -38,9 +38,34 @@ pub fn ComposerShell(
 ) -> Element {
     let workspace = crate::use_workspace();
     let dictation = workspace.dictation_available();
+    // Files dragged from the Finder onto the box are attached, as in the desktop app.
+    let composer = try_use_context::<crate::composer_state::ComposerState>();
+    let mut drop_over = use_signal(|| false);
     rsx! {
         div { class: "composer-wrap",
-            div { class: "composer", onkeydown: move |event| onkeydown.call(event),
+            div {
+                class: if drop_over() { "composer drop-over" } else { "composer" },
+                onkeydown: move |event| onkeydown.call(event),
+                ondragover: move |event| {
+                    // A sidebar row dragged across (to pin it) is not a file.
+                    if composer.is_some() && workspace.pin_drag().is_none() {
+                        event.prevent_default();
+                        if !drop_over() {
+                            drop_over.set(true);
+                        }
+                    }
+                },
+                ondragleave: move |_| drop_over.set(false),
+                ondrop: move |event| {
+                    drop_over.set(false);
+                    if let Some(composer) = composer {
+                        let paths: Vec<std::path::PathBuf> = event.data_transfer().files().iter().map(|file| file.path()).collect();
+                        if !paths.is_empty() {
+                            event.prevent_default();
+                            composer.add_dropped(paths);
+                        }
+                    }
+                },
                 {top}
                 div { class: "composer-input-row",
                     div { class: "composer-lead", {leading} }

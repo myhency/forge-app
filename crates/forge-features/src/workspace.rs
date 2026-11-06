@@ -246,6 +246,8 @@ pub struct Workspace {
     change_count_tickets: Signal<HashMap<LiveSessionId, u64>>,
     /// The Outputs card's files per session, and the ticket of its latest read.
     outputs: Signal<OutputsStore>,
+    /// The session row being dragged, for the `고정됨` group to take it.
+    pin_drag: Signal<Option<(PathBuf, SessionId)>>,
     /// Dev servers each session started in the background (see `use_dev_server`).
     background_servers: Signal<HashMap<LiveSessionId, Vec<BackgroundServer>>>,
     /// The `@` mention's file list per session.
@@ -353,6 +355,7 @@ pub fn use_workspace_provider() -> Workspace {
             change_counts: root_signal(HashMap::new()),
             change_count_tickets: root_signal(HashMap::new()),
             outputs: root_signal(OutputsStore::default()),
+            pin_drag: root_signal(None),
             background_servers: root_signal(HashMap::new()),
             file_lists: root_signal(FileListStore::default()),
             outside_file: root_signal(None),
@@ -488,6 +491,29 @@ impl Workspace {
     /// Whether the session is pinned (`고정`).
     pub fn is_pinned(&self, project: &Path, session: &SessionId) -> bool {
         self.prefs.read().pinned.iter().any(|pin| pin.project == project && pin.session_id == session.0)
+    }
+
+    /// A session row's drag started (`Some`) or ended (`None`).
+    pub fn set_pin_drag(&self, dragged: Option<(PathBuf, SessionId)>) {
+        let mut drag = self.pin_drag;
+        if *drag.peek() != dragged {
+            drag.set(dragged);
+        }
+    }
+
+    pub fn pin_drag(&self) -> Option<(PathBuf, SessionId)> {
+        self.pin_drag.read().clone()
+    }
+
+    /// A row dropped on the `고정됨` group: it is pinned (the desktop app's `드래그하여 고정`).
+    pub fn drop_to_pin(&self) {
+        let dragged = self.pin_drag.peek().clone();
+        self.set_pin_drag(None);
+        if let Some((project, session)) = dragged {
+            if !self.is_pinned(&project, &session) {
+                self.toggle_pin(project, session);
+            }
+        }
     }
 
     /// Pins or unpins a session; pinned sessions sit in the `고정됨` group at the top of the sidebar.
@@ -1805,22 +1831,32 @@ impl Workspace {
     }
 
     /// What became of a session's proposed-session cards.
+    /// What was done with the session's proposal cards: this run's marks over the ones kept from earlier runs.
     pub fn offer_marks(&self, id: LiveSessionId) -> HashMap<String, forge_entities::OfferMark> {
-        self.offer_marks.read().get(&id).cloned().unwrap_or_default()
+        let mut marks: HashMap<String, forge_entities::OfferMark> = HashMap::new();
+        if let Some(session) = self.live_view(id).and_then(|view| view.peek().claude_session_id.clone()) {
+            for kept in self.prefs.read().offer_marks.iter().filter(|kept| kept.session_id == session.0) {
+                if let Some(mark) = offer_mark_from(&kept.mark) {
+                    marks.insert(kept.call_id.clone(), mark);
+                }
+            }
+        }
+        marks.extend(self.offer_marks.read().get(&id).cloned().unwrap_or_default());
+        marks
     }
 
     /// The proposals open sessions are waiting on (no card button pressed yet), newest session first:
     /// the new-session screen's chips.
     pub fn pending_offers(&self) -> Vec<(LiveSessionId, forge_entities::SessionOffer)> {
-        let marks = self.offer_marks.read();
         let started = self.offer_sessions.read();
         let mut out = Vec::new();
         for (id, view) in self.live_views().into_iter().rev() {
             if self.is_routine_session(id) {
                 continue;
             }
+            let marks = self.offer_marks(id);
             for offer in forge_entities::open_offers(&view.read().session.messages) {
-                let handled = marks.get(&id).is_some_and(|marks| marks.contains_key(&offer.id)) || started.contains_key(&(id, offer.id.clone()));
+                let handled = marks.contains_key(&offer.id) || started.contains_key(&(id, offer.id.clone()));
                 if !handled {
                     out.push((id, offer));
                 }
@@ -1851,6 +1887,17 @@ impl Workspace {
     }
 
     fn mark_offer(&self, id: LiveSessionId, call_id: String, mark: forge_entities::OfferMark) {
+        // Kept in the preferences too, so the card stays handled after a restart.
+        if let Some(session) = self.live_view(id).and_then(|view| view.peek().claude_session_id.clone()) {
+            let call = call_id.clone();
+            self.update_prefs(move |prefs| {
+                prefs.offer_marks.retain(|kept| !(kept.session_id == session.0 && kept.call_id == call));
+                prefs.offer_marks.push(forge_domain::OfferMarkRef { session_id: session.0.clone(), call_id: call.clone(), mark: offer_mark_name(mark).to_string() });
+                // The oldest go first past a few hundred: a card from long ago needs no memory.
+                let excess = prefs.offer_marks.len().saturating_sub(500);
+                prefs.offer_marks.drain(..excess);
+            });
+        }
         let mut marks = self.offer_marks;
         marks.write().entry(id).or_default().insert(call_id, mark);
     }
@@ -1941,8 +1988,6 @@ impl Workspace {
                         }
                     }
                 }
-                let services = (*self.services.peek()).clone();
-                let project = ProjectSummary { path: project_path, last_active: String::new(), session_count: 0, exists: true };
                 // A title-only offer is the person's own request: the new session starts with their words.
                 // It is framed so the new session does the work rather than splitting it off again.
                 let brief = if offer.brief.is_empty() {
@@ -1951,26 +1996,64 @@ impl Workspace {
                 } else {
                     offer.brief.clone()
                 };
-                match services.registry.open_new_with_effort(&project, mode, model, effort, Vec::new()) {
-                    Ok(handle) => {
-                        let child = self.attach(handle.clone());
-                        if let Some(plan) = plan {
-                            if !plan.env.0.is_empty() {
-                                handle.set_env(plan.env.clone());
-                            }
-                            if !plan.extra.is_empty() {
-                                handle.add_directories(plan.extra.clone());
-                            }
-                        }
-                        handle.send_with(brief, Vec::new());
-                        let mut sessions = self.offer_sessions;
-                        sessions.write().insert((id, offer.id.clone()), child);
-                        self.mark_offer(id, offer.id.clone(), OfferMark::Started);
-                        self.report_back_when_done(id, child, offer.title);
-                    }
-                    Err(error) => self.report(error.to_string()),
+                let wants_worktree = offer.start_with.as_ref().is_some_and(|start| start.worktree && start.environment.is_empty());
+                if !wants_worktree {
+                    return self.start_offer_session(id, offer, project_path, mode, model, effort, plan, brief);
                 }
+                // `워크트리` in `옵션`: a new worktree first, then the session in it. A session that already
+                // runs in a worktree makes the new one from its repository, not inside its own worktree.
+                let project_path = self.worktrees.peek().iter().find(|record| record.path == project_path).map(|record| record.repo.clone()).unwrap_or(project_path);
+                let this = *self;
+                let services = (*self.services.peek()).clone();
+                dioxus::core::spawn_forever(async move {
+                    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_nanos() as u64).unwrap_or(0);
+                    let created_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis() as i64).unwrap_or(0);
+                    match services.worktrees.create(&project_path, None, &offer.title, seed, created_at).await {
+                        Ok(record) => {
+                            let mut records = this.worktrees;
+                            records.write().push(record.clone());
+                            this.start_offer_session(id, offer, record.path, mode, model, effort, plan, brief);
+                        }
+                        Err(error) => this.report(tr!("Could not create the worktree: {error}", error = crate::worktree_view::creation_error_text(&error))),
+                    }
+                });
             }
+        }
+    }
+
+    // Opens the session a proposal card's Start asked for, in `folder`, sends it the brief and marks the card.
+    #[allow(clippy::too_many_arguments)]
+    fn start_offer_session(
+        &self,
+        id: LiveSessionId,
+        offer: forge_entities::SessionOffer,
+        folder: PathBuf,
+        mode: PermissionMode,
+        model: Option<String>,
+        effort: Option<EffortLevel>,
+        plan: Option<crate::EnvironmentStart>,
+        brief: String,
+    ) {
+        let services = (*self.services.peek()).clone();
+        let project = ProjectSummary { path: folder, last_active: String::new(), session_count: 0, exists: true };
+        match services.registry.open_new_with_effort(&project, mode, model, effort, Vec::new()) {
+            Ok(handle) => {
+                let child = self.attach(handle.clone());
+                if let Some(plan) = plan {
+                    if !plan.env.0.is_empty() {
+                        handle.set_env(plan.env.clone());
+                    }
+                    if !plan.extra.is_empty() {
+                        handle.add_directories(plan.extra.clone());
+                    }
+                }
+                handle.send_with(brief, Vec::new());
+                let mut sessions = self.offer_sessions;
+                sessions.write().insert((id, offer.id.clone()), child);
+                self.mark_offer(id, offer.id.clone(), forge_entities::OfferMark::Started);
+                self.report_back_when_done(id, child, offer.title);
+            }
+            Err(error) => self.report(error.to_string()),
         }
     }
 
@@ -4439,6 +4522,15 @@ fn plan_text_of_view(view: &LiveSessionView) -> Option<String> {
 
 #[cfg(test)]
 mod plan_text_tests {
+    #[test]
+    fn a_proposal_cards_mark_is_kept_under_a_name_and_read_back() {
+        use forge_entities::OfferMark;
+        for mark in [OfferMark::Dismissed, OfferMark::Here, OfferMark::Started, OfferMark::Drafted] {
+            assert_eq!(super::offer_mark_from(super::offer_mark_name(mark)), Some(mark));
+        }
+        assert_eq!(super::offer_mark_from("?"), None);
+    }
+
     use std::collections::VecDeque;
 
     use forge_domain::{Block, Message, PermissionRequest, ToolCall};
@@ -4521,6 +4613,26 @@ pub fn effort_value(level: forge_domain::EffortLevel) -> &'static str {
         forge_domain::EffortLevel::High => "high",
         forge_domain::EffortLevel::XHigh => "xhigh",
         forge_domain::EffortLevel::Max => "max",
+    }
+}
+
+/// The name a proposal card's mark is kept under in the preferences.
+fn offer_mark_name(mark: forge_entities::OfferMark) -> &'static str {
+    match mark {
+        forge_entities::OfferMark::Dismissed => "dismissed",
+        forge_entities::OfferMark::Here => "here",
+        forge_entities::OfferMark::Started => "started",
+        forge_entities::OfferMark::Drafted => "drafted",
+    }
+}
+
+fn offer_mark_from(name: &str) -> Option<forge_entities::OfferMark> {
+    match name {
+        "dismissed" => Some(forge_entities::OfferMark::Dismissed),
+        "here" => Some(forge_entities::OfferMark::Here),
+        "started" => Some(forge_entities::OfferMark::Started),
+        "drafted" => Some(forge_entities::OfferMark::Drafted),
+        _ => None,
     }
 }
 

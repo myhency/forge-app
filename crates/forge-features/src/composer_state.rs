@@ -169,6 +169,15 @@ impl ComposerState {
         });
     }
 
+    /// Files dragged onto the box become chips, as picked ones do; a dragged folder is left out.
+    pub fn add_dropped(&self, paths: Vec<PathBuf>) {
+        let files: Vec<PathBuf> = paths.into_iter().filter(|path| !path.is_dir()).collect();
+        if !files.is_empty() {
+            let mut attachments = self.attachments;
+            add_attachments(&mut attachments.write(), files);
+        }
+    }
+
     /// Opens the folder dialog. A trusted folder (or one below it) becomes a chip at once; any other
     /// is held in `pending_trust` until the person answers the card.
     pub fn add_folder(&self) {
