@@ -391,6 +391,18 @@ pub fn SessionRow(
                                     span { class: "menu-key", "F" }
                                 }
                             }
+                            // The desktop app's `중첩된 세션 숨기기` (observed 2026-11-06): the same fold as the chevron.
+                            if let (true, Some(fold_id)) = (fork_count > 0, fold_id.clone()) {
+                                button {
+                                    class: "row-menu-item",
+                                    onclick: move |_| {
+                                        workspace.update_prefs(|prefs| prefs.toggle_collapsed(&fold_id));
+                                        mode.set(RowMode::Normal);
+                                        refocus_workspace();
+                                    },
+                                    span { if forks_folded { {tr!("Show nested sessions")} } else { {tr!("Hide nested sessions")} } }
+                                }
+                            }
                             if actions.archive != ArchiveAction::Unavailable {
                                 button {
                                     class: "row-menu-item",
