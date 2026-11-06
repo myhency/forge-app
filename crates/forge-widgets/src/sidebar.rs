@@ -260,9 +260,9 @@ pub fn Sidebar() -> Element {
                                 FilterButton {}
                             }
                         },
-                        Heading::Status(marker) => rsx! {
+                        Heading::Status(status) => rsx! {
                             div { class: "sidebar-group-header",
-                                {group_toggle(workspace, &group.id, group.collapsed, forge_features::status_heading(*marker).to_string(), String::new(), false)}
+                                {group_toggle(workspace, &group.id, group.collapsed, forge_features::status_heading(*status).to_string(), String::new(), false)}
                                 FilterButton {}
                             }
                         },

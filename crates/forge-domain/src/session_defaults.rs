@@ -21,6 +21,8 @@ pub struct SessionDefaults {
     pub desktop_control: bool,
     /// What Claude does when the person asks for something unrelated to the session's work.
     pub unrelated_task: UnrelatedTask,
+    /// Claude sorts the session into blocked, ready for review or done after each turn.
+    pub classify_status: bool,
 }
 
 /// The desktop app's `관련 없는 작업을 요청할 때` (Settings → Claude Code, observed 2026-11-06):
@@ -60,13 +62,13 @@ impl UnrelatedTask {
 
 impl Default for SessionDefaults {
     fn default() -> Self {
-        Self { output_style: None, auto_mode_model: None, prompt_suggestions: true, allow_bypass: false, dynamic_workflows: false, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false, unrelated_task: UnrelatedTask::Ask }
+        Self { output_style: None, auto_mode_model: None, prompt_suggestions: true, allow_bypass: false, dynamic_workflows: false, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false, unrelated_task: UnrelatedTask::Ask, classify_status: true }
     }
 }
 
 impl SessionDefaults {
     pub fn from_config(config: &AppConfig) -> Self {
-        Self { output_style: config.output_style, auto_mode_model: config.auto_mode_model, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, auto_memory: config.auto_memory, turn_tools: config.turn_tools, generative_ui: config.generative_ui, desktop_control: config.desktop_control, unrelated_task: config.unrelated_task }
+        Self { output_style: config.output_style, auto_mode_model: config.auto_mode_model, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, auto_memory: config.auto_memory, turn_tools: config.turn_tools, generative_ui: config.generative_ui, desktop_control: config.desktop_control, unrelated_task: config.unrelated_task, classify_status: config.classify_sessions }
     }
 }
 
@@ -98,7 +100,7 @@ mod tests {
         let config = AppConfig { output_style: Some(OutputStyle::Learning), auto_mode_model: None, prompt_suggestions: false, allow_bypass_mode: true, dynamic_workflows: true, ..AppConfig::default() };
         assert_eq!(
             SessionDefaults::from_config(&config),
-            SessionDefaults { output_style: Some(OutputStyle::Learning), auto_mode_model: None, prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false, unrelated_task: UnrelatedTask::Ask }
+            SessionDefaults { output_style: Some(OutputStyle::Learning), auto_mode_model: None, prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false, unrelated_task: UnrelatedTask::Ask, classify_status: true }
         );
     }
 }

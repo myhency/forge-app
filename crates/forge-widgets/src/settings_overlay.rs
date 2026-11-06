@@ -439,6 +439,11 @@ fn CodeSection() -> Element {
             Switch { on: settings.turn_tools(), onchange: move |on| settings.set_turn_tools(on) }
         }
         SettingRow {
+            title: tr!("Session status classification"),
+            description: tr!("Lets Claude sort sessions into blocked, ready for review or done on its own; the status grouping of the sidebar files them so. Sorting counts toward your plan usage. Applies to new sessions."),
+            Switch { on: settings.classify_sessions(), onchange: move |on| settings.set_classify_sessions(on) }
+        }
+        SettingRow {
             title: tr!("When you ask for unrelated work"),
             description: tr!("Whether Claude asks before starting a separate session, always works in the current one, or always starts a new session. Takes effect in new sessions."),
             Select {

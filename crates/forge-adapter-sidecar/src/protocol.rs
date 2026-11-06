@@ -34,6 +34,7 @@ pub enum SidecarCommand {
         generative_ui: bool,
         desktop_control: bool,
         unrelated_task: &'static str,
+        classify_status: bool,
     },
     SendMessage {
         id: String,
@@ -150,6 +151,7 @@ impl SidecarCommand {
             generative_ui: params.defaults.generative_ui,
             desktop_control: params.defaults.desktop_control,
             unrelated_task: params.defaults.unrelated_task.value(),
+            classify_status: params.defaults.classify_status,
         }
     }
 
@@ -261,6 +263,7 @@ mod tests {
             generative_ui: false,
             desktop_control: true,
             unrelated_task: forge_domain::UnrelatedTask::Ask,
+            classify_status: false,
         };
         let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params)).unwrap();
         assert_eq!(json["output_style"], serde_json::json!("Concise"));
@@ -387,7 +390,8 @@ mod tests {
                 "turn_tools": true,
                 "generative_ui": true,
                 "desktop_control": false,
-                "unrelated_task": "ask"
+                "unrelated_task": "ask",
+                "classify_status": true
             })
         );
     }

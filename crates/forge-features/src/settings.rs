@@ -60,6 +60,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::AutoMemory(on) => config.auto_memory = on,
         CodeChange::TurnTools(on) => config.turn_tools = on,
         CodeChange::UnrelatedTask(choice) => config.unrelated_task = choice,
+        CodeChange::ClassifySessions(on) => config.classify_sessions = on,
         CodeChange::GenerativeUi(on) => config.generative_ui = on,
         CodeChange::DesktopControl(on) => config.desktop_control = on,
         CodeChange::WorktreeLocation(value) => config.worktree_location = value,
@@ -117,6 +118,7 @@ pub(crate) enum CodeChange {
     AutoMemory(bool),
     TurnTools(bool),
     UnrelatedTask(forge_domain::UnrelatedTask),
+    ClassifySessions(bool),
     GenerativeUi(bool),
     DesktopControl(bool),
     WorktreeLocation(WorktreeLocation),
@@ -341,6 +343,14 @@ impl Settings {
 
     pub fn set_turn_tools(&self, on: bool) {
         self.change_code(CodeChange::TurnTools(on));
+    }
+
+    pub fn classify_sessions(&self) -> bool {
+        self.saved.read().classify_sessions
+    }
+
+    pub fn set_classify_sessions(&self, on: bool) {
+        self.change_code(CodeChange::ClassifySessions(on));
     }
 
     pub fn unrelated_task(&self) -> forge_domain::UnrelatedTask {
@@ -830,6 +840,7 @@ impl Settings {
             current.auto_memory = config.auto_memory;
             current.turn_tools = config.turn_tools;
             current.unrelated_task = config.unrelated_task;
+            current.classify_sessions = config.classify_sessions;
             current.generative_ui = config.generative_ui;
             current.desktop_control = config.desktop_control;
             current.worktree_location = config.worktree_location;

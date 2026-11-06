@@ -673,6 +673,11 @@ impl Actor {
                 }
             }
             SessionUpdate::AppRequest(request) => self.view.app_requests.push(request),
+            SessionUpdate::StatusClassified(status) => {
+                if status.is_some() {
+                    self.view.classified = status;
+                }
+            }
             SessionUpdate::SideAnswer { request_id, result } => {
                 if let Some(side) = self.view.side_thread.iter_mut().find(|side| side.id == request_id) {
                     side.answer = match result {

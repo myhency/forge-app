@@ -50,8 +50,9 @@ impl DateBucket {
 pub enum Heading {
     Project(ProjectSummary),
     Bucket(DateBucket),
-    /// Grouping by status: one group per thing a session can be doing.
-    Status(SessionMarker),
+    /// Grouping by status: one group per thing a session can be doing, an idle one split by what
+    /// Claude sorted it into.
+    Status(StatusGroup),
     /// Grouping by environment: the environment's name (the folder's name for a session in none).
     Environment(String),
     /// No grouping: one group, `Recent items`.
@@ -190,8 +191,37 @@ pub fn folder_group_id(path: &Path) -> String {
     format!("folder:{}", path.display())
 }
 
+/// A group of the status grouping: what a session is doing, and for an idle one what Claude last
+/// sorted it into (the desktop app's `세션 상태 분류`: 차단됨, 검토 준비됨, 완료됨).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusGroup {
+    NeedsInput,
+    Running,
+    Blocked,
+    Review,
+    Done,
+    Idle,
+}
+
 /// The groups of the status grouping, in the order they are drawn: what wants the person first.
-const STATUS_ORDER: [SessionMarker; 3] = [SessionMarker::NeedsAttention, SessionMarker::Running, SessionMarker::Idle];
+const STATUS_ORDER: [StatusGroup; 6] = [StatusGroup::NeedsInput, StatusGroup::Running, StatusGroup::Blocked, StatusGroup::Review, StatusGroup::Done, StatusGroup::Idle];
+
+/// Which status group a session falls in.
+fn status_group_of(entry: &SidebarEntry, prefs: &SidebarPrefs) -> StatusGroup {
+    match entry.marker {
+        SessionMarker::NeedsAttention => StatusGroup::NeedsInput,
+        SessionMarker::Running => StatusGroup::Running,
+        SessionMarker::Idle => {
+            let mark = entry.session_id.as_ref().and_then(|id| prefs.session_status.iter().find(|mark| mark.session_id == id.0));
+            match mark.map(|mark| mark.status) {
+                Some(forge_domain::SessionStatus::Blocked) => StatusGroup::Blocked,
+                Some(forge_domain::SessionStatus::Review) => StatusGroup::Review,
+                Some(forge_domain::SessionStatus::Done) => StatusGroup::Done,
+                None => StatusGroup::Idle,
+            }
+        }
+    }
+}
 
 /// What the group of the no-grouping list is called.
 pub fn recent_heading() -> &'static str {
@@ -199,19 +229,25 @@ pub fn recent_heading() -> &'static str {
 }
 
 /// What the status grouping calls a group.
-pub fn status_heading(marker: SessionMarker) -> &'static str {
-    match marker {
-        SessionMarker::NeedsAttention => tr!("Needs input"),
-        SessionMarker::Running => tr!("Running"),
-        SessionMarker::Idle => tr!("Idle"),
+pub fn status_heading(group: StatusGroup) -> &'static str {
+    match group {
+        StatusGroup::NeedsInput => tr!("Needs input"),
+        StatusGroup::Running => tr!("Running"),
+        StatusGroup::Blocked => tr!("Blocked"),
+        StatusGroup::Review => tr!("Ready for review"),
+        StatusGroup::Done => tr!("Done|status"),
+        StatusGroup::Idle => tr!("Idle"),
     }
 }
 
-fn status_group_id(marker: SessionMarker) -> String {
-    let slug = match marker {
-        SessionMarker::NeedsAttention => "needs-input",
-        SessionMarker::Running => "running",
-        SessionMarker::Idle => "idle",
+fn status_group_id(group: StatusGroup) -> String {
+    let slug = match group {
+        StatusGroup::NeedsInput => "needs-input",
+        StatusGroup::Running => "running",
+        StatusGroup::Blocked => "blocked",
+        StatusGroup::Review => "review",
+        StatusGroup::Done => "done",
+        StatusGroup::Idle => "idle",
     };
     format!("status:{slug}")
 }
@@ -449,10 +485,10 @@ fn arrange_filtered(
             sort_entries(&mut items, prefs.sort_by, prefs.reversed);
             STATUS_ORDER
                 .into_iter()
-                .filter_map(|marker| {
-                    let list: Vec<ArrangedEntry> = items.iter().filter(|item| item.entry.marker == marker).cloned().collect();
-                    // A status nobody is in has no heading: the idle group would otherwise be one of three empty ones.
-                    (!list.is_empty()).then(|| finish(status_group_id(marker), Heading::Status(marker), nest_forks(list, prefs, active), prefs, active))
+                .filter_map(|group| {
+                    let list: Vec<ArrangedEntry> = items.iter().filter(|item| status_group_of(&item.entry, prefs) == group).cloned().collect();
+                    // A status nobody is in has no heading.
+                    (!list.is_empty()).then(|| finish(status_group_id(group), Heading::Status(group), nest_forks(list, prefs, active), prefs, active))
                 })
                 .collect()
         }
@@ -584,7 +620,7 @@ mod tests {
             .map(|group| match &group.heading {
                 Heading::Project(project) => project.path.display().to_string(),
                 Heading::Bucket(bucket) => bucket.label().to_string(),
-                Heading::Status(marker) => status_heading(*marker).to_string(),
+                Heading::Status(group) => status_heading(*group).to_string(),
                 Heading::Environment(name) => name.clone(),
                 Heading::Recent => recent_heading().to_string(),
             })
@@ -607,6 +643,22 @@ mod tests {
         let only_idle = arrange(&[group("/a", vec![entry("idle", None, Some("2026-10-03T00:00:00Z"))])], &prefs(SortBy::Activity, GroupBy::Status), now(), None);
         assert_eq!(headings(&only_idle), ["Idle"]);
         assert_eq!(only_idle[0].id, "status:idle");
+    }
+
+    #[test]
+    fn an_idle_session_goes_under_what_claude_sorted_it_into() {
+        let mut blocked = entry("blocked", None, Some("2026-10-03T00:00:00Z"));
+        blocked.session_id = Some(forge_domain::SessionId("b".into()));
+        let mut done = entry("done", None, Some("2026-10-02T00:00:00Z"));
+        done.session_id = Some(forge_domain::SessionId("d".into()));
+        let plain = entry("plain", None, Some("2026-10-01T00:00:00Z"));
+        let mut prefs = prefs(SortBy::Activity, GroupBy::Status);
+        prefs.session_status = vec![
+            forge_domain::StatusMark { session_id: "b".into(), status: forge_domain::SessionStatus::Blocked },
+            forge_domain::StatusMark { session_id: "d".into(), status: forge_domain::SessionStatus::Done },
+        ];
+        let arranged = arrange(&[group("/a", vec![plain, done, blocked])], &prefs, now(), None);
+        assert_eq!(headings(&arranged), ["Blocked", "Done", "Idle"]);
     }
 
     #[test]

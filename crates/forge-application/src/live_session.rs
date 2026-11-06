@@ -83,6 +83,8 @@ pub struct LiveSessionView {
     pub side_thread: Vec<SideQuestion>,
     /// App tool calls waiting for the app's answer (list_sessions, set_pinned, ...).
     pub app_requests: Vec<AppRequest>,
+    /// What Claude sorted the session into after its last turn (`세션 상태 분류`).
+    pub classified: Option<forge_domain::SessionStatus>,
     /// The `/rewind` the person is looking at: a preview of what would change, then the result.
     pub rewind: Option<RewindState>,
 }
@@ -403,6 +405,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         rate_limit: None,
         side_thread: Vec::new(),
         app_requests: Vec::new(),
+        classified: None,
         rewind: None,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
@@ -516,7 +519,7 @@ mod tests {
 
         assert_eq!(
             started_defaults(control.calls()),
-            SessionDefaults { output_style: Some(OutputStyle::Concise), auto_mode_model: None, prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false, unrelated_task: forge_domain::UnrelatedTask::Ask }
+            SessionDefaults { output_style: Some(OutputStyle::Concise), auto_mode_model: None, prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false, unrelated_task: forge_domain::UnrelatedTask::Ask, classify_status: true }
         );
     }
 

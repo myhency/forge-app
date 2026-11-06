@@ -116,6 +116,14 @@ pub fn use_session_notices(workspace: Workspace, settings: Settings) {
                 before.retain(|id, _| views.iter().any(|(open, _)| open == id));
                 for (id, view) in views {
                     workspace.start_requested_offers(id);
+                    // What Claude sorted the session into after its turn (`세션 상태 분류`).
+                    let classified = {
+                        let view = view.peek();
+                        view.classified.zip(view.claude_session_id.clone())
+                    };
+                    if let Some((status, session)) = classified {
+                        workspace.mark_session_status(&session, status);
+                    }
                     // Claude's calls to the app's own tools (list_sessions, set_pinned, ...).
                     if !view.peek().app_requests.is_empty() {
                         workspace.serve_app_requests(id, &settings.saved_config());

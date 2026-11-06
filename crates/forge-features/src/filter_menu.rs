@@ -372,6 +372,7 @@ mod tests {
             pinned: Vec::new(),
             chapter_pins: Vec::new(),
             hidden_links: Vec::new(),
+            session_status: Vec::new(),
         };
 
         FilterChoice::Reset.apply(&mut prefs);

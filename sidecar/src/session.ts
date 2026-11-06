@@ -11,6 +11,17 @@ import type { SidecarCommand, SidecarEvent, WireAvailableModel, WireEffort, Wire
 
 // The model Forge shows as `Default` in its picker (forge-entities model_catalog.rs DEFAULT_MODEL_ID). With no model
 // given the SDK picks its own (the packaged app got Opus), so the default is named here.
+/** The side question that sorts a session after a turn (the desktop app's `세션 상태 분류`: 차단됨,
+ *  검토 준비됨, 완료됨). It is not added to the conversation. */
+export const CLASSIFY_PROMPT =
+  "Sort this session for the user's sidebar by where it stands now. Reply with exactly one word: blocked (you cannot go on without the user: a question, a decision, an approval or missing access), review (the work is finished and waits for the user to look at or test it), or done (the request is fully answered and nothing is pending).";
+
+/** The status a reply names, or null when it names none. */
+export function parseStatus(reply: string): "blocked" | "review" | "done" | null {
+  const word = reply.trim().toLowerCase().match(/blocked|review|done/);
+  return word ? (word[0] as "blocked" | "review" | "done") : null;
+}
+
 // How long an app tool waits for the app before it gives up.
 const APP_ANSWER_TIMEOUT_MS = 60_000;
 const DEFAULT_MODEL = "claude-sonnet-5-5";
@@ -175,6 +186,8 @@ export class SidecarSession {
   private pendingPermissions = new Map<string, PendingPermission>();
   // App tool calls waiting for the app's answer, by request id.
   private pendingApp = new Map<string, (answer: AppAnswer) => void>();
+  // Sort the session after each turn (`세션 상태 분류`).
+  private classifyStatus = false;
   private abortController = new AbortController();
   private started = false;
   private shuttingDown = false;
@@ -378,6 +391,19 @@ export class SidecarSession {
     }
   }
 
+  /** Sorts the session after a turn and says so with `session_status`; quiet when it cannot. */
+  private async classify(): Promise<void> {
+    const query = this.activeQuery;
+    if (!query?.askSideQuestion) return;
+    try {
+      const result = await query.askSideQuestion(CLASSIFY_PROMPT);
+      const status = parseStatus(result?.response ?? "");
+      if (status) this.emit({ type: "session_status", status });
+    } catch {
+      // A failed sort leaves the last one standing.
+    }
+  }
+
   private async askSide(requestId: string, question: string): Promise<void> {
     const query = await this.queryReady();
     if (!query?.askSideQuestion) {
@@ -459,6 +485,7 @@ export class SidecarSession {
 
   private async run(command: Extract<SidecarCommand, { type: "start_session" }>): Promise<void> {
     const turnTools = command.turn_tools === true;
+    this.classifyStatus = command.classify_status === true;
     const generativeUi = command.generative_ui === true;
     // Forge's own tools never ask. They are approved here, not in `allowedTools`, because the SDK warns
     // that a bare `allowedTools` entry shadows `canUseTool`.
@@ -869,6 +896,7 @@ export class SidecarSession {
         // total, includes helper models and sub-agents, and after a resume already holds the
         // earlier turns (spec §20.10).
         this.emit({ type: "turn_complete", usage: turnUsage(this.mainModel, message.usage, this.pendingSearches) });
+        if (this.classifyStatus) void this.classify();
         this.mainModel = null;
         this.pendingSearches = 0;
         this.turnDetailSent = false;

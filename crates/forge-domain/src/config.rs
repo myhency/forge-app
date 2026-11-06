@@ -98,6 +98,37 @@ pub struct SidebarPrefs {
     /// Top rows the person took off the sidebar with `사이드바 편집` (`scheduled`, `customize`).
     #[serde(default)]
     pub hidden_links: Vec<String>,
+    /// What Claude last sorted each session into (`세션 상태 분류`), by session id.
+    #[serde(default)]
+    pub session_status: Vec<StatusMark>,
+}
+
+/// The state Claude sorts an idle session into (the desktop app's `세션 상태 분류`: 차단됨, 검토
+/// 준비됨, 완료됨).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionStatus {
+    Blocked,
+    Review,
+    Done,
+}
+
+impl SessionStatus {
+    pub fn from_value(value: &str) -> Option<SessionStatus> {
+        match value.trim().trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase().as_str() {
+            "blocked" => Some(SessionStatus::Blocked),
+            "review" => Some(SessionStatus::Review),
+            "done" => Some(SessionStatus::Done),
+            _ => None,
+        }
+    }
+}
+
+/// One session's last classification.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatusMark {
+    pub session_id: String,
+    pub status: SessionStatus,
 }
 
 /// A chapter the person set on an answer: the session, the id of the message that began the turn,
@@ -125,6 +156,7 @@ impl Default for SidebarPrefs {
             pinned: Vec::new(),
             chapter_pins: Vec::new(),
             hidden_links: Vec::new(),
+            session_status: Vec::new(),
         }
     }
 }
@@ -388,6 +420,9 @@ pub struct AppConfig {
     /// What Claude does when asked for something unrelated to the session's work.
     #[serde(default, deserialize_with = "lenient")]
     pub unrelated_task: crate::UnrelatedTask,
+    /// Claude sorts a session into blocked, ready for review or done after each turn.
+    #[serde(default = "default_true", deserialize_with = "lenient")]
+    pub classify_sessions: bool,
     /// Whether Claude gets the `generate_sandboxed_ui` tool: an interactive page drawn in the chat.
     #[serde(default = "default_generative_ui")]
     pub generative_ui: bool,
@@ -496,6 +531,7 @@ impl Default for AppConfig {
             auto_memory: true,
             turn_tools: true,
             unrelated_task: crate::UnrelatedTask::Ask,
+            classify_sessions: true,
             generative_ui: default_generative_ui(),
             desktop_control: false,
             appearance: Appearance::default(),
@@ -693,6 +729,7 @@ mod tests {
             pinned: Vec::new(),
             chapter_pins: Vec::new(),
             hidden_links: Vec::new(),
+            session_status: Vec::new(),
         };
         let config = AppConfig { sidebar: prefs.clone(), ..AppConfig::default() };
 

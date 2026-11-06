@@ -281,6 +281,7 @@ mod tests {
             rate_limit: None,
             side_thread: Vec::new(),
             app_requests: Vec::new(),
+            classified: None,
             rewind: None,
         }
     }

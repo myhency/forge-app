@@ -492,6 +492,20 @@ impl Workspace {
         });
     }
 
+    /// Keeps what Claude sorted a session into (`세션 상태 분류`), so the status grouping can file
+    /// it after a restart too. Writes only when it changed.
+    pub fn mark_session_status(&self, session: &SessionId, status: forge_domain::SessionStatus) {
+        let known = self.prefs.peek().session_status.iter().any(|mark| mark.session_id == session.0 && mark.status == status);
+        if known {
+            return;
+        }
+        let id = session.0.clone();
+        self.update_prefs(|prefs| {
+            prefs.session_status.retain(|mark| mark.session_id != id);
+            prefs.session_status.push(forge_domain::StatusMark { session_id: id, status });
+        });
+    }
+
     /// The chapters the person pinned in a session: (the id of the message that began the turn, the heading).
     pub fn chapter_pins(&self, session: &SessionId) -> Vec<(String, String)> {
         self.prefs.read().chapter_pins.iter().filter(|pin| pin.session_id == session.0).map(|pin| (pin.anchor.clone(), pin.title.clone())).collect()
@@ -4199,6 +4213,7 @@ mod plan_text_tests {
             rate_limit: None,
             side_thread: Vec::new(),
             app_requests: Vec::new(),
+            classified: None,
             rewind: None,
         }
     }

@@ -69,6 +69,8 @@ export type SidecarCommand =
       desktop_control?: boolean;
       // What Claude does when asked for unrelated work: "ask" (omitted), "here" or "new_session".
       unrelated_task?: string;
+      // After each turn, sort the session into blocked / review / done (a parent that omits it means off).
+      classify_status?: boolean;
     }
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision; reason?: string }
@@ -162,6 +164,8 @@ export type SidecarEvent =
   | { type: "models_available"; models: WireAvailableModel[] }
   | { type: "setting_failed"; message: string }
   | { type: "error"; message: string }
+  // What the session was sorted into after a turn (`세션 상태 분류`).
+  | { type: "session_status"; status: "blocked" | "review" | "done" }
   // Claude called one of the app's tools (list_sessions, set_pinned, ...): the app answers with `app_response`.
   | { type: "app_request"; request_id: string; tool: string; input: Record<string, unknown> }
   | { type: "session_ended" };

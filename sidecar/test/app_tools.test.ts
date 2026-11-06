@@ -31,4 +31,13 @@ describe("app tools", () => {
     await session.handle({ type: "app_response", id: "1", request_id: (request as { request_id: string }).request_id, output: "{}", is_error: false });
     await expect(pending).resolves.toEqual({ output: "{}", is_error: false });
   });
+
+  it("read the status out of a classification reply", async () => {
+    const { parseStatus, CLASSIFY_PROMPT } = await import("../src/session.js");
+    expect(parseStatus("Done.")).toBe("done");
+    expect(parseStatus("  review ")).toBe("review");
+    expect(parseStatus("I think it is blocked")).toBe("blocked");
+    expect(parseStatus("unclear")).toBeNull();
+    expect(CLASSIFY_PROMPT).toContain("exactly one word");
+  });
 });

@@ -145,6 +145,8 @@ pub enum SidecarEvent {
     },
     /// The person stopped the turn (the SDK wrote its interrupt line).
     Interrupted,
+    /// What Claude sorted the session into after a turn (`blocked`, `review`, `done`).
+    SessionStatus { status: String },
     /// Claude called one of the app's tools (list_sessions, set_pinned, ...); the app answers with
     /// `answer_app_request` and the same `request_id`.
     AppRequest {
