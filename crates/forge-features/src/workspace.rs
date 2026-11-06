@@ -3037,6 +3037,25 @@ impl Workspace {
     }
 
     /// Opens a new session in `project`, on the saved default model, and sends its first message.
+    /// The search palette's compose mode (`작성 Tab`, observed 2026-11-06): starts a new session with
+    /// this text at once, in the folder the new-session page would use, with the default mode and
+    /// the saved model. Says so when there is no folder to start in.
+    pub fn start_from_palette(&self, text: String) {
+        if text.trim().is_empty() {
+            return;
+        }
+        let projects = self.new_session_projects();
+        let project = match self.new_folder() {
+            Some(path) => projects.iter().find(|project| project.path == path).cloned().or_else(|| projects.first().cloned()),
+            None => projects.first().cloned(),
+        };
+        let Some(project) = project else {
+            return self.report(tr!("Choose a folder on the new session page first.").to_string());
+        };
+        self.close_search();
+        self.start_new(project, PermissionMode::Default, None, None, text, Vec::new(), Vec::new(), None, None, false);
+    }
+
     pub fn start_new(
         &self,
         project: ProjectSummary,

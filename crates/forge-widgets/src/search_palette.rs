@@ -61,6 +61,9 @@ fn PaletteBody() -> Element {
     let routines = use_routines();
     let mut highlight = use_signal(|| 0usize);
     let mut tab = use_signal(|| Tab::All);
+    // `작성` mode (Tab): the box takes a message that starts a new session.
+    let mut compose = use_signal(|| false);
+    let mut draft = use_signal(String::new);
     let query = workspace.search_query();
     let needle = query.trim().to_lowercase();
     let matches = |text: &str| needle.is_empty() || text.to_lowercase().contains(&needle);
@@ -128,6 +131,35 @@ fn PaletteBody() -> Element {
         div { class: "palette-backdrop", onclick: move |_| workspace.close_search(),
             div { class: "palette", onclick: move |event| event.stop_propagation(),
                 div { class: "palette-input-row",
+                    if compose() {
+                        input {
+                            class: "palette-input",
+                            r#type: "text",
+                            value: "{draft}",
+                            placeholder: tr!("Type a message..."),
+                            spellcheck: "false",
+                            onmounted: move |mounted| async move {
+                                let _ = mounted.set_focus(true).await;
+                            },
+                            oninput: move |event| draft.set(event.value()),
+                            onkeydown: move |event: KeyboardEvent| match event.key() {
+                                Key::Escape => {
+                                    event.stop_propagation();
+                                    workspace.close_search();
+                                }
+                                Key::Tab => {
+                                    event.prevent_default();
+                                    compose.set(false);
+                                }
+                                Key::Enter if !event.is_composing() => {
+                                    event.prevent_default();
+                                    event.stop_propagation();
+                                    workspace.start_from_palette(draft.peek().clone());
+                                }
+                                _ => {}
+                            },
+                        }
+                    } else {
                     input {
                         class: "palette-input",
                         r#type: "text",
@@ -158,6 +190,11 @@ fn PaletteBody() -> Element {
                                     event.stop_propagation();
                                     highlight.set(selected.saturating_sub(1));
                                 }
+                                // The desktop app's `작성 Tab`: write a message for a new session instead.
+                                Key::Tab => {
+                                    event.prevent_default();
+                                    compose.set(true);
+                                }
                                 // The desktop app's `유형 변경 ←→`.
                                 Key::ArrowLeft if !event.is_composing() => {
                                     event.prevent_default();
@@ -179,6 +216,7 @@ fn PaletteBody() -> Element {
                             }
                         },
                     }
+                    }
                     button {
                         class: "palette-close",
                         title: tr!("Close"),
@@ -186,6 +224,7 @@ fn PaletteBody() -> Element {
                         Icon { kind: IconKind::Close, size: IconSize::Small }
                     }
                 }
+                if !compose() {
                 div { class: "palette-tabs", role: "tablist",
                     for item in Tab::ALL {
                         button {
@@ -238,10 +277,19 @@ fn PaletteBody() -> Element {
                         div { class: "state-empty", {tr!("No results")} }
                     }
                 }
+                }
+                if compose() {
+                    div { class: "palette-footer",
+                        span { {tr!("Send")} span { class: "palette-key", "↵" } } // icon-ok: a key cap
+                        span { {tr!("Search")} span { class: "palette-key", "Tab" } }
+                    }
+                } else {
                 div { class: "palette-footer",
                     span { {tr!("Close")} span { class: "palette-key", "Esc" } }
                     span { {tr!("Change type")} span { class: "palette-key", "←" } span { class: "palette-key", "→" } } // icon-ok: key caps
                     span { {tr!("Open")} span { class: "palette-key", "↵" } } // icon-ok: a key cap
+                    span { {tr!("Compose")} span { class: "palette-key", "Tab" } }
+                }
                 }
             }
         }
