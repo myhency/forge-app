@@ -1,9 +1,11 @@
+mod app_tools;
 mod appearance;
 mod memory_view;
 mod change_comments;
 mod change_rows;
 mod session_notices;
 mod details;
+mod window_drag;
 mod output_files;
 mod developer;
 mod settings_pages;
@@ -75,12 +77,12 @@ mod worktree_view;
 pub use thumbnail::{provide_thumbnail_loader, thumbnail_allowed, thumbnail_data_url, ComposerAttachment, THUMBNAIL_LIMIT};
 pub use pane_context::{use_pane_focused, use_pane_index, use_pane_width, PaneIndex, PaneWidth};
 pub use pane_tree::{drag_ratio, Dir, Divider, PaneTree, Rect, MAX_PANES, MIN_PANE_HEIGHT, MIN_PANE_WIDTH};
-pub use arrange::{arrange, arrange_with_origins, arranged_open_order, recent_heading, status_heading, folder_group_id, fork_fold_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading};
+pub use arrange::{arrange, arrange_with_origins, group_cut, GROUP_ROWS, arranged_open_order, recent_heading, status_heading, folder_group_id, fork_fold_id, local_offset, now_in, now_local, set_local_offset, ArrangedEntry, ArrangedGroup, DateBucket, Heading, StatusGroup};
 pub use file_menu::{file_menu, show_in_file_manager, menu_height, submenu_opens_left, FileAction, MenuEntry, MenuTarget};
 pub use files_store::{Draft, FilesStore, Restore};
 pub use hit_list::{group_hits, split_hit, HitGroup};
 pub use cards::{clamp_cards, line_count, Cards};
-pub use customize_connectors::{connection_tag, connection_text, connector_dialog_busy, connector_groups, explore_connectors, find_connector, refreshes_on_tab, shows_sign_in, sign_in_cwd, sign_in_status, source_label, stop_text, ConnectionState, ConnectorGroups, ConnectorRow, SignInState};
+pub use customize_connectors::{connection_tag, connection_text, connector_dialog_busy, connector_groups, explore_connectors, find_connector, refreshes_on_tab, shows_sign_in, sign_in_cwd, sign_in_status, source_label, stop_text, ConnectionState, ConnectorGroups, ConnectorRow, PendingExtension, SignInState};
 pub use sign_in::{Action as SignInAction, Outcome as SignInOutcome, StopReason as SignInStop};
 pub use code_runs::{finished_messages, shell_supported, CodeRuns, Finished, RunState, RunTap, RunView};
 pub use sign_in_run::SignInRun;
@@ -98,6 +100,7 @@ pub use command_box::CommandTextArea;
 pub use editor_doc::{normalize_newlines, text_hash, Banner, TabDoc};
 pub use editor_tabs::{EditorTab, EditorTabs};
 pub use task_list_views::TaskListView;
+pub use window_drag::{DragSpacer, WindowDrag};
 pub use details::{change_counts, ChangeCounts, DetailsCard, OneShot};
 pub use output_files::offers_default_program;
 pub use file_lists::{FileListState, FILE_LIST_LIMIT};
@@ -135,7 +138,7 @@ pub use terminal_tabs::{TabId, TerminalTabs};
 pub use routines::{cards, history_rows, run_state_text, local_when_label, notices, offset_at, skip_text, start_failed_notice, waiting_notice, when_label, FormDraft, HistoryRow, RoutineCard, RoutineFilter, RoutineSort, ScheduleKind};
 pub use routine_templates::{routine_templates, RoutineTemplate};
 pub use routines_state::{use_routines, use_routines_provider, RoutineDialog, RoutineScreen, Routines};
-pub use workspace::{preview_key_from_event, shortcut_from_event, use_workspace, use_workspace_provider, Active, PaneGeometry, Picture, RoutineServices, TrustRequest, Workspace, WorkspaceServices};
+pub use workspace::{effort_value, preview_key_from_event, shortcut_from_event, use_workspace, use_workspace_provider, Active, PaneGeometry, Picture, RoutineServices, TrustRequest, Workspace, WorkspaceServices};
 pub use blocking::run_blocking;
 pub use file_tree::{parse_files_query, FileTree, FilesQuery, TreeRow};
 pub use browser_host::{should_show, ShowInput};
@@ -158,3 +161,11 @@ pub use change_rows::{branch_label, header_counts, BranchLabel, fallback_source,
 pub(crate) fn root_signal<T: 'static>(value: T) -> dioxus::prelude::Signal<T> {
     dioxus::prelude::Signal::new_in_scope(value, dioxus::prelude::ScopeId::ROOT)
 }
+
+/// Free space on the disk that holds the home folder, in bytes, as the app last measured it
+/// (`None` before the first look). The desktop app warns when it runs low (observed 2026-11-06).
+#[derive(Clone, Copy)]
+pub struct DiskSpace(pub dioxus::prelude::Signal<Option<u64>>);
+
+/// Below this much free space the low-disk banner shows (the desktop app warned at 8.6 GB).
+pub const LOW_DISK_BYTES: u64 = 10 * 1024 * 1024 * 1024;

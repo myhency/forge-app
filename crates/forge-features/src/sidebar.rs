@@ -84,7 +84,8 @@ impl SidebarEntry {
 
 impl SidebarEntry {
     /// What the menu under the title of the open session offers: the row's actions, except that the
-    /// session can be archived while open (archiving closes it, as ⌥⌘A does) and there is no delete.
+    /// session can be archived and deleted while open (both close it first; the desktop app's title
+    /// menu has `보관 A` and `삭제 D`, round 37).
     pub fn title_menu_actions(&self) -> RowActions {
         let row = self.actions();
         let archive = match (self.session_id.is_some(), self.archived) {
@@ -92,7 +93,8 @@ impl SidebarEntry {
             (true, true) => ArchiveAction::Unarchive,
             (true, false) => ArchiveAction::Archive,
         };
-        RowActions { delete: DeleteAction::Unavailable, archive, ..row }
+        let delete = if self.session_id.is_some() { DeleteAction::Allowed } else { DeleteAction::Unavailable };
+        RowActions { delete, archive, ..row }
     }
 }
 
@@ -103,6 +105,10 @@ pub enum MenuKeyAction {
     Fork,
     Delete,
     ToggleArchive,
+    /// P pins or unpins (the desktop app's `고정 P`).
+    TogglePin,
+    /// U marks the session unread or read (the desktop app's `읽지 않음으로 표시 U`).
+    ToggleUnread,
 }
 
 /// The single letters the menu shows: R renames, F forks, A archives or unarchives, D deletes (Claude Code desktop's menu keys). A key
@@ -120,6 +126,8 @@ pub fn menu_key_action(code: &str, modified: bool, actions: RowActions) -> Optio
         "KeyF" if actions.can_fork => Some(MenuKeyAction::Fork),
         "KeyA" if actions.archive != ArchiveAction::Unavailable => Some(MenuKeyAction::ToggleArchive),
         "KeyD" if actions.delete == DeleteAction::Allowed => Some(MenuKeyAction::Delete),
+        "KeyP" if actions.can_rename => Some(MenuKeyAction::TogglePin),
+        "KeyU" if actions.can_rename => Some(MenuKeyAction::ToggleUnread),
         _ => None,
     }
 }
@@ -229,6 +237,9 @@ pub struct LiveSummary {
     pub first_user_message: Option<String>,
     pub marker: SessionMarker,
     pub can_send: bool,
+    /// The session that proposed this one (`start_session`), by its Claude id: the sidebar nests it
+    /// there, as the desktop app does.
+    pub started_from: Option<SessionId>,
 }
 
 impl LiveSummary {
@@ -246,6 +257,7 @@ impl LiveSummary {
                 .map(|message| truncate_chars(&message.text(), MAX_TITLE_CHARS)),
             marker: marker_for(view),
             can_send: view.can_send,
+            started_from: None,
         }
     }
 
@@ -310,7 +322,7 @@ pub fn merge_sidebar(
                     created_at: Some(summary.created_at.clone()),
                     marker: open.marker,
                     archived: false,
-                    forked_from: summary.forked_from.clone(),
+                    forked_from: summary.forked_from.clone().or_else(|| open.started_from.clone()),
                 },
                 None => SidebarEntry {
                     key: EntryKey::Past { project: project.path.clone(), session: summary.id.clone() },
@@ -345,7 +357,7 @@ pub fn merge_sidebar(
             created_at: None,
             marker: open.marker,
             archived: false,
-            forked_from: None,
+            forked_from: open.started_from.clone(),
         };
         match extras.iter_mut().find(|(path, _, _)| *path == open.project_path) {
             Some((_, _, entries)) => entries.push(entry),
@@ -598,13 +610,13 @@ mod tests {
     }
 
     #[test]
-    fn the_title_menu_of_an_open_session_archives_and_closes_it_and_never_deletes() {
+    fn the_title_menu_of_an_open_session_archives_and_deletes_it() {
         let mut open = entry(EntryKey::Live(LiveSessionId(1)), Some("s"));
-        assert_eq!(open.title_menu_actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Unavailable, archive: ArchiveAction::Archive });
+        assert_eq!(open.title_menu_actions(), RowActions { can_rename: true, can_fork: true, delete: DeleteAction::Allowed, archive: ArchiveAction::Archive });
 
         open.archived = true;
         assert_eq!(open.title_menu_actions().archive, ArchiveAction::Unarchive);
-        assert_eq!(menu_key_action("KeyD", false, open.title_menu_actions()), None);
+        assert_eq!(menu_key_action("KeyD", false, open.title_menu_actions()), Some(MenuKeyAction::Delete));
     }
 
     #[test]
@@ -663,6 +675,7 @@ mod tests {
             first_user_message: None,
             marker,
             can_send: true,
+            started_from: None,
         }
     }
 
@@ -693,6 +706,7 @@ mod tests {
             available_models: Vec::new(),
             phase,
             turn_started: None,
+            turn_output_tokens: None,
             background_tasks: Vec::new(),
             suggestion: None,
             pending_permissions: VecDeque::from(vec![request; pending]),
@@ -709,6 +723,11 @@ mod tests {
             queued: Vec::new(),
             rate_limit: None,
             side_thread: Vec::new(),
+            app_requests: Vec::new(),
+            classified: None,
+            output_style: None,
+            available_output_styles: Vec::new(),
+            style_draft: Default::default(),
             rewind: None,
         }
     }

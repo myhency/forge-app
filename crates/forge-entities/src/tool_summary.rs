@@ -103,9 +103,10 @@ pub fn tool_input_lines(input: &Value) -> Vec<InputLine> {
 /// The clock of a running turn: "4s", "1m 21s", "1h 2m".
 pub fn elapsed_label(seconds: u64) -> String {
     match seconds {
-        s if s < 60 => format!("{s}s"),
-        s if s < 3600 => format!("{}m {}s", s / 60, s % 60),
-        s => format!("{}h {}m", s / 3600, (s % 3600) / 60),
+        // In the language on screen: the desktop app says `3초`, `1분 6초` (round 36, 37).
+        s if s < 60 => forge_shared::tr!("{seconds}s", seconds = s),
+        s if s < 3600 => forge_shared::tr!("{minutes}m {seconds}s", minutes = s / 60, seconds = s % 60),
+        s => forge_shared::tr!("{hours}h {minutes}m", hours = s / 3600, minutes = (s % 3600) / 60),
     }
 }
 

@@ -90,6 +90,14 @@ pub fn CustomizePage() -> Element {
                                     },
                                     {tr!("Add connector")}
                                 }
+                                // The desktop app installs these in Settings › 확장 프로그램 (observed 2026-11-06).
+                                button {
+                                    onclick: move |_| {
+                                        add_menu.set(false);
+                                        customize.install_extension();
+                                    },
+                                    {tr!("Install extension (.mcpb)…")}
+                                }
                             } else if tab == CustomizeTab::Skills {
                                 button {
                                     onclick: move |_| {

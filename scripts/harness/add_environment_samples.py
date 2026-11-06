@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Saves four environments into the harness config, so the card above the new-session box and the environment
-menu can be looked at: three of them fill the card, the fourth waits under `더 보기`.
+"""Saves five environments into the harness config, so the card above the new-session box and the environment
+menu can be looked at: three of them fill the card, the others wait under `더 보기`; `gone` points at a folder that
+does not exist.
 
 Run it through launch.sh:  FORGE_HARNESS_EXTRA=scripts/harness/add_environment_samples.py scripts/harness/launch.sh
 """
@@ -17,6 +18,8 @@ ENVIRONMENTS = [
     ("env-2", "app (a)", "a/app", False, 300),
     ("env-3", "app (b)", "b/app", False, 200),
     ("env-4", "scratch", "my-app", False, 100),
+    # Its folder does not exist: the new-session screen says so above the box.
+    ("env-5", "gone", "gone-folder", False, 50),
 ]
 
 

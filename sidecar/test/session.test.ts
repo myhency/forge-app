@@ -45,7 +45,7 @@ function makeSkillDir(name: string): string {
 }
 
 describe("SidecarSession", () => {
-  it("adds the ccd_turn server and allows its two tools when turn_tools is on", async () => {
+  it("adds the ccd_turn and ccd_session servers and allows their tools when turn_tools is on", async () => {
     let captured: Record<string, any> | undefined;
     const queryFn: QueryFn = ({ options }) => {
       captured = options;
@@ -55,13 +55,14 @@ describe("SidecarSession", () => {
     await session.handle({
       ...startCommand,
       turn_tools: true,
+      browser_tools: true,
       mcp_servers: { files: { command: "npx", args: ["files-mcp"] } },
       allowed_tools: ["Read"],
     });
-    expect(Object.keys(captured!.mcpServers).sort()).toEqual(["ccd_turn", "files"]);
+    expect(Object.keys(captured!.mcpServers).sort()).toEqual(["Claude_Browser", "ccd_session", "ccd_session_mgmt", "ccd_settings", "ccd_sidebar", "ccd_turn", "ccd_view", "files"]);
     expect(captured!.allowedTools).toEqual(["Read"]);
     const signal = new AbortController().signal;
-    for (const tool of ["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]) {
+    for (const tool of ["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up", "mcp__ccd_session__mark_chapter", "mcp__ccd_session__start_session"]) {
       await expect(captured!.canUseTool(tool, { a: 1 }, { requestId: "r", signal })).resolves.toEqual({ behavior: "allow", updatedInput: { a: 1 } });
     }
   });
@@ -297,7 +298,7 @@ describe("SidecarSession", () => {
     const session = new SidecarSession(queryFn, (e) => events.push(e));
     await session.handle(startCommand);
 
-    expect(events).toEqual([
+    expect(events.filter((e) => e.type !== "output_tokens")).toEqual([
       { type: "session_started", session_id: "s-1" },
       { type: "assistant_delta", text: "Hello" },
       { type: "session_ended" },
@@ -321,7 +322,8 @@ describe("SidecarSession", () => {
     const session = new SidecarSession(queryFn, (e) => events.push(e));
     await session.handle(startCommand);
 
-    expect(events).toEqual([{ type: "thinking_delta", text: "Let me see" }, { type: "session_ended" }]);
+    // The running token count is tested on its own.
+    expect(events.filter((e) => e.type !== "output_tokens")).toEqual([{ type: "thinking_delta", text: "Let me see" }, { type: "session_ended" }]);
   });
 
   it("forwards a tool_use content block from an assistant message", async () => {
@@ -626,6 +628,7 @@ describe("SidecarSession", () => {
             { name: "Read", serverName: "Claude Docs", tokens: 90 },
           ],
           agents: [{ agentType: "Explore", source: "built-in", tokens: 80 }],
+          memoryFiles: [{ path: "/w/forge/CLAUDE.md", type: "Project", tokens: 4500.4 }],
         }),
       }),
       (e) => events.push(e),
@@ -645,6 +648,7 @@ describe("SidecarSession", () => {
         { server: "Claude Docs", name: "Read", tokens: 90 },
       ],
       agents: [{ name: "Explore", tokens: 80 }],
+      memory_files: [{ name: "/w/forge/CLAUDE.md", tokens: 4500 }],
     });
   });
 
@@ -681,6 +685,63 @@ describe("SidecarSession", () => {
     const types = events.map((e) => e.type);
     expect(types).toContain("context_usage");
     expect(types).not.toContain("context_detail");
+  });
+
+  it("sends context_usage and mcp_status once, early, at the turn's first assistant message", async () => {
+    const events: SidecarEvent[] = [];
+    let contextCalls = 0;
+    let mcpCalls = 0;
+    const query: QueryFn = () =>
+      toQueryHandle(
+        (async function* () {
+          yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-sonnet-5-5", content: [] } };
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          yield { type: "assistant", parent_tool_use_id: null, message: { model: "claude-sonnet-5-5", content: [] } };
+          yield { type: "result", subtype: "success", usage: {} };
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        })(),
+        {
+          getContextUsage: async () => {
+            contextCalls += 1;
+            return { totalTokens: 1000, maxTokens: 200000, percentage: 1 };
+          },
+          mcpServerStatus: async () => {
+            mcpCalls += 1;
+            return [];
+          },
+        },
+      );
+    const session = new SidecarSession(query, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const types = events.map((e) => e.type);
+    // Once early (before the turn ends) and once after it.
+    expect(types.indexOf("context_usage")).toBeLessThan(types.indexOf("turn_complete"));
+    expect(contextCalls).toBe(2);
+    expect(mcpCalls).toBe(2);
+  });
+
+  it("counts the turn's output tokens: exact per finished message, estimated while one streams", async () => {
+    const events: SidecarEvent[] = [];
+    const stream = (event: unknown) => ({ type: "stream_event", parent_tool_use_id: null, event });
+    const query: QueryFn = () =>
+      toQueryHandle(
+        (async function* () {
+          yield stream({ type: "message_start" });
+          yield stream({ type: "content_block_delta", delta: { type: "text_delta", text: "abcdefgh" } });
+          yield stream({ type: "message_delta", usage: { output_tokens: 30 } });
+          yield stream({ type: "message_start" });
+          yield stream({ type: "message_delta", usage: { output_tokens: 12 } });
+          // A sub-agent's stream does not count.
+          yield { type: "stream_event", parent_tool_use_id: "t", event: { type: "message_delta", usage: { output_tokens: 999 } } };
+          yield { type: "result", subtype: "success", usage: {} };
+        })(),
+      );
+    const session = new SidecarSession(query, (e) => events.push(e));
+    await session.handle(startCommand);
+
+    const counts = events.filter((e) => e.type === "output_tokens").map((e) => (e as { tokens: number }).tokens);
+    expect(counts).toEqual([2, 30, 42]);
   });
 
   it("sends mcp_status after a turn", async () => {
@@ -743,6 +804,7 @@ describe("SidecarSession", () => {
       categories: [{ name: "Messages", tokens: 13, kind: "used" }],
       mcp_tools: [{ server: "Docs", name: "Make", tokens: 3 }],
       agents: [{ name: "Explore", tokens: 8 }],
+      memory_files: [],
     });
   });
 

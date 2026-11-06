@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use forge_domain::{ChatWidth, FontChoice, MotionPref, OutputStyle, TextSize, Theme, TranscriptView};
+use forge_domain::{ChatWidth, CodeTheme, FontChoice, MotionPref, OutputStyle, TextSize, Theme, TranscriptView, CODE_SIZES, DEFAULT_CODE_SIZE};
 use forge_entities::{model_from_value, model_options, model_value};
 use forge_features::{nav_groups, search_hits, use_settings, use_workspace, DesktopToolView, ExtensionKind, NotificationKind, SettingsSection, SettingsStatus};
 use crate::developer_section::DeveloperSection;
@@ -74,9 +74,13 @@ pub fn SettingsOverlay() -> Element {
                                             button {
                                                 key: "{at}",
                                                 class: "settings-nav-item settings-hit-row",
-                                                onclick: move |_| {
-                                                    settings.set_section(hit.section);
-                                                    settings.set_search(String::new());
+                                                onclick: {
+                                                    let title = format!("{}{}{}", row.before, row.matched, row.after);
+                                                    move |_| {
+                                                        settings.set_section(hit.section);
+                                                        settings.set_search(String::new());
+                                                        reveal_setting(&title);
+                                                    }
                                                 },
                                                 "{row.before}" b { class: "settings-match", "{row.matched}" } "{row.after}"
                                             }
@@ -179,6 +183,7 @@ fn GeneralSection() -> Element {
                 onchange: move |on| settings.set_motion(if on { MotionPref::Reduced } else { MotionPref::System }),
             }
         }
+        CodeLookRows {}
         h3 { class: "settings-group", {tr!("Work")} }
         SettingRow {
             title: tr!("Trusted folders"),
@@ -197,6 +202,73 @@ fn GeneralSection() -> Element {
         }
         SettingRow { title: tr!("Permission request"), description: tr!("When a session you are not looking at asks for approval."),
             Switch { on: notes.permission_request, onchange: move |on| settings.set_notification(NotificationKind::PermissionRequest, on) }
+        }
+    }
+}
+
+/// The desktop app's `코드 모양`: a code theme for light mode and one for dark, a code font and a
+/// code size. Theme names are the same in every language, as in the desktop app.
+#[component]
+fn CodeLookRows() -> Element {
+    let settings = use_settings();
+    let look = settings.code_look();
+    let theme_options = |dark: bool| -> Vec<(String, String)> {
+        let themes: &[CodeTheme] = if dark { &CodeTheme::DARK } else { &CodeTheme::LIGHT };
+        themes.iter().map(|theme| (theme.value().to_string(), theme.label(dark).to_string())).collect()
+    };
+    let default_size = tr!("Default · {size}px", size = DEFAULT_CODE_SIZE);
+    let mut size_options = vec![(String::new(), default_size)];
+    size_options.extend(CODE_SIZES.iter().map(|size| (size.to_string(), format!("{size}px"))));
+    rsx! {
+        h3 { class: "settings-group", {tr!("Code look")} }
+        SettingRow { title: tr!("Light code theme"), description: tr!("The colours of code in light mode."),
+            Select {
+                value: look.light.value().to_string(),
+                options: theme_options(false),
+                onchange: move |value: String| {
+                    if let Some(theme) = CodeTheme::from_value(&value) {
+                        settings.set_code_theme(false, theme);
+                    }
+                },
+            }
+        }
+        SettingRow { title: tr!("Dark code theme"), description: tr!("The colours of code in dark mode."),
+            Select {
+                value: look.dark.value().to_string(),
+                options: theme_options(true),
+                onchange: move |value: String| {
+                    if let Some(theme) = CodeTheme::from_value(&value) {
+                        settings.set_code_theme(true, theme);
+                    }
+                },
+            }
+        }
+        // The desktop app's preview (observed 2026-11-06): the same small diff in each chosen theme.
+        div { class: "code-look-previews",
+            CodePreview { theme: look.light, dark: false, font: look.font.clone().unwrap_or_default(), size: look.size.unwrap_or(DEFAULT_CODE_SIZE) }
+            CodePreview { theme: look.dark, dark: true, font: look.font.clone().unwrap_or_default(), size: look.size.unwrap_or(DEFAULT_CODE_SIZE) }
+        }
+        SettingRow { title: tr!("Code font"), description: tr!("A custom monospace font for code and the terminal."),
+            // Saved when the field is left or Enter is pressed, not on every key.
+            input {
+                class: "text-input",
+                r#type: "text",
+                value: "{look.font.clone().unwrap_or_default()}",
+                placeholder: tr!("e.g. JetBrains Mono"),
+                autocomplete: "off",
+                spellcheck: "false",
+                onchange: move |event| {
+                    let text = event.value();
+                    settings.set_code_font((!text.trim().is_empty()).then_some(text));
+                },
+            }
+        }
+        SettingRow { title: tr!("Code font size"), description: tr!("Used in open files, diffs, code blocks and command output."),
+            Select {
+                value: look.size.map(|size| size.to_string()).unwrap_or_default(),
+                options: size_options,
+                onchange: move |value: String| settings.set_code_size(value.parse::<u8>().ok()),
+            }
         }
     }
 }
@@ -292,9 +364,14 @@ fn CodeSection() -> Element {
     location_options.push((CUSTOM_LOCATION.to_string(), tr!("Custom…").to_string()));
     let mut auto_mode_options = vec![(DEFAULT_STYLE_VALUE.to_string(), tr!("Default").to_string())];
     auto_mode_options.extend(forge_domain::AutoModeModel::ALL.iter().map(|model| (model.id().to_string(), model.label().to_string())));
-    let style_value = settings.output_style().map_or(DEFAULT_STYLE_VALUE, OutputStyle::name).to_string();
+    let current_style = settings.output_style();
+    let style_value = current_style.as_ref().map(|style| style.name().to_string()).unwrap_or_else(|| DEFAULT_STYLE_VALUE.to_string());
     let mut style_options = vec![(DEFAULT_STYLE_VALUE.to_string(), tr!("Default").to_string())];
-    style_options.extend(OutputStyle::ALL.iter().map(|style| (style.name().to_string(), forge_shared::i18n::text(style.label()).to_string())));
+    style_options.extend(OutputStyle::ALL.iter().map(|style| (style.name().to_string(), style.display())));
+    // A style of the person's own chosen as the default (by a tool) stays in the list.
+    if let Some(mine) = current_style.filter(OutputStyle::is_custom) {
+        style_options.push((mine.name().to_string(), mine.display()));
+    }
     rsx! {
         h2 { {tr!("Code")} }
         SettingRow {
@@ -371,9 +448,38 @@ fn CodeSection() -> Element {
             Switch { on: settings.turn_tools(), onchange: move |on| settings.set_turn_tools(on) }
         }
         SettingRow {
+            title: tr!("Session status classification"),
+            description: tr!("Lets Claude sort sessions into blocked, ready for review or done on its own; the status grouping of the sidebar files them so. Sorting counts toward your plan usage. Applies to new sessions."),
+            Switch { on: settings.classify_sessions(), onchange: move |on| settings.set_classify_sessions(on) }
+        }
+        SettingRow {
+            title: tr!("When you ask for unrelated work"),
+            description: tr!("Whether Claude asks before starting a separate session, always works in the current one, or always starts a new session. Takes effect in new sessions."),
+            Select {
+                value: settings.unrelated_task().value().to_string(),
+                options: forge_domain::UnrelatedTask::ALL.into_iter().map(|choice| (choice.value().to_string(), forge_shared::i18n::text(choice.label()).to_string())).collect::<Vec<_>>(),
+                onchange: move |value: String| {
+                    if let Some(choice) = forge_domain::UnrelatedTask::from_value(&value) {
+                        settings.set_unrelated_task(choice);
+                    }
+                },
+            }
+        }
+        SettingRow {
             title: tr!("Interactive pages"),
             description: tr!("Claude can draw a small interactive page in the chat, such as a calculator or a chart, when text would explain less."),
             Switch { on: settings.generative_ui(), onchange: move |on| settings.set_generative_ui(on) }
+        }
+        // The desktop app's `브라우저` rows (Settings, Claude Code; observed 2026-11-06).
+        SettingRow {
+            title: tr!("Browser tools"),
+            description: tr!("Claude can start dev servers, browse in the built-in browser and check changes with screenshots and DOM inspection. Applies to new sessions."),
+            Switch { on: settings.browser_tools(), onchange: move |on| settings.set_browser_tools(on) }
+        }
+        SettingRow {
+            title: tr!("Open files Claude writes"),
+            description: tr!("HTML, images, PDFs and videos Claude writes open in the built-in browser."),
+            Switch { on: settings.auto_open_outputs(), onchange: move |on| settings.set_auto_open_outputs(on) }
         }
         SettingRow {
             title: tr!("Control other apps"),
@@ -517,4 +623,54 @@ fn ExtensionSection(kind: ExtensionKind) -> Element {
             {tr!("Forge sessions do not use the hooks or permission rules from ~/.claude/settings.json; project settings still apply.")}
         }
     }
+}
+
+/// A few lines of code in one theme: a function whose return line changed, the old line on red and
+/// the new on green, as the desktop app's Settings show it.
+#[component]
+fn CodePreview(theme: CodeTheme, dark: bool, font: String, size: u8) -> Element {
+    let [_, keyword, string, number, function, kind] = forge_domain::preview_colors(theme, dark);
+    let font = forge_domain::clean_font_name(&font).map(|font| format!("\"{font}\", ")).unwrap_or_default();
+    let style = format!("font-family: {font}var(--mono); font-size: {size}px;");
+    let class = if dark { "code-preview dark" } else { "code-preview" };
+    rsx! {
+        div { class: "{class}", style: "{style}",
+            div { class: "code-preview-line",
+                span { class: "code-preview-number", "1" }
+                span { style: "color: {keyword}", "function " }
+                span { style: "color: {function}", "greet" }
+                "("
+                span { style: "color: {number}", "name" }
+                ": "
+                span { style: "color: {kind}", "string" }
+                ") {{"
+            }
+            div { class: "code-preview-line removed",
+                span { class: "code-preview-number", "2" }
+                "  "
+                span { style: "color: {keyword}", "return " }
+                span { style: "color: {string}", "\"Hello, \"" }
+                " + name;"
+            }
+            div { class: "code-preview-line added",
+                span { class: "code-preview-number", "2" }
+                "  "
+                span { style: "color: {keyword}", "return " }
+                span { style: "color: {string}", "`Hello, ${{name}}!`" }
+                ";"
+            }
+            div { class: "code-preview-line",
+                span { class: "code-preview-number", "3" }
+                "}}"
+            }
+        }
+    }
+}
+
+/// Brings the row a search hit named into view on its page and marks it for a moment.
+fn reveal_setting(title: &str) {
+    let quoted = serde_json::to_string(title).unwrap_or_else(|_| "\"\"".to_string());
+    document::eval(&format!(
+        "setTimeout(function(){{var want={quoted};var all=document.querySelectorAll('.setting-title, .settings-subheading, h3');for(var i=0;i<all.length;i++){{if(all[i].textContent.trim()===want){{var row=all[i].closest('.setting-row')||all[i];row.scrollIntoView({{block:'center'}});row.classList.add('setting-flash');setTimeout(function(){{row.classList.remove('setting-flash');}},1600);return;}}}}}},60);"
+    ));
 }

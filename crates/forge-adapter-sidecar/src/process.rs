@@ -183,6 +183,11 @@ impl SidecarPort for SidecarProcess {
         self.send_command(SidecarCommand::SideQuestion { id, request_id, question })
     }
 
+    async fn answer_app_request(&self, request_id: String, output: String, is_error: bool) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::AppResponse { id, request_id, output, is_error })
+    }
+
     async fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), SidecarError> {
         let id = self.next_id();
         self.send_command(SidecarCommand::SetPermissionMode { id, mode: mode.into() })
@@ -191,6 +196,16 @@ impl SidecarPort for SidecarProcess {
     async fn set_model(&self, model: Option<String>) -> Result<(), SidecarError> {
         let id = self.next_id();
         self.send_command(SidecarCommand::SetModel { id, model })
+    }
+
+    async fn set_output_style(&self, style: Option<String>) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::SetOutputStyle { id, style })
+    }
+
+    async fn create_output_style(&self, description: String, name: Option<String>) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::CreateOutputStyle { id, description, name })
     }
 
     async fn set_effort(&self, effort: Option<forge_domain::EffortLevel>) -> Result<(), SidecarError> {

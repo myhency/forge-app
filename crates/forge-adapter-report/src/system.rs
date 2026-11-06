@@ -88,3 +88,15 @@ mod tests {
         assert_eq!(hours(3 * 3600 + 125), "3h 2m");
     }
 }
+
+/// Free space on the disk that holds `path` (the disk whose mount point is the longest prefix of
+/// it), in bytes. `None` when no disk matches.
+pub fn free_space(path: &std::path::Path) -> Option<u64> {
+    let disks = Disks::new_with_refreshed_list();
+    disks
+        .list()
+        .iter()
+        .filter(|disk| path.starts_with(disk.mount_point()))
+        .max_by_key(|disk| disk.mount_point().as_os_str().len())
+        .map(|disk| disk.available_space())
+}

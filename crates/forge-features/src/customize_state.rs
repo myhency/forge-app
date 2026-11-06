@@ -44,6 +44,8 @@ pub enum Dialog {
     ConfirmRemoveMarketplace(String),
     CreateSkill,
     AddConnector,
+    /// The settings a desktop extension asks for before it is added (`user_config`).
+    InstallExtension,
     ConfirmRemoveConnector(String),
     SignInConnector(String),
 }
@@ -72,7 +74,7 @@ pub struct Customize {
     reads: Signal<Latest>,
     skills_usecase: Signal<Arc<SkillCatalogUseCase>>,
     folder_picker: Signal<Arc<dyn FolderPickerPort>>,
-    file_picker: Signal<Arc<dyn FilePickerPort>>,
+    pub(crate) file_picker: Signal<Arc<dyn FilePickerPort>>,
     pub(crate) project: Signal<Option<PathBuf>>,
     skills: Signal<Option<SkillView>>,
     skills_busy: Signal<bool>,
@@ -120,7 +122,7 @@ pub fn use_customize_provider() -> Customize {
         skill_source: Signal::new_in_scope(false, ScopeId::ROOT),
         file_reads: Signal::new_in_scope(Latest::default(), ScopeId::ROOT),
         visit: Signal::new_in_scope(0, ScopeId::ROOT),
-        connectors: Connectors::new(services.connector_catalog.clone()),
+        connectors: Connectors::new(services.connector_catalog.clone(), services.bundles.clone()),
     });
     use_context_provider(move || customize);
     customize
@@ -328,6 +330,11 @@ impl Customize {
     pub fn dismiss_error(&self) {
         let mut error = self.error;
         error.set(None);
+    }
+
+    /// The folder picker, for a dialog that asks for folders (an extension's settings).
+    pub fn folder_picker(&self) -> Arc<dyn FolderPickerPort> {
+        (*self.folder_picker.peek()).clone()
     }
 
     pub fn dialog_error(&self) -> Option<String> {

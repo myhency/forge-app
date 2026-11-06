@@ -112,6 +112,325 @@ pub enum Item {
     Compacted { before: Option<u64>, after: Option<u64> },
     /// The person stopped the turn here.
     Stopped,
+    /// Claude marked a new chapter here with `mark_chapter`: a heading in the transcript, an entry in
+    /// the table of contents. `index` counts the session's chapters from 0.
+    Chapter(Chapter),
+    /// Claude proposed a separate session with `start_session`: a card the person starts, takes here or closes.
+    SessionOffer(SessionOffer),
+    /// A message another session sent here (a session this one proposed, reporting back): the desktop
+    /// app folds it as `수신 메시지 1개`.
+    Received { title: String, text: String },
+}
+
+const REPORT_OPEN: &str = "<session-report title=\"";
+const REPORT_CLOSE: &str = "</session-report>";
+
+/// The message a started session sends back to the session that proposed it.
+pub fn session_report_message(title: &str, body: &str) -> String {
+    let title = title.replace(['"', '<', '>'], "");
+    format!("{REPORT_OPEN}{title}\">\n{body}\n{REPORT_CLOSE}")
+}
+
+/// The title and text of a report message, when the text is one.
+fn session_report(text: &str) -> Option<(String, String)> {
+    let rest = text.trim().strip_prefix(REPORT_OPEN)?;
+    let (title, rest) = rest.split_once("\">")?;
+    let body = rest.trim().strip_suffix(REPORT_CLOSE)?.trim();
+    Some((title.to_string(), body.to_string()))
+}
+
+/// A separate session Claude proposed (the desktop app's `start_session` card, observed 2026-11-06).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionOffer {
+    /// The tool call's id: the card's key in the session's marks.
+    pub id: String,
+    pub title: String,
+    /// The brief the new session starts with: the prompt, with the background before it.
+    pub brief: String,
+    /// The first line of the prompt, shown under the title.
+    pub lead: String,
+    /// The person asked for unrelated work with `항상 새 세션 시작` on: the session starts by itself
+    /// instead of waiting for the card's Start (the sidecar's answer says `Started …`). An empty
+    /// `brief` means the person's own message is the brief.
+    pub auto_start: bool,
+    /// The handle the sidecar gave the card (`task_ab12cd34`), which `dismiss_task` names.
+    pub task_id: Option<String>,
+    /// A hand-off (`hand_off_to_session`): the new session is a fork of this conversation, started
+    /// at once with the remaining plan.
+    pub fork: bool,
+    /// What the card's `옵션` set for the new session; `None` starts it like this one.
+    pub start_with: Option<OfferStart>,
+}
+
+/// The model, effort and permission mode a proposed session starts with, as values: a model id
+/// (empty: the default), an effort (`low` … `max`, empty: the default) and a mode (`default`, …).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferStart {
+    pub model: String,
+    pub effort: String,
+    pub mode: String,
+    /// A saved environment's id, or empty for this session's folder on this computer.
+    pub environment: String,
+}
+
+/// What a proposed session's `옵션` popover offers (the desktop app's, observed 2026-11-06: 환경,
+/// the folder, 워크트리, 모델, 노력, 권한): the folder it starts in, the choices as (value, label),
+/// and this session's own values to start from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferChoices {
+    pub folder: String,
+    /// The saved environments as (id, name, first folder); this computer comes first in the menu.
+    pub environments: Vec<(String, String, String)>,
+    pub models: Vec<(String, String)>,
+    pub efforts: Vec<(String, String)>,
+    pub modes: Vec<(String, String)>,
+    pub current: OfferStart,
+}
+
+/// What became of a proposed session's card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OfferMark {
+    /// Closed with `×`: the card becomes a quiet line saying so.
+    Dismissed,
+    /// Taken here (`여기서 하기`): the card goes, the work continues in this session.
+    Here,
+    /// Started as its own session: the card becomes a line that opens it.
+    Started,
+    /// Taken to the new-session screen (one of its chips): the card becomes a quiet line.
+    Drafted,
+}
+
+/// What the person did with a proposed session's card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OfferAction {
+    Start,
+    Here,
+    Dismiss,
+    /// Open the session the card started.
+    Open,
+}
+
+/// What a session started from the person's own split-off request reads before their words, so it
+/// does the work instead of splitting it off again.
+pub const SPLIT_OFF_PREAMBLE: &str = "This session was started from another session to do the request below. Do it here; do not start or propose another session for it.";
+
+/// The row words for the app's own tools (`ccd_session_mgmt`, `ccd_sidebar`, `ccd_view`,
+/// `ccd_settings`, `Claude_Browser`): what was done, and to what.
+fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
+    let text = |key: &str| call.input.get(key).and_then(Value::as_str).map(str::trim).unwrap_or_default().to_string();
+    let first_line = |value: String| value.lines().next().unwrap_or_default().to_string();
+    Some(match call.name.as_str() {
+        "mcp__ccd_session_mgmt__list_sessions" => (tr!("Listed the sessions").to_string(), String::new()),
+        "mcp__ccd_session_mgmt__get_session" => (tr!("Looked up a session").to_string(), String::new()),
+        "mcp__ccd_session_mgmt__send_message" => (tr!("Sent a message").to_string(), first_line(text("message"))),
+        "mcp__ccd_session_mgmt__search_session_transcripts" => (tr!("Searched the sessions").to_string(), text("query")),
+        "mcp__ccd_sidebar__set_pinned" if call.input.get("pinned").and_then(Value::as_bool) == Some(false) => (tr!("Unpinned a session").to_string(), String::new()),
+        "mcp__ccd_sidebar__set_pinned" => (tr!("Pinned a session").to_string(), String::new()),
+        "mcp__ccd_view__show_pane" => (tr!("Opened a pane").to_string(), text("pane")),
+        "mcp__Claude_Browser__preview_start" => (tr!("Opened a preview").to_string(), if text("name").is_empty() { text("url") } else { text("name") }),
+        "mcp__Claude_Browser__preview_list" => (tr!("Listed the dev servers").to_string(), String::new()),
+        "mcp__Claude_Browser__tabs_context_mcp" => (tr!("Listed the browser tabs").to_string(), String::new()),
+        "mcp__Claude_Browser__navigate" => (tr!("Opened a page").to_string(), text("url")),
+        "mcp__Claude_Browser__get_page_text" => (tr!("Read a page").to_string(), String::new()),
+        "mcp__Claude_Browser__read_console_messages" => (tr!("Read the console").to_string(), text("pattern")),
+        "mcp__Claude_Browser__computer" if call.input.get("action").and_then(Value::as_str) == Some("screenshot") => (tr!("Took a screenshot").to_string(), String::new()),
+        "mcp__Claude_Browser__computer" if call.input.get("action").and_then(Value::as_str).is_some_and(|action| action.starts_with("scroll")) => (tr!("Scrolled a page").to_string(), String::new()),
+        "mcp__Claude_Browser__computer" => (tr!("Used a page").to_string(), call.input.get("action").and_then(Value::as_str).unwrap_or_default().to_string()),
+        "mcp__Claude_Browser__read_page" => (tr!("Read a page").to_string(), String::new()),
+        "mcp__Claude_Browser__form_input" => (tr!("Filled in a field").to_string(), text("ref")),
+        "mcp__Claude_Browser__read_network_requests" => (tr!("Read the network requests").to_string(), text("urlPattern")),
+        "mcp__Claude_Browser__find" => (tr!("Searched a page").to_string(), text("query")),
+        "mcp__Claude_Browser__javascript_tool" => (tr!("Ran a script in a page").to_string(), first_line(text("text"))),
+        "mcp__Claude_Browser__preview_stop" => (tr!("Stopped a dev server").to_string(), String::new()),
+        "mcp__Claude_Browser__preview_logs" => (tr!("Read a dev server's output").to_string(), text("search")),
+        "mcp__ccd_view__close_pane" => (tr!("Closed a pane").to_string(), text("pane")),
+        "mcp__ccd_view__get_layout" => (tr!("Checked the layout").to_string(), String::new()),
+        "mcp__ccd_view__set_transcript_view" => (tr!("Changed the transcript view").to_string(), text("view")),
+        "mcp__ccd_settings__get_settings" => (tr!("Read the settings").to_string(), String::new()),
+        "mcp__ccd_session_mgmt__list_events" => (tr!("Read another session").to_string(), String::new()),
+        "mcp__ccd_session_mgmt__export_transcript" => (tr!("Exported a session").to_string(), String::new()),
+        "mcp__ccd_session_mgmt__get_usage" => (tr!("Checked the usage").to_string(), String::new()),
+        "mcp__ccd_session_mgmt__set_session_title" => (tr!("Renamed a session").to_string(), text("title")),
+        "mcp__ccd_session_mgmt__set_session_model" => (tr!("Changed a session's model").to_string(), text("model")),
+        "mcp__ccd_session_mgmt__set_session_effort" => (tr!("Changed a session's effort").to_string(), text("effort")),
+        "mcp__ccd_session_mgmt__set_session_permission_mode" => (tr!("Changed a session's mode").to_string(), text("mode")),
+        "mcp__ccd_session_mgmt__set_session_output_style" => (tr!("Changed a session's output style").to_string(), text("style")),
+        "mcp__ccd_session_mgmt__archive_session" => (tr!("Archived a session").to_string(), text("reason")),
+        "mcp__ccd_session_mgmt__unarchive_session" => (tr!("Restored a session").to_string(), String::new()),
+        "mcp__ccd_session_mgmt__stop_session" => (tr!("Stopped a session").to_string(), String::new()),
+        "mcp__ccd_sidebar__list_sections" => (tr!("Listed the sections").to_string(), String::new()),
+        "mcp__ccd_sidebar__create_section" => (tr!("Made a section").to_string(), text("name")),
+        "mcp__ccd_sidebar__rename_section" => (tr!("Renamed a section").to_string(), text("name")),
+        "mcp__ccd_sidebar__delete_section" => (tr!("Deleted a section").to_string(), String::new()),
+        "mcp__ccd_sidebar__move_sessions" => (tr!("Moved sessions").to_string(), String::new()),
+        "mcp__ccd_sidebar__set_unread" => (tr!("Marked a session").to_string(), String::new()),
+        "mcp__ccd_settings__set_setting" => (tr!("Changed a setting").to_string(), text("key")),
+        _ => return None,
+    })
+}
+
+/// The tool that moves the task in progress into a fork of the session (the desktop app's name).
+pub const HAND_OFF_TOOL: &str = "mcp__ccd_session__hand_off_to_session";
+
+/// What a hand-off's fork reads before the remaining plan, so it carries on rather than handing
+/// off again.
+pub const HAND_OFF_PREAMBLE: &str = "This session is a fork that takes over the task the other session handed off, so that one can answer the user. Carry on with the plan below here; do not hand it off again.";
+
+/// The tool that withdraws a proposal Claude made (the desktop app's name).
+pub const DISMISS_TASK_TOOL: &str = "mcp__ccd_session__dismiss_task";
+
+/// The task ids Claude withdrew with `dismiss_task` in these messages.
+fn dismissed_tasks(messages: &[Message]) -> Vec<String> {
+    messages
+        .iter()
+        .flat_map(|message| message.blocks.iter())
+        .filter_map(|block| match block {
+            Block::Tool(call) if call.name == DISMISS_TASK_TOOL && call.result.as_ref().is_some_and(|result| !result.is_error) => call.input.get("task_id").and_then(Value::as_str).map(|id| id.trim().to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The tool the desktop app gives Claude to propose a session; Forge offers the same name.
+pub const START_SESSION_TOOL: &str = "mcp__ccd_session__start_session";
+
+/// The offer a `start_session` call makes, when it is one Forge draws: the call succeeded and names
+/// a title and a prompt. A call that only starts an earlier proposal (`proposal_id`) is not a card.
+/// The proposals of a conversation that wait for the person: not started by themselves, not hand-offs,
+/// not withdrawn by Claude (`dismiss_task`). The new-session screen lists them as chips, as the
+/// desktop app does (observed 2026-11-06).
+pub fn open_offers(messages: &[Message]) -> Vec<SessionOffer> {
+    let dismissed = dismissed_tasks(messages);
+    messages
+        .iter()
+        .flat_map(|message| message.tool_calls())
+        .filter_map(session_offer)
+        .filter(|offer| !offer.auto_start && !offer.fork && !offer.task_id.as_ref().is_some_and(|task| dismissed.contains(task)))
+        .collect()
+}
+
+pub fn session_offer(call: &ToolCall) -> Option<SessionOffer> {
+    let text = |key: &str| call.input.get(key).and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty());
+    // A hand-off starts as soon as the sidecar has answered it: the line opens the fork.
+    if call.name == HAND_OFF_TOOL {
+        call.result.as_ref().filter(|result| !result.is_error)?;
+        let title = text("title")?.to_string();
+        let plan = text("remaining_plan")?.to_string();
+        return Some(SessionOffer { id: call.id.clone(), title, brief: plan, lead: String::new(), auto_start: true, task_id: None, fork: true, start_with: None });
+    }
+    if call.name != START_SESSION_TOOL || call.result.as_ref().is_some_and(|result| result.is_error) {
+        return None;
+    }
+    let title = text("title")?.to_string();
+    // A title-only "offer" is the person's own unrelated request: its brief is their message, which
+    // the workspace finds when it starts the session.
+    let prompt = match text("prompt") {
+        Some(prompt) => prompt,
+        None if text("initiation") == Some("offer") => "",
+        None => return None,
+    };
+    let brief = match text("background") {
+        Some(background) if !prompt.is_empty() => format!("{background}\n\n{prompt}"),
+        _ => prompt.to_string(),
+    };
+    let lead = prompt.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or(prompt).trim_start_matches('#').trim().to_string();
+    // With `항상 새 세션 시작` on, the sidecar answers `Started …`: the session starts by itself.
+    let auto_start = call.result.as_ref().is_some_and(|result| result.output.trim_start().starts_with("Started "));
+    let task_id = call.result.as_ref().and_then(|result| result.output.split("task_id: ").nth(1)).map(|rest| rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect::<String>()).filter(|id| !id.is_empty());
+    Some(SessionOffer { id: call.id.clone(), title, brief, lead, auto_start, task_id, fork: false, start_with: None })
+}
+
+/// A chapter of the session (the desktop app's `mark_chapter`, observed 2026-11-06).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chapter {
+    pub index: usize,
+    pub title: String,
+    pub summary: Option<String>,
+}
+
+/// The tool the desktop app gives Claude to start a chapter; Forge offers the same name.
+const MARK_CHAPTER_TOOL: &str = "mcp__ccd_session__mark_chapter";
+
+fn chapter_input(block: &Block) -> Option<(String, Option<String>)> {
+    let Block::Tool(call) = block else { return None };
+    if call.name != MARK_CHAPTER_TOOL || call.result.as_ref().is_some_and(|result| result.is_error) {
+        return None;
+    }
+    let title = call.input.get("title")?.as_str()?.trim();
+    if title.is_empty() {
+        return None;
+    }
+    let summary = call.input.get("summary").and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty()).map(str::to_string);
+    Some((title.to_string(), summary))
+}
+
+/// The messages with the chapters the person pinned (`챕터로 고정`) put in as chapter marks at the
+/// start of each pinned answer, so headings and the table of contents treat them as Claude's own.
+/// `pins` are (the id of the message that began the turn, the heading).
+pub fn with_pinned_chapters(messages: &[Message], pins: &[(String, String)]) -> Vec<Message> {
+    if pins.is_empty() {
+        return messages.to_vec();
+    }
+    let mut out: Vec<Message> = Vec::with_capacity(messages.len());
+    let mut pending: Option<String> = None;
+    for message in messages {
+        let mut message = message.clone();
+        match message.role {
+            MessageRole::User => {
+                pending = message.uuid.as_ref().and_then(|uuid| pins.iter().find(|(anchor, _)| anchor == uuid)).map(|(_, title)| title.clone());
+            }
+            MessageRole::Assistant => {
+                if let Some(title) = pending.take() {
+                    let mark = Block::Tool(ToolCall {
+                        id: format!("pinned-chapter-{title}"),
+                        name: MARK_CHAPTER_TOOL.to_string(),
+                        input: serde_json::json!({ "title": title }),
+                        result: Some(forge_domain::ToolResult { output: String::new(), is_error: false }),
+                    });
+                    message.blocks.insert(0, mark);
+                }
+            }
+        }
+        out.push(message);
+    }
+    out
+}
+
+/// A heading for an answer the person pins as a chapter: its first sentence, without markdown
+/// marks, cut at a word to at most 48 characters.
+pub fn pinned_chapter_title(answer: &str) -> String {
+    const LIMIT: usize = 48;
+    let line = crate::turn::speech_text(answer).lines().next().unwrap_or_default().trim().to_string();
+    let sentence = line.split_inclusive(". ").next().unwrap_or(&line).trim().trim_end_matches('.').to_string();
+    if sentence.chars().count() <= LIMIT {
+        return sentence;
+    }
+    let mut cut = String::new();
+    for word in sentence.split_whitespace() {
+        if cut.chars().count() + word.chars().count() + 1 > LIMIT {
+            break;
+        }
+        if !cut.is_empty() {
+            cut.push(' ');
+        }
+        cut.push_str(word);
+    }
+    if cut.is_empty() { sentence.chars().take(LIMIT).collect::<String>() + "…" } else { cut + "…" }
+}
+
+/// The session's chapters in order. A call that repeats the previous chapter's title is the same
+/// chapter (the desktop app's transcripts record some calls twice).
+pub fn chapters(messages: &[Message]) -> Vec<Chapter> {
+    let mut found: Vec<Chapter> = Vec::new();
+    for block in messages.iter().filter(|message| message.role == MessageRole::Assistant).flat_map(|message| message.blocks.iter()) {
+        if let Some((title, summary)) = chapter_input(block) {
+            if found.last().is_some_and(|last| last.title == title) {
+                continue;
+            }
+            found.push(Chapter { index: found.len(), title, summary });
+        }
+    }
+    found
 }
 
 /// The end-of-turn card Claude filled with `wrap_up`, and what became of it.
@@ -146,7 +465,7 @@ fn plan_proposal(call: &ToolCall) -> Option<PlanItem> {
 
 /// The calls that have a card of their own and so are neither counted nor listed in the folded line.
 fn is_turn_tool(call: &ToolCall) -> bool {
-    turn_tool(&call.name).is_some() || is_ui_call(call)
+    turn_tool(&call.name).is_some() || is_ui_call(call) || call.name == MARK_CHAPTER_TOOL || call.name == START_SESSION_TOOL
 }
 
 /// What follows a turn: nothing (it is the last one) or the next user message.
@@ -217,11 +536,13 @@ pub struct LiveState {
     /// When it was sent; the clock counts from here.
     pub started: Option<SystemTime>,
     pub waiting: Option<Waiting>,
+    /// The turn's output tokens so far, shown after the clock.
+    pub output_tokens: Option<u64>,
 }
 
 /// The live state of a session from what its view holds: the start time and the request on top of
 /// the queue.
-pub fn live_state(turn_started: Option<SystemTime>, pending: Option<&PermissionRequest>) -> LiveState {
+pub fn live_state(turn_started: Option<SystemTime>, pending: Option<&PermissionRequest>, output_tokens: Option<u64>) -> LiveState {
     let waiting = pending.map(|request| {
         if request.tool_name == QUESTION_TOOL {
             Waiting::Question
@@ -229,7 +550,7 @@ pub fn live_state(turn_started: Option<SystemTime>, pending: Option<&PermissionR
             Waiting::Permission { tool_name: request.tool_name.clone(), input: request.input.clone() }
         }
     });
-    LiveState { started: turn_started, waiting }
+    LiveState { started: turn_started, waiting, output_tokens }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -251,6 +572,10 @@ pub struct LiveLine {
     pub added: usize,
     pub removed: usize,
     pub started: Option<SystemTime>,
+    /// The session has not answered yet: a red dot and no clock.
+    pub starting: bool,
+    /// The turn's output tokens so far (the desktop app: `•• 3초 · 7 토큰`).
+    pub tokens: Option<u64>,
 }
 
 pub fn tool_kind(name: &str) -> ToolKind {
@@ -289,19 +614,36 @@ fn tool_row(call: &ToolCall) -> ToolRow {
         }
         ToolKind::Command if is_background_start(call) => (tr!("Background task").to_string(), summary.clone(), String::new()),
         ToolKind::Command => {
-            let label = call
-                .input
-                .get("description")
-                .and_then(Value::as_str)
-                .filter(|text| !text.is_empty())
-                .map(str::to_string)
-                .unwrap_or_else(|| summary.clone());
-            let verb = if call.result.is_some() { tr!("Ran|tool") } else { tr!("Running|tool") };
-            (verb.to_string(), label, String::new())
+            let description = call.input.get("description").and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty());
+            match description {
+                // The desktop app shows the description alone, in the past once the command ran:
+                // "Run pytest in calc folder" → "Ran pytest in calc folder" (observed 2026-11-06).
+                Some(text) if starts_english_verb(text) => (String::new(), if call.result.is_some() { past(text) } else { progressive(text) }, String::new()),
+                Some(text) => {
+                    let verb = if call.result.is_some() { tr!("Ran|tool") } else { tr!("Running|tool") };
+                    (verb.to_string(), text.to_string(), String::new())
+                }
+                None => {
+                    let verb = if call.result.is_some() { tr!("Ran|tool") } else { tr!("Running|tool") };
+                    (verb.to_string(), summary.clone(), String::new())
+                }
+            }
         }
         ToolKind::Other if call.name == SKILL_TOOL => {
             let name = call.input.get("skill").and_then(Value::as_str).unwrap_or_default();
             (tr!("Skill ran|tool").to_string(), format!("/{name}"), String::new())
+        }
+        ToolKind::Other if (call.name.starts_with("mcp__ccd_") || call.name.starts_with("mcp__Claude_Browser__")) && app_tool_words(call).is_some() => {
+            let (verb, subject) = app_tool_words(call).unwrap_or_default();
+            (verb, subject, String::new())
+        }
+        ToolKind::Other if call.name == HAND_OFF_TOOL => {
+            let title = call.input.get("title").and_then(Value::as_str).map(str::trim).unwrap_or_default();
+            (tr!("Handed off").to_string(), title.to_string(), String::new())
+        }
+        ToolKind::Other if call.name == DISMISS_TASK_TOOL => {
+            let reason = call.input.get("reason").and_then(Value::as_str).map(str::trim).unwrap_or_default();
+            (tr!("Withdrew a proposal").to_string(), reason.to_string(), String::new())
         }
         ToolKind::Other if is_desktop_tool(&call.name) => {
             let verb = if call.result.is_some() { tr!("Controlled an app|tool") } else { tr!("Controlling an app") };
@@ -402,9 +744,10 @@ fn summarize(tools: &[&ToolRow], failed: usize) -> String {
         let loaded_tools = count(Counted::LoadedTools);
         // One sentence per count, so a language with other plural rules can word each one.
         let parts = [
-            (created, if created == 1 { tr!("Created {count} file") } else { tr!("Created {count} files") }),
-            (edited, if edited == 1 { tr!("Edited {count} file") } else { tr!("Edited {count} files") }),
+            // The desktop app's order (round 37): commands, edited, created.
             (commands, if commands == 1 { tr!("Ran {count} command") } else { tr!("Ran {count} commands") }),
+            (edited, if edited == 1 { tr!("Edited {count} file") } else { tr!("Edited {count} files") }),
+            (created, if created == 1 { tr!("Created {count} file") } else { tr!("Created {count} files") }),
             (background, if background == 1 { tr!("Started {count} background task") } else { tr!("Started {count} background tasks") }),
             (read, if read == 1 { tr!("Read {count} file") } else { tr!("Read {count} files") }),
             (memory, if memory == 1 { tr!("Loaded {count} memory file") } else { tr!("Loaded {count} memory files") }),
@@ -444,7 +787,8 @@ fn build_activity(blocks: &[Block], tool_rows: &[Option<ToolRow>], view: Transcr
     }
     let tools: Vec<&ToolRow> = rows.iter().filter_map(|row| if let Row::Tool(tool) = row { Some(tool) } else { None }).collect();
     let failed = tools.iter().filter(|row| row.failed).count();
-    let (added, removed) = tools.iter().fold((0, 0), |(a, r), row| (a + row.added, r + row.removed));
+    // A write that was refused or failed changed nothing: its lines are not counted.
+    let (added, removed) = tools.iter().filter(|row| !row.stopped && !row.failed).fold((0, 0), |(a, r), row| (a + row.added, r + row.removed));
     let summary = summarize(&tools, failed);
     let image = read_image(&tools);
     Activity { rows, summary, added, removed, failed, image }
@@ -453,7 +797,7 @@ fn build_activity(blocks: &[Block], tool_rows: &[Option<ToolRow>], view: Transcr
 fn build_card(tool_rows: &[Option<ToolRow>]) -> Option<FileCard> {
     let mut files: Vec<CardFile> = Vec::new();
     for row in tool_rows.iter().flatten() {
-        if !matches!(row.kind, ToolKind::Created | ToolKind::Edited) || !row.has_diff {
+        if !matches!(row.kind, ToolKind::Created | ToolKind::Edited) || !row.has_diff || row.stopped || row.failed {
             continue;
         }
         match files.iter_mut().find(|file| file.path == row.path) {
@@ -476,11 +820,89 @@ fn live_label(row: &ToolRow) -> (String, String) {
         ToolKind::Created => (tr!("Creating").to_string(), row.subject.clone()),
         ToolKind::Edited => (tr!("Editing").to_string(), row.subject.clone()),
         ToolKind::Read => (tr!("Reading").to_string(), row.subject.clone()),
-        ToolKind::Command => (row.subject.clone(), String::new()),
+        // The desktop app turns the command's description into what is happening now
+        // ("List project files" → "Listing project files", round 37).
+        ToolKind::Command => {
+            let described = row.call.input.get("description").and_then(Value::as_str).is_some_and(|text| !text.is_empty());
+            let label = if described { progressive(&row.subject) } else { row.subject.clone() };
+            (label, String::new())
+        }
         ToolKind::Other if matches!(row.call.name.as_str(), "Grep" | "Glob") => (tr!("Searching").to_string(), row.subject.clone()),
         ToolKind::Other if is_desktop_tool(&row.call.name) => (tr!("Controlling an app").to_string(), row.subject.clone()),
         ToolKind::Other => (tr!("Using {name}", name = short_tool_name(&row.call.name)), row.subject.clone()),
     }
+}
+
+// Whether a description starts with a capitalised English word, the imperative a command's
+// description is written in ("Run tests"); a Korean one is left as it is.
+fn starts_english_verb(description: &str) -> bool {
+    let word = description.split(' ').next().unwrap_or_default();
+    word.len() >= 2 && word.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && word.chars().all(|c| c.is_ascii_alphabetic())
+}
+
+/// An imperative English description in the past form of its first word: "Run tests" → "Ran tests",
+/// "List files" → "Listed files", "Stop server" → "Stopped server". Other text is left alone.
+pub(crate) fn past(description: &str) -> String {
+    let (word, rest) = match description.find(' ') {
+        Some(space) => description.split_at(space),
+        None => (description, ""),
+    };
+    if !starts_english_verb(description) || word.ends_with("ed") {
+        return description.to_string();
+    }
+    let lower = word.to_ascii_lowercase();
+    const IRREGULAR: &[(&str, &str)] = &[
+        ("run", "ran"), ("rerun", "reran"), ("read", "read"), ("write", "wrote"), ("rewrite", "rewrote"), ("make", "made"), ("find", "found"),
+        ("get", "got"), ("build", "built"), ("rebuild", "rebuilt"), ("set", "set"), ("reset", "reset"), ("put", "put"), ("send", "sent"),
+        ("take", "took"), ("show", "showed"), ("give", "gave"), ("begin", "began"), ("do", "did"), ("redo", "redid"), ("undo", "undid"),
+        ("go", "went"), ("see", "saw"), ("keep", "kept"), ("leave", "left"), ("cut", "cut"), ("split", "split"), ("hit", "hit"),
+        ("fetch", "fetched"), ("bring", "brought"), ("seek", "sought"), ("spin", "spun"), ("feed", "fed"), ("lead", "led"),
+    ];
+    const DOUBLE: &[&str] = &["stop", "plan", "scan", "ship", "drop", "swap", "step", "chop", "skip", "strip", "tap", "map", "wrap", "zip", "commit", "submit", "grep", "dig", "log", "tag", "pin", "trim"];
+    let done = if let Some((_, gone)) = IRREGULAR.iter().find(|(now, _)| *now == lower) {
+        gone.to_string()
+    } else if DOUBLE.contains(&lower.as_str()) {
+        format!("{lower}{}ed", &lower[lower.len() - 1..])
+    } else if lower.ends_with('e') {
+        format!("{lower}d")
+    } else if lower.ends_with('y') && !lower.ends_with("ay") && !lower.ends_with("ey") && !lower.ends_with("oy") {
+        format!("{}ied", &lower[..lower.len() - 1])
+    } else {
+        format!("{lower}ed")
+    };
+    let mut chars = done.chars();
+    let capital: String = chars.next().map(|c| c.to_ascii_uppercase()).into_iter().chain(chars).collect();
+    format!("{capital}{rest}")
+}
+
+/// An imperative English description in the "-ing" form of its first word: "List files" → "Listing
+/// files", "Rerun tests" → "Rerunning tests", "Create a.py" → "Creating a.py". Text that does not
+/// start with a capitalised English word (a Korean description) or already does is left alone.
+pub(crate) fn progressive(description: &str) -> String {
+    let (word, rest) = match description.find(' ') {
+        Some(space) => description.split_at(space),
+        None => (description, ""),
+    };
+    let starts_upper = word.chars().next().is_some_and(|c| c.is_ascii_uppercase());
+    if !starts_upper || !word.chars().all(|c| c.is_ascii_alphabetic()) || word.len() < 2 || word.ends_with("ing") {
+        return description.to_string();
+    }
+    let lower = word.to_ascii_lowercase();
+    // Short verbs that double their last consonant.
+    const DOUBLE: &[&str] = &[
+        "run", "rerun", "set", "reset", "get", "put", "stop", "cut", "sit", "plan", "scan", "ship", "drop", "swap", "step",
+        "chop", "skip", "strip", "tap", "map", "wrap", "zip", "commit", "submit", "grep", "dig", "log", "tag", "pin", "trim",
+    ];
+    let stem = if DOUBLE.contains(&lower.as_str()) {
+        format!("{word}{}", &word[word.len() - 1..])
+    } else if lower.ends_with("ie") {
+        format!("{}y", &word[..word.len() - 2])
+    } else if lower.ends_with('e') && !lower.ends_with("ee") && !lower.ends_with("ye") && !lower.ends_with("oe") && lower != "be" {
+        word[..word.len() - 1].to_string()
+    } else {
+        word.to_string()
+    };
+    format!("{stem}ing{rest}")
 }
 
 fn live_line(blocks: &[Block], tool_rows: &[Option<ToolRow>], live: &LiveState) -> LiveLine {
@@ -490,17 +912,17 @@ fn live_line(blocks: &[Block], tool_rows: &[Option<ToolRow>], live: &LiveState) 
             Waiting::Permission { tool_name, input } => diff_for_tool(tool_name, input).map_or((0, 0), |diff| (diff.added, diff.removed)),
             Waiting::Question => (0, 0),
         };
-        return LiveLine { kind: LiveKind::NeedsInput, label: tr!("Input needed").to_string(), subject: String::new(), added, removed, started };
+        return LiveLine { kind: LiveKind::NeedsInput, label: tr!("Input needed").to_string(), subject: String::new(), added, removed, started, starting: false, tokens: live.output_tokens };
     }
     // The turn's own tools (task list, next-step card) never name what is running.
     let last = blocks.iter().rposition(|block| !matches!(block, Block::Tool(call) if is_turn_tool(call)));
     if let (Some(Block::Tool(call)), Some(Some(row))) = (last.map(|index| &blocks[index]), last.and_then(|index| tool_rows.get(index))) {
         if call.result.is_none() {
             let (label, subject) = live_label(row);
-            return LiveLine { kind: LiveKind::Tool, label, subject, added: 0, removed: 0, started };
+            return LiveLine { kind: LiveKind::Tool, label, subject, added: 0, removed: 0, started, starting: false, tokens: live.output_tokens };
         }
     }
-    LiveLine { kind: LiveKind::Thinking, label: String::new(), subject: String::new(), added: 0, removed: 0, started }
+    LiveLine { kind: LiveKind::Thinking, label: String::new(), subject: String::new(), added: 0, removed: 0, started, starting: false, tokens: live.output_tokens }
 }
 
 fn is_question(block: &Block) -> bool {
@@ -589,7 +1011,7 @@ fn push_segment(items: &mut Vec<Item>, blocks: &[Block], tool_rows: &[Option<Too
     }
 }
 
-fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, view: TranscriptView, live: Option<&LiveState>, next: Next<'_>) {
+fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, view: TranscriptView, live: Option<&LiveState>, next: Next<'_>, chapters: &mut Vec<String>) {
     if blocks.is_empty() && live.is_none() {
         return;
     }
@@ -602,6 +1024,17 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
     // A question splits the turn: what came before it folds, the question becomes its answer card.
     let mut segment_start = 0;
     for (index, block) in blocks.iter().enumerate() {
+        // A chapter splits the turn too: what came before folds, then the chapter's heading.
+        if let Some((title, summary)) = chapter_input(block) {
+            if chapters.last() == Some(&title) {
+                continue;
+            }
+            push_segment(items, &blocks[segment_start..index], &tool_rows[segment_start..index], view, None, None);
+            items.push(Item::Chapter(Chapter { index: chapters.len(), title: title.clone(), summary }));
+            chapters.push(title);
+            segment_start = index + 1;
+            continue;
+        }
         if !is_question(block) {
             continue;
         }
@@ -619,6 +1052,15 @@ fn finish_turn(items: &mut Vec<Item>, blocks: Vec<Block>, at: Option<String>, vi
     // The task list is the whole turn's, even when a question split it into segments.
     let steps = live.and_then(|_| plan_of(blocks.iter().filter_map(|block| if let Block::Tool(call) = block { Some(call) } else { None })));
     push_segment(items, &blocks[segment_start..], &tool_rows[segment_start..], view, live, steps);
+    // Proposed sessions come after the turn's text, as the desktop app draws them.
+    let offers: Vec<Item> = blocks.iter().filter_map(|block| if let Block::Tool(call) = block { session_offer(call) } else { None }).map(Item::SessionOffer).collect();
+    if !offers.is_empty() {
+        // While the turn runs the live line stays last.
+        let at = if matches!(items.last(), Some(Item::Live(_))) { items.len() - 1 } else { items.len() };
+        for (offset, offer) in offers.into_iter().enumerate() {
+            items.insert(at + offset, offer);
+        }
+    }
     // A turn that is only a compaction or a stop has nothing to copy.
     let has_content = blocks.iter().any(|block| matches!(block, Block::Text(_) | Block::Tool(_) | Block::Thinking(_)));
     if live.is_none() && items.len() > start && has_content {
@@ -638,13 +1080,17 @@ pub fn build_turns(messages: &[Message], view: TranscriptView, live: Option<&Liv
     let mut items = Vec::new();
     let mut blocks: Vec<Block> = Vec::new();
     let mut at: Option<String> = None;
+    let mut chapter_titles: Vec<String> = Vec::new();
     for message in messages {
         match message.role {
             MessageRole::User => {
                 let text = message.text();
-                finish_turn(&mut items, std::mem::take(&mut blocks), at.take(), view, None, Next::Message(&text));
-                // What a run of a code block told the model is not something the person said.
-                if !is_run_message(&text) {
+                finish_turn(&mut items, std::mem::take(&mut blocks), at.take(), view, None, Next::Message(&text), &mut chapter_titles);
+                // What a run of a code block told the model is not something the person said, and
+                // neither is a report from another session.
+                if let Some((title, body)) = session_report(&text) {
+                    items.push(Item::Received { title, text: body });
+                } else if !is_run_message(&text) {
                     items.push(Item::User(message.clone()));
                 }
             }
@@ -656,13 +1102,29 @@ pub fn build_turns(messages: &[Message], view: TranscriptView, live: Option<&Liv
             }
         }
     }
-    finish_turn(&mut items, blocks, at, view, live, Next::End);
+    finish_turn(&mut items, blocks, at, view, live, Next::End, &mut chapter_titles);
+    // A card Claude withdrew later with `dismiss_task` is gone.
+    let dismissed = dismissed_tasks(messages);
+    if !dismissed.is_empty() {
+        items.retain(|item| !matches!(item, Item::SessionOffer(offer) if offer.task_id.as_ref().is_some_and(|id| dismissed.contains(id))));
+    }
     // A running `/compact` has no tool call to name: the line says what it is doing.
     let compacting = messages.iter().rev().find(|message| message.role == MessageRole::User).is_some_and(|message| is_compact_command(&message.text()));
     if live.is_some() && compacting {
         if let Some(Item::Live(line)) = items.last_mut() {
             if line.kind == LiveKind::Thinking && line.label.is_empty() {
                 line.label = tr!("Compacting the session").to_string();
+            }
+        }
+    }
+    // A new session's first message before anything has come back: the desktop app says the
+    // session is starting (round 37: a red dot and "세션 시작 중").
+    let first_and_silent = messages.len() == 1 && messages[0].role == MessageRole::User;
+    if live.is_some() && first_and_silent && !compacting {
+        if let Some(Item::Live(line)) = items.last_mut() {
+            if line.kind == LiveKind::Thinking && line.label.is_empty() {
+                line.label = tr!("Starting the session").to_string();
+                line.starting = true;
             }
         }
     }
@@ -726,6 +1188,9 @@ mod tests {
                 Item::FileCard(_) => "card",
                 Item::Footer(_) => "footer",
                 Item::Answers(_) => "answers",
+                Item::Chapter(_) => "chapter",
+                Item::SessionOffer(_) => "offer",
+                Item::Received { .. } => "received",
                 Item::Live(_) => "live",
                 Item::Workflow(_) => "workflow",
                 Item::Plan(_) => "plan",
@@ -1027,7 +1492,7 @@ mod tests {
         ];
         let items = build_turns(&messages, TranscriptView::Normal, None);
         let a = activity(&items);
-        assert_eq!(a.summary, "Created 2 files, Edited 1 file, Ran 2 commands, Read 1 file, Used 1 other tool");
+        assert_eq!(a.summary, "Ran 2 commands, Edited 1 file, Created 2 files, Read 1 file, Used 1 other tool");
         assert_eq!(a.failed, 0);
         let Item::FileCard(card) = items.iter().find(|i| matches!(i, Item::FileCard(_))).unwrap() else { panic!() };
         let names: Vec<_> = card.files.iter().map(|f| f.name.as_str()).collect();
@@ -1187,7 +1652,13 @@ mod tests {
         let rows = &activity(&items).rows;
         let Row::Tool(done) = &rows[0] else { panic!() };
         let Row::Tool(running) = &rows[1] else { panic!() };
-        assert_eq!((done.verb.as_str(), running.verb.as_str()), ("Ran", "Running"));
+        // An English description stands alone, in the past; a bare command keeps the verb.
+        assert_eq!((done.verb.as_str(), done.subject.as_str()), ("", "Listed"));
+        assert_eq!(running.verb.as_str(), "Running");
+        let korean = vec![Message::user("go"), assistant(vec![bash("t-1", Some("파일 목록"))])];
+        let items = build_turns(&korean, TranscriptView::Normal, None);
+        let Row::Tool(row) = &activity(&items).rows[0] else { panic!() };
+        assert_eq!((row.verb.as_str(), row.subject.as_str()), ("Ran", "파일 목록"));
     }
 
     #[test]
@@ -1273,6 +1744,19 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_write_adds_no_lines_and_no_file_card() {
+        let denied = Block::Tool(ToolCall {
+            id: "t-1".to_string(),
+            name: "Write".to_string(),
+            input: json!({"file_path": "/p/haiku.txt", "content": "a\nb\nc"}),
+            result: Some(ToolResult { output: "The user doesn't want to proceed with this tool use. The tool use was rejected".to_string(), is_error: true }),
+        });
+        let items = build_turns(&[Message::user("go"), assistant(vec![denied, Block::Text("ok".into())])], TranscriptView::Normal, None);
+        assert_eq!((activity(&items).added, activity(&items).removed), (0, 0));
+        assert!(!items.iter().any(|item| matches!(item, Item::FileCard(_))), "nothing was written");
+    }
+
+    #[test]
     fn a_row_that_did_not_fail_has_no_error_text() {
         let items = build_turns(&[Message::user("go"), assistant(vec![write("t-1", "/p/a.py"), tool("t-2", "Bash", json!({"command": "ls"}), None)])], TranscriptView::Normal, None);
         for row in &activity(&items).rows {
@@ -1299,7 +1783,7 @@ mod tests {
         assert_eq!(kinds(&items), vec!["user", "text", "live"]);
         let Item::Live(line) = &items[2] else { panic!() };
         assert_eq!(line.kind, LiveKind::Tool);
-        assert_eq!(line.label, "List");
+        assert_eq!(line.label, "Listing");
         assert_eq!(line.subject, "");
     }
 
@@ -1318,6 +1802,56 @@ mod tests {
     fn live_items(blocks: Vec<Block>, live: LiveState) -> Vec<Item> {
         build_turns(&[Message::user("go"), assistant(blocks)], TranscriptView::Normal, Some(&live))
     }
+    #[test]
+    fn a_finished_command_reads_in_the_past_like_the_desktop_app() {
+        assert_eq!(past("Run pytest in calc folder"), "Ran pytest in calc folder");
+        assert_eq!(past("List project files"), "Listed project files");
+        assert_eq!(past("Stop the server"), "Stopped the server");
+        assert_eq!(past("Create the venv"), "Created the venv");
+        assert_eq!(past("Copy files"), "Copied files");
+        assert_eq!(past("Read the log"), "Read the log");
+        assert_eq!(past("Write notes"), "Wrote notes");
+        assert_eq!(past("테스트 실행"), "테스트 실행");
+        assert_eq!(past("Installed deps"), "Installed deps");
+    }
+
+    #[test]
+    fn a_description_reads_as_what_is_happening_now() {
+        assert_eq!(progressive("List project and calc folder"), "Listing project and calc folder");
+        assert_eq!(progressive("Show files and run tests"), "Showing files and run tests");
+        assert_eq!(progressive("Rerun tests and sum sales"), "Rerunning tests and sum sales");
+        assert_eq!(progressive("Create the app"), "Creating the app");
+        assert_eq!(progressive("See logs"), "Seeing logs");
+        assert_eq!(progressive("Tie it"), "Tying it");
+        assert_eq!(progressive("Check"), "Checking");
+        assert_eq!(progressive("Installing deps"), "Installing deps");
+        assert_eq!(progressive("테스트 실행"), "테스트 실행");
+        assert_eq!(progressive("ls -la"), "ls -la");
+        assert_eq!(progressive("npm install"), "npm install");
+    }
+
+    #[test]
+    fn a_running_command_with_a_description_names_it_in_the_ing_form() {
+        let line = live_line(&live_items(vec![unfinished("Bash", json!({"command": "ls", "description": "List files"}))], LiveState::default()));
+        assert_eq!(line.label, "Listing files");
+        let bare = live_line(&live_items(vec![unfinished("Bash", json!({"command": "ls -la"}))], LiveState::default()));
+        assert_eq!(bare.label, "ls -la");
+    }
+
+    #[test]
+    fn a_new_sessions_first_turn_says_it_is_starting_until_something_comes_back() {
+        let messages = vec![Message::user("hi")];
+        let live = LiveState { started: Some(SystemTime::now()), waiting: None, output_tokens: None };
+        let items = build_turns(&messages, TranscriptView::Normal, Some(&live));
+        let Some(Item::Live(line)) = items.last() else { panic!() };
+        assert_eq!(line.label, "Starting the session");
+        assert!(line.starting);
+        let replied = vec![Message::user("hi"), assistant(vec![text("hel")])];
+        let items = build_turns(&replied, TranscriptView::Normal, Some(&live));
+        let Some(Item::Live(line)) = items.last() else { panic!() };
+        assert!(!line.starting);
+    }
+
     fn live_line(items: &[Item]) -> LiveLine {
         let Item::Live(line) = items.last().unwrap() else { panic!("a live line last") };
         line.clone()
@@ -1331,8 +1865,9 @@ mod tests {
         let running = LiveState::default();
         let items = build_turns(&[Message::user("/compact")], TranscriptView::Normal, Some(&running));
         assert_eq!(live_line(&items).label, "Compacting the session");
+        // Any other first message of a session says the session is starting.
         let other = build_turns(&[Message::user("hello")], TranscriptView::Normal, Some(&running));
-        assert_eq!(live_line(&other).label, "");
+        assert_eq!(live_line(&other).label, "Starting the session");
         let finished = build_turns(&[Message::user("/compact")], TranscriptView::Normal, None);
         assert!(!finished.iter().any(|item| matches!(item, Item::Live(_))));
     }
@@ -1361,7 +1896,7 @@ mod tests {
         let read = line("Read", json!({"file_path": "/p/a.py"}));
         assert_eq!((read.label.as_str(), read.subject.as_str()), ("Reading", "a.py"));
         let bash = line("Bash", json!({"command": "ls -la", "description": "List files"}));
-        assert_eq!((bash.label.as_str(), bash.subject.as_str()), ("List files", ""));
+        assert_eq!((bash.label.as_str(), bash.subject.as_str()), ("Listing files", ""));
         let bare = line("Bash", json!({"command": "ls -la"}));
         assert_eq!(bare.label, "ls -la");
         let grep = line("Grep", json!({"pattern": "fn main"}));
@@ -1386,7 +1921,7 @@ mod tests {
     fn waiting_for_a_permission_shows_needs_input_with_the_pending_changes() {
         let input = json!({"file_path": "/p/a.py", "content": "a\nb\nc\n"});
         let waiting = Waiting::Permission { tool_name: "Write".to_string(), input: input.clone() };
-        let items = live_items(vec![unfinished("Write", input)], LiveState { started: None, waiting: Some(waiting) });
+        let items = live_items(vec![unfinished("Write", input)], LiveState { started: None, waiting: Some(waiting), output_tokens: None });
         let line = live_line(&items);
         assert_eq!(line.kind, LiveKind::NeedsInput);
         assert_eq!(line.label, "Input needed");
@@ -1396,28 +1931,28 @@ mod tests {
     #[test]
     fn waiting_for_a_command_or_a_question_has_no_changes() {
         let command = Waiting::Permission { tool_name: "Bash".to_string(), input: json!({"command": "ls"}) };
-        let items = live_items(vec![], LiveState { started: None, waiting: Some(command) });
+        let items = live_items(vec![], LiveState { started: None, waiting: Some(command), output_tokens: None });
         assert_eq!((live_line(&items).added, live_line(&items).removed), (0, 0));
-        let question = live_items(vec![], LiveState { started: None, waiting: Some(Waiting::Question) });
+        let question = live_items(vec![], LiveState { started: None, waiting: Some(Waiting::Question), output_tokens: None });
         assert_eq!(live_line(&question).kind, LiveKind::NeedsInput);
     }
 
     #[test]
     fn the_start_time_travels_to_the_live_line() {
         let started = std::time::UNIX_EPOCH + std::time::Duration::from_secs(5);
-        let items = live_items(vec![], LiveState { started: Some(started), waiting: None });
+        let items = live_items(vec![], LiveState { started: Some(started), waiting: None, output_tokens: None });
         assert_eq!(live_line(&items).started, Some(started));
     }
 
     #[test]
     fn live_state_follows_the_first_pending_request() {
         let started = std::time::UNIX_EPOCH;
-        assert_eq!(live_state(Some(started), None), LiveState { started: Some(started), waiting: None });
+        assert_eq!(live_state(Some(started), None, None), LiveState { started: Some(started), waiting: None, output_tokens: None });
         let question = forge_domain::PermissionRequest { id: "q".to_string(), tool_name: "AskUserQuestion".to_string(), input: json!({}), rules: Vec::new() };
-        assert_eq!(live_state(None, Some(&question)).waiting, Some(Waiting::Question));
+        assert_eq!(live_state(None, Some(&question), None).waiting, Some(Waiting::Question));
         let write = forge_domain::PermissionRequest { id: "p".to_string(), tool_name: "Write".to_string(), input: json!({"file_path": "/p/a"}), rules: Vec::new() };
         assert_eq!(
-            live_state(None, Some(&write)).waiting,
+            live_state(None, Some(&write), None).waiting,
             Some(Waiting::Permission { tool_name: "Write".to_string(), input: json!({"file_path": "/p/a"}) })
         );
     }
@@ -1443,7 +1978,7 @@ mod tests {
 
     #[test]
     fn a_pending_question_draws_nothing_but_the_needs_input_line() {
-        let items = live_items(vec![text("Let me ask."), ask("q-1", None)], LiveState { started: None, waiting: Some(Waiting::Question) });
+        let items = live_items(vec![text("Let me ask."), ask("q-1", None)], LiveState { started: None, waiting: Some(Waiting::Question), output_tokens: None });
         assert_eq!(kinds(&items), vec!["user", "text", "live"]);
         assert_eq!(live_line(&items).kind, LiveKind::NeedsInput);
     }
@@ -1491,7 +2026,7 @@ mod tests {
         let items = live_items(vec![running_bash, update_plan("p", two_steps(), false)], running());
         let line = live_line(&items);
         assert_eq!(line.kind, LiveKind::Tool);
-        assert_eq!(line.label, "List files");
+        assert_eq!(line.label, "Listing files");
     }
 
     #[test]
@@ -1525,4 +2060,119 @@ mod tests {
         cased.push(Message::user("Commit it"));
         assert!(!kinds(&build_turns(&cased, TranscriptView::Normal, None)).contains(&"endcard"));
     }
+
+    fn chapter_call(id: &str, title: &str) -> Block {
+        tool(id, "mcp__ccd_session__mark_chapter", json!({"title": title, "summary": "s"}), Some(false))
+    }
+
+    #[test]
+    fn a_chapter_splits_the_turn_into_a_fold_and_a_heading_and_repeats_collapse() {
+        let messages = vec![
+            Message::user("go"),
+            assistant(vec![chapter_call("c1", "Explore"), chapter_call("c1b", "Explore"), bash("b1", Some("List")), chapter_call("c2", "Test"), bash("b2", Some("Run")), text("done")]),
+        ];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        let kinds = kinds(&items);
+        assert_eq!(&kinds[..5], &["user", "chapter", "activity", "chapter", "activity"]);
+        let Item::Chapter(second) = &items[3] else { panic!() };
+        assert_eq!((second.index, second.title.as_str()), (1, "Test"));
+        let found = chapters(&messages);
+        assert_eq!(found.iter().map(|c| c.title.as_str()).collect::<Vec<_>>(), vec!["Explore", "Test"]);
+        assert_eq!(found[0].summary.as_deref(), Some("s"));
+        // The chapter call itself is not counted in a fold.
+        let Item::Activity(activity) = &items[2] else { panic!() };
+        assert_eq!(activity.rows.len(), 1);
+    }
+
+
+    #[test]
+    fn a_start_session_call_is_a_card_after_the_text_and_not_a_fold_row() {
+        let offer = tool("s1", "mcp__ccd_session__start_session", json!({"initiation": "own_initiative", "title": "Fix stats", "background": "Two tests fail.", "prompt": "Fix mean in stats.py\nThen run pytest."}), Some(false));
+        let messages = vec![Message::user("go"), assistant(vec![bash("b1", Some("Run")), offer, text("done")])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        let kinds = kinds(&items);
+        let at = kinds.iter().position(|kind| *kind == "offer").expect("an offer");
+        assert!(kinds[..at].contains(&"text"), "{kinds:?}");
+        let Item::SessionOffer(card) = &items[at] else { panic!() };
+        assert_eq!(card.title, "Fix stats");
+        assert_eq!(card.lead, "Fix mean in stats.py");
+        assert_eq!(card.brief, "Two tests fail.\n\nFix mean in stats.py\nThen run pytest.");
+        let Item::Activity(activity) = items.iter().find(|item| matches!(item, Item::Activity(_))).unwrap() else { panic!() };
+        assert_eq!(activity.rows.len(), 1);
+    }
+
+    #[test]
+    fn a_requested_session_the_sidecar_started_starts_by_itself() {
+        let mut call = ToolCall { id: "s1".into(), name: START_SESSION_TOOL.into(), input: json!({"initiation": "offer", "title": "Fix"}), result: Some(forge_domain::ToolResult { output: "Started \"Fix\" as a new session beside this one".into(), is_error: false }) };
+        let offer = session_offer(&call).unwrap();
+        assert!(offer.auto_start);
+        assert_eq!(offer.brief, "", "the person's message is the brief");
+        call.result = Some(forge_domain::ToolResult { output: "Shown to the user as a card".into(), is_error: false });
+        assert!(!session_offer(&call).unwrap().auto_start);
+    }
+
+    #[test]
+    fn a_card_claude_withdrew_with_dismiss_task_is_gone() {
+        let start = tool("s1", START_SESSION_TOOL, json!({"initiation": "own_initiative", "title": "Fix", "prompt": "Fix it"}), Some(false));
+        let Block::Tool(mut start_call) = start else { unreachable!() };
+        start_call.result = Some(ToolResult { output: "Shown to the user as a card \"Fix\". (task_id: task_ab12cd34)".into(), is_error: false });
+        assert_eq!(session_offer(&start_call).unwrap().task_id.as_deref(), Some("task_ab12cd34"));
+        let offers = |messages: &[Message]| build_turns(messages, TranscriptView::Normal, None).into_iter().filter(|item| matches!(item, Item::SessionOffer(_))).count();
+        let first = vec![Message::user("go"), assistant(vec![Block::Tool(start_call.clone())])];
+        assert_eq!(offers(&first), 1);
+        let dismiss = tool("d1", DISMISS_TASK_TOOL, json!({"task_id": "task_ab12cd34"}), Some(false));
+        let later = vec![Message::user("go"), assistant(vec![Block::Tool(start_call)]), Message::user("done it here"), assistant(vec![dismiss])];
+        assert_eq!(offers(&later), 0);
+        let row = build_turns(&later, TranscriptView::Normal, None);
+        assert!(format!("{row:?}").contains("Withdrew a proposal"), "the row says what it did, not the JSON");
+    }
+
+    #[test]
+    fn the_app_tools_read_as_words_not_json() {
+        let call = ToolCall { id: "a".into(), name: "mcp__ccd_session_mgmt__send_message".into(), input: json!({"session_id": "s", "message": "say hi\nmore"}), result: None };
+        assert_eq!(app_tool_words(&call), Some(("Sent a message".to_string(), "say hi".to_string())));
+        let other = ToolCall { name: "mcp__ccd_window__close_split".into(), ..call };
+        assert_eq!(app_tool_words(&other), None);
+    }
+
+    #[test]
+    fn a_pinned_chapter_heads_its_answer_and_counts_as_a_chapter() {
+        let mut question = Message::user("fix it");
+        question.uuid = Some("u1".into());
+        let messages = vec![question, assistant(vec![Block::Text("## Fixed the parser\nDone.".into())])];
+        let pinned = with_pinned_chapters(&messages, &[("u1".into(), pinned_chapter_title("## Fixed the parser\nDone."))]);
+        assert_eq!(chapters(&pinned).iter().map(|c| c.title.as_str()).collect::<Vec<_>>(), vec!["Fixed the parser"]);
+        assert!(build_turns(&pinned, TranscriptView::Normal, None).iter().any(|item| matches!(item, Item::Chapter(_))));
+        assert_eq!(with_pinned_chapters(&messages, &[]), messages);
+        assert_eq!(pinned_chapter_title("Fixed the failing test and wrote the totals.\n\nMore."), "Fixed the failing test and wrote the totals");
+        assert_eq!(pinned_chapter_title("This is a much longer opening line that goes on well past the limit of the heading"), "This is a much longer opening line that goes on…");
+    }
+
+    #[test]
+    fn a_hand_off_is_an_offer_that_forks_and_starts_at_once() {
+        let call = ToolCall { id: "h1".into(), name: HAND_OFF_TOOL.into(), input: json!({"title": "Finish the parser", "remaining_plan": "Add tests"}), result: Some(ToolResult { output: "Handed off".into(), is_error: false }) };
+        let offer = session_offer(&call).unwrap();
+        assert!(offer.fork && offer.auto_start);
+        assert_eq!(offer.brief, "Add tests");
+        let pending = ToolCall { result: None, ..call };
+        assert!(session_offer(&pending).is_none(), "nothing starts before the sidecar answers");
+    }
+
+    #[test]
+    fn a_start_session_call_without_a_prompt_draws_no_card() {
+        let start = tool("s2", "mcp__ccd_session__start_session", json!({"proposal_id": "s1"}), Some(false));
+        assert!(session_offer(match &start { Block::Tool(call) => call, _ => unreachable!() }).is_none());
+    }
+
+
+    #[test]
+    fn a_report_from_another_session_is_a_received_message_not_a_user_bubble() {
+        let report = session_report_message("Fix \"mean\"", "It is done.");
+        let messages = vec![Message::user("go"), assistant(vec![text("ok")]), Message::user(&report), assistant(vec![text("checked")])];
+        let items = build_turns(&messages, TranscriptView::Normal, None);
+        let received = items.iter().find_map(|item| if let Item::Received { title, text } = item { Some((title.clone(), text.clone())) } else { None });
+        assert_eq!(received, Some(("Fix mean".to_string(), "It is done.".to_string())));
+        assert_eq!(items.iter().filter(|item| matches!(item, Item::User(_))).count(), 1);
+    }
+
 }

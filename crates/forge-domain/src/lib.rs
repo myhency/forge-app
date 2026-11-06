@@ -1,6 +1,7 @@
 mod attachment;
 mod auto_archive;
 mod card;
+mod code_look;
 mod context_detail;
 mod background;
 mod command;
@@ -25,6 +26,8 @@ mod search;
 mod session;
 mod auto_mode_model;
 mod output_style;
+mod dev_server;
+mod mcpb;
 mod session_defaults;
 mod transcript_view;
 mod usage;
@@ -38,12 +41,13 @@ mod msg;
 pub mod i18n;
 pub use command::SlashCommand;
 pub use config::{
-    normalize_setting, AppConfig, CONFIG_INCOMPLETE, Appearance, ArchivedRef, ChangeModeRef, SavedChangeView, ChangesViewPrefs, ChatWidth, FileListPosition, FontChoice, Language, MotionPref, NotificationPrefs, TextSize, Theme, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,
+    normalize_setting, AppConfig, TerminalCursor, TerminalPrefs, TERMINAL_SCROLLBACKS, CONFIG_INCOMPLETE, Appearance, ArchivedRef, ChapterPin, SessionStatus, SidebarSection, StatusMark, ChangeModeRef, SavedChangeView, ChangesViewPrefs, ChatWidth, FileListPosition, FontChoice, Language, MotionPref, NotificationPrefs, TextSize, Theme, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,
     MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
 };
 pub use effort::{AvailableModel, EffortLevel};
 pub use environment::{environment_of, environment_of_session, new_environment_id, parse_env, EnvParseError, EnvParseReason, EnvVars, Environment, FolderChoice, SessionEnvironmentRef};
-pub use keys::{SHOW_IN_FILE_MANAGER, KEY_ADD_FILES, KEY_ALLOW_ALWAYS, KEY_ANSWER, KEY_CLOSE_SESSION, KEY_FIND, KEY_SEARCH, KEY_SETTINGS, KEY_SHORTCUTS};
+pub use code_look::{clean_font_name, code_look_css, preview_colors, CodeLook, CodeTheme, CODE_SIZES, DEFAULT_CODE_SIZE};
+pub use keys::{SHOW_IN_FILE_MANAGER, KEY_ADD_FILES, KEY_ALLOW_ALWAYS, KEY_ANSWER, KEY_CLOSE_SESSION, KEY_FIND, KEY_NEW_SESSION, KEY_SEARCH, KEY_SETTINGS, KEY_SHORTCUTS};
 pub use paths::{extension_of, file_name, has_parent_part, has_program_extension, is_absolute_path, path_parts};
 pub use trusted::{add_trusted, is_trusted, without_extended_prefix};
 pub use layout::{
@@ -57,7 +61,9 @@ pub use plugin_catalog::{plugin_id, split_plugin_id, Marketplace, PluginEntry, P
 pub use skill_catalog::{skill_id, SkillEntry, SkillFile, SkillFileList, SkillOrigin, SkillSnapshot};
 pub use auto_mode_model::AutoModeModel;
 pub use output_style::OutputStyle;
-pub use session_defaults::SessionDefaults;
+pub use mcpb::{bundle_server_name, join_args, read_manifest, resolve_bundle, BundleManifest, BundlePlaces, BundleSetting};
+pub use dev_server::{candidates as dev_server_candidates, files_to_check as dev_server_files, saved_servers, with_server, LaunchJsonError, ServerCandidate, LAUNCH_JSON};
+pub use session_defaults::{SessionDefaults, UnrelatedTask};
 pub use rate_limit::{local_moment, LocalMoment, RateLevel, RateLimit, RateWindow};
 pub use transcript_view::TranscriptView;
 pub use permission::{PermissionDecision, PermissionMode};

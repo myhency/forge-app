@@ -2,6 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { readCommands, writeEvent } from "./io.js";
 import { SidecarSession, type QueryFn } from "./session.js";
 import type { SidecarEvent } from "./protocol.js";
+import { userStylesDir } from "./output_styles.js";
 
 function emit(event: SidecarEvent): void {
   writeEvent(process.stdout, event);
@@ -9,7 +10,8 @@ function emit(event: SidecarEvent): void {
 
 // `query`'s real signature is more specific than `QueryFn`; the cast documents
 // the one boundary where this codebase's simplified type meets the SDK's own.
-const session = new SidecarSession(query as unknown as QueryFn, emit);
+// The person's own output styles: the folder the SDK's Claude home holds them in.
+const session = new SidecarSession(query as unknown as QueryFn, emit, { stylesDir: userStylesDir() });
 
 readCommands(
   process.stdin,

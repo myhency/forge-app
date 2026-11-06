@@ -11,6 +11,7 @@ pub const SHOW_IN_FILE_MANAGER: &str = if cfg!(windows) { "Show in Explorer" } e
 pub const KEY_FIND: &str = command_label!("F");
 pub const KEY_ADD_FILES: &str = command_label!("U");
 pub const KEY_SEARCH: &str = command_label!("K");
+pub const KEY_NEW_SESSION: &str = command_label!("N");
 pub const KEY_SETTINGS: &str = command_label!(",");
 pub const KEY_SHORTCUTS: &str = command_label!("/");
 pub const KEY_CLOSE_SESSION: &str = command_label!("W");

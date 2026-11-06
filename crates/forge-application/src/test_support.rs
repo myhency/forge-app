@@ -30,11 +30,14 @@ pub(crate) enum Call {
     Answer(String, std::collections::BTreeMap<String, String>),
     Interrupt,
     SideQuestion(String, String),
+    AppAnswer(String, String, bool),
     Rewind(String, String, bool),
     StopTask(String),
     SetMode(PermissionMode),
     SetModel(Option<String>),
     SetEffort(Option<forge_domain::EffortLevel>),
+    SetOutputStyle(Option<String>),
+    CreateOutputStyle(String, Option<String>),
     Shutdown,
 }
 
@@ -170,6 +173,11 @@ impl SidecarPort for FakeSidecar {
         Ok(())
     }
 
+    async fn answer_app_request(&self, request_id: String, output: String, is_error: bool) -> Result<(), SidecarError> {
+        self.control.record(Call::AppAnswer(request_id, output, is_error));
+        Ok(())
+    }
+
     async fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), SidecarError> {
         self.control.record(Call::SetMode(mode));
         Ok(())
@@ -177,6 +185,16 @@ impl SidecarPort for FakeSidecar {
 
     async fn set_model(&self, model: Option<String>) -> Result<(), SidecarError> {
         self.control.record(Call::SetModel(model));
+        Ok(())
+    }
+
+    async fn set_output_style(&self, style: Option<String>) -> Result<(), SidecarError> {
+        self.control.record(Call::SetOutputStyle(style));
+        Ok(())
+    }
+
+    async fn create_output_style(&self, description: String, name: Option<String>) -> Result<(), SidecarError> {
+        self.control.record(Call::CreateOutputStyle(description, name));
         Ok(())
     }
 

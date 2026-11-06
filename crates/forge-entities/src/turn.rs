@@ -16,7 +16,7 @@ use crate::tool_summary::elapsed_label;
 use forge_domain::TranscriptView;
 use crate::generated_ui_view::GeneratedUiView;
 use crate::turn_card_views::{EndCardView, PlanListView};
-use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolRow, WorkflowItem};
+use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolKind, ToolRow, WorkflowItem};
 use crate::workflow_progress::{dot_class, JournalAgent};
 use forge_shared::{tr, Icon, IconKind, IconSize};
 
@@ -59,21 +59,55 @@ pub fn Turns(
     #[props(default)] on_rewind: Option<EventHandler<String>>,
     /// Asked to fork the session before the user message with this id (its action row's ⑂); no ⑂ without it.
     #[props(default)] on_fork: Option<EventHandler<String>>,
+    /// Asked to fork the session right after an answer (its footer's ⑂, the desktop app's `여기서
+    /// 포크하기`): the id of the next user message to cut before, or `None` for the whole session.
+    #[props(default)] on_fork_here: Option<EventHandler<Option<String>>>,
+    /// The turns the person pinned as chapters, by the id of the message that began them.
+    #[props(default)] pinned_chapters: Vec<String>,
+    /// Asked to pin or unpin an answer as a chapter (its footer's pin): the id of the message that
+    /// began the turn, and the heading. No pin without it.
+    #[props(default)] on_pin_chapter: Option<EventHandler<(String, String)>>,
     /// Asked to send this text as the next message (an end card's button); its buttons do nothing without it.
     #[props(default)] on_send: Option<EventHandler<String>>,
     /// What became of each end card of the session, by the `wrap_up` call's id.
     #[props(default)] card_marks: std::collections::HashMap<String, crate::turn_cards::CardMark>,
     /// Asked to record a mark (closed, or sent) for the end card with this id.
     #[props(default)] on_card_mark: Option<EventHandler<(String, crate::turn_cards::CardMark)>>,
+    /// Asked to open the Changes panel (a fold line's `변경 사항 보기`); no link without it.
+    #[props(default)] on_open_changes: Option<EventHandler<()>>,
+    /// What became of each proposed session's card, by the `start_session` call's id.
+    #[props(default)] offer_marks: std::collections::HashMap<String, crate::turn_view::OfferMark>,
+    /// The person acted on a proposed session's card; the cards have no buttons without it.
+    #[props(default)] on_offer: Option<EventHandler<(crate::turn_view::SessionOffer, crate::turn_view::OfferAction)>>,
+    /// What a proposed session's `옵션` offers; no `옵션` without it.
+    #[props(default)] offer_choices: Option<crate::turn_view::OfferChoices>,
 ) -> Element {
     let known = known_paths(&messages);
     let forkable: Vec<String> = messages.iter().filter_map(|message| message.uuid.clone()).filter(|uuid| forge_domain::can_fork_before(&messages, uuid)).collect();
     let items = build_turns(&messages, view, live.as_ref());
     let detailed = view.expands_tool_calls();
+    // For each item, the id of the next person's message after it: where a fork from an answer cuts.
+    let mut next_user: Vec<Option<String>> = vec![None; items.len()];
+    let mut upcoming: Option<String> = None;
+    for (index, item) in items.iter().enumerate().rev() {
+        next_user[index] = upcoming.clone();
+        if let Item::User(message) = item {
+            upcoming = message.uuid.clone();
+        }
+    }
+    // And the id of the person's message that began the turn: what a pinned chapter hangs on.
+    let mut turn_user: Vec<Option<String>> = vec![None; items.len()];
+    let mut current: Option<String> = None;
+    for (index, item) in items.iter().enumerate() {
+        if let Item::User(message) = item {
+            current = message.uuid.clone();
+        }
+        turn_user[index] = current.clone();
+    }
     rsx! {
         div { class: "turns",
             for (index, item) in items.into_iter().enumerate() {
-                TurnItem { key: "{index}", item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone() }
+                TurnItem { key: "{index}", next_user: next_user[index].clone(), turn_user: turn_user[index].clone(), pinned_chapters: pinned_chapters.clone(), on_pin_chapter, on_fork_here, item, detailed, known: known.clone(), on_open_file, workflows: workflows.clone(), finished: finished.clone(), on_open_tasks, on_open_plan, on_rewind, on_fork, on_send, card_marks: card_marks.clone(), on_card_mark, forkable: forkable.clone(), on_open_changes, offer_marks: offer_marks.clone(), on_offer, offer_choices: offer_choices.clone() }
             }
         }
     }
@@ -91,10 +125,19 @@ fn TurnItem(
     on_open_plan: EventHandler<()>,
     on_rewind: Option<EventHandler<String>>,
     on_fork: Option<EventHandler<String>>,
+    next_user: Option<String>,
+    turn_user: Option<String>,
+    pinned_chapters: Vec<String>,
+    on_pin_chapter: Option<EventHandler<(String, String)>>,
+    on_fork_here: Option<EventHandler<Option<String>>>,
     on_send: Option<EventHandler<String>>,
     card_marks: std::collections::HashMap<String, crate::turn_cards::CardMark>,
     on_card_mark: Option<EventHandler<(String, crate::turn_cards::CardMark)>>,
     forkable: Vec<String>,
+    on_open_changes: Option<EventHandler<()>>,
+    offer_marks: std::collections::HashMap<String, crate::turn_view::OfferMark>,
+    on_offer: Option<EventHandler<(crate::turn_view::SessionOffer, crate::turn_view::OfferAction)>>,
+    offer_choices: Option<crate::turn_view::OfferChoices>,
 ) -> Element {
     match item {
         Item::User(message) => {
@@ -116,8 +159,15 @@ fn TurnItem(
                         }
                     }
                     if !text.is_empty() {
-                        div { class: "user-bubble", "{text}" }
+                        UserBubble { text: text.clone() }
                         div { class: "message-actions",
+                            // The desktop app's read mark (observed 2026-11-06): two ticks, `Claude님이 읽음`,
+                            // once the SDK has taken the message in (it then has an id).
+                            if message.uuid.is_some() {
+                                span { class: "read-mark", title: tr!("Read by Claude"), Icon { kind: IconKind::DoubleCheck, size: IconSize::Small } }
+                            } else {
+                                span { class: "read-mark", title: tr!("Sent"), Icon { kind: IconKind::Check, size: IconSize::Small } }
+                            }
                             if let Some(at) = message.at.as_deref() {
                                 {
                                     let time = relative_time(at, OffsetDateTime::now_utc());
@@ -165,10 +215,29 @@ fn TurnItem(
             rsx! { div { class: "turn-text markdown", dangerous_inner_html: "{html}" } }
         }
         Item::Thinking(text) => rsx! { div { class: "thinking", "{text}" } },
-        Item::Activity(activity) => rsx! { ActivityBlock { activity, detailed, on_open_file } },
+        Item::Activity(activity) => rsx! { ActivityBlock { activity, detailed, on_open_file, on_open_changes } },
         Item::FileCard(card) => rsx! { FileCardView { card, on_open_file } },
-        Item::Footer(footer) => rsx! { FooterView { footer } },
+        Item::Footer(footer) => {
+            // Only a turn whose message has an id can carry a pinned chapter.
+            let pin = turn_user.map(|anchor| (pinned_chapters.contains(&anchor), anchor));
+            rsx! { FooterView { footer, next_user, on_fork_here, pin, on_pin_chapter } }
+        }
         Item::Answers(pairs) => rsx! { AnswerCard { pairs } },
+        Item::Received { title, text } => rsx! { ReceivedMessage { title, text } },
+        Item::SessionOffer(offer) => {
+            let mark = offer_marks.get(&offer.id).copied();
+            rsx! { SessionOfferCard { offer, mark, on_offer, choices: offer_choices } }
+        }
+        // A chapter's heading, as the desktop app draws it: the title in bold, the summary on hover.
+        // `data-chapter` lets the table of contents scroll to it.
+        Item::Chapter(chapter) => rsx! {
+            div {
+                class: "chapter-heading",
+                "data-chapter": "{chapter.index}",
+                title: chapter.summary.clone().unwrap_or_default(),
+                "{chapter.title}"
+            }
+        },
         Item::Live(line) => rsx! { RunningLine { line } },
         Item::Workflow(item) => {
             let running = workflows.iter().find(|workflow| workflow.task_id == item.task_id).cloned();
@@ -245,9 +314,10 @@ fn WorkflowLine(item: WorkflowItem, running: Option<RunningWorkflow>, ended: Opt
 }
 
 #[component]
-fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<String>) -> Element {
+fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<String>, on_open_changes: Option<EventHandler<()>>) -> Element {
     let mut open = use_signal(|| false);
     let shown = open() || detailed;
+    let changed = activity.added + activity.removed > 0;
     rsx! {
         div { class: "activity",
             button {
@@ -257,6 +327,19 @@ fn ActivityBlock(activity: Activity, detailed: bool, on_open_file: EventHandler<
                 onclick: move |_| open.set(!shown),
                 span { class: "activity-summary", "{activity.summary}" }
                 CountChips { added: activity.added, removed: activity.removed }
+                // The desktop app's fold line ends with `· 변경 사항 보기` when the turn changed files (round 37).
+                if let (true, Some(open_changes)) = (changed, on_open_changes) {
+                    span { class: "activity-sep", "·" }
+                    span {
+                        class: "activity-changes-link",
+                        role: "link",
+                        onclick: move |event: MouseEvent| {
+                            event.stop_propagation();
+                            open_changes.call(());
+                        },
+                        {tr!("View changes")}
+                    }
+                }
                 span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: shown } }
                 if let Some(path) = activity.image.clone() {
                     ReadThumbnail { path }
@@ -287,13 +370,23 @@ fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>
     let mut expanded = use_signal(|| false);
     let open = expanded() || detailed;
     let class = if tool.failed { "activity-row-head failed" } else { "activity-row-head" };
+    // A file that was read opens in the Files panel from anywhere on its row, as in the desktop app
+    // (observed 2026-11-06); other rows open in place.
+    let opens_file = tool.kind == ToolKind::Read && !tool.path.is_empty() && !tool.failed && !detailed;
+    let read_path = tool.path.clone();
     rsx! {
         div { class: "activity-row",
             button {
                 class: "{class}",
                 r#type: "button",
                 "aria-expanded": "{open}",
-                onclick: move |_| expanded.set(!open),
+                onclick: move |_| {
+                    if opens_file {
+                        on_open_file.call(read_path.clone());
+                    } else {
+                        expanded.set(!open);
+                    }
+                },
                 if !tool.verb.is_empty() {
                     span { class: "row-verb", "{tool.verb}" }
                 }
@@ -366,9 +459,10 @@ fn FileCardView(card: FileCard, on_open_file: EventHandler<String>) -> Element {
 }
 
 #[component]
-fn FooterView(footer: Footer) -> Element {
+fn FooterView(footer: Footer, next_user: Option<String>, on_fork_here: Option<EventHandler<Option<String>>>, pin: Option<(bool, String)>, on_pin_chapter: Option<EventHandler<(String, String)>>) -> Element {
     let time = footer.at.as_deref().map(|at| relative_time(at, OffsetDateTime::now_utc())).unwrap_or_default();
     let text = footer.text.clone();
+    let spoken = footer.text.clone();
     rsx! {
         div { class: "turn-footer",
             button {
@@ -378,11 +472,77 @@ fn FooterView(footer: Footer) -> Element {
                 onclick: move |_| crate::clipboard::copy_text(&text),
                 Icon { kind: IconKind::Copy, size: IconSize::Small }
             }
+            // The desktop app's footer (observed 2026-11-06): 여기서 포크하기, 소리 내어 읽기.
+            if let Some(on_fork_here) = on_fork_here {
+                button {
+                    class: "icon-button",
+                    r#type: "button",
+                    title: tr!("Fork from here: starts a new session from this point; this session stays as it is."),
+                    "aria-label": tr!("Fork from here"),
+                    onclick: move |_| on_fork_here.call(next_user.clone()),
+                    Icon { kind: IconKind::Fork, size: IconSize::Small }
+                }
+            }
+            if let (Some(on_pin_chapter), Some((pinned, anchor))) = (on_pin_chapter, pin) {
+                button {
+                    class: if pinned { "icon-button active" } else { "icon-button" },
+                    r#type: "button",
+                    title: if pinned { tr!("Unpin chapter") } else { tr!("Pin as chapter") },
+                    "aria-label": if pinned { tr!("Unpin chapter") } else { tr!("Pin as chapter") },
+                    "aria-pressed": "{pinned}",
+                    onclick: {
+                        let title = crate::turn_view::pinned_chapter_title(&footer.text);
+                        move |_| on_pin_chapter.call((anchor.clone(), title.clone()))
+                    },
+                    Icon { kind: if pinned { IconKind::PinFilled } else { IconKind::Pin }, size: IconSize::Small }
+                }
+            }
+            button {
+                class: "icon-button",
+                r#type: "button",
+                title: tr!("Read aloud"),
+                "aria-label": tr!("Read aloud"),
+                onclick: move |_| read_aloud(&spoken),
+                Icon { kind: IconKind::Speaker, size: IconSize::Small }
+            }
             if !time.is_empty() {
                 span { class: "footer-time", "{time}" }
             }
         }
     }
+}
+
+/// The words of an answer without its markdown marks, for speech.
+pub fn speech_text(markdown: &str) -> String {
+    let mut out = String::new();
+    let mut in_code = false;
+    for line in markdown.lines() {
+        if line.trim_start().starts_with("```") {
+            in_code = !in_code;
+            continue;
+        }
+        if in_code {
+            continue;
+        }
+        let line = line.trim_start_matches(|c: char| c == '#' || c == '>' || c == ' ');
+        let line = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")).unwrap_or(line);
+        let cleaned: String = line.chars().filter(|c| !matches!(c, '*' | '`' | '_' | '|')).collect();
+        if !cleaned.trim().is_empty() {
+            out.push_str(cleaned.trim());
+            out.push('\n');
+        }
+    }
+    out.trim().to_string()
+}
+
+/// Reads an answer out loud with the system voice through the web view's speech API, or stops
+/// the reading when one is going (the desktop app's `소리 내어 읽기`).
+fn read_aloud(markdown: &str) {
+    let text = serde_json::to_string(&speech_text(markdown)).unwrap_or_else(|_| "\"\"".to_string());
+    let script = format!(
+        "if (window.speechSynthesis) {{ if (speechSynthesis.speaking) {{ speechSynthesis.cancel(); }} else {{ const u = new SpeechSynthesisUtterance({text}); u.lang = document.documentElement.lang || navigator.language; speechSynthesis.speak(u); }} }}"
+    );
+    document::eval(&script);
 }
 
 /// The seconds of a running turn. Only this component re-renders each second; the transcript above
@@ -402,6 +562,188 @@ pub fn Clock(started: Option<SystemTime>) -> Element {
     rsx! { span { class: "live-clock", "{label}" } }
 }
 
+/// A message another session sent here, folded as the desktop app does: `수신 메시지 1개 · <title> ›`,
+/// the text inside when opened.
+#[component]
+fn ReceivedMessage(title: String, text: String) -> Element {
+    let mut open = use_signal(|| false);
+    rsx! {
+        div { class: "activity",
+            button { class: "activity-head", r#type: "button", "aria-expanded": "{open()}", onclick: move |_| open.set(!open()),
+                span { class: "activity-summary", {tr!("Received {count} message", count = 1)} " · {title}" }
+                span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: open() } }
+            }
+            if open() {
+                div { class: "activity-box received-text", "{text}" }
+            }
+        }
+    }
+}
+
+/// A session Claude proposed, as the desktop app's card (observed 2026-11-06): a grey strip `새 세션`,
+/// the title, the brief's first line, `×`, and `여기서 하기` / a black `시작`. Started, it becomes one
+/// line with the title and `›` that opens the new session; closed or taken here, it goes.
+#[component]
+fn SessionOfferCard(offer: crate::turn_view::SessionOffer, mark: Option<crate::turn_view::OfferMark>, on_offer: Option<EventHandler<(crate::turn_view::SessionOffer, crate::turn_view::OfferAction)>>, choices: Option<crate::turn_view::OfferChoices>) -> Element {
+    use crate::turn_view::{OfferAction, OfferMark, OfferStart};
+    let mut options_open = use_signal(|| false);
+    // What `옵션` picked; `None` until the person changes something, so Start is like this session.
+    let picked: Signal<Option<OfferStart>> = use_signal(|| None);
+    let source = offer.clone();
+    let act = move |action: OfferAction| {
+        let offer = source.clone();
+        move |_| {
+            if let Some(on_offer) = on_offer {
+                let mut offer = offer.clone();
+                offer.start_with = picked.peek().clone();
+                on_offer.call((offer, action));
+            }
+        }
+    };
+    // A hand-off starts by itself, so it is always the line, never a card with buttons (a fork's
+    // copy of the conversation holds the call with no mark of its own).
+    let mark = if offer.fork { Some(OfferMark::Started) } else { mark };
+    match mark {
+        Some(OfferMark::Here) => rsx! {},
+        // The desktop app keeps a closed card as a quiet line (observed 2026-11-06).
+        Some(OfferMark::Dismissed) => rsx! {
+            div { class: "offer-started offer-dismissed",
+                span { class: "offer-started-title", "{offer.title}" }
+                span { class: "offer-dismissed-note", {tr!("Dismissed")} }
+            }
+        },
+        Some(OfferMark::Drafted) => rsx! {
+            div { class: "offer-started offer-dismissed",
+                span { class: "offer-started-title", "{offer.title}" }
+                span { class: "offer-dismissed-note", {tr!("Moved to a new session")} }
+            }
+        },
+        Some(OfferMark::Started) => rsx! {
+            button { class: "offer-started", r#type: "button", onclick: act(OfferAction::Open),
+                span { class: "offer-started-title", "{offer.title}" }
+                Icon { kind: IconKind::Chevron, size: IconSize::Small }
+            }
+        },
+        None => rsx! {
+            div { class: "offer-card",
+                div { class: "offer-head", {tr!("New session")} }
+                div { class: "offer-body",
+                    div { class: "offer-text",
+                        div { class: "offer-title", "{offer.title}" }
+                        if !offer.lead.is_empty() { div { class: "offer-lead", "{offer.lead}" } }
+                    }
+                    if on_offer.is_some() {
+                        button { class: "icon-button offer-close", r#type: "button", title: tr!("Close"), "aria-label": tr!("Close"), onclick: act(OfferAction::Dismiss),
+                            Icon { kind: IconKind::Close, size: IconSize::Small }
+                        }
+                    }
+                }
+                if on_offer.is_some() {
+                    div { class: "offer-actions",
+                        if let Some(choices) = choices.clone() {
+                            div { class: "offer-options-wrap",
+                                button {
+                                    class: if options_open() { "offer-options-button open" } else { "offer-options-button" },
+                                    r#type: "button",
+                                    "aria-expanded": "{options_open()}",
+                                    onclick: move |_| options_open.set(!options_open()),
+                                    {tr!("Options")}
+                                }
+                                if options_open() {
+                                    div { class: "menu-backdrop", onclick: move |_| options_open.set(false) }
+                                    OfferOptions { choices, picked }
+                                }
+                            }
+                        }
+                        span { class: "offer-actions-gap" }
+                        button { class: "offer-here", r#type: "button", onclick: act(OfferAction::Here), {tr!("Do it here")} }
+                        button { class: "offer-start", r#type: "button", onclick: act(OfferAction::Start), {tr!("Start")} }
+                    }
+                }
+            }
+        },
+    }
+}
+
+/// The popover of a proposed session's `옵션`: the folder it starts in, then 모델, 노력 and 권한, each
+/// starting from this session's own. A change is kept in `picked` for the card's Start.
+#[component]
+fn OfferOptions(choices: crate::turn_view::OfferChoices, picked: Signal<Option<crate::turn_view::OfferStart>>) -> Element {
+    let mut picked = picked;
+    let now = picked().unwrap_or_else(|| choices.current.clone());
+    let set = move |change: Box<dyn Fn(&mut crate::turn_view::OfferStart)>| {
+        let mut next = picked.peek().clone().unwrap_or_else(|| choices.current.clone());
+        change(&mut next);
+        picked.set(Some(next));
+    };
+    let rows: [(String, Vec<(String, String)>, String, u8); 3] = [
+        (tr!("Model").to_string(), choices.models.clone(), now.model.clone(), 0),
+        (tr!("Effort").to_string(), choices.efforts.clone(), now.effort.clone(), 1),
+        (tr!("Permission").to_string(), choices.modes.clone(), now.mode.clone(), 2),
+    ];
+    let folder = choices.environments.iter().find(|(id, _, _)| *id == now.environment).map(|(_, _, folder)| folder.clone()).unwrap_or_else(|| choices.folder.clone());
+    let mut env_options: Vec<(String, String)> = vec![(String::new(), tr!("This computer").to_string())];
+    env_options.extend(choices.environments.iter().map(|(id, name, _)| (id.clone(), name.clone())));
+    let mut set_env = set.clone();
+    rsx! {
+        div { class: "offer-options", role: "dialog",
+            label { class: "offer-options-row",
+                span { {tr!("Environment")} }
+                select {
+                    class: "select",
+                    value: "{now.environment}",
+                    onchange: move |event: Event<FormData>| {
+                        let chosen = event.value();
+                        set_env(Box::new(move |start: &mut crate::turn_view::OfferStart| start.environment = chosen.clone()));
+                    },
+                    for (option, text) in env_options {
+                        option { key: "{option}", value: "{option}", selected: option == now.environment, "{text}" }
+                    }
+                }
+            }
+            div { class: "offer-options-folder",
+                Icon { kind: IconKind::Folder, size: IconSize::Small }
+                span { "{folder}" }
+            }
+            for (label, options, value, which) in rows {
+                label { key: "{which}", class: "offer-options-row",
+                    span { "{label}" }
+                    select {
+                        class: "select",
+                        value: "{value}",
+                        onchange: {
+                            let mut set = set.clone();
+                            move |event: Event<FormData>| {
+                                let chosen = event.value();
+                                set(Box::new(move |start: &mut crate::turn_view::OfferStart| match which {
+                                    0 => start.model = chosen.clone(),
+                                    1 => start.effort = chosen.clone(),
+                                    _ => start.mode = chosen.clone(),
+                                }));
+                            }
+                        },
+                        for (option, text) in options {
+                            option { key: "{option}", value: "{option}", selected: option == value, "{text}" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The running turn's output tokens after the clock: `· 474 토큰`. Nothing before the first count.
+#[component]
+fn LiveTokens(tokens: Option<u64>) -> Element {
+    match tokens.filter(|count| *count > 0) {
+        Some(count) => {
+            let amount = crate::details_view::format_tokens_short(count);
+            rsx! { span { class: "live-tokens", "· " {tr!("{amount} tokens", amount = amount)} } }
+        }
+        None => rsx! {},
+    }
+}
+
 /// What the running turn is doing right now: a tool, the model writing, or a question for the person.
 #[component]
 fn RunningLine(line: LiveLine) -> Element {
@@ -414,6 +756,13 @@ fn RunningLine(line: LiveLine) -> Element {
                     span { class: "live-subject", "{line.subject}" }
                 }
                 Clock { started: line.started }
+                LiveTokens { tokens: line.tokens }
+            }
+        },
+        LiveKind::Thinking if line.starting => rsx! {
+            div { class: "live-line",
+                span { class: "live-starting" }
+                span { class: "live-label", "{line.label}" }
             }
         },
         LiveKind::Thinking => rsx! {
@@ -423,13 +772,14 @@ fn RunningLine(line: LiveLine) -> Element {
                     span { class: "live-label", "{line.label}" }
                 }
                 Clock { started: line.started }
+                LiveTokens { tokens: line.tokens }
             }
         },
         LiveKind::NeedsInput => rsx! {
+            // The desktop app's waiting mark: an amber pill with an animated ring, nothing else.
             div { class: "live-line",
-                span { class: "live-ring" }
-                span { class: "needs-input", "{line.label} " Icon { kind: IconKind::Chevron, size: IconSize::Small } }
-                CountChips { added: line.added, removed: line.removed }
+                span { class: "live-ring waiting" }
+                span { class: "needs-input", "{line.label}" }
             }
         },
     }
@@ -460,5 +810,42 @@ mod compacted_tests {
         assert_eq!(compacted_label(Some(5), None), "Session compacted");
         assert_eq!(compacted_label(None, Some(5)), "Session compacted");
         assert_eq!(compacted_label(Some(10), Some(20)), "Session compacted", "nothing saved is not claimed");
+    }
+}
+
+/// Whether a sent message is long enough to fold: more than about nine lines at the bubble's width.
+pub fn is_long_message(text: &str) -> bool {
+    let lines: usize = text.lines().map(|line| 1 + line.chars().count() / 70).sum();
+    lines > 9
+}
+
+/// The person's message. A long one is folded to its first lines under a fade with `더 보기`, as
+/// in the desktop app (observed 2026-11-06); `간단히 보기` folds it again.
+#[component]
+fn UserBubble(text: String) -> Element {
+    let mut open = use_signal(|| false);
+    let long = is_long_message(&text);
+    let class = if long && !open() { "user-bubble folded" } else { "user-bubble" };
+    rsx! {
+        div { class: "{class}",
+            div { class: "user-bubble-text", "{text}" }
+            if long {
+                button {
+                    class: "user-bubble-more",
+                    r#type: "button",
+                    onclick: move |_| open.set(!open()),
+                    if open() { {tr!("Show less")} } else { {tr!("Show more")} }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod speech_tests {
+    #[test]
+    fn speech_leaves_out_code_blocks_and_markdown_marks() {
+        let text = "## Done\n\nThe **fix** is in `stats.py`:\n\n```python\nx = 1\n```\n- one\n| a | b |";
+        assert_eq!(super::speech_text(text), "Done\nThe fix is in stats.py:\none\na  b");
     }
 }

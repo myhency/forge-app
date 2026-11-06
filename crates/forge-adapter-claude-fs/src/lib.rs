@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 mod connector_catalog;
+mod extension_bundles;
 mod fork;
 mod sessions;
 mod skill_catalog;
@@ -16,6 +17,7 @@ mod usage;
 mod usage_stats;
 
 pub use connector_catalog::ClaudeConnectorCatalogAdapter;
+pub use extension_bundles::ExtensionBundles;
 pub use sessions::ClaudeSessionAdapter;
 pub use skill_catalog::ClaudeSkillCatalogAdapter;
 pub use skills::ClaudeSkillAdapter;

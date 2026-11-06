@@ -1,3 +1,4 @@
+mod low_disk;
 mod account_menu;
 mod changes_comment;
 mod changes_header;
@@ -36,6 +37,7 @@ mod plan_card;
 mod start_line;
 mod plus_menu;
 mod auto_mode_card;
+mod offer_chips;
 mod environment_card;
 mod local_card;
 mod preview_panel;
@@ -94,3 +96,5 @@ pub use workspace_trust_dialog::WorkspaceTrustDialog;
 pub use sidebar::{project_label, project_label_in, project_labels, NavButtons, Sidebar};
 pub use usage_ring::UsageRing;
 pub use web_view_host::WebViewHost;
+
+pub use low_disk::LowDiskBanner;

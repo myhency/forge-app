@@ -413,6 +413,7 @@ fn ContextCard(id: LiveSessionId) -> Element {
                     }
                     ContextFold { title: tr!("MCP tools"), items: card.mcp_tools.clone() }
                     ContextFold { title: tr!("Custom agents"), items: card.agents.clone() }
+                    ContextFold { title: tr!("Memory files"), items: card.memory_files.clone() }
                 } else {
                     div { class: "env-card-note", {tr!("Send a message to see the context usage.")} }
                 }

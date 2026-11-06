@@ -94,6 +94,12 @@ pub struct WorkspaceServices {
     pub git: Arc<dyn GitPort>,
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
+    /// Dev servers started in the background where the Terminal panel cannot run them (Windows).
+    pub background: Arc<dyn forge_ports::BackgroundPort>,
+    /// Desktop extensions (`.mcpb`, `.dxt`), installed as connectors.
+    pub bundles: Arc<dyn forge_ports::ExtensionBundlePort>,
+    /// The system's dictation, for the message box's microphone button.
+    pub dictation: Arc<dyn forge_ports::DictationPort>,
     pub webviews: Arc<dyn WebViewPort>,
     pub usage_stats: Arc<dyn UsageStatsPort>,
     pub mcp_logs: Arc<dyn McpLogPort>,
@@ -205,6 +211,15 @@ pub struct Workspace {
     rewind_requests: Signal<HashMap<LiveSessionId, String>>,
     /// What became of each session's end cards (by the `wrap_up` call's id): closed, or already sent.
     end_card_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::CardMark>>>,
+    /// Sessions with a reply the person has not looked at, by Claude session id (the desktop app's blue
+    /// dot and `읽지 않음으로 표시`); kept while the app runs.
+    unread: Signal<std::collections::HashSet<String>>,
+    /// Folders whose start-line environment hint the person put off; kept while the app runs.
+    env_hint_dismissed: Signal<std::collections::HashSet<PathBuf>>,
+    /// What became of each session's proposed-session cards, by the `start_session` call's id.
+    offer_marks: Signal<HashMap<LiveSessionId, HashMap<String, forge_entities::OfferMark>>>,
+    /// The session a card started, by (the proposing session, the call's id).
+    offer_sessions: Signal<HashMap<(LiveSessionId, String), LiveSessionId>>,
     /// The `/status` and `/usage` cards of each session, oldest first; a send takes them away.
     local_cards: Signal<HashMap<LiveSessionId, Vec<forge_entities::LocalCard>>>,
     /// The `/stats` card of each session: what was read from every session and the range chosen on the card. It is drawn
@@ -231,6 +246,8 @@ pub struct Workspace {
     change_count_tickets: Signal<HashMap<LiveSessionId, u64>>,
     /// The Outputs card's files per session, and the ticket of its latest read.
     outputs: Signal<OutputsStore>,
+    /// Dev servers each session started in the background (see `use_dev_server`).
+    background_servers: Signal<HashMap<LiveSessionId, Vec<BackgroundServer>>>,
     /// The `@` mention's file list per session.
     file_lists: Signal<FileListStore>,
     /// The file outside the session folder that the note asks about.
@@ -317,6 +334,10 @@ pub fn use_workspace_provider() -> Workspace {
             queued_files: root_signal(HashMap::new()),
             rewind_requests: root_signal(HashMap::new()),
             end_card_marks: root_signal(HashMap::new()),
+            offer_marks: root_signal(HashMap::new()),
+            env_hint_dismissed: root_signal(std::collections::HashSet::new()),
+            unread: root_signal(std::collections::HashSet::new()),
+            offer_sessions: root_signal(HashMap::new()),
             local_cards: root_signal(HashMap::new()),
             stats_cards: root_signal(HashMap::new()),
             code_runs: root_signal(HashMap::new()),
@@ -332,6 +353,7 @@ pub fn use_workspace_provider() -> Workspace {
             change_counts: root_signal(HashMap::new()),
             change_count_tickets: root_signal(HashMap::new()),
             outputs: root_signal(OutputsStore::default()),
+            background_servers: root_signal(HashMap::new()),
             file_lists: root_signal(FileListStore::default()),
             outside_file: root_signal(None),
             customize_tab_request: root_signal(OneShot::default()),
@@ -416,6 +438,15 @@ impl Workspace {
             .iter()
             .map(|entry| LiveSummary::from_view(&entry.view.read()))
             .collect();
+        // A session a card started nests under the session that proposed it.
+        let parents: HashMap<LiveSessionId, LiveSessionId> = self.offer_sessions.read().iter().map(|((parent, _), child)| (*child, *parent)).collect();
+        let open: Vec<LiveSummary> = open
+            .into_iter()
+            .map(|mut summary| {
+                summary.started_from = parents.get(&summary.id).and_then(|parent| self.live_view(*parent)).and_then(|view| view.read().claude_session_id.clone());
+                summary
+            })
+            .collect();
         let mut groups = merge_sidebar(&self.past.read(), &open);
         mark_archived(&mut groups, &self.archived.read());
         groups
@@ -430,6 +461,124 @@ impl Workspace {
     pub fn update_prefs(&self, change: impl FnOnce(&mut SidebarPrefs)) {
         self.change_prefs_unsaved(change);
         self.save_prefs();
+    }
+
+    /// Whether the session has a reply the person has not looked at.
+    pub fn is_unread(&self, session: &SessionId) -> bool {
+        self.unread.read().contains(&session.0)
+    }
+
+    /// Marks a session read or unread by hand (the row menu's `읽지 않음으로 표시 U`).
+    pub fn toggle_unread(&self, session: SessionId) {
+        let mut unread = self.unread;
+        let mut set = unread.write();
+        if !set.remove(&session.0) {
+            set.insert(session.0);
+        }
+    }
+
+    /// An open session finished a reply while the person looked elsewhere.
+    pub fn mark_unread_live(&self, id: LiveSessionId) {
+        if let Some(session) = self.live_view(id).and_then(|view| view.peek().claude_session_id.clone()) {
+            let mut unread = self.unread;
+            unread.write().insert(session.0);
+        }
+    }
+
+    /// Whether the session is pinned (`고정`).
+    pub fn is_pinned(&self, project: &Path, session: &SessionId) -> bool {
+        self.prefs.read().pinned.iter().any(|pin| pin.project == project && pin.session_id == session.0)
+    }
+
+    /// Pins or unpins a session; pinned sessions sit in the `고정됨` group at the top of the sidebar.
+    pub fn toggle_pin(&self, project: PathBuf, session: SessionId) {
+        self.update_prefs(|prefs| {
+            if let Some(at) = prefs.pinned.iter().position(|pin| pin.project == project && pin.session_id == session.0) {
+                prefs.pinned.remove(at);
+            } else {
+                prefs.pinned.push(forge_domain::ArchivedRef { project, session_id: session.0 });
+            }
+        });
+    }
+
+    /// The section a session sits in, if any.
+    pub fn section_of(&self, session: &SessionId) -> Option<String> {
+        self.prefs.read().sections.iter().find(|section| section.sessions.iter().any(|id| *id == session.0)).map(|section| section.id.clone())
+    }
+
+    /// Moves a session into a section (`None`: back to its usual group).
+    pub fn move_to_section(&self, session: SessionId, section: Option<String>) {
+        self.update_prefs(|prefs| {
+            for each in prefs.sections.iter_mut() {
+                each.sessions.retain(|id| *id != session.0);
+            }
+            if let Some(target) = section.and_then(|id| prefs.sections.iter_mut().find(|each| each.id == id)) {
+                target.sessions.push(session.0.clone());
+            }
+        });
+    }
+
+    /// Makes a section with this name and moves the session into it (`새 섹션`).
+    pub fn new_section_with(&self, session: SessionId, name: String) {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        let id = format!("section-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis()).unwrap_or(0));
+        self.update_prefs(|prefs| {
+            for each in prefs.sections.iter_mut() {
+                each.sessions.retain(|known| *known != session.0);
+            }
+            prefs.sections.push(forge_domain::SidebarSection { id, name, sessions: vec![session.0.clone()] });
+        });
+    }
+
+    pub fn rename_section(&self, id: &str, name: String) {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        self.update_prefs(|prefs| {
+            if let Some(section) = prefs.sections.iter_mut().find(|section| section.id == id) {
+                section.name = name;
+            }
+        });
+    }
+
+    /// Removes a section; its sessions go back to their usual groups.
+    pub fn delete_section(&self, id: &str) {
+        self.update_prefs(|prefs| prefs.sections.retain(|section| section.id != id));
+    }
+
+    /// Keeps what Claude sorted a session into (`세션 상태 분류`), so the status grouping can file
+    /// it after a restart too. Writes only when it changed.
+    pub fn mark_session_status(&self, session: &SessionId, status: forge_domain::SessionStatus) {
+        let known = self.prefs.peek().session_status.iter().any(|mark| mark.session_id == session.0 && mark.status == status);
+        if known {
+            return;
+        }
+        let id = session.0.clone();
+        self.update_prefs(|prefs| {
+            prefs.session_status.retain(|mark| mark.session_id != id);
+            prefs.session_status.push(forge_domain::StatusMark { session_id: id, status });
+        });
+    }
+
+    /// The chapters the person pinned in a session: (the id of the message that began the turn, the heading).
+    pub fn chapter_pins(&self, session: &SessionId) -> Vec<(String, String)> {
+        self.prefs.read().chapter_pins.iter().filter(|pin| pin.session_id == session.0).map(|pin| (pin.anchor.clone(), pin.title.clone())).collect()
+    }
+
+    /// Pins an answer as a chapter, or unpins it (the desktop app's `챕터로 고정`). Kept in the
+    /// sidebar preferences, so it stays after a restart.
+    pub fn toggle_chapter_pin(&self, session: SessionId, anchor: String, title: String) {
+        self.update_prefs(|prefs| {
+            if let Some(at) = prefs.chapter_pins.iter().position(|pin| pin.session_id == session.0 && pin.anchor == anchor) {
+                prefs.chapter_pins.remove(at);
+            } else {
+                prefs.chapter_pins.push(forge_domain::ChapterPin { session_id: session.0, anchor, title });
+            }
+        });
     }
 
     /// Changes the preferences on screen only (a drag changes the width many times); call
@@ -1031,6 +1180,60 @@ impl Workspace {
         });
     }
 
+    /// An answer's `여기서 포크하기`: copies the open session as it was right after that answer —
+    /// before `next_user`, the person's next message, or the whole of it when the answer is the
+    /// last — and opens the copy. Unlike a fork from a message, nothing goes back into the box.
+    pub fn fork_after(&self, id: LiveSessionId, next_user: Option<String>) {
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let mut past = self.past;
+        let Some(view) = self.live_view(id) else { return };
+        let (project, session_id, title) = {
+            let view = view.peek();
+            (view.project_path.clone(), view.claude_session_id.clone(), view.session.title.clone().unwrap_or_default())
+        };
+        let Some(session_id) = session_id else {
+            return self.report(tr!("This message cannot be forked yet.").to_string());
+        };
+        dioxus::core::spawn_forever(async move {
+            let made = match next_user {
+                Some(uuid) => services.registry.fork_before(&project, &session_id, &uuid, &title).await,
+                None => services.registry.fork(&project, &session_id, &title).await,
+            };
+            let new_id = match made {
+                Ok(id) => id,
+                Err(error) => return this.report(error.to_string()),
+            };
+            match services.sessions.list_sessions(&project).await {
+                Ok(sessions) => replace_project_sessions(&mut past.write(), &project, sessions),
+                Err(error) => return this.report(format!("{}: {error}", project.display())),
+            }
+            let summary = project_for_open(&past.peek(), &project);
+            this.open_past(summary, new_id);
+        });
+    }
+
+    /// Exports the open session as a zip in the Downloads folder (the desktop app's Export) and says
+    /// where it went. Nothing is uploaded.
+    pub fn export_active_session(&self, id: LiveSessionId) {
+        let Some(view) = self.live_view(id) else { return };
+        let (project, session) = {
+            let view = view.peek();
+            (view.project_path.clone(), view.claude_session_id.clone())
+        };
+        let Some(session) = session else {
+            return self.report(tr!("This session has no transcript to export yet.").to_string());
+        };
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        dioxus::core::spawn_forever(async move {
+            match services.sessions.export_session(&project, &session).await {
+                Ok(path) => this.report_info(tr!("Exported to {path}", path = path.display()).to_string()),
+                Err(error) => this.report(error.to_string()),
+            }
+        });
+    }
+
     /// The origin of the open session when it is a fork and the origin is listed (the `포크 원본` line).
     pub fn fork_origin(&self, id: LiveSessionId) -> Option<ForkOrigin> {
         let view = self.live_view(id)?;
@@ -1142,6 +1345,65 @@ impl Workspace {
         self.preview_load(id, tab, &url)
     }
 
+    /// The Preview panel's `개발 서버 감지`: the servers the session's folder offers (saved ones in
+    /// `.claude/launch.json` first, then the package.json scripts), as the desktop app finds them.
+    pub fn detect_dev_servers(&self, id: LiveSessionId) -> Vec<forge_domain::ServerCandidate> {
+        let Some(folder) = self.live_view(id).map(|view| view.peek().project_path.clone()) else { return Vec::new() };
+        let read = |name: &str| std::fs::read_to_string(folder.join(name)).ok();
+        let exists = |name: &str| folder.join(name).is_file();
+        forge_domain::dev_server_candidates(&exists, read("package.json").as_deref(), read(forge_domain::LAUNCH_JSON).as_deref())
+    }
+
+    /// `이것 사용`: keeps the server in `.claude/launch.json`, starts it in the Terminal panel unless
+    /// something already answers on its port, and shows it in the tab once it does. The error is a
+    /// message for the person.
+    pub fn use_dev_server(&self, id: LiveSessionId, tab: PreviewTabId, server: forge_domain::ServerCandidate) -> Result<(), String> {
+        let folder = self.live_view(id).map(|view| view.peek().project_path.clone()).ok_or_else(|| tr!("This session is not open.").to_string())?;
+        if !server.saved {
+            let path = folder.join(forge_domain::LAUNCH_JSON);
+            let existing = std::fs::read_to_string(&path).ok();
+            match forge_domain::with_server(existing.as_deref(), &server) {
+                Ok(text) => {
+                    let written = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| std::fs::write(&path, text));
+                    if let Err(error) = written {
+                        forge_log::warn("preview", &format!("launch.json not written: {error}"));
+                        return Err(tr!("This configuration could not be saved. Try again.").to_string());
+                    }
+                }
+                // The same name is there already: that entry stands, the server still starts.
+                Err(forge_domain::LaunchJsonError::NameExists) => {}
+                Err(forge_domain::LaunchJsonError::Unreadable) => return Err(tr!("This configuration could not be saved. Try again.").to_string()),
+            }
+        }
+        let url = server.url();
+        if port_answers(server.port) {
+            return self.preview_load(id, tab, &url);
+        }
+        if self.code_run_available() {
+            self.code_runs(id).start_server(&server.command_line(), &server.name, std::time::Instant::now());
+            self.open_terminal_panel(id);
+        } else {
+            // No terminal run here (Windows): the server runs in the background, its output kept for preview_logs.
+            let background = self.services.peek().background.clone();
+            let started = background.start(&folder, &server.command_line()).map_err(|error| tr!("{command} could not start: {error}", command = server.command_line(), error = error).to_string())?;
+            let mut servers = self.background_servers;
+            servers.write().entry(id).or_default().push(BackgroundServer { id: started, name: server.name.clone(), command: server.command_line() });
+        }
+        let this = *self;
+        let port = server.port;
+        dioxus::core::spawn_forever(async move {
+            // A dev server takes a few seconds to listen; give up after two minutes.
+            for _ in 0..240 {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if tokio::task::spawn_blocking(move || port_answers(port)).await.unwrap_or(false) {
+                    let _ = this.preview_load(id, tab, &url);
+                    return;
+                }
+            }
+        });
+        Ok(())
+    }
+
     fn preview_load(&self, id: LiveSessionId, tab: PreviewTabId, url: &str) -> Result<(), String> {
         let (webviews, browser, surface) = (self.webviews(), self.browser(), self.surface());
         let mut previews = self.previews;
@@ -1155,7 +1417,19 @@ impl Workspace {
         self.open_preview_tab(id, &forge_entities::file_address(absolute_path));
     }
 
-    fn open_preview_tab(&self, id: LiveSessionId, url: &str) {
+    /// Opens the Preview panel with a new empty tab, for a page that comes later.
+    pub(crate) fn open_empty_preview_tab(&self, id: LiveSessionId) -> Option<PreviewTabId> {
+        self.change_dock(id, |dock| {
+            if !dock.is_open(Panel::Preview) {
+                dock.toggle(Panel::Preview);
+            }
+        });
+        let mut tab = None;
+        self.change_previews(id, |tabs| tab = Some(tabs.open()));
+        tab
+    }
+
+    pub(crate) fn open_preview_tab(&self, id: LiveSessionId, url: &str) {
         self.change_dock(id, |dock| {
             if !dock.is_open(Panel::Preview) {
                 dock.toggle(Panel::Preview);
@@ -1515,6 +1789,285 @@ impl Workspace {
         }
     }
 
+    /// How many sessions the folder holds, as listed (this one included once it is on disk).
+    pub fn folder_session_count(&self, folder: &Path) -> usize {
+        self.past.read().iter().filter(|(project, _)| project.path == folder).map(|(_, sessions)| sessions.len()).sum()
+    }
+
+    /// Whether the person put off the start line's environment hint for this folder (`나중에`).
+    pub fn env_hint_dismissed(&self, folder: &Path) -> bool {
+        self.env_hint_dismissed.read().contains(folder)
+    }
+
+    pub fn dismiss_env_hint(&self, folder: PathBuf) {
+        let mut dismissed = self.env_hint_dismissed;
+        dismissed.write().insert(folder);
+    }
+
+    /// What became of a session's proposed-session cards.
+    pub fn offer_marks(&self, id: LiveSessionId) -> HashMap<String, forge_entities::OfferMark> {
+        self.offer_marks.read().get(&id).cloned().unwrap_or_default()
+    }
+
+    /// The proposals open sessions are waiting on (no card button pressed yet), newest session first:
+    /// the new-session screen's chips.
+    pub fn pending_offers(&self) -> Vec<(LiveSessionId, forge_entities::SessionOffer)> {
+        let marks = self.offer_marks.read();
+        let started = self.offer_sessions.read();
+        let mut out = Vec::new();
+        for (id, view) in self.live_views().into_iter().rev() {
+            if self.is_routine_session(id) {
+                continue;
+            }
+            for offer in forge_entities::open_offers(&view.read().session.messages) {
+                let handled = marks.get(&id).is_some_and(|marks| marks.contains_key(&offer.id)) || started.contains_key(&(id, offer.id.clone()));
+                if !handled {
+                    out.push((id, offer));
+                }
+            }
+        }
+        out
+    }
+
+    /// A chip pressed: the proposal's brief goes into the new session's box, in its session's folder,
+    /// and its card in the session says it moved.
+    pub fn draft_offer(&self, id: LiveSessionId, offer: forge_entities::SessionOffer) {
+        // The desktop app's brief: what the session that proposed it knew, then the task.
+        let text = if !offer.brief.trim().is_empty() {
+            offer.brief.clone()
+        } else {
+            match self.message_before_call(id, &offer.id) {
+                Some(asked) => format!("Background (from the session that started this one):\n{}\n\nTask:\n{}", asked.trim(), offer.title),
+                None => offer.title.clone(),
+            }
+        };
+        if let Some(view) = self.live_view(id) {
+            let folder = view.peek().project_path.clone();
+            self.set_new_folder(Some(folder));
+        }
+        self.mark_offer(id, offer.id, forge_entities::OfferMark::Drafted);
+        let mut unsent = self.new_unsent;
+        unsent.set(Some(text));
+    }
+
+    fn mark_offer(&self, id: LiveSessionId, call_id: String, mark: forge_entities::OfferMark) {
+        let mut marks = self.offer_marks;
+        marks.write().entry(id).or_default().insert(call_id, mark);
+    }
+
+    /// The person's message that the turn holding a tool call answered.
+    fn message_before_call(&self, id: LiveSessionId, call_id: &str) -> Option<String> {
+        let view = self.live_view(id)?;
+        let view = view.peek();
+        let messages = &view.session.messages;
+        let at = messages.iter().position(|message| message.blocks.iter().any(|block| matches!(block, forge_domain::Block::Tool(call) if call.id == call_id)))?;
+        messages[..at].iter().rev().find(|message| message.role == forge_domain::MessageRole::User).map(|message| message.text()).filter(|text| !text.trim().is_empty())
+    }
+
+    /// Starts, once, every session Claude started for the person with `항상 새 세션 시작` on: a
+    /// `start_session` call in the running turn that the sidecar answered with `Started …` and no card
+    /// mark yet.
+    pub fn start_requested_offers(&self, id: LiveSessionId) {
+        // A session an offer started never starts one by itself: one split-off request must not chain.
+        if self.offer_sessions.peek().values().any(|child| *child == id) {
+            return;
+        }
+        let Some(view) = self.live_view(id) else { return };
+        let offers: Vec<forge_entities::SessionOffer> = {
+            let view = view.peek();
+            // Only the running turn's calls: a reopened session must not start its old proposals again.
+            if view.phase != forge_application::Phase::Running {
+                return;
+            }
+            let turn_start = view.session.messages.iter().rposition(|message| message.role == forge_domain::MessageRole::User).unwrap_or(0);
+            view.session.messages[turn_start..]
+                .iter()
+                .flat_map(|message| message.blocks.iter())
+                .filter_map(|block| if let forge_domain::Block::Tool(call) = block { forge_entities::session_offer(call) } else { None })
+                .filter(|offer| offer.auto_start)
+                .collect()
+        };
+        for offer in offers {
+            if !self.offer_marks.peek().get(&id).is_some_and(|marks| marks.contains_key(&offer.id)) {
+                self.act_on_offer(id, offer, forge_entities::OfferAction::Start);
+            }
+        }
+    }
+
+    /// Acts on a card Claude drew with `start_session` (the desktop app's `새 세션` card): starts the
+    /// proposed session beside this one (same folder, mode, model and effort; it stays in the
+    /// background, as in the desktop app), takes the work here, closes the card, or opens the session
+    /// the card started.
+    pub fn act_on_offer(&self, id: LiveSessionId, offer: forge_entities::SessionOffer, action: forge_entities::OfferAction) {
+        use forge_entities::{OfferAction, OfferMark};
+        match action {
+            OfferAction::Dismiss => self.mark_offer(id, offer.id, OfferMark::Dismissed),
+            OfferAction::Here => {
+                let Some(handle) = self.handle(id) else { return };
+                self.mark_offer(id, offer.id.clone(), OfferMark::Here);
+                handle.send_with(tr!("Do this here instead of in a new session: {title}", title = offer.title), Vec::new());
+            }
+            OfferAction::Open => {
+                let child = self.offer_sessions.peek().get(&(id, offer.id.clone())).copied();
+                match child {
+                    Some(child) if self.live_view(child).is_some() => self.open_session(child),
+                    _ => self.report(tr!("The session this card started is no longer open.").to_string()),
+                }
+            }
+            OfferAction::Start if offer.fork => self.hand_off(id, offer),
+            OfferAction::Start => {
+                let Some(view) = self.live_view(id) else { return };
+                let (mut project_path, mut mode, mut model, mut effort) = {
+                    let view = view.peek();
+                    (view.project_path.clone(), view.session.permission_mode, view.model.clone(), view.effort)
+                };
+                // A saved environment chosen in `옵션`: its folder, variables and extra folders (no worktree here).
+                let mut plan: Option<crate::EnvironmentStart> = None;
+                // The card's `옵션`, when the person changed something there.
+                if let Some(start) = &offer.start_with {
+                    mode = crate::permission_mode::parse_mode(&start.mode);
+                    model = (!start.model.is_empty()).then(|| start.model.clone());
+                    effort = forge_domain::EffortLevel::ALL.into_iter().find(|level| effort_value(*level) == start.effort);
+                    if !start.environment.is_empty() {
+                        let Some(environment) = self.environments().into_iter().find(|env| env.id == start.environment) else {
+                            return self.report(tr!("That environment is gone.").to_string());
+                        };
+                        match crate::environment::start_plan(&environment) {
+                            Ok(found) if !crate::environment::folder_missing(&found) => {
+                                project_path = found.folder.clone();
+                                plan = Some(found);
+                            }
+                            _ => return self.report(tr!("The {name} environment cannot start: its folder is missing or its variables do not read.", name = environment.name).to_string()),
+                        }
+                    }
+                }
+                let services = (*self.services.peek()).clone();
+                let project = ProjectSummary { path: project_path, last_active: String::new(), session_count: 0, exists: true };
+                // A title-only offer is the person's own request: the new session starts with their words.
+                // It is framed so the new session does the work rather than splitting it off again.
+                let brief = if offer.brief.is_empty() {
+                    let words = self.message_before_call(id, &offer.id).unwrap_or_else(|| offer.title.clone());
+                    format!("{}\n\n{words}", forge_entities::SPLIT_OFF_PREAMBLE)
+                } else {
+                    offer.brief.clone()
+                };
+                match services.registry.open_new_with_effort(&project, mode, model, effort, Vec::new()) {
+                    Ok(handle) => {
+                        let child = self.attach(handle.clone());
+                        if let Some(plan) = plan {
+                            if !plan.env.0.is_empty() {
+                                handle.set_env(plan.env.clone());
+                            }
+                            if !plan.extra.is_empty() {
+                                handle.add_directories(plan.extra.clone());
+                            }
+                        }
+                        handle.send_with(brief, Vec::new());
+                        let mut sessions = self.offer_sessions;
+                        sessions.write().insert((id, offer.id.clone()), child);
+                        self.mark_offer(id, offer.id.clone(), OfferMark::Started);
+                        self.report_back_when_done(id, child, offer.title);
+                    }
+                    Err(error) => self.report(error.to_string()),
+                }
+            }
+        }
+    }
+
+    /// Which open session each card or hand-off started: (the session that started it, the started one).
+    pub(crate) fn offer_sessions_snapshot(&self) -> Vec<(LiveSessionId, LiveSessionId)> {
+        self.offer_sessions.peek().iter().map(|((parent, _), child)| (*parent, *child)).collect()
+    }
+
+    pub(crate) fn services_snapshot(&self) -> WorkspaceServices {
+        (*self.services.peek()).clone()
+    }
+
+    /// Opens a past session in the background (it stays where it is in the sidebar) and sends it
+    /// `text` (an app tool's `send_message`).
+    pub(crate) fn open_and_send(&self, folder: PathBuf, session: SessionId, text: String) {
+        let this = *self;
+        let services = self.services_snapshot();
+        let past = self.past;
+        dioxus::core::spawn_forever(async move {
+            let project = project_for_open(&past.peek(), &folder);
+            match services.registry.open_existing(&project, session).await {
+                Ok(outcome) => {
+                    this.ensure_attached(outcome.handle.clone());
+                    outcome.handle.send_with(text, Vec::new());
+                }
+                Err(error) => this.report(error.to_string()),
+            }
+        });
+    }
+
+    /// Claude's `hand_off_to_session`: forks this conversation in the background, sends the fork the
+    /// remaining plan and nests it under this session; the line `title ›` opens it. Marked at once,
+    /// so the watcher never starts it twice while the copy is being made.
+    fn hand_off(&self, id: LiveSessionId, offer: forge_entities::SessionOffer) {
+        let Some(view) = self.live_view(id) else { return };
+        let (project_path, session_id) = {
+            let view = view.peek();
+            (view.project_path.clone(), view.claude_session_id.clone())
+        };
+        let Some(session_id) = session_id else { return };
+        self.mark_offer(id, offer.id.clone(), forge_entities::OfferMark::Started);
+        let this = *self;
+        let services = (*self.services.peek()).clone();
+        let mut past = self.past;
+        dioxus::core::spawn_forever(async move {
+            let new_id = match services.registry.fork_titled(&project_path, &session_id, &offer.title).await {
+                Ok(new_id) => new_id,
+                Err(error) => return this.report(error.to_string()),
+            };
+            if let Ok(sessions) = services.sessions.list_sessions(&project_path).await {
+                replace_project_sessions(&mut past.write(), &project_path, sessions);
+            }
+            let project = project_for_open(&past.peek(), &project_path);
+            match services.registry.open_existing(&project, new_id).await {
+                Ok(outcome) => {
+                    let child = this.ensure_attached(outcome.handle.clone());
+                    outcome.handle.send_with(format!("{}\n\n{}", forge_entities::HAND_OFF_PREAMBLE, offer.brief), Vec::new());
+                    let mut sessions = this.offer_sessions;
+                    sessions.write().insert((id, offer.id.clone()), child);
+                }
+                Err(error) => this.report(error.to_string()),
+            }
+        });
+    }
+
+    /// When the session a card started ends its first turn, sends its last reply to the session that
+    /// proposed it, so that one can check the work and report back (the desktop app does this: the
+    /// parent shows `수신 메시지 1개` and carries on). Gives up if either session closes.
+    fn report_back_when_done(&self, parent: LiveSessionId, child: LiveSessionId, title: String) {
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            let mut ran = false;
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let Some(view) = this.live_view(child) else { return };
+                let (phase, reply) = {
+                    let view = view.peek();
+                    let reply = view.session.messages.iter().rev().find(|message| message.role == forge_domain::MessageRole::Assistant).map(|message| message.text());
+                    (view.phase, reply)
+                };
+                match phase {
+                    Phase::Running => ran = true,
+                    Phase::Idle if ran => {
+                        let Some(handle) = this.handle(parent) else { return };
+                        let reply: String = reply.unwrap_or_default().chars().take(2000).collect();
+                        // Tagged so the transcript draws it as a received message, not as something the person said.
+                        let body = tr!("The session \"{title}\" you proposed has finished. Its last reply:\n\n{reply}", title = title, reply = reply);
+                        handle.send_with(forge_entities::session_report_message(&title, &body), Vec::new());
+                        return;
+                    }
+                    Phase::Failed => return,
+                    _ => {}
+                }
+            }
+        });
+    }
+
     /// The end cards of a session that were closed or already sent.
     pub fn end_card_marks(&self, id: LiveSessionId) -> HashMap<String, forge_entities::CardMark> {
         self.end_card_marks.read().get(&id).cloned().unwrap_or_default()
@@ -1593,6 +2146,8 @@ impl Workspace {
     pub fn refresh_change_counts(&self, id: LiveSessionId) {
         let Some(view) = self.live_view(id) else { return };
         let cwd = view.peek().project_path.clone();
+        // Not a git repository: the session's own edits are what changed (the desktop app shows them).
+        let own_edits = crate::details::session_edit_counts(&view.peek().session.messages);
         let mut tickets = self.change_count_tickets;
         let ticket = tickets.peek().get(&id).copied().unwrap_or(0).wrapping_add(1);
         tickets.write().insert(id, ticket);
@@ -1609,11 +2164,15 @@ impl Workspace {
             if workspace.change_count_tickets.peek().get(&id) != Some(&ticket) {
                 return;
             }
-            // A git error is dropped on purpose: the card just hides, there is no error UI.
-            let counts = read.ok().and_then(|files| {
-                let files: Vec<_> = files.into_iter().map(|change| change.file).collect();
-                change_counts(&files)
-            });
+            // A git error (most often: not a repository) falls back to the session's own edits; there
+            // is no error UI.
+            let counts = match read {
+                Ok(files) => {
+                    let files: Vec<_> = files.into_iter().map(|change| change.file).collect();
+                    change_counts(&files)
+                }
+                Err(_) => own_edits,
+            };
             let mut map = workspace.change_counts;
             match counts {
                 Some(counts) => {
@@ -1633,6 +2192,10 @@ impl Workspace {
 
     pub fn open_skills_page(&self) {
         self.open_customize_on(CustomizeTab::Skills);
+    }
+
+    pub fn open_plugins_page(&self) {
+        self.open_customize_on(CustomizeTab::Plugins);
     }
 
     pub fn open_connectors_page(&self) {
@@ -1764,6 +2327,28 @@ impl Workspace {
         self.browser().open_with(&dir, None)
     }
 
+    /// The title menu's `다음에서 열기 ›`: opens the session's folder in VS Code (`Some`) or in Finder
+    /// (File Explorer on Windows); a failure becomes a notice.
+    pub fn open_session_folder_in(&self, id: LiveSessionId, app: Option<&'static str>) {
+        let Some(folder) = self.live_view(id).map(|view| view.peek().project_path.clone()) else { return };
+        self.open_with_app(&folder, app);
+    }
+
+    /// Whether the message box shows the microphone (the system has dictation Forge can start).
+    pub fn dictation_available(&self) -> bool {
+        self.services.peek().dictation.available()
+    }
+
+    /// The microphone button: the system's dictation types into the focused message box; a failure becomes a notice.
+    pub fn start_dictation(&self) {
+        let dictation = self.services.peek().dictation.clone();
+        if let Err(message) = dictation.start() {
+            forge_log::warn("dictation", &message);
+            let shown = if cfg!(windows) { tr!("Voice typing could not start. Press Windows+H.") } else { tr!("Dictation could not start. Turn it on in System Settings > Keyboard > Dictation.") };
+            self.report(shown.to_string());
+        }
+    }
+
     /// Opens a file with the default app or a named one; a failure becomes a notice.
     pub fn open_with_app(&self, path: &Path, app: Option<&'static str>) {
         if let Err(message) = self.browser().open_with(path, app) {
@@ -1797,7 +2382,33 @@ impl Workspace {
         }
     }
 
+    /// The title menu's `출력 스타일`: this session's style from its next answer on.
+    pub fn set_output_style(&self, id: LiveSessionId, style: Option<forge_domain::OutputStyle>) {
+        if let Some(handle) = self.handle(id) {
+            handle.set_output_style(style);
+        }
+    }
+
+    /// The output styles the SDK lists for the session (`default` first); empty until it reports them.
+    pub fn available_output_styles(&self, id: LiveSessionId) -> Vec<String> {
+        self.live_view(id).map(|view| view.peek().available_output_styles.clone()).unwrap_or_default()
+    }
+
+    /// `새 스타일...`: Claude drafts a style from what the person wrote; it is saved and chosen for the session.
+    pub fn create_output_style(&self, id: LiveSessionId, description: String, name: Option<String>) {
+        if let Some(handle) = self.handle(id) {
+            handle.create_output_style(description, name);
+        }
+    }
+
+    pub fn clear_style_draft(&self, id: LiveSessionId) {
+        if let Some(handle) = self.handle(id) {
+            handle.clear_style_draft();
+        }
+    }
+
     /// Changes the effort of the open session (`None`: the SDK's default), from its next turn on.
+
     pub fn set_effort(&self, id: LiveSessionId, effort: Option<EffortLevel>) {
         if let Some(handle) = self.handle(id) {
             handle.set_effort(effort);
@@ -1937,6 +2548,22 @@ impl Workspace {
             (ArchiveKey::StopFirst, _) => self.report(tr!("Stop the session before archiving it.").to_string()),
             _ => {}
         }
+    }
+
+    /// Deletes the active session from the menu under its title, as the desktop app's `삭제 D` does:
+    /// it closes the session, then moves its transcript to the trash. A session that is still working
+    /// is not deleted.
+    pub fn delete_active(&self) {
+        let (Active::Live(id), Some((project, entry))) = (self.active(), self.active_entry()) else {
+            return;
+        };
+        let Some(session) = entry.session_id else { return };
+        if self.live_view(id).is_some_and(|view| view.read().phase == Phase::Running) {
+            self.report(tr!("Stop the session before deleting it.").to_string());
+            return;
+        }
+        self.close(id);
+        self.delete_session(project, session);
     }
 
     /// Puts the active session's sidebar row into rename mode. Nothing when the session cannot be
@@ -2305,6 +2932,13 @@ impl Workspace {
     fn display(&self, to: Active) {
         self.close_lightbox();
         if let Active::Live(id) = to {
+            // Looking at a session reads it.
+            if let Some(session) = self.live_view(id).and_then(|view| view.peek().claude_session_id.clone()) {
+                if self.unread.peek().contains(&session.0) {
+                    let mut unread = self.unread;
+                    unread.write().remove(&session.0);
+                }
+            }
             // A routine's session the person opens stays open: what they type or edit in it must not be
             // closed away by the routine timer.
             self.services.peek().routines.host.keep_open(id);
@@ -2682,6 +3316,25 @@ impl Workspace {
     }
 
     /// Opens a new session in `project`, on the saved default model, and sends its first message.
+    /// The search palette's compose mode (`작성 Tab`, observed 2026-11-06): starts a new session with
+    /// this text at once, in the folder the new-session page would use, with the default mode and
+    /// the saved model. Says so when there is no folder to start in.
+    pub fn start_from_palette(&self, text: String) {
+        if text.trim().is_empty() {
+            return;
+        }
+        let projects = self.new_session_projects();
+        let project = match self.new_folder() {
+            Some(path) => projects.iter().find(|project| project.path == path).cloned().or_else(|| projects.first().cloned()),
+            None => projects.first().cloned(),
+        };
+        let Some(project) = project else {
+            return self.report(tr!("Choose a folder on the new session page first.").to_string());
+        };
+        self.close_search();
+        self.start_new(project, PermissionMode::Default, None, None, text, Vec::new(), Vec::new(), None, None, false);
+    }
+
     pub fn start_new(
         &self,
         project: ProjectSummary,
@@ -3528,6 +4181,16 @@ impl Workspace {
             Shortcut::CycleTranscript => self.cycle_transcript_view(),
             Shortcut::ToggleFileList => self.toggle_file_list(),
             Shortcut::ExpandPanel => self.toggle_panel_expanded(),
+            Shortcut::Dictate => {
+                if !self.dictation_available() {
+                    return false;
+                }
+                let this = *self;
+                dioxus::core::spawn(async move {
+                    let _ = dioxus::document::eval("document.querySelector('.pane.focused .composer-field textarea, .composer-field textarea')?.focus()").await;
+                    this.start_dictation();
+                });
+            }
             // The composer handles ⌘U itself, and the Preview panel its own keys.
             Shortcut::AddFiles | Shortcut::Preview(_) => return false,
         }
@@ -3807,6 +4470,7 @@ mod plan_text_tests {
             available_models: Vec::new(),
             phase: Phase::Idle,
             turn_started: None,
+            turn_output_tokens: None,
             background_tasks: Vec::new(),
             suggestion: None,
             pending_permissions: VecDeque::from(pending),
@@ -3823,6 +4487,11 @@ mod plan_text_tests {
             queued: Vec::new(),
             rate_limit: None,
             side_thread: Vec::new(),
+            app_requests: Vec::new(),
+            classified: None,
+            output_style: None,
+            available_output_styles: Vec::new(),
+            style_draft: Default::default(),
             rewind: None,
         }
     }
@@ -3842,4 +4511,48 @@ mod plan_text_tests {
         let messages = vec![Message::user("go"), reply];
         assert_eq!(plan_text_of_view(&view(messages, Vec::new())), Some("# Old".to_string()));
     }
+}
+
+/// An effort level as the option popovers write it (`low` … `max`).
+pub fn effort_value(level: forge_domain::EffortLevel) -> &'static str {
+    match level {
+        forge_domain::EffortLevel::Low => "low",
+        forge_domain::EffortLevel::Medium => "medium",
+        forge_domain::EffortLevel::High => "high",
+        forge_domain::EffortLevel::XHigh => "xhigh",
+        forge_domain::EffortLevel::Max => "max",
+    }
+}
+
+/// A dev server started in the background, by its id in `BackgroundPort`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackgroundServer {
+    pub id: u64,
+    pub name: String,
+    pub command: String,
+}
+
+/// Background servers are listed to the browser tools above this number, so their ids never meet a terminal run's.
+pub(crate) const BACKGROUND_ID_BASE: u64 = 1_000_000;
+
+impl Workspace {
+    pub(crate) fn background_servers_of(&self, id: LiveSessionId) -> Vec<BackgroundServer> {
+        self.background_servers.peek().get(&id).cloned().unwrap_or_default()
+    }
+
+    pub(crate) fn background(&self) -> Arc<dyn forge_ports::BackgroundPort> {
+        self.services.peek().background.clone()
+    }
+}
+
+pub(crate) fn port_is_answering(port: u16) -> bool {
+    port_answers(port)
+}
+
+/// Whether a server listens on this port of this computer (IPv4 or IPv6: Vite on newer Node listens on `::1` only).
+fn port_answers(port: u16) -> bool {
+    let wait = std::time::Duration::from_millis(300);
+    [std::net::SocketAddr::from(([127, 0, 0, 1], port)), std::net::SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, port))]
+        .iter()
+        .any(|address| std::net::TcpStream::connect_timeout(address, wait).is_ok())
 }

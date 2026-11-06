@@ -1650,6 +1650,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-adapter-dictation"
+version = "0.1.0"
+dependencies = [
+ "forge-ports",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "forge-adapter-files"
 version = "0.1.0"
 dependencies = [
@@ -1720,20 +1731,29 @@ name = "forge-adapter-terminal"
 version = "0.1.0"
 dependencies = [
  "forge-ports",
+ "libc",
  "portable-pty",
  "tempfile",
  "tokio",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
 name = "forge-adapter-webview"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "forge-entities",
  "forge-ports",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-web-kit",
  "serde_json",
  "tao",
  "tokio",
+ "webview2-com",
+ "windows 0.61.3",
  "wry",
 ]
 
@@ -1748,6 +1768,7 @@ dependencies = [
  "forge-adapter-claude-plugins",
  "forge-adapter-config",
  "forge-adapter-dialog",
+ "forge-adapter-dictation",
  "forge-adapter-files",
  "forge-adapter-git",
  "forge-adapter-notify",

@@ -18,16 +18,40 @@ function tick() {
 tick();
 "#;
 
-// Reports whether any backdrop (dialog, palette, lightbox) or a menu without one is in the document.
+// Reports whether something of the app's own lies over the Preview surface, where the native view
+// would hide it: a backdrop that dims or blurs the window (dialog, palette, lightbox), or a menu,
+// picker or popover whose box overlaps the surface. A transparent backdrop only catches clicks
+// outside its popup, so the popup after it is what counts: a popover elsewhere leaves the page shown.
 const OVERLAY_SCRIPT: &str = r#"
 if (window.__forgeOverlayObserver) { window.__forgeOverlayObserver.disconnect(); }
 let last = null;
+function overlaps(el, s) {
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 && r.left < s.right && r.right > s.left && r.top < s.bottom && r.bottom > s.top;
+}
+function clear(style) {
+  return (style.backgroundColor === 'rgba(0, 0, 0, 0)' || style.backgroundColor === 'transparent') && (!style.backdropFilter || style.backdropFilter === 'none');
+}
 function check() {
-  const open = document.querySelector('[class*="backdrop"], .row-menu, .perm-menu') !== null;
+  const surface = document.querySelector('.pane.focused .preview-surface');
+  const s = surface ? surface.getBoundingClientRect() : null;
+  let open = false;
+  for (const el of document.querySelectorAll('[class*="backdrop"], .row-menu, .perm-menu')) {
+    if (String(el.className).includes('backdrop') && clear(getComputedStyle(el))) {
+      if (!s) { open = true; break; }
+      for (let next = el.nextElementSibling; next; next = next.nextElementSibling) {
+        if (overlaps(next, s)) { open = true; break; }
+      }
+      if (open) break;
+      continue;
+    }
+    if (!s || overlaps(el, s)) { open = true; break; }
+  }
   if (open !== last) { last = open; dioxus.send(open); }
 }
 window.__forgeOverlayObserver = new MutationObserver(check);
-window.__forgeOverlayObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+window.__forgeOverlayObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style'] });
+window.addEventListener('resize', check);
 check();
 "#;
 

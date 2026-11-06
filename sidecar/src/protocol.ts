@@ -65,8 +65,14 @@ export type SidecarCommand =
       turn_tools?: boolean;
       // Offers Claude the generate_sandboxed_ui tool (a parent that omits it means off).
       generative_ui?: boolean;
+      // The Browser pane tools (Claude_Browser); off unless the parent says so.
+      browser_tools?: boolean;
       // Offers Claude the agent_desktop tool, asked on every call (a parent that omits it means off).
       desktop_control?: boolean;
+      // What Claude does when asked for unrelated work: "ask" (omitted), "here" or "new_session".
+      unrelated_task?: string;
+      // After each turn, sort the session into blocked / review / done (a parent that omits it means off).
+      classify_status?: boolean;
     }
   | { type: "send_message"; id: string; text: string; attachments?: WireAttachment[] }
   | { type: "permission_response"; id: string; permission_request_id: string; decision: WirePermissionDecision; reason?: string }
@@ -80,12 +86,19 @@ export type SidecarCommand =
   | { type: "set_permission_mode"; id: string; mode: WirePermissionMode }
   | { type: "set_model"; id: string; model: string | null }
   | { type: "set_effort"; id: string; effort: WireEffort | null }
+  | { type: "set_output_style"; id: string; style: string | null }
+  // The title menu's `새 스타일...`: Claude drafts a style; it is saved and the session switches to it.
+  | { type: "create_output_style"; id: string; description: string; name: string | null }
+  // The app's answer to an `app_request`.
+  | { type: "app_response"; id: string; request_id: string; output: string; is_error: boolean }
   | { type: "shutdown"; id: string };
 
 export type SidecarEvent =
   | { type: "session_started"; session_id: string }
   | { type: "assistant_delta"; text: string }
   | { type: "thinking_delta"; text: string }
+  /** The output tokens of the running turn so far: exact for finished model messages, estimated for the one streaming. */
+  | { type: "output_tokens"; tokens: number }
   | { type: "tool_use"; tool_call_id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_call_id: string; output: string; is_error: boolean }
   | { type: "permission_request"; permission_request_id: string; tool_name: string; input: unknown; rules?: string[] }
@@ -98,6 +111,7 @@ export type SidecarEvent =
       categories: Array<{ name: string; tokens: number; kind: string }>;
       mcp_tools: Array<{ server: string; name: string; tokens: number }>;
       agents: Array<{ name: string; tokens: number }>;
+      memory_files: Array<{ name: string; tokens: number }>;
     }
   | {
       type: "mcp_status";
@@ -117,6 +131,11 @@ export type SidecarEvent =
   | { type: "permission_mode_set"; mode: WirePermissionMode }
   | { type: "model_set"; model: string | null }
   | { type: "effort_set"; effort: WireEffort | null }
+  | { type: "output_style_set"; style: string | null }
+  // The output styles the SDK knows (`default` first), and how a create_output_style ended.
+  | { type: "output_styles_available"; styles: string[] }
+  | { type: "output_style_created"; name: string }
+  | { type: "output_style_create_failed"; reason: string }
   // The SDK's full set of background tasks (replace semantics), a finished one, and a predicted next prompt.
   | { type: "background_tasks"; tasks: WireBackgroundTask[] }
   | { type: "task_progress"; task_id: string; total_tokens: number }
@@ -155,6 +174,10 @@ export type SidecarEvent =
   | { type: "models_available"; models: WireAvailableModel[] }
   | { type: "setting_failed"; message: string }
   | { type: "error"; message: string }
+  // What the session was sorted into after a turn (`세션 상태 분류`).
+  | { type: "session_status"; status: "blocked" | "review" | "done" }
+  // Claude called one of the app's tools (list_sessions, set_pinned, ...): the app answers with `app_response`.
+  | { type: "app_request"; request_id: string; tool: string; input: Record<string, unknown> }
   | { type: "session_ended" };
 
 export function parseCommand(line: string): SidecarCommand {

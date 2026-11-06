@@ -37,6 +37,8 @@ pub enum Shortcut {
     ExpandPanel,
     /// ⌘U. The composer handles it; the table only lists it.
     AddFiles,
+    /// ⌘D: the system's dictation into the message box (the desktop app's `음성 입력 단축키`).
+    Dictate,
     /// A key of the Preview panel; see `PREVIEW_SHORTCUTS`.
     Preview(PreviewKey),
 }
@@ -182,6 +184,7 @@ pub static SHORTCUTS: &[ShortcutRow] = &[
     ShortcutRow { group: Group::Composer, label: msg!("Pick an environment 1…9"), action: Shortcut::PickEnvironment(0), keys: &[cmd_alt(DIGITS)] },
     ShortcutRow { group: Group::Composer, label: msg!("New environment"), action: Shortcut::NewEnvironment, keys: &[cmd_alt("Digit0")] },
     ShortcutRow { group: Group::Composer, label: msg!("Add file or photo"), action: Shortcut::AddFiles, keys: &[cmd("KeyU")] },
+    ShortcutRow { group: Group::Composer, label: msg!("Dictate"), action: Shortcut::Dictate, keys: &[cmd("KeyD")] },
 ];
 
 /// The keys of the Preview panel. They share keys with the session keys (Ctrl+Tab, Cmd+1…9), so
@@ -559,6 +562,7 @@ mod tests {
             assert_eq!(shortcut_for(&press(code, true, false, false, true), false), Some(Shortcut::OpenPicker(kind)), "Ctrl+Shift elsewhere");
         }
         assert_eq!(shortcut_for(&press("KeyU", false, true, false, false), true), Some(Shortcut::AddFiles));
+        assert_eq!(shortcut_for(&press("KeyD", false, true, false, false), true), Some(Shortcut::Dictate));
         assert_eq!(shortcut_for(&press("KeyO", true, false, false, false), true), Some(Shortcut::CycleTranscript), "Control, not Cmd, on a Mac");
         assert_eq!(shortcut_for(&press("KeyY", false, true, false, true), true), Some(Shortcut::ToggleFileList));
         assert_eq!(shortcut_for(&press("Backslash", false, true, false, true), true), Some(Shortcut::ExpandPanel));
@@ -612,7 +616,7 @@ mod tests {
         }
         let listed: usize = shortcut_sections(true).iter().map(|section| section.rows.len()).sum();
         assert_eq!(listed, SHORTCUTS.len() + PREVIEW_SHORTCUTS.len());
-        assert_eq!(shortcut_sections(true).last().map(|section| section.rows.len()), Some(6), "the composer group: three menus, add file, pick and new environment");
+        assert_eq!(shortcut_sections(true).last().map(|section| section.rows.len()), Some(7), "the composer group: three menus, add file, dictate, pick and new environment");
     }
 
     #[test]

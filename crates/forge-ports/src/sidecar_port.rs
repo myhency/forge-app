@@ -71,6 +71,8 @@ pub enum SidecarEvent {
     AssistantDelta { text: String },
     /// A piece of the model's thinking, streamed before its answer.
     ThinkingDelta { text: String },
+    /// The running turn's output tokens so far (estimated for the message still streaming).
+    OutputTokens { tokens: u64 },
     ToolUse { tool_call_id: String, name: String, input: serde_json::Value },
     ToolResult { tool_call_id: String, output: String, is_error: bool },
     PermissionRequest {
@@ -98,6 +100,9 @@ pub enum SidecarEvent {
         mcp_tools: Vec<ContextItemReport>,
         #[serde(default)]
         agents: Vec<ContextItemReport>,
+        /// The memory files (CLAUDE.md and the like) loaded into the context, by path.
+        #[serde(default)]
+        memory_files: Vec<ContextItemReport>,
     },
     /// The state of every MCP server, sent after each `TurnComplete`; each event replaces the earlier one.
     McpStatus { servers: Vec<McpServerReport> },
@@ -109,6 +114,18 @@ pub enum SidecarEvent {
     ModelSet { model: Option<String> },
     /// The SDK accepted a `set_effort`; `None` is its default.
     EffortSet { effort: Option<EffortLevel> },
+    /// The SDK accepted a `set_output_style`; `None` is the default style.
+    OutputStyleSet {
+        #[serde(default)]
+        style: Option<String>,
+    },
+    /// The output styles the SDK knows for this session (`default` first), sent after the start and
+    /// after a style is created.
+    OutputStylesAvailable { styles: Vec<String> },
+    /// A `create_output_style` wrote the person's new style; `name` is the SDK's name for it.
+    OutputStyleCreated { name: String },
+    /// A `create_output_style` wrote nothing; `reason` says why, for the person.
+    OutputStyleCreateFailed { reason: String },
     /// The models the SDK lists for this session and the effort levels each takes. Sent once after the start.
     ModelsAvailable { models: Vec<AvailableModel> },
     /// The SDK refused a `set_permission_mode`, `set_model` or `set_effort`. The session goes on.
@@ -140,6 +157,16 @@ pub enum SidecarEvent {
     },
     /// The person stopped the turn (the SDK wrote its interrupt line).
     Interrupted,
+    /// What Claude sorted the session into after a turn (`blocked`, `review`, `done`).
+    SessionStatus { status: String },
+    /// Claude called one of the app's tools (list_sessions, set_pinned, ...); the app answers with
+    /// `answer_app_request` and the same `request_id`.
+    AppRequest {
+        request_id: String,
+        tool: String,
+        #[serde(default)]
+        input: serde_json::Value,
+    },
     /// Where the account stands against a usage limit (`allowed`, `allowed_warning`, `rejected`).
     RateLimit {
         status: String,
@@ -213,6 +240,8 @@ pub trait SidecarPort: Send + Sync {
     /// Asks a question about the conversation without adding it to the session (`/btw`). The answer
     /// comes back as a `SideAnswer` event with the same `request_id`.
     async fn ask_side_question(&self, request_id: String, question: String) -> Result<(), SidecarError>;
+    /// Answers an `AppRequest`: the tool's text, and whether it is an error.
+    async fn answer_app_request(&self, request_id: String, output: String, is_error: bool) -> Result<(), SidecarError>;
     /// Stops one background task. A refusal comes back as a `SettingFailed` event.
     async fn stop_task(&self, task_id: String) -> Result<(), SidecarError>;
     /// Asks for a mode change in the running session. The answer comes back as an event.
@@ -223,6 +252,13 @@ pub trait SidecarPort: Send + Sync {
     /// Asks for an effort change in the running session (`None`: the default). The answer comes back
     /// as an event.
     async fn set_effort(&self, effort: Option<EffortLevel>) -> Result<(), SidecarError>;
+    /// Asks for an output style change in the running session (`None`: the default). The answer
+    /// comes back as an event.
+    async fn set_output_style(&self, style: Option<String>) -> Result<(), SidecarError>;
+    /// The title menu's `새 스타일...`: Claude drafts a style from `description`, the sidecar saves it
+    /// in the person's `output-styles` folder and switches the session to it. The outcome comes back
+    /// as an event.
+    async fn create_output_style(&self, description: String, name: Option<String>) -> Result<(), SidecarError>;
     async fn shutdown(&self) -> Result<(), SidecarError>;
     async fn next_event(&self) -> Option<SidecarEvent>;
 }
@@ -323,6 +359,7 @@ mod tests {
                 categories: vec![ContextCategory { name: "Messages".to_string(), tokens: 20_100, kind: "used".to_string() }],
                 mcp_tools: vec![ContextItemReport { server: Some("Claude Docs".to_string()), name: "Make".to_string(), tokens: 152 }],
                 agents: vec![ContextItemReport { server: None, name: "Explore".to_string(), tokens: 80 }],
+                memory_files: vec![],
             }
         );
     }
@@ -358,6 +395,12 @@ mod tests {
                 ]
             }
         );
+    }
+
+    #[test]
+    fn output_tokens_event_parses() {
+        let event: SidecarEvent = serde_json::from_str(r#"{"type":"output_tokens","tokens":474}"#).unwrap();
+        assert_eq!(event, SidecarEvent::OutputTokens { tokens: 474 });
     }
 
     #[test]
