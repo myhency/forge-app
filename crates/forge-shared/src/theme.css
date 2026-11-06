@@ -1833,3 +1833,12 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .edit-sidebar-note { margin: 0 0 var(--sp-12); color: var(--fg-muted); }
 .edit-sidebar-row { display: flex; align-items: center; gap: var(--sp-10); padding: var(--sp-6) 0; cursor: pointer; }
 .edit-sidebar-actions { display: flex; justify-content: flex-end; margin-top: var(--sp-16); }
+
+/* The palette's row menu (desktop app, 2026-11-06): a ⋯ on the highlighted row, the menu beside it. */
+.palette-enter { display: inline-flex; align-items: center; gap: var(--sp-6); position: relative; }
+.palette-more { width: 24px; height: 24px; }
+.palette-row-menu { top: calc(100% + var(--sp-4)); right: 0; left: auto; z-index: 60; min-width: 220px; cursor: default; color: var(--fg); font-size: var(--text-base); }
+.palette-row-menu-head { padding: var(--sp-6) var(--sp-8) var(--sp-8); border-bottom: 1px solid var(--border); margin-bottom: var(--sp-4); }
+.palette-row-menu-title { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-row-menu-sub { color: var(--fg-muted); font-size: var(--text-sm); }
+.palette-rename { width: 100%; box-sizing: border-box; }

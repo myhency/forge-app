@@ -64,6 +64,8 @@ fn PaletteBody() -> Element {
     // `작성` mode (Tab): the box takes a message that starts a new session.
     let mut compose = use_signal(|| false);
     let mut draft = use_signal(String::new);
+    // The highlighted session row's `⋯` menu (the desktop app's, also `작업 ⌥↵`).
+    let mut row_menu = use_signal(|| false);
     let query = workspace.search_query();
     let needle = query.trim().to_lowercase();
     let matches = |text: &str| needle.is_empty() || text.to_lowercase().contains(&needle);
@@ -129,7 +131,12 @@ fn PaletteBody() -> Element {
     let mut position = 0usize;
     rsx! {
         div { class: "palette-backdrop", onclick: move |_| workspace.close_search(),
-            div { class: "palette", onclick: move |event| event.stop_propagation(),
+            div {
+                class: "palette",
+                onclick: move |event| {
+                    event.stop_propagation();
+                    row_menu.set(false);
+                },
                 div { class: "palette-input-row",
                     if compose() {
                         input {
@@ -204,6 +211,14 @@ fn PaletteBody() -> Element {
                                     event.prevent_default();
                                     switch_tab(1);
                                 }
+                                // The desktop app's `작업 ⌥↵`: the highlighted session's menu.
+                                Key::Enter if !event.is_composing() && event.modifiers().alt() => {
+                                    event.prevent_default();
+                                    event.stop_propagation();
+                                    if matches!(flat.get(selected), Some(Entry::Session(_))) {
+                                        row_menu.set(true);
+                                    }
+                                }
                                 // Enter that ends an IME composition confirms the text, not the row.
                                 Key::Enter if !event.is_composing() => {
                                     event.prevent_default();
@@ -262,11 +277,33 @@ fn PaletteBody() -> Element {
                                     div {
                                         key: "{key}",
                                         class: if index == selected { "palette-row selected" } else { "palette-row" },
-                                        onmouseenter: move |_| highlight.set(index),
+                                        // While a row's menu is open the pointer crosses other rows on its way into the menu.
+                                        onmouseenter: move |_| {
+                                            if !row_menu() {
+                                                highlight.set(index);
+                                            }
+                                        },
                                         onclick: move |_| open(&clicked),
                                         {row_body(&entry, &query, now, scratch.as_deref())}
                                         if index == selected {
-                                            span { class: "palette-enter", "↵" } // icon-ok: a key cap, as in the desktop app
+                                            span { class: "palette-enter",
+                                                if let Entry::Session(row) = &entry {
+                                                    button {
+                                                        class: "icon-button palette-more",
+                                                        r#type: "button",
+                                                        title: tr!("Actions"),
+                                                        onclick: move |event| {
+                                                            event.stop_propagation();
+                                                            row_menu.set(!row_menu());
+                                                        },
+                                                        Icon { kind: IconKind::MoreHorizontal, size: IconSize::Small }
+                                                    }
+                                                    if row_menu() {
+                                                        PaletteRowMenu { row: row.clone(), on_close: move |_| row_menu.set(false) }
+                                                    }
+                                                }
+                                                "↵" // icon-ok: a key cap, as in the desktop app
+                                            }
                                         }
                                     }
                                 }
@@ -288,6 +325,7 @@ fn PaletteBody() -> Element {
                     span { {tr!("Close")} span { class: "palette-key", "Esc" } }
                     span { {tr!("Change type")} span { class: "palette-key", "←" } span { class: "palette-key", "→" } } // icon-ok: key caps
                     span { {tr!("Open")} span { class: "palette-key", "↵" } } // icon-ok: a key cap
+                    span { {tr!("Actions")} span { class: "palette-key", "⌥" } span { class: "palette-key", "↵" } } // icon-ok: key caps
                     span { {tr!("Compose")} span { class: "palette-key", "Tab" } }
                 }
                 }
@@ -332,5 +370,148 @@ fn row_body(entry: &Entry, query: &str, now: OffsetDateTime, scratch: Option<&st
             span { class: "palette-icon", Icon { kind: IconKind::Plus, size: IconSize::Small } }
             div { class: "palette-title", {tr!("New session")} }
         },
+    }
+}
+
+/// What the palette's row menu shows: its items, the rename box, or the delete question.
+#[derive(Debug, Clone, PartialEq)]
+enum RowMenuPage {
+    Main,
+    Renaming(String),
+    ConfirmDelete,
+}
+
+/// A session row's menu in the palette, as the desktop app has it (observed 2026-11-06): the title
+/// and `세션 · <when>`, then 열기, 고정, 이름 변경, 보관, 삭제.
+#[component]
+fn PaletteRowMenu(row: SearchRow, on_close: EventHandler<()>) -> Element {
+    let workspace = use_workspace();
+    let mut page = use_signal(|| RowMenuPage::Main);
+    let project = row.project.path.clone();
+    let session = match &row.key {
+        forge_features::EntryKey::Past { session, .. } => Some(session.clone()),
+        forge_features::EntryKey::Live(id) => workspace.live_view(*id).and_then(|view| view.peek().claude_session_id.clone()),
+    };
+    let open_now = matches!(row.key, forge_features::EntryKey::Live(_));
+    let when = row.updated_at.as_deref().map(|at| relative_time(at, OffsetDateTime::now_utc())).unwrap_or_default();
+    let pinned = session.as_ref().is_some_and(|id| workspace.is_pinned(&project, id));
+    let archived = session.as_ref().is_some_and(|id| workspace.is_archived(&project, id));
+    let opened = row.clone();
+    rsx! {
+        div { class: "row-menu palette-row-menu", role: "menu", onclick: move |event| event.stop_propagation(),
+            div { class: "palette-row-menu-head",
+                div { class: "palette-row-menu-title", "{row.title}" }
+                div { class: "palette-row-menu-sub", {tr!("Session")} if !when.is_empty() { " · {when}" } }
+            }
+            match page() {
+                RowMenuPage::Main => rsx! {
+                    button { class: "row-menu-item", role: "menuitem", onclick: move |_| workspace.open_search_row(&opened), span { {tr!("Open")} } }
+                    if let Some(id) = session.clone() {
+                        button {
+                            class: "row-menu-item",
+                            role: "menuitem",
+                            onclick: {
+                                let project = project.clone();
+                                let id = id.clone();
+                                move |_| {
+                                    workspace.toggle_pin(project.clone(), id.clone());
+                                    on_close.call(());
+                                }
+                            },
+                            span { if pinned { {tr!("Unpin")} } else { {tr!("Pin")} } }
+                        }
+                        button {
+                            class: "row-menu-item",
+                            role: "menuitem",
+                            onclick: {
+                                let title = row.title.clone();
+                                move |_| page.set(RowMenuPage::Renaming(title.clone()))
+                            },
+                            span { {tr!("Rename")} }
+                        }
+                        if !open_now || archived {
+                            button {
+                                class: "row-menu-item",
+                                role: "menuitem",
+                                onclick: {
+                                    let project = project.clone();
+                                    let id = id.clone();
+                                    move |_| {
+                                        if archived {
+                                            workspace.unarchive_session(project.clone(), id.clone());
+                                        } else {
+                                            workspace.archive_session(project.clone(), id.clone());
+                                        }
+                                        on_close.call(());
+                                    }
+                                },
+                                span { if archived { {tr!("Unarchive")} } else { {tr!("Archive")} } }
+                            }
+                        }
+                        div { class: "row-menu-separator" }
+                        button {
+                            class: "row-menu-item danger",
+                            role: "menuitem",
+                            disabled: open_now,
+                            title: if open_now { tr!("Close the session before deleting it.") } else { "" },
+                            onclick: move |_| page.set(RowMenuPage::ConfirmDelete),
+                            span { {tr!("Delete")} }
+                        }
+                    }
+                },
+                RowMenuPage::Renaming(title) => rsx! {
+                    input {
+                        class: "text-input palette-rename",
+                        r#type: "text",
+                        value: "{title}",
+                        onmounted: move |mounted| async move {
+                            let _ = mounted.set_focus(true).await;
+                        },
+                        oninput: move |event| page.set(RowMenuPage::Renaming(event.value())),
+                        onkeydown: {
+                            let project = project.clone();
+                            let session = session.clone();
+                            move |event: KeyboardEvent| match event.key() {
+                                Key::Enter if !event.is_composing() => {
+                                    event.prevent_default();
+                                    event.stop_propagation();
+                                    if let (RowMenuPage::Renaming(title), Some(id)) = (page.peek().clone(), session.clone()) {
+                                        if !title.trim().is_empty() {
+                                            workspace.rename_session(project.clone(), id, title.trim().to_string());
+                                        }
+                                    }
+                                    on_close.call(());
+                                }
+                                Key::Escape => {
+                                    event.stop_propagation();
+                                    page.set(RowMenuPage::Main);
+                                }
+                                _ => {}
+                            }
+                        },
+                    }
+                },
+                RowMenuPage::ConfirmDelete => rsx! {
+                    div { class: "row-menu-note", {tr!("Delete this session? It is moved to the trash.")} }
+                    div { class: "row-menu-actions",
+                        button { class: "row-menu-item", onclick: move |_| page.set(RowMenuPage::Main), span { {tr!("Cancel")} } }
+                        button {
+                            class: "row-menu-item danger",
+                            onclick: {
+                                let project = project.clone();
+                                let session = session.clone();
+                                move |_| {
+                                    if let Some(id) = session.clone() {
+                                        workspace.delete_session(project.clone(), id);
+                                    }
+                                    on_close.call(());
+                                }
+                            },
+                            span { {tr!("Delete")} }
+                        }
+                    }
+                },
+            }
+        }
     }
 }
