@@ -16,7 +16,7 @@ use crate::tool_summary::elapsed_label;
 use forge_domain::TranscriptView;
 use crate::generated_ui_view::GeneratedUiView;
 use crate::turn_card_views::{EndCardView, PlanListView};
-use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolRow, WorkflowItem};
+use crate::turn_view::{build_turns, Activity, FileCard, Footer, Item, LiveKind, LiveLine, LiveState, Row, ToolKind, ToolRow, WorkflowItem};
 use crate::workflow_progress::{dot_class, JournalAgent};
 use forge_shared::{tr, Icon, IconKind, IconSize};
 
@@ -370,13 +370,23 @@ fn ToolRowView(tool: ToolRow, detailed: bool, on_open_file: EventHandler<String>
     let mut expanded = use_signal(|| false);
     let open = expanded() || detailed;
     let class = if tool.failed { "activity-row-head failed" } else { "activity-row-head" };
+    // A file that was read opens in the Files panel from anywhere on its row, as in the desktop app
+    // (observed 2026-11-06); other rows open in place.
+    let opens_file = tool.kind == ToolKind::Read && !tool.path.is_empty() && !tool.failed && !detailed;
+    let read_path = tool.path.clone();
     rsx! {
         div { class: "activity-row",
             button {
                 class: "{class}",
                 r#type: "button",
                 "aria-expanded": "{open}",
-                onclick: move |_| expanded.set(!open),
+                onclick: move |_| {
+                    if opens_file {
+                        on_open_file.call(read_path.clone());
+                    } else {
+                        expanded.set(!open);
+                    }
+                },
                 if !tool.verb.is_empty() {
                     span { class: "row-verb", "{tool.verb}" }
                 }
