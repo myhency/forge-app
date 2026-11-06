@@ -83,6 +83,17 @@ impl CodeTheme {
     }
 }
 
+/// Forge's own syntax colours (theme.css `--hl-*`), for the Settings preview of `Claude Light` and
+/// `Claude Dark`; keep them in step with the stylesheet.
+const CLAUDE_LIGHT: [&str; 6] = ["oklch(0.500 0.015 71.2)", "oklch(0.518 0.226 323.9)", "oklch(0.510 0.137 150.1)", "oklch(0.535 0.146 49.0)", "oklch(0.488 0.217 264.4)", "oklch(0.511 0.086 186.4)"];
+const CLAUDE_DARK: [&str; 6] = ["oklch(0.700 0.015 71.2)", "oklch(0.748 0.207 322.2)", "oklch(0.871 0.136 154.4)", "oklch(0.837 0.117 66.3)", "oklch(0.809 0.096 251.8)", "oklch(0.855 0.125 181.1)"];
+
+/// The six colours (comment, keyword, string, number, function, type) a theme draws code with in
+/// light or dark mode: the Settings preview shows them side by side, as the desktop app does.
+pub fn preview_colors(theme: CodeTheme, dark: bool) -> [&'static str; 6] {
+    theme.palette(dark).unwrap_or(if dark { CLAUDE_DARK } else { CLAUDE_LIGHT })
+}
+
 /// The code sizes the size menu offers, in px; `None` is the default (13 px).
 pub const CODE_SIZES: [u8; 8] = [11, 12, 13, 14, 15, 16, 18, 20];
 pub const DEFAULT_CODE_SIZE: u8 = 13;
@@ -177,6 +188,13 @@ mod tests {
         assert_eq!(look.light, CodeTheme::Claude);
         assert_eq!(look.dark, CodeTheme::One);
         assert_eq!(look.size, Some(14));
+    }
+
+    #[test]
+    fn the_preview_falls_back_to_forges_own_colours() {
+        assert_eq!(preview_colors(CodeTheme::Claude, false), CLAUDE_LIGHT);
+        assert_eq!(preview_colors(CodeTheme::Github, true)[1], "#ff7b72");
+        assert_eq!(preview_colors(CodeTheme::Dracula, false), CLAUDE_LIGHT, "Dracula has no light colours");
     }
 
     #[test]

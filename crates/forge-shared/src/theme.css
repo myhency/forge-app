@@ -625,6 +625,11 @@ button:not(:disabled):active { scale: 0.98; }
 :root {
   --code-bg: oklch(0.955 0 0);
   --link: oklch(0.501 0.165 258.7);
+  /* The Settings code preview draws one light and one dark box whatever the app's theme. */
+  --preview-light-bg: oklch(1 0 0);
+  --preview-light-fg: oklch(0.205 0 0);
+  --preview-dark-bg: oklch(0.205 0 0);
+  --preview-dark-fg: oklch(0.922 0 0);
   --hl-comment: oklch(0.500 0.015 71.2);
   --hl-keyword: oklch(0.518 0.226 323.9);
   --hl-string: oklch(0.510 0.137 150.1);
@@ -1847,3 +1852,12 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .palette-chip { display: inline-flex; align-items: center; gap: var(--sp-4); flex-shrink: 0; padding: var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-8); border: 1px solid var(--border); border-radius: var(--r-6); background: var(--bg-hover); color: var(--fg); font-size: var(--text-sm); }
 .palette-chip.static { padding: var(--sp-2) var(--sp-8); }
 .palette-chip-close { display: inline-flex; padding: 0; border: 0; background: none; color: var(--fg-muted); cursor: pointer; }
+
+/* Settings → 코드 모양 preview (desktop app, 2026-11-06): the light and the dark theme side by side. */
+.code-look-previews { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-12); margin: var(--sp-4) 0 var(--sp-12); }
+.code-preview { padding: var(--sp-8) 0; border: 1px solid var(--border); border-radius: var(--r-8); background: var(--preview-light-bg); color: var(--preview-light-fg); white-space: pre; overflow: hidden; line-height: 1.7; }
+.code-preview.dark { background: var(--preview-dark-bg); color: var(--preview-dark-fg); border-color: transparent; }
+.code-preview-line { padding: 0 var(--sp-12); }
+.code-preview-line.removed { background: var(--diff-removed-bg); }
+.code-preview-line.added { background: var(--diff-added-bg); }
+.code-preview-number { display: inline-block; width: 2.2em; color: var(--fg-muted); text-align: right; margin-right: var(--sp-12); }

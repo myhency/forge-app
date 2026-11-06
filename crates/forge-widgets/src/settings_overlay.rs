@@ -239,6 +239,11 @@ fn CodeLookRows() -> Element {
                 },
             }
         }
+        // The desktop app's preview (observed 2026-11-06): the same small diff in each chosen theme.
+        div { class: "code-look-previews",
+            CodePreview { theme: look.light, dark: false, font: look.font.clone().unwrap_or_default(), size: look.size.unwrap_or(DEFAULT_CODE_SIZE) }
+            CodePreview { theme: look.dark, dark: true, font: look.font.clone().unwrap_or_default(), size: look.size.unwrap_or(DEFAULT_CODE_SIZE) }
+        }
         SettingRow { title: tr!("Code font"), description: tr!("A custom monospace font for code and the terminal."),
             // Saved when the field is left or Enter is pressed, not on every key.
             input {
@@ -591,6 +596,48 @@ fn ExtensionSection(kind: ExtensionKind) -> Element {
         }
         div { class: "hint",
             {tr!("Forge sessions do not use the hooks or permission rules from ~/.claude/settings.json; project settings still apply.")}
+        }
+    }
+}
+
+/// A few lines of code in one theme: a function whose return line changed, the old line on red and
+/// the new on green, as the desktop app's Settings show it.
+#[component]
+fn CodePreview(theme: CodeTheme, dark: bool, font: String, size: u8) -> Element {
+    let [_, keyword, string, number, function, kind] = forge_domain::preview_colors(theme, dark);
+    let font = forge_domain::clean_font_name(&font).map(|font| format!("\"{font}\", ")).unwrap_or_default();
+    let style = format!("font-family: {font}var(--mono); font-size: {size}px;");
+    let class = if dark { "code-preview dark" } else { "code-preview" };
+    rsx! {
+        div { class: "{class}", style: "{style}",
+            div { class: "code-preview-line",
+                span { class: "code-preview-number", "1" }
+                span { style: "color: {keyword}", "function " }
+                span { style: "color: {function}", "greet" }
+                "("
+                span { style: "color: {number}", "name" }
+                ": "
+                span { style: "color: {kind}", "string" }
+                ") {{"
+            }
+            div { class: "code-preview-line removed",
+                span { class: "code-preview-number", "2" }
+                "  "
+                span { style: "color: {keyword}", "return " }
+                span { style: "color: {string}", "\"Hello, \"" }
+                " + name;"
+            }
+            div { class: "code-preview-line added",
+                span { class: "code-preview-number", "2" }
+                "  "
+                span { style: "color: {keyword}", "return " }
+                span { style: "color: {string}", "`Hello, ${{name}}!`" }
+                ";"
+            }
+            div { class: "code-preview-line",
+                span { class: "code-preview-number", "3" }
+                "}}"
+            }
         }
     }
 }
