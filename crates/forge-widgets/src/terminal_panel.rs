@@ -27,7 +27,9 @@ enum FromPage {
 const BRIDGE_JS: &str = r#"
 const host = document.getElementById("__HOST__");
 const opts = __OPTS__;
-const term = new Terminal({ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 12, cursorBlink: opts.blink, cursorStyle: opts.cursor, scrollback: opts.scrollback });
+// The code font of Settings (`--mono`), as the desktop app's terminal uses it.
+const mono = getComputedStyle(document.documentElement).getPropertyValue("--mono").trim() || 'ui-monospace, "SF Mono", Menlo, monospace';
+const term = new Terminal({ fontFamily: mono, fontSize: 12, cursorBlink: opts.blink, cursorStyle: opts.cursor, scrollback: opts.scrollback });
 let copyOnSelect = opts.copy;
 // The panel's `⋯` menu changes every open terminal at once.
 const onOptions = (e) => {
