@@ -161,3 +161,11 @@ pub use change_rows::{branch_label, header_counts, BranchLabel, fallback_source,
 pub(crate) fn root_signal<T: 'static>(value: T) -> dioxus::prelude::Signal<T> {
     dioxus::prelude::Signal::new_in_scope(value, dioxus::prelude::ScopeId::ROOT)
 }
+
+/// Free space on the disk that holds the home folder, in bytes, as the app last measured it
+/// (`None` before the first look). The desktop app warns when it runs low (observed 2026-11-06).
+#[derive(Clone, Copy)]
+pub struct DiskSpace(pub dioxus::prelude::Signal<Option<u64>>);
+
+/// Below this much free space the low-disk banner shows (the desktop app warned at 8.6 GB).
+pub const LOW_DISK_BYTES: u64 = 10 * 1024 * 1024 * 1024;

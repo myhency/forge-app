@@ -256,10 +256,12 @@ pub enum IconKind {
     /// A push pin (pin as chapter), and the same filled once pinned.
     Pin,
     PinFilled,
+    /// A warning triangle with an exclamation mark.
+    Alert,
 }
 
 impl IconKind {
-    pub const ALL: [IconKind; 48] = [
+    pub const ALL: [IconKind; 49] = [
         IconKind::Close,
         IconKind::Search,
         IconKind::Sparkle,
@@ -308,6 +310,7 @@ impl IconKind {
         IconKind::Speaker,
         IconKind::Pin,
         IconKind::PinFilled,
+        IconKind::Alert,
     ];
 
     pub fn shapes(self) -> &'static [Shape] {
@@ -333,6 +336,7 @@ impl IconKind {
             IconKind::Send => &[Shape::Path("M12.5 3.5v5h-9M3.5 8.5l3-3M3.5 8.5l3 3")],
             IconKind::More => &[Shape::Dot { cx: 3.5, cy: 8.0 }, Shape::Dot { cx: 8.0, cy: 8.0 }, Shape::Dot { cx: 12.5, cy: 8.0 }],
             IconKind::Target => &[Shape::Circle { cx: 8.0, cy: 8.0, r: 6.0 }, Shape::Circle { cx: 8.0, cy: 8.0, r: 2.0 }],
+            IconKind::Alert => &[Shape::Path("M8 2.2l6.2 11H1.8z"), Shape::Path("M8 6.5v3"), Shape::Dot { cx: 8.0, cy: 11.3 }],
             IconKind::Pin => &[Shape::Path("M9.8 2.4l3.8 3.8-1.5.8-2.5 2.5.4 2.8-1 1-6.3-6.3 1-1 2.8.4 2.5-2.5z"), Shape::Path("M5.8 10.2L2.5 13.5")],
             IconKind::PinFilled => &[Shape::Solid("M9.8 2.4l3.8 3.8-1.5.8-2.5 2.5.4 2.8-1 1-6.3-6.3 1-1 2.8.4 2.5-2.5z"), Shape::Path("M5.8 10.2L2.5 13.5")],
             IconKind::Speaker => &[Shape::Path("M2.5 6.2h2.3l3.2-2.7v9l-3.2-2.7H2.5z"), Shape::Path("M10.6 5.8c.9 1.2.9 3.2 0 4.4M12.6 4.2c1.8 2.1 1.8 5.5 0 7.6")],

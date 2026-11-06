@@ -1,3 +1,4 @@
+mod low_disk;
 mod account_menu;
 mod changes_comment;
 mod changes_header;
@@ -94,3 +95,5 @@ pub use workspace_trust_dialog::WorkspaceTrustDialog;
 pub use sidebar::{project_label, project_label_in, project_labels, NavButtons, Sidebar};
 pub use usage_ring::UsageRing;
 pub use web_view_host::WebViewHost;
+
+pub use low_disk::LowDiskBanner;

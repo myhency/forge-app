@@ -344,6 +344,20 @@ fn App() -> Element {
     #[cfg(target_os = "macos")]
     use_context_provider(|| forge_features::WindowDrag(Callback::new(|_| dioxus::desktop::window().drag())));
     use_workspace_providers();
+    // How much room the home disk has left, looked at now and every half hour (the low-disk banner).
+    let disk = use_context_provider(|| forge_features::DiskSpace(Signal::new(None)));
+    use_future(move || async move {
+        let mut space = disk.0;
+        loop {
+            let home = directories::UserDirs::new().map(|dirs| dirs.home_dir().to_path_buf());
+            if let Some(home) = home {
+                if let Ok(free) = tokio::task::spawn_blocking(move || forge_adapter_report::free_space(&home)).await {
+                    space.set(free);
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;
+        }
+    });
     rsx! {
         style { "{THEME_CSS}" }
         if cfg!(target_os = "macos") {

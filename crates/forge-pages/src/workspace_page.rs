@@ -225,6 +225,7 @@ pub fn WorkspacePage() -> Element {
             {pane_row(workspace, main_area, main_height, pane_dragging)}
             SettingsOverlay {}
             SearchPalette {}
+            forge_widgets::LowDiskBanner {}
             ShortcutsDialog {}
             EnvironmentDialog {}
             WorkspaceTrustDialog {}

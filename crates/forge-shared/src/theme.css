@@ -1819,3 +1819,8 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .icon-button, .settings-close, .env-back, .env-icon, .queue-action, .cd-comment-ok, .send-icon { display: inline-flex; align-items: center; justify-content: center; }
 .customize-icon .icon { width: 18px; height: 18px; }
 .customize-icon.big .icon { width: 24px; height: 24px; }
+
+/* The low-disk banner at the bottom right (desktop app, 2026-11-06). */
+.low-disk { position: fixed; right: var(--sp-16); bottom: var(--sp-16); z-index: 40; display: flex; align-items: center; gap: var(--sp-10); max-width: 360px; padding: var(--sp-12) var(--sp-14); border: 1px solid var(--border); border-radius: var(--r-12); background: var(--bg-card); box-shadow: var(--shadow-menu); color: var(--fg); }
+.low-disk-sign { color: var(--warning); display: inline-flex; }
+.low-disk-text { flex: 1; }

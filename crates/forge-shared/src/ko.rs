@@ -456,6 +456,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Looked up a session", "세션 정보 확인함"),
     ("Looks for outdated packages, security patches and breaking changes.", "오래된 패키지, 보안 패치, 호환성을 깨는 변경을 찾아봅니다."),
     ("Low", "낮음"),
+    ("Low disk space: {amount} left", "디스크 공간 부족: 남은 공간 {amount}"),
     ("MCP servers", "MCP 서버"),
     ("MCP tools", "MCP 도구"),
     ("Made by", "만든 사람"),

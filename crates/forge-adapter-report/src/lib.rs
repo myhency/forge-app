@@ -5,6 +5,7 @@ mod environment;
 mod mask;
 mod oslogs;
 mod system;
+pub use system::free_space;
 mod transcripts;
 
 use std::io::Write;
