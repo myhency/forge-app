@@ -176,7 +176,7 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay:
                     commands: arrange_commands(&view.map(|view| view.read().commands.clone()).unwrap_or_default(), local_commands()),
                     // The desktop app (round 37): the queue hint while the model works, and the slash hint
                     // when the turn waits for a card or nothing runs.
-                    placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, if running && !waiting { tr!("⏎ to send, ⌘⏎ to queue and send later") } else { tr!("Type / for commands") }),
+                    placeholder: composer_placeholder(suggestion.as_deref(), draft.read().is_empty(), running, if running && !waiting { tr!("Press ⌘⏎ to add it to the queue") } else { tr!("Type / for commands") }),
                     disabled: !can_send,
                     open_token: composer.popup_token(),
                     oninput: move |text| draft.set(text),

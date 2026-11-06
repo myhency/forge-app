@@ -704,6 +704,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Plugin {plugin}", "플러그인 {plugin}"),
     ("Plugins", "플러그인"),
     ("Press Enter to send, ⌘Enter to queue it and send later", "↵ 키로 보내기, ⌘↵ 키로 대기열에 추가하여 나중에 보내기"),
+    ("Press ⌘⏎ to add it to the queue", "⌘⏎ 키를 눌러 대기열에 추가하세요"),
     ("Preview", "미리보기"),
     ("Preview tabs", "미리보기 탭"),
     ("Preview your app?", "앱을 미리 볼까요?"),
@@ -1253,5 +1254,4 @@ pub static KO: &[(&str, &str)] = &[
     ("← Connectors", "← 커넥터"),
     ("← Plugins", "← 플러그인"),
     ("← Skills", "← 스킬"),
-    ("⏎ to send, ⌘⏎ to queue and send later", "⏎ 키로 보내기, ⌘⏎ 키로 대기열에 추가하여 나중에 보내기"),
 ];
