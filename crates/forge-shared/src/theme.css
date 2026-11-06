@@ -1908,3 +1908,5 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 /* A desktop extension dragged over the connectors tab. */
 .extension-drop-hint { margin: var(--sp-4) 0 var(--sp-12); padding: var(--sp-10) var(--sp-12); border: 1px dashed var(--border); border-radius: var(--r-8); color: var(--fg-muted); font-size: var(--text-sm); text-align: center; transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
 .customize.drop-over .extension-drop-hint { border-color: var(--accent); background: var(--bg-hover); color: var(--fg); }
+/* Files dragged over the message box. */
+.composer.drop-over { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
