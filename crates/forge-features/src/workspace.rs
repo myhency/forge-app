@@ -1805,22 +1805,32 @@ impl Workspace {
     }
 
     /// What became of a session's proposed-session cards.
+    /// What was done with the session's proposal cards: this run's marks over the ones kept from earlier runs.
     pub fn offer_marks(&self, id: LiveSessionId) -> HashMap<String, forge_entities::OfferMark> {
-        self.offer_marks.read().get(&id).cloned().unwrap_or_default()
+        let mut marks: HashMap<String, forge_entities::OfferMark> = HashMap::new();
+        if let Some(session) = self.live_view(id).and_then(|view| view.peek().claude_session_id.clone()) {
+            for kept in self.prefs.read().offer_marks.iter().filter(|kept| kept.session_id == session.0) {
+                if let Some(mark) = offer_mark_from(&kept.mark) {
+                    marks.insert(kept.call_id.clone(), mark);
+                }
+            }
+        }
+        marks.extend(self.offer_marks.read().get(&id).cloned().unwrap_or_default());
+        marks
     }
 
     /// The proposals open sessions are waiting on (no card button pressed yet), newest session first:
     /// the new-session screen's chips.
     pub fn pending_offers(&self) -> Vec<(LiveSessionId, forge_entities::SessionOffer)> {
-        let marks = self.offer_marks.read();
         let started = self.offer_sessions.read();
         let mut out = Vec::new();
         for (id, view) in self.live_views().into_iter().rev() {
             if self.is_routine_session(id) {
                 continue;
             }
+            let marks = self.offer_marks(id);
             for offer in forge_entities::open_offers(&view.read().session.messages) {
-                let handled = marks.get(&id).is_some_and(|marks| marks.contains_key(&offer.id)) || started.contains_key(&(id, offer.id.clone()));
+                let handled = marks.contains_key(&offer.id) || started.contains_key(&(id, offer.id.clone()));
                 if !handled {
                     out.push((id, offer));
                 }
@@ -1851,6 +1861,17 @@ impl Workspace {
     }
 
     fn mark_offer(&self, id: LiveSessionId, call_id: String, mark: forge_entities::OfferMark) {
+        // Kept in the preferences too, so the card stays handled after a restart.
+        if let Some(session) = self.live_view(id).and_then(|view| view.peek().claude_session_id.clone()) {
+            let call = call_id.clone();
+            self.update_prefs(move |prefs| {
+                prefs.offer_marks.retain(|kept| !(kept.session_id == session.0 && kept.call_id == call));
+                prefs.offer_marks.push(forge_domain::OfferMarkRef { session_id: session.0.clone(), call_id: call.clone(), mark: offer_mark_name(mark).to_string() });
+                // The oldest go first past a few hundred: a card from long ago needs no memory.
+                let excess = prefs.offer_marks.len().saturating_sub(500);
+                prefs.offer_marks.drain(..excess);
+            });
+        }
         let mut marks = self.offer_marks;
         marks.write().entry(id).or_default().insert(call_id, mark);
     }
@@ -4439,6 +4460,15 @@ fn plan_text_of_view(view: &LiveSessionView) -> Option<String> {
 
 #[cfg(test)]
 mod plan_text_tests {
+    #[test]
+    fn a_proposal_cards_mark_is_kept_under_a_name_and_read_back() {
+        use forge_entities::OfferMark;
+        for mark in [OfferMark::Dismissed, OfferMark::Here, OfferMark::Started, OfferMark::Drafted] {
+            assert_eq!(super::offer_mark_from(super::offer_mark_name(mark)), Some(mark));
+        }
+        assert_eq!(super::offer_mark_from("?"), None);
+    }
+
     use std::collections::VecDeque;
 
     use forge_domain::{Block, Message, PermissionRequest, ToolCall};
@@ -4521,6 +4551,26 @@ pub fn effort_value(level: forge_domain::EffortLevel) -> &'static str {
         forge_domain::EffortLevel::High => "high",
         forge_domain::EffortLevel::XHigh => "xhigh",
         forge_domain::EffortLevel::Max => "max",
+    }
+}
+
+/// The name a proposal card's mark is kept under in the preferences.
+fn offer_mark_name(mark: forge_entities::OfferMark) -> &'static str {
+    match mark {
+        forge_entities::OfferMark::Dismissed => "dismissed",
+        forge_entities::OfferMark::Here => "here",
+        forge_entities::OfferMark::Started => "started",
+        forge_entities::OfferMark::Drafted => "drafted",
+    }
+}
+
+fn offer_mark_from(name: &str) -> Option<forge_entities::OfferMark> {
+    match name {
+        "dismissed" => Some(forge_entities::OfferMark::Dismissed),
+        "here" => Some(forge_entities::OfferMark::Here),
+        "started" => Some(forge_entities::OfferMark::Started),
+        "drafted" => Some(forge_entities::OfferMark::Drafted),
+        _ => None,
     }
 }
 
