@@ -2202,6 +2202,13 @@ impl Workspace {
         self.browser().open_with(&dir, None)
     }
 
+    /// The title menu's `다음에서 열기 ›`: opens the session's folder in VS Code (`Some`) or in Finder
+    /// (File Explorer on Windows); a failure becomes a notice.
+    pub fn open_session_folder_in(&self, id: LiveSessionId, app: Option<&'static str>) {
+        let Some(folder) = self.live_view(id).map(|view| view.peek().project_path.clone()) else { return };
+        self.open_with_app(&folder, app);
+    }
+
     /// Opens a file with the default app or a named one; a failure becomes a notice.
     pub fn open_with_app(&self, path: &Path, app: Option<&'static str>) {
         if let Err(message) = self.browser().open_with(path, app) {

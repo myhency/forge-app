@@ -8,6 +8,7 @@ use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MenuPage {
     Main,
+    OpenIn,
     Views,
     Styles,
     ConfirmDelete,
@@ -15,7 +16,7 @@ enum MenuPage {
 
 /// The chevron after the title of the open session and its menu, laid out like the desktop app's
 /// (round 37): `이름 변경 R`, `포크 F`, then `트랜스크립트 보기 ›` (normal, thinking, detailed), then
-/// `보관 A` and `삭제 D`. Delete asks first, then closes the session and moves it to the trash.
+/// `보관 A` and `삭제 D`, with `다음에서 열기 ›` (VS Code, Finder) at the top. Delete asks first, then closes the session and moves it to the trash.
 /// `출력 스타일 ›` changes this session's output style, and its `새 스타일...` has Claude write a new
 /// one. `다음에서 열기` (new window, cloud) is left out.
 #[component]
@@ -84,6 +85,21 @@ pub fn SessionTitleMenu(
                             }
                             return;
                         }
+                        // `다음에서 열기 ›` keeps the desktop app's numbers: 1 is its 새 창, which Forge has not.
+                        if page() == MenuPage::OpenIn {
+                            let app = match event.code().to_string().as_str() {
+                                "Digit2" => Some(Some("Visual Studio Code")),
+                                "Digit3" => Some(None),
+                                _ => None,
+                            };
+                            if let Some(app) = app {
+                                event.stop_propagation();
+                                event.prevent_default();
+                                close();
+                                workspace.open_session_folder_in(id, app);
+                            }
+                            return;
+                        }
                         if page() != MenuPage::Main {
                             return;
                         }
@@ -113,6 +129,17 @@ pub fn SessionTitleMenu(
                     },
                     match page() {
                         MenuPage::Main => rsx! {
+                            // The desktop app's first row (observed 2026-11-06): 새 창, VS Code, Finder and
+                            // 클라우드; Forge offers the two that open the session's folder.
+                            button {
+                                class: "row-menu-item",
+                                role: "menuitem",
+                                "aria-haspopup": "menu",
+                                onclick: move |_| page.set(MenuPage::OpenIn),
+                                span { {tr!("Open in|session")} }
+                                span { class: "menu-key", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
+                            }
+                            div { class: "row-menu-separator" }
                             if actions.can_rename {
                                 button {
                                     class: "row-menu-item",
@@ -187,6 +214,35 @@ pub fn SessionTitleMenu(
                                     span { {tr!("Delete")} }
                                     span { class: "menu-key", "D" }
                                 }
+                            }
+                        },
+                        MenuPage::OpenIn => rsx! {
+                            button {
+                                class: "row-menu-item row-menu-back",
+                                role: "menuitem",
+                                onclick: move |_| page.set(MenuPage::Main),
+                                Icon { kind: IconKind::ChevronLeft, size: IconSize::Small }
+                                span { {tr!("Open in|session")} }
+                            }
+                            button {
+                                class: "row-menu-item",
+                                role: "menuitem",
+                                onclick: move |_| {
+                                    close();
+                                    workspace.open_session_folder_in(id, Some("Visual Studio Code"));
+                                },
+                                span { {tr!("VS Code")} }
+                                span { class: "menu-key", "2" }
+                            }
+                            button {
+                                class: "row-menu-item",
+                                role: "menuitem",
+                                onclick: move |_| {
+                                    close();
+                                    workspace.open_session_folder_in(id, None);
+                                },
+                                span { if cfg!(windows) { {tr!("File Explorer")} } else { "Finder" } }
+                                span { class: "menu-key", "3" }
                             }
                         },
                         MenuPage::Views => rsx! {
