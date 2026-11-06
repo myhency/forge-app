@@ -324,7 +324,13 @@ pub fn ChangesPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
 
     let body = match result() {
         None => rsx! { div { class: "dock-note", {tr!("Loading…")} } },
-        Some((_, Err(GitError::NotARepository))) => rsx! { div { class: "dock-note", {tr!("No changes to show")} } },
+        // The desktop app's words for a folder outside Git (observed 2026-11-06).
+        Some((_, Err(GitError::NotARepository))) => rsx! {
+            div { class: "changes-no-git",
+                div { class: "changes-no-git-title", {tr!("A Git repository is needed to see changes")} }
+                div { class: "changes-no-git-note", {tr!("Nothing was found in this session, or the session folder cannot be reached.")} }
+            }
+        },
         Some((_, Err(error))) => with_commits(rsx! { div { class: "dock-note error", "{error}" } }),
         Some((_, Ok(files))) if files.is_empty() => with_commits(rsx! { div { class: "dock-note", {tr!("No changes to show")} } }),
         Some((used, Ok(files))) => {
