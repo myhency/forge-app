@@ -187,6 +187,30 @@ fn nest_forks(entries: Vec<ArrangedEntry>, prefs: &SidebarPrefs, active: Option<
     out
 }
 
+/// Moves a row whose source session is listed in another group into that group, so it can nest
+/// under its source: a session a proposal card started in another folder sits under the session that
+/// proposed it, as in the desktop app. A chain follows its sources; a loop stops after one pass per row.
+fn gather_under_sources(lists: &mut [Vec<ArrangedEntry>]) {
+    let total: usize = lists.iter().map(Vec::len).sum();
+    for _ in 0..total {
+        let home: HashMap<SessionId, usize> = lists
+            .iter()
+            .enumerate()
+            .flat_map(|(group, list)| list.iter().filter_map(move |item| item.entry.session_id.clone().map(|id| (id, group))))
+            .collect();
+        let found = lists.iter().enumerate().find_map(|(group, list)| {
+            list.iter().position(|item| {
+                item.entry.forked_from.as_ref().and_then(|source| home.get(source)).is_some_and(|&target| target != group)
+                    && item.entry.forked_from != item.entry.session_id
+            }).map(|index| (group, index))
+        });
+        let Some((group, index)) = found else { return };
+        let item = lists[group].remove(index);
+        let target = home[item.entry.forked_from.as_ref().unwrap()];
+        lists[target].push(item);
+    }
+}
+
 pub fn folder_group_id(path: &Path) -> String {
     format!("folder:{}", path.display())
 }
@@ -442,9 +466,18 @@ fn arrange_filtered(
                     }
                 }
             }
+            let had_rows: Vec<bool> = merged.iter().map(|(_, _, entries)| !entries.is_empty()).collect();
+            let mut lists: Vec<Vec<ArrangedEntry>> = merged.iter_mut().map(|(_, _, entries)| std::mem::take(entries)).collect();
+            gather_under_sources(&mut lists);
+            for ((_, _, entries), list) in merged.iter_mut().zip(lists) {
+                *entries = list;
+            }
             merged
                 .into_iter()
-                .filter(|(_, _, entries)| prefs.show_empty || !entries.is_empty())
+                .zip(had_rows)
+                // A folder whose only rows moved under their sources keeps no heading of its own.
+                .filter(|((_, _, entries), had)| (prefs.show_empty && !had) || !entries.is_empty())
+                .map(|(group, _)| group)
                 .map(|(home, heading, mut entries)| {
                     sort_entries(&mut entries, prefs.sort_by, prefs.reversed);
                     let entries = nest_forks(entries, prefs, active);
@@ -503,9 +536,13 @@ fn arrange_filtered(
                     None => named.push((name, vec![item])),
                 }
             }
+            let mut lists: Vec<Vec<ArrangedEntry>> = named.iter_mut().map(|(_, list)| std::mem::take(list)).collect();
+            gather_under_sources(&mut lists);
             named
                 .into_iter()
-                .map(|(name, list)| finish(environment_group_id(&name), Heading::Environment(name), nest_forks(list, prefs, active), prefs, active))
+                .zip(lists)
+                .filter(|(_, list)| !list.is_empty())
+                .map(|((name, _), list)| finish(environment_group_id(&name), Heading::Environment(name), nest_forks(list, prefs, active), prefs, active))
                 .collect()
         }
         GroupBy::Flat => {
@@ -1150,6 +1187,26 @@ mod tests {
         let arranged = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Folder), now(), None);
 
         assert_eq!(depths(&arranged[0]), [("orphan".to_string(), 0), ("self".to_string(), 0)]);
+    }
+
+    #[test]
+    fn a_session_started_in_another_folder_nests_under_its_source() {
+        let groups = vec![
+            group("/a", vec![entry("parent", None, Some("2026-10-01T00:00:00Z")), entry("other", None, Some("2026-10-02T00:00:00Z"))]),
+            group("/b", vec![fork_of("child", "parent", "2026-10-03T08:00:00Z")]),
+            group("/c", vec![fork_of("grandchild", "child", "2026-10-03T09:00:00Z"), entry("stays", None, Some("2026-10-01T00:00:00Z"))]),
+        ];
+
+        let arranged = arrange(&groups, &prefs(SortBy::Activity, GroupBy::Folder), now(), None);
+
+        assert_eq!(arranged.len(), 2, "the folder whose only row moved has no heading");
+        assert_eq!(
+            depths(&arranged[0]),
+            [("other".to_string(), 0), ("parent".to_string(), 0), ("child".to_string(), 1), ("grandchild".to_string(), 2)]
+        );
+        assert_eq!(depths(&arranged[1]), [("stays".to_string(), 0)]);
+        let shown_empty = arrange(&groups, &SidebarPrefs { show_empty: true, ..prefs(SortBy::Activity, GroupBy::Folder) }, now(), None);
+        assert_eq!(shown_empty.len(), 2, "a folder emptied by the move is not an empty folder");
     }
 
     #[test]
