@@ -1861,3 +1861,10 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .code-preview-line.removed { background: var(--diff-removed-bg); }
 .code-preview-line.added { background: var(--diff-added-bg); }
 .code-preview-number { display: inline-block; width: 2.2em; color: var(--fg-muted); text-align: right; margin-right: var(--sp-12); }
+
+/* Sections the person made in the sidebar (the desktop app's 섹션으로 이동 › 새 섹션). */
+.row-submenu { position: static; margin-top: var(--sp-4); border: 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; padding: var(--sp-4) 0 0; min-width: 0; }
+.section-name, .section-rename { width: 100%; box-sizing: border-box; }
+.section-menu-wrap { position: relative; margin-left: auto; opacity: 0; }
+.sidebar-group-header:hover .section-menu-wrap, .section-menu-wrap:focus-within { opacity: 1; }
+.section-empty { padding: var(--sp-4) var(--sp-16); color: var(--fg-muted); font-size: var(--text-sm); }

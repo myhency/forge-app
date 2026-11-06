@@ -492,6 +492,55 @@ impl Workspace {
         });
     }
 
+    /// The section a session sits in, if any.
+    pub fn section_of(&self, session: &SessionId) -> Option<String> {
+        self.prefs.read().sections.iter().find(|section| section.sessions.iter().any(|id| *id == session.0)).map(|section| section.id.clone())
+    }
+
+    /// Moves a session into a section (`None`: back to its usual group).
+    pub fn move_to_section(&self, session: SessionId, section: Option<String>) {
+        self.update_prefs(|prefs| {
+            for each in prefs.sections.iter_mut() {
+                each.sessions.retain(|id| *id != session.0);
+            }
+            if let Some(target) = section.and_then(|id| prefs.sections.iter_mut().find(|each| each.id == id)) {
+                target.sessions.push(session.0.clone());
+            }
+        });
+    }
+
+    /// Makes a section with this name and moves the session into it (`새 섹션`).
+    pub fn new_section_with(&self, session: SessionId, name: String) {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        let id = format!("section-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis()).unwrap_or(0));
+        self.update_prefs(|prefs| {
+            for each in prefs.sections.iter_mut() {
+                each.sessions.retain(|known| *known != session.0);
+            }
+            prefs.sections.push(forge_domain::SidebarSection { id, name, sessions: vec![session.0.clone()] });
+        });
+    }
+
+    pub fn rename_section(&self, id: &str, name: String) {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        self.update_prefs(|prefs| {
+            if let Some(section) = prefs.sections.iter_mut().find(|section| section.id == id) {
+                section.name = name;
+            }
+        });
+    }
+
+    /// Removes a section; its sessions go back to their usual groups.
+    pub fn delete_section(&self, id: &str) {
+        self.update_prefs(|prefs| prefs.sections.retain(|section| section.id != id));
+    }
+
     /// Keeps what Claude sorted a session into (`세션 상태 분류`), so the status grouping can file
     /// it after a restart too. Writes only when it changed.
     pub fn mark_session_status(&self, session: &SessionId, status: forge_domain::SessionStatus) {

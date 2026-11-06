@@ -55,6 +55,8 @@ pub fn SessionRow(
 ) -> Element {
     let workspace = use_workspace();
     let mut mode = use_signal(|| RowMode::Normal);
+    let mut section_page = use_signal(|| false);
+    let mut new_section: Signal<Option<String>> = use_signal(|| None);
     let actions = entry.actions();
     let session_id = entry.session_id.clone();
     let pinned = session_id.as_ref().is_some_and(|id| workspace.is_pinned(&project, id));
@@ -391,6 +393,16 @@ pub fn SessionRow(
                                     span { class: "menu-key", "F" }
                                 }
                             }
+                            // The desktop app's `섹션으로 이동 ›` (observed 2026-11-06): its sections and `새 섹션`.
+                            if session_id.is_some() {
+                                button {
+                                    class: if section_page() { "row-menu-item open" } else { "row-menu-item" },
+                                    "aria-haspopup": "menu",
+                                    onclick: move |_| section_page.set(!section_page()),
+                                    span { {tr!("Move to section")} }
+                                    span { class: "menu-key", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
+                                }
+                            }
                             // The desktop app's `중첩된 세션 숨기기` (observed 2026-11-06): the same fold as the chevron.
                             if let (true, Some(fold_id)) = (fork_count > 0, fold_id.clone()) {
                                 button {
@@ -433,6 +445,92 @@ pub fn SessionRow(
                             }
                             if actions.delete == DeleteAction::WhileOpen {
                                 div { class: "row-menu-note", {tr!("Close the session first ({key}) to delete it.", key = forge_domain::KEY_CLOSE_SESSION)} }
+                            }
+                            if let (true, Some(id)) = (section_page(), session_id.clone()) {
+                                {
+                                    let sections = workspace.prefs().sections;
+                                    let current = workspace.section_of(&id);
+                                    let mut close_all = move || {
+                                        section_page.set(false);
+                                        new_section.set(None);
+                                        mode.set(RowMode::Normal);
+                                        refocus_workspace();
+                                    };
+                                    rsx! {
+                                        div { class: "row-menu row-submenu", role: "menu", onclick: move |event| event.stop_propagation(),
+                                            for section in sections {
+                                                button {
+                                                    key: "{section.id}",
+                                                    class: "row-menu-item",
+                                                    role: "menuitemradio",
+                                                    "aria-checked": "{current.as_deref() == Some(section.id.as_str())}",
+                                                    onclick: {
+                                                        let id = id.clone();
+                                                        let target = section.id.clone();
+                                                        move |_| {
+                                                            workspace.move_to_section(id.clone(), Some(target.clone()));
+                                                            close_all();
+                                                        }
+                                                    },
+                                                    span { "{section.name}" }
+                                                    if current.as_deref() == Some(section.id.as_str()) {
+                                                        span { class: "menu-key", Icon { kind: IconKind::Check, size: IconSize::Small } }
+                                                    }
+                                                }
+                                            }
+                                            if current.is_some() {
+                                                button {
+                                                    class: "row-menu-item",
+                                                    onclick: {
+                                                        let id = id.clone();
+                                                        move |_| {
+                                                            workspace.move_to_section(id.clone(), None);
+                                                            close_all();
+                                                        }
+                                                    },
+                                                    span { {tr!("Remove from section")} }
+                                                }
+                                            }
+                                            div { class: "row-menu-separator" }
+                                            match new_section() {
+                                                Some(draft) => rsx! {
+                                                    input {
+                                                        class: "text-input section-name",
+                                                        placeholder: tr!("Section name"),
+                                                        value: "{draft}",
+                                                        onmounted: move |mounted| async move {
+                                                            let _ = mounted.set_focus(true).await;
+                                                        },
+                                                        oninput: move |event| new_section.set(Some(event.value())),
+                                                        onkeydown: {
+                                                            let id = id.clone();
+                                                            move |event: KeyboardEvent| {
+                                                                event.stop_propagation();
+                                                                match event.key() {
+                                                                    Key::Enter if !event.is_composing() => {
+                                                                        if let Some(name) = new_section.peek().clone() {
+                                                                            workspace.new_section_with(id.clone(), name);
+                                                                        }
+                                                                        close_all();
+                                                                    }
+                                                                    Key::Escape => new_section.set(None),
+                                                                    _ => {}
+                                                                }
+                                                            }
+                                                        },
+                                                    }
+                                                },
+                                                None => rsx! {
+                                                    button {
+                                                        class: "row-menu-item",
+                                                        onclick: move |_| new_section.set(Some(String::new())),
+                                                        span { {tr!("New section")} }
+                                                    }
+                                                },
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

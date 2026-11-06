@@ -101,6 +101,17 @@ pub struct SidebarPrefs {
     /// What Claude last sorted each session into (`세션 상태 분류`), by session id.
     #[serde(default)]
     pub session_status: Vec<StatusMark>,
+    /// Sections the person made (`섹션으로 이동 › 새 섹션`), in the order made.
+    #[serde(default)]
+    pub sections: Vec<SidebarSection>,
+}
+
+/// A group of sessions the person named; its sessions leave their usual group for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SidebarSection {
+    pub id: String,
+    pub name: String,
+    pub sessions: Vec<String>,
 }
 
 /// The state Claude sorts an idle session into (the desktop app's `세션 상태 분류`: 차단됨, 검토
@@ -157,6 +168,7 @@ impl Default for SidebarPrefs {
             chapter_pins: Vec::new(),
             hidden_links: Vec::new(),
             session_status: Vec::new(),
+            sections: Vec::new(),
         }
     }
 }
@@ -730,6 +742,7 @@ mod tests {
             chapter_pins: Vec::new(),
             hidden_links: Vec::new(),
             session_status: Vec::new(),
+            sections: Vec::new(),
         };
         let config = AppConfig { sidebar: prefs.clone(), ..AppConfig::default() };
 

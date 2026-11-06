@@ -137,6 +137,27 @@ pub fn Sidebar() -> Element {
             group.id.clear();
         }
     }
+    // Sessions the person filed in a section leave their group for it, as pinned ones do.
+    let mut section_items: Vec<(forge_domain::SidebarSection, Vec<forge_features::ArrangedEntry>)> = prefs.sections.iter().cloned().map(|section| (section, Vec::new())).collect();
+    for group in groups.iter_mut() {
+        if group.id.is_empty() {
+            continue;
+        }
+        let before = group.entries.len();
+        group.entries.retain(|item| {
+            let Some(id) = item.entry.session_id.as_ref().filter(|_| item.depth == 0) else { return true };
+            match section_items.iter_mut().find(|(section, _)| section.sessions.iter().any(|known| *known == id.0)) {
+                Some((_, list)) => {
+                    list.push(item.clone());
+                    false
+                }
+                None => true,
+            }
+        });
+        if before > 0 && group.entries.is_empty() {
+            group.id.clear();
+        }
+    }
     groups.retain(|group| !group.id.is_empty());
     let pin_order = prefs.pinned.clone();
     pinned_items.sort_by_key(|item| pin_order.iter().position(|pin| Some(pin.session_id.as_str()) == item.entry.session_id.as_ref().map(|id| id.0.as_str())).unwrap_or(usize::MAX));
@@ -244,6 +265,9 @@ pub fn Sidebar() -> Element {
                         }
                     }
                 }
+            }
+            for (section, items) in section_items.into_iter() {
+                SidebarSectionGroup { key: "{section.id}", section, items }
             }
             for group in groups {
                 div { key: "{group.id}",
@@ -628,6 +652,107 @@ fn SidebarMore() -> Element {
                     div { class: "edit-sidebar-actions",
                         button { class: "button primary", r#type: "button", onclick: move |_| editing.set(false), {tr!("Done")} }
                     }
+                }
+            }
+        }
+    }
+}
+
+/// A section the person made (`섹션으로 이동 › 새 섹션`): its name over its sessions, and a menu to
+/// rename or remove it. An empty section still shows, so it can be filled or removed.
+#[component]
+fn SidebarSectionGroup(section: forge_domain::SidebarSection, items: Vec<forge_features::ArrangedEntry>) -> Element {
+    let workspace = use_workspace();
+    let active = workspace.active();
+    let mut open = use_signal(|| true);
+    let mut menu = use_signal(|| false);
+    let mut renaming: Signal<Option<String>> = use_signal(|| None);
+    let id = section.id.clone();
+    rsx! {
+        div { class: "section-group",
+            div { class: "sidebar-group-header",
+                if let Some(draft) = renaming() {
+                    input {
+                        class: "text-input section-rename",
+                        value: "{draft}",
+                        onmounted: move |mounted| async move {
+                            let _ = mounted.set_focus(true).await;
+                        },
+                        oninput: move |event| renaming.set(Some(event.value())),
+                        onkeydown: {
+                            let id = id.clone();
+                            move |event: KeyboardEvent| match event.key() {
+                                Key::Enter if !event.is_composing() => {
+                                    if let Some(name) = renaming.peek().clone() {
+                                        workspace.rename_section(&id, name);
+                                    }
+                                    renaming.set(None);
+                                }
+                                Key::Escape => renaming.set(None),
+                                _ => {}
+                            }
+                        },
+                    }
+                } else {
+                    button { class: "group-toggle", onclick: move |_| open.set(!open()),
+                        span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: open() } }
+                        span { class: "sidebar-group-title", "{section.name}" }
+                    }
+                    div { class: "section-menu-wrap",
+                        button { class: "icon-button section-menu-button", title: tr!("Section menu"), onclick: move |_| menu.set(!menu()),
+                            Icon { kind: IconKind::MoreHorizontal, size: IconSize::Small }
+                        }
+                        if menu() {
+                            div { class: "menu-backdrop", onclick: move |_| menu.set(false) }
+                            div { class: "row-menu", role: "menu",
+                                button {
+                                    class: "row-menu-item",
+                                    onclick: {
+                                        let name = section.name.clone();
+                                        move |_| {
+                                            menu.set(false);
+                                            renaming.set(Some(name.clone()));
+                                        }
+                                    },
+                                    span { {tr!("Rename")} }
+                                }
+                                button {
+                                    class: "row-menu-item danger",
+                                    onclick: {
+                                        let id = id.clone();
+                                        move |_| {
+                                            menu.set(false);
+                                            workspace.delete_section(&id);
+                                        }
+                                    },
+                                    span { {tr!("Delete section")} }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if open() {
+                for item in items.iter() {
+                    SessionRow {
+                        key: "sec-{item.entry.key.dom_key()}",
+                        project: item.project.path.clone(),
+                        entry: item.entry.clone(),
+                        active: matches!(&item.entry.key, EntryKey::Live(id) if active == Active::Live(*id)),
+                        onopen: {
+                            let project = item.project.clone();
+                            let key = item.entry.key.clone();
+                            move |beside: bool| match (&key, beside) {
+                                (EntryKey::Live(id), false) => workspace.open_session(*id),
+                                (EntryKey::Live(id), true) => workspace.add_session(*id),
+                                (EntryKey::Past { session, .. }, false) => workspace.open_past_clicked(project.clone(), session.clone()),
+                                (EntryKey::Past { session, .. }, true) => workspace.add_past(project.clone(), session.clone()),
+                            }
+                        },
+                    }
+                }
+                if items.is_empty() {
+                    div { class: "section-empty", {tr!("Move sessions here from their menu.")} }
                 }
             }
         }
