@@ -38,6 +38,7 @@ fn local_commands() -> Vec<SlashCommand> {
 #[component]
 pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay: Element, leading: Element, end: Element) -> Element {
     let workspace = use_workspace();
+    let settings = crate::use_settings();
     let draft = use_signal(String::new);
     let composer = use_composer_state_provider(draft);
     // The `@` mention lists this session's folder.
@@ -112,6 +113,12 @@ pub fn SendMessageBox(id: LiveSessionId, running: bool, can_send: bool, overlay:
                 AppCommand::Plan => workspace.set_permission_mode(id, forge_domain::PermissionMode::Plan),
                 AppCommand::Mcp => workspace.open_connectors_page(),
                 AppCommand::Plugin => workspace.open_plugins_page(),
+                AppCommand::Config => settings.open(),
+                AppCommand::Theme => {
+                    settings.open();
+                    settings.set_section(crate::SettingsSection::General);
+                }
+                AppCommand::Resume => workspace.open_search(),
             }
             draft.set(String::new());
             return;

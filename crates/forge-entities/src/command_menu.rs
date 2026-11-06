@@ -60,6 +60,12 @@ pub enum AppCommand {
     Plan,
     Mcp,
     Plugin,
+    /// `/config`: Settings.
+    Config,
+    /// `/theme`: Settings on the page with the theme.
+    Theme,
+    /// `/resume`: the session search.
+    Resume,
 }
 
 /// The app command the message is, if it is just that command.
@@ -72,6 +78,9 @@ pub fn app_command(input: &str) -> Option<AppCommand> {
         "/plan" => Some(AppCommand::Plan),
         "/mcp" => Some(AppCommand::Mcp),
         "/plugin" | "/plugins" => Some(AppCommand::Plugin),
+        "/config" | "/settings" => Some(AppCommand::Config),
+        "/theme" => Some(AppCommand::Theme),
+        "/resume" => Some(AppCommand::Resume),
         _ => None,
     }
 }
