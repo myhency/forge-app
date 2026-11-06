@@ -58,6 +58,19 @@ struct Run {
     created: Instant,
     reported: bool,
     ended_ms: Option<u64>,
+    /// The `.claude/launch.json` name of a dev server the Preview started; such a run is not reported to the model.
+    server: Option<String>,
+    /// `preview_stop` asked for it to stop; the tap presses Ctrl-C once.
+    stop: bool,
+}
+
+/// A dev server the Preview started, as the browser tools list it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ServerRun {
+    pub id: u64,
+    pub name: String,
+    pub command: String,
+    pub state: RunState,
 }
 
 impl Run {
@@ -106,12 +119,58 @@ impl CodeRuns {
         }
         let id = inner.next_id;
         inner.next_id += 1;
-        inner.runs.push(Run { id, block: block.to_string(), state: RunState::Waiting, typed: false, raw: String::new(), created: now, reported: false, ended_ms: None });
+        inner.runs.push(Run { id, block: block.to_string(), state: RunState::Waiting, typed: false, raw: String::new(), created: now, reported: false, ended_ms: None, server: None, stop: false });
         while inner.runs.len() > KEPT_RUNS {
             let Some(position) = inner.runs.iter().position(|run| !run.state.is_open() && run.reported) else { break };
             inner.runs.remove(position);
         }
         id
+    }
+
+    /// Adds a run for a dev server called `name` (the Preview's `이것 사용` and `preview_start`).
+    pub fn start_server(&self, block: &str, name: &str, now: Instant) -> u64 {
+        let id = self.start(block, now);
+        if let Some(run) = self.0.borrow_mut().run_mut(id) {
+            run.server = Some(name.to_string());
+        }
+        id
+    }
+
+    /// The dev servers started here, newest first.
+    pub fn servers(&self) -> Vec<ServerRun> {
+        self.0.borrow().runs.iter().rev().filter_map(|run| Some(ServerRun { id: run.id, name: run.server.clone()?, command: run.block.clone(), state: run.state })).collect()
+    }
+
+    /// The output of a dev server so far (trimmed from the front past the kept amount).
+    pub fn server_output(&self, id: u64) -> Option<String> {
+        self.0.borrow().runs.iter().find(|run| run.id == id && run.server.is_some()).map(|run| run.raw.clone())
+    }
+
+    /// Asks a running dev server to stop (Ctrl-C in its terminal). False when it is not running.
+    pub fn request_stop(&self, id: u64) -> bool {
+        match self.0.borrow_mut().run_mut(id) {
+            Some(run) if run.server.is_some() && run.state.is_open() => {
+                if run.typed {
+                    run.stop = true;
+                } else {
+                    // Not typed yet: it never starts.
+                    run.close(RunState::Ended);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    // Whether the run `id` was asked to stop; clears the ask.
+    fn take_stop(&self, id: u64) -> bool {
+        match self.0.borrow_mut().run_mut(id) {
+            Some(run) if run.stop => {
+                run.stop = false;
+                true
+            }
+            _ => false,
+        }
     }
 
     pub fn snapshot(&self) -> Vec<RunView> {
@@ -132,6 +191,10 @@ impl CodeRuns {
         let mut finished = Vec::new();
         for run in inner.runs.iter_mut().filter(|run| !run.state.is_open() && !run.reported) {
             run.reported = true;
+            // A dev server ending (stopped by the person or by preview_stop) is not news for the model.
+            if run.server.is_some() {
+                continue;
+            }
             let code = match run.state {
                 RunState::Done { code } => Some(code),
                 _ => None,
@@ -255,6 +318,11 @@ impl TerminalTap for RunTap {
 
     fn tick(&self) -> Vec<u8> {
         self.quiet_ticks.set(self.quiet_ticks.get().saturating_add(1));
+        if let Some(id) = self.typed.get() {
+            if self.runs.take_stop(id) {
+                return vec![0x03];
+            }
+        }
         if !self.seen_output.get() || self.quiet_ticks.get() < SETTLE_TICKS || !self.active.get() || self.runs.in_flight() {
             return Vec::new();
         }
@@ -340,6 +408,24 @@ mod tests {
         assert_eq!(view.state, RunState::Done { code: 3 });
         assert_eq!(runs.take_finished(), vec![Finished { block: "echo hi".into(), code: Some(3), output: "hi\n".into(), cut: false }]);
         assert!(runs.take_finished().is_empty());
+    }
+
+    #[test]
+    fn a_dev_server_is_listed_logged_stopped_by_ctrl_c_and_not_reported_to_the_model() {
+        let runs = CodeRuns::default();
+        let (tap, _) = tap_for(&runs, true);
+        let id = runs.start_server("npm run dev", "web", Instant::now());
+        assert_eq!(runs.servers(), vec![ServerRun { id, name: "web".into(), command: "npm run dev".into(), state: RunState::Waiting }]);
+        tap.tick();
+        tap.output(format!("{START}{id}\x07ready on 5173\r\n").as_bytes());
+        assert_eq!(runs.server_output(id).as_deref(), Some("ready on 5173\n"));
+        assert!(runs.request_stop(id));
+        assert_eq!(tap.tick(), vec![0x03], "Ctrl-C goes to its terminal");
+        assert!(tap.tick().is_empty(), "once");
+        tap.output(format!("{END}{id};130\x07").as_bytes());
+        assert_eq!(runs.servers()[0].state, RunState::Done { code: 130 });
+        assert!(runs.take_finished().is_empty(), "a stopped server is not news for the model");
+        assert!(!runs.request_stop(id), "it is not running any more");
     }
 
     #[test]

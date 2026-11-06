@@ -227,6 +227,8 @@ fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
         "mcp__ccd_view__show_pane" => (tr!("Opened a pane").to_string(), text("pane")),
         "mcp__Claude_Browser__preview_start" => (tr!("Opened a preview").to_string(), if text("name").is_empty() { text("url") } else { text("name") }),
         "mcp__Claude_Browser__preview_list" => (tr!("Listed the dev servers").to_string(), String::new()),
+        "mcp__Claude_Browser__preview_stop" => (tr!("Stopped a dev server").to_string(), String::new()),
+        "mcp__Claude_Browser__preview_logs" => (tr!("Read a dev server's output").to_string(), text("search")),
         "mcp__ccd_view__close_pane" => (tr!("Closed a pane").to_string(), text("pane")),
         "mcp__ccd_view__get_layout" => (tr!("Checked the layout").to_string(), String::new()),
         "mcp__ccd_view__set_transcript_view" => (tr!("Changed the transcript view").to_string(), text("view")),

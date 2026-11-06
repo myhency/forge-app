@@ -1375,7 +1375,8 @@ impl Workspace {
         if !self.code_run_available() {
             return Err(tr!("Run {command} in a terminal, then open {url}.", command = server.command_line(), url = url).to_string());
         }
-        self.run_code(id, &server.command_line());
+        self.code_runs(id).start_server(&server.command_line(), &server.name, std::time::Instant::now());
+        self.open_terminal_panel(id);
         let this = *self;
         let port = server.port;
         dioxus::core::spawn_forever(async move {

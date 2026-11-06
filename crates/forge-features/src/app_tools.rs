@@ -94,6 +94,21 @@ impl Workspace {
             "get_layout" => Ok(self.layout_json(id)),
             "preview_start" => self.preview_start_by_tool(id, text("name"), text("url")),
             "preview_list" => Ok(self.preview_list_json(id)),
+            "preview_stop" => {
+                let server = input.get("serverId").and_then(Value::as_u64).or_else(|| text("serverId").and_then(|id| id.parse().ok()));
+                match server {
+                    Some(server) if self.code_runs(id).request_stop(server) => Ok(format!("Server {server} is stopping (Ctrl-C in its terminal).")),
+                    Some(server) => Err(format!("No running server {server}; preview_list lists them.")),
+                    None => Err("Pass serverId from preview_list.".to_string()),
+                }
+            }
+            "preview_logs" => {
+                let server = input.get("serverId").and_then(Value::as_u64).or_else(|| text("serverId").and_then(|id| id.parse().ok()));
+                match server.and_then(|server| self.code_runs(id).server_output(server)) {
+                    Some(output) => Ok(server_log(&output, text("level"), text("search"))),
+                    None => Err("No such server; preview_list lists them with their serverId.".to_string()),
+                }
+            }
             "create_section" => self.create_section_by_tool(text("name").unwrap_or_default()),
             "rename_section" => {
                 let section = text("section_id").unwrap_or_default().to_string();
@@ -668,7 +683,21 @@ impl Workspace {
             .filter(|server| server.saved)
             .map(|server| json!({ "name": server.name, "command": server.command_line(), "port": server.port, "url": server.url(), "running": crate::workspace::port_is_answering(server.port) }))
             .collect();
-        json!({ "launch_json": servers }).to_string()
+        let running: Vec<Value> = self
+            .code_runs(id)
+            .servers()
+            .into_iter()
+            .map(|run| {
+                let status = match run.state {
+                    crate::code_runs::RunState::Waiting => "starting".to_string(),
+                    crate::code_runs::RunState::Running => "running".to_string(),
+                    crate::code_runs::RunState::Done { code } => format!("exited ({code})"),
+                    crate::code_runs::RunState::Ended => "ended".to_string(),
+                };
+                json!({ "serverId": run.id, "name": run.name, "command": run.command, "status": status })
+            })
+            .collect();
+        json!({ "servers": running, "launch_json": servers }).to_string()
     }
 
     fn sections_json(&self) -> String {
@@ -807,6 +836,28 @@ mod tests {
     }
 }
 
+/// `preview_logs`: the last 8 KB of a server's output, only the lines with an error when `level` is
+/// "error", only those holding `search` when it is given.
+fn server_log(output: &str, level: Option<&str>, search: Option<&str>) -> String {
+    let errors_only = level.is_some_and(|level| level.eq_ignore_ascii_case("error"));
+    let search = search.map(str::to_lowercase).filter(|search| !search.is_empty());
+    let kept: Vec<&str> = output
+        .lines()
+        .filter(|line| !errors_only || { let lower = line.to_lowercase(); lower.contains("error") || lower.contains("failed") || lower.contains("exception") })
+        .filter(|line| search.as_ref().is_none_or(|search| line.to_lowercase().contains(search.as_str())))
+        .collect();
+    let text = kept.join("\n");
+    let limit = 8 * 1024;
+    if text.len() <= limit {
+        return if text.is_empty() { "(no output)".to_string() } else { text };
+    }
+    let mut from = text.len() - limit;
+    while !text.is_char_boundary(from) {
+        from += 1;
+    }
+    text[from..].to_string()
+}
+
 /// The desktop app's limits on `export_transcript`, per calling session: one export at a time and
 /// at most six in an hour (its answer points the person at the files already in Downloads).
 #[derive(Debug, Default)]
@@ -842,7 +893,17 @@ fn export_limits() -> &'static std::sync::Mutex<std::collections::HashMap<String
 
 #[cfg(test)]
 mod export_limit_tests {
-    use super::ExportLimit;
+    use super::{server_log, ExportLimit};
+
+    #[test]
+    fn server_logs_keep_the_tail_and_filter_errors_or_a_search() {
+        let output = "ready on 5173\nGET / 200\nError: boom\nGET /x 404";
+        assert_eq!(server_log(output, None, None), output);
+        assert_eq!(server_log(output, Some("error"), None), "Error: boom");
+        assert_eq!(server_log(output, None, Some("get")), "GET / 200\nGET /x 404");
+        assert_eq!(server_log("", None, None), "(no output)");
+        assert_eq!(server_log(&"x".repeat(9000), None, None).len(), 8192);
+    }
     use std::time::{Duration, Instant};
 
     #[test]

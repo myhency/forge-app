@@ -35,6 +35,7 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${VIEW_SERVER}__close_pane`,
   `mcp__${VIEW_SERVER}__get_layout`,
   `mcp__${BROWSER_SERVER}__preview_list`,
+  `mcp__${BROWSER_SERVER}__preview_logs`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -293,9 +294,25 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
     ),
     tool(
       "preview_list",
-      "List the entries of .claude/launch.json with their command, port, url and whether something already answers on the port.",
+      "List this session's dev servers (started by preview_start or the Preview pane, with their serverId and status) and the entries of .claude/launch.json with their command, port, url and whether something already answers on the port. Returns serverIds for preview_stop and preview_logs.",
       {},
       forward(ask, "preview_list"),
+    ),
+    tool(
+      "preview_stop",
+      "Stop one of this session's dev servers by its serverId from preview_list (Ctrl-C in its terminal).",
+      { serverId: z.number().describe("The serverId from preview_list.") },
+      forward(ask, "preview_stop"),
+    ),
+    tool(
+      "preview_logs",
+      "Get the last 8 KB of a dev server's output (stdout and stderr together). Use 'level' to filter to errors only, or 'search' to filter for specific text.",
+      {
+        serverId: z.number().describe("The serverId from preview_list."),
+        level: z.enum(["all", "error"]).optional().describe('"error" keeps only lines that look like errors. Default "all".'),
+        search: z.string().optional().describe("Keep only lines that contain this text (any case)."),
+      },
+      forward(ask, "preview_logs"),
     ),
   ];
 }
