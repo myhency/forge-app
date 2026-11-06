@@ -2193,6 +2193,13 @@ impl Workspace {
     }
 
     /// Changes the effort of the open session (`None`: the SDK's default), from its next turn on.
+    /// The title menu's `출력 스타일`: this session's style from its next answer on.
+    pub fn set_output_style(&self, id: LiveSessionId, style: Option<forge_domain::OutputStyle>) {
+        if let Some(handle) = self.handle(id) {
+            handle.set_output_style(style);
+        }
+    }
+
     pub fn set_effort(&self, id: LiveSessionId, effort: Option<EffortLevel>) {
         if let Some(handle) = self.handle(id) {
             handle.set_effort(effort);
@@ -4263,6 +4270,7 @@ mod plan_text_tests {
             side_thread: Vec::new(),
             app_requests: Vec::new(),
             classified: None,
+            output_style: None,
             rewind: None,
         }
     }

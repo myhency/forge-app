@@ -299,6 +299,15 @@ export class SidecarSession {
           { type: "effort_set", effort: command.effort },
         );
         return;
+      case "set_output_style":
+        await this.change(
+          (query) =>
+            query.applyFlagSettings
+              ? query.applyFlagSettings({ outputStyle: command.style ?? "default" })
+              : Promise.reject(new Error("this version of the SDK cannot change the output style")),
+          { type: "output_style_set", style: command.style },
+        );
+        return;
       case "stop_task": {
         const query = this.activeQuery;
         if (!query?.stopTask) {

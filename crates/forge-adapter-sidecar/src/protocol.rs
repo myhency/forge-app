@@ -60,6 +60,8 @@ pub enum SidecarCommand {
     SetModel { id: String, model: Option<String> },
     /// `None` is the SDK's default effort.
     SetEffort { id: String, effort: Option<forge_domain::EffortLevel> },
+    /// `None` is the default style.
+    SetOutputStyle { id: String, style: Option<String> },
     Shutdown { id: String },
 }
 

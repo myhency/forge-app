@@ -167,6 +167,7 @@ impl Actor {
             LiveCommand::SetMode(mode) => self.set_mode(mode).await,
             LiveCommand::SetModel(model) => self.set_model(model).await,
             LiveCommand::SetEffort(effort) => self.set_effort(effort).await,
+            LiveCommand::SetOutputStyle(style) => self.set_output_style(style).await,
             LiveCommand::SetTitle(title) => {
                 self.view.session.title = Some(title);
                 self.dirty = true;
@@ -405,6 +406,10 @@ impl Actor {
         // still start: the SDK refuses that mode unless it is allowed up front.
         let mut defaults = configured;
         defaults.allow_bypass |= self.view.session.permission_mode == PermissionMode::BypassPermissions;
+        // A style chosen in the title menu outlives a restart of the sidecar.
+        if let Some(style) = self.view.output_style {
+            defaults.output_style = style;
+        }
         forge_log::info("session", &format!("{}: starting a sidecar (resume: {}, mode {:?}, model {})", self.view.id.0, self.view.claude_session_id.is_some(), self.view.session.permission_mode, self.model.as_deref().unwrap_or("default")));
         let sidecar = self.factory.spawn().await.map_err(|e| e.to_string())?;
         sidecar
@@ -514,6 +519,18 @@ impl Actor {
             return;
         };
         if let Err(error) = sidecar.set_model(model).await {
+            self.fail(error.to_string(), false).await;
+        }
+    }
+
+    async fn set_output_style(&mut self, style: Option<forge_domain::OutputStyle>) {
+        let Some(sidecar) = self.sidecar.clone() else {
+            // No sidecar yet: the next start takes it.
+            self.view.output_style = Some(style);
+            self.dirty = true;
+            return;
+        };
+        if let Err(error) = sidecar.set_output_style(style.map(|style| style.name().to_string())).await {
             self.fail(error.to_string(), false).await;
         }
     }
@@ -640,6 +657,10 @@ impl Actor {
             SessionUpdate::ModelChanged { model } => {
                 self.model = model.clone();
                 self.view.model = model;
+                self.clear_refusal();
+            }
+            SessionUpdate::OutputStyleChanged(style) => {
+                self.view.output_style = Some(style);
                 self.clear_refusal();
             }
             SessionUpdate::EffortChanged { effort } => {

@@ -9,15 +9,16 @@ use forge_shared::{tr, Icon, IconKind, IconSize};
 enum MenuPage {
     Main,
     Views,
+    Styles,
     ConfirmDelete,
 }
 
 /// The chevron after the title of the open session and its menu, laid out like the desktop app's
 /// (round 37): `이름 변경 R`, `포크 F`, then `트랜스크립트 보기 ›` (normal, thinking, detailed), then
 /// `보관 A` and `삭제 D`. Delete asks first, then closes the session and moves it to the trash.
-/// `다음에서 열기` (new window, cloud) and `출력 스타일` are left out.
+/// `출력 스타일 ›` changes this session's output style. `다음에서 열기` (new window, cloud) is left out.
 #[component]
-pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: TranscriptView) -> Element {
+pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: TranscriptView, #[props(default)] style: Option<forge_domain::OutputStyle>) -> Element {
     let workspace = use_workspace();
     let mut open = use_signal(|| false);
     let mut page = use_signal(|| MenuPage::Main);
@@ -125,6 +126,15 @@ pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: Transcript
                                 span { {tr!("Transcript view")} }
                                 span { class: "menu-key", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
                             }
+                            // The desktop app's `출력 스타일 ›` (observed 2026-11-06): 기본값 and Claude Code's styles.
+                            button {
+                                class: "row-menu-item",
+                                role: "menuitem",
+                                "aria-haspopup": "menu",
+                                onclick: move |_| page.set(MenuPage::Styles),
+                                span { {tr!("Output style")} }
+                                span { class: "menu-key", Icon { kind: IconKind::Chevron, size: IconSize::Small } }
+                            }
                             if actions.archive != ArchiveAction::Unavailable || can_delete {
                                 div { class: "row-menu-separator" }
                             }
@@ -170,6 +180,36 @@ pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: Transcript
                                     },
                                     span { {forge_shared::i18n::text(option.label())} }
                                     if option == mode {
+                                        span { class: "menu-key", Icon { kind: IconKind::Check, size: IconSize::Small } }
+                                    }
+                                }
+                            }
+                        },
+                        MenuPage::Styles => rsx! {
+                            button {
+                                class: "row-menu-item row-menu-back",
+                                role: "menuitem",
+                                onclick: move |_| page.set(MenuPage::Main),
+                                Icon { kind: IconKind::ChevronLeft, size: IconSize::Small }
+                                span { {tr!("Output style")} }
+                            }
+                            for option in std::iter::once(None).chain(forge_domain::OutputStyle::ALL.into_iter().map(Some)) {
+                                button {
+                                    key: "{option.map(|style| style.name()).unwrap_or(\"default\")}",
+                                    class: "row-menu-item",
+                                    role: "menuitemradio",
+                                    "aria-checked": "{option == style}",
+                                    onclick: move |_| {
+                                        workspace.set_output_style(id, option);
+                                        close();
+                                    },
+                                    span {
+                                        match option {
+                                            Some(choice) => forge_shared::i18n::text(choice.label()).to_string(),
+                                            None => tr!("Default").to_string(),
+                                        }
+                                    }
+                                    if option == style {
                                         span { class: "menu-key", Icon { kind: IconKind::Check, size: IconSize::Small } }
                                     }
                                 }

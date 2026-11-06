@@ -282,6 +282,7 @@ mod tests {
             side_thread: Vec::new(),
             app_requests: Vec::new(),
             classified: None,
+            output_style: None,
             rewind: None,
         }
     }

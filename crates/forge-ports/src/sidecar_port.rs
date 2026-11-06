@@ -114,6 +114,11 @@ pub enum SidecarEvent {
     ModelSet { model: Option<String> },
     /// The SDK accepted a `set_effort`; `None` is its default.
     EffortSet { effort: Option<EffortLevel> },
+    /// The SDK accepted a `set_output_style`; `None` is the default style.
+    OutputStyleSet {
+        #[serde(default)]
+        style: Option<String>,
+    },
     /// The models the SDK lists for this session and the effort levels each takes. Sent once after the start.
     ModelsAvailable { models: Vec<AvailableModel> },
     /// The SDK refused a `set_permission_mode`, `set_model` or `set_effort`. The session goes on.
@@ -240,6 +245,9 @@ pub trait SidecarPort: Send + Sync {
     /// Asks for an effort change in the running session (`None`: the default). The answer comes back
     /// as an event.
     async fn set_effort(&self, effort: Option<EffortLevel>) -> Result<(), SidecarError>;
+    /// Asks for an output style change in the running session (`None`: the default). The answer
+    /// comes back as an event.
+    async fn set_output_style(&self, style: Option<String>) -> Result<(), SidecarError>;
     async fn shutdown(&self) -> Result<(), SidecarError>;
     async fn next_event(&self) -> Option<SidecarEvent>;
 }

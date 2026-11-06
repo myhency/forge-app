@@ -84,6 +84,7 @@ export type SidecarCommand =
   | { type: "set_permission_mode"; id: string; mode: WirePermissionMode }
   | { type: "set_model"; id: string; model: string | null }
   | { type: "set_effort"; id: string; effort: WireEffort | null }
+  | { type: "set_output_style"; id: string; style: string | null }
   // The app's answer to an `app_request`.
   | { type: "app_response"; id: string; request_id: string; output: string; is_error: boolean }
   | { type: "shutdown"; id: string };
@@ -126,6 +127,7 @@ export type SidecarEvent =
   | { type: "permission_mode_set"; mode: WirePermissionMode }
   | { type: "model_set"; model: string | null }
   | { type: "effort_set"; effort: WireEffort | null }
+  | { type: "output_style_set"; style: string | null }
   // The SDK's full set of background tasks (replace semantics), a finished one, and a predicted next prompt.
   | { type: "background_tasks"; tasks: WireBackgroundTask[] }
   | { type: "task_progress"; task_id: string; total_tokens: number }

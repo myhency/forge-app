@@ -85,6 +85,9 @@ pub struct LiveSessionView {
     pub app_requests: Vec<AppRequest>,
     /// What Claude sorted the session into after its last turn (`세션 상태 분류`).
     pub classified: Option<forge_domain::SessionStatus>,
+    /// The output style the person chose for this session in its title menu; `None` until then
+    /// (the session then runs on the Settings default).
+    pub output_style: Option<Option<forge_domain::OutputStyle>>,
     /// The `/rewind` the person is looking at: a preview of what would change, then the result.
     pub rewind: Option<RewindState>,
 }
@@ -173,6 +176,8 @@ pub enum LiveCommand {
     SetMode(PermissionMode),
     SetModel(Option<String>),
     SetEffort(Option<EffortLevel>),
+    /// The session's output style from its next answer on (`None`: the default).
+    SetOutputStyle(Option<forge_domain::OutputStyle>),
     Close,
 }
 
@@ -331,6 +336,11 @@ impl LiveSessionHandle {
         let _ = self.commands.send(LiveCommand::SetEffort(effort));
     }
 
+    /// The title menu's `출력 스타일`: changes this session's output style.
+    pub fn set_output_style(&self, style: Option<forge_domain::OutputStyle>) {
+        let _ = self.commands.send(LiveCommand::SetOutputStyle(style));
+    }
+
     pub fn close(&self) {
         let _ = self.commands.send(LiveCommand::Close);
     }
@@ -406,6 +416,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         side_thread: Vec::new(),
         app_requests: Vec::new(),
         classified: None,
+        output_style: None,
         rewind: None,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());

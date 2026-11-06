@@ -162,7 +162,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 div { class: "pane-titlebox",
                     span { class: "pane-title", "{heading}" }
                     if let Some(actions) = title_menu {
-                        SessionTitleMenu { id, actions, mode }
+                        SessionTitleMenu { id, actions, mode, style: view.output_style.unwrap_or(settings.output_style()) }
                     }
                     if let Some(tag) = tag {
                         span { class: "pane-tag", "{tag}" }
