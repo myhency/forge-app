@@ -161,6 +161,13 @@ fn TurnItem(
                     if !text.is_empty() {
                         UserBubble { text: text.clone() }
                         div { class: "message-actions",
+                            // The desktop app's read mark (observed 2026-11-06): two ticks, `Claude님이 읽음`,
+                            // once the SDK has taken the message in (it then has an id).
+                            if message.uuid.is_some() {
+                                span { class: "read-mark", title: tr!("Read by Claude"), Icon { kind: IconKind::DoubleCheck, size: IconSize::Small } }
+                            } else {
+                                span { class: "read-mark", title: tr!("Sent"), Icon { kind: IconKind::Check, size: IconSize::Small } }
+                            }
                             if let Some(at) = message.at.as_deref() {
                                 {
                                     let time = relative_time(at, OffsetDateTime::now_utc());

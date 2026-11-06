@@ -1868,3 +1868,6 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .section-menu-wrap { position: relative; margin-left: auto; opacity: 0; }
 .sidebar-group-header:hover .section-menu-wrap, .section-menu-wrap:focus-within { opacity: 1; }
 .section-empty { padding: var(--sp-4) var(--sp-16); color: var(--fg-muted); font-size: var(--text-sm); }
+
+/* The read mark before a sent message's time (desktop app, 2026-11-06). */
+.read-mark { display: inline-flex; align-items: center; color: var(--fg-muted); }
