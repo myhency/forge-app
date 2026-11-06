@@ -136,6 +136,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
         efforts.extend(forge_domain::EffortLevel::ALL.into_iter().map(|level| (forge_features::effort_value(level).to_string(), forge_shared::i18n::text(level.label()).to_string())));
         forge_entities::OfferChoices {
             folder: view.project_path.display().to_string(),
+            environments: workspace.environments().into_iter().filter_map(|env| env.folders.first().map(|folder| (env.id.clone(), env.name.clone(), folder.display().to_string()))).collect(),
             models,
             efforts,
             modes: forge_features::mode_options(settings.allow_bypass_mode()),
@@ -143,6 +144,7 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 model: view.model.clone().unwrap_or_default(),
                 effort: view.effort.map(|level| forge_features::effort_value(level).to_string()).unwrap_or_default(),
                 mode: forge_features::mode_value(view.session.permission_mode).to_string(),
+                environment: String::new(),
             },
         }
     };

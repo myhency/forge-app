@@ -665,11 +665,29 @@ fn OfferOptions(choices: crate::turn_view::OfferChoices, picked: Signal<Option<c
         (tr!("Effort").to_string(), choices.efforts.clone(), now.effort.clone(), 1),
         (tr!("Permission").to_string(), choices.modes.clone(), now.mode.clone(), 2),
     ];
+    let folder = choices.environments.iter().find(|(id, _, _)| *id == now.environment).map(|(_, _, folder)| folder.clone()).unwrap_or_else(|| choices.folder.clone());
+    let mut env_options: Vec<(String, String)> = vec![(String::new(), tr!("This computer").to_string())];
+    env_options.extend(choices.environments.iter().map(|(id, name, _)| (id.clone(), name.clone())));
+    let mut set_env = set.clone();
     rsx! {
         div { class: "offer-options", role: "dialog",
+            label { class: "offer-options-row",
+                span { {tr!("Environment")} }
+                select {
+                    class: "select",
+                    value: "{now.environment}",
+                    onchange: move |event: Event<FormData>| {
+                        let chosen = event.value();
+                        set_env(Box::new(move |start: &mut crate::turn_view::OfferStart| start.environment = chosen.clone()));
+                    },
+                    for (option, text) in env_options {
+                        option { key: "{option}", value: "{option}", selected: option == now.environment, "{text}" }
+                    }
+                }
+            }
             div { class: "offer-options-folder",
                 Icon { kind: IconKind::Folder, size: IconSize::Small }
-                span { "{choices.folder}" }
+                span { "{folder}" }
             }
             for (label, options, value, which) in rows {
                 label { key: "{which}", class: "offer-options-row",

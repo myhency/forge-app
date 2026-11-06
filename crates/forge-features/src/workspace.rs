@@ -1775,15 +1775,29 @@ impl Workspace {
             OfferAction::Start if offer.fork => self.hand_off(id, offer),
             OfferAction::Start => {
                 let Some(view) = self.live_view(id) else { return };
-                let (project_path, mut mode, mut model, mut effort) = {
+                let (mut project_path, mut mode, mut model, mut effort) = {
                     let view = view.peek();
                     (view.project_path.clone(), view.session.permission_mode, view.model.clone(), view.effort)
                 };
+                // A saved environment chosen in `옵션`: its folder, variables and extra folders (no worktree here).
+                let mut plan: Option<crate::EnvironmentStart> = None;
                 // The card's `옵션`, when the person changed something there.
                 if let Some(start) = &offer.start_with {
                     mode = crate::permission_mode::parse_mode(&start.mode);
                     model = (!start.model.is_empty()).then(|| start.model.clone());
                     effort = forge_domain::EffortLevel::ALL.into_iter().find(|level| effort_value(*level) == start.effort);
+                    if !start.environment.is_empty() {
+                        let Some(environment) = self.environments().into_iter().find(|env| env.id == start.environment) else {
+                            return self.report(tr!("That environment is gone.").to_string());
+                        };
+                        match crate::environment::start_plan(&environment) {
+                            Ok(found) if !crate::environment::folder_missing(&found) => {
+                                project_path = found.folder.clone();
+                                plan = Some(found);
+                            }
+                            _ => return self.report(tr!("The {name} environment cannot start: its folder is missing or its variables do not read.", name = environment.name).to_string()),
+                        }
+                    }
                 }
                 let services = (*self.services.peek()).clone();
                 let project = ProjectSummary { path: project_path, last_active: String::new(), session_count: 0, exists: true };
@@ -1798,6 +1812,14 @@ impl Workspace {
                 match services.registry.open_new_with_effort(&project, mode, model, effort, Vec::new()) {
                     Ok(handle) => {
                         let child = self.attach(handle.clone());
+                        if let Some(plan) = plan {
+                            if !plan.env.0.is_empty() {
+                                handle.set_env(plan.env.clone());
+                            }
+                            if !plan.extra.is_empty() {
+                                handle.add_directories(plan.extra.clone());
+                            }
+                        }
                         handle.send_with(brief, Vec::new());
                         let mut sessions = self.offer_sessions;
                         sessions.write().insert((id, offer.id.clone()), child);

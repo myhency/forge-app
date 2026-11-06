@@ -169,6 +169,8 @@ pub struct OfferStart {
     pub model: String,
     pub effort: String,
     pub mode: String,
+    /// A saved environment's id, or empty for this session's folder on this computer.
+    pub environment: String,
 }
 
 /// What a proposed session's `옵션` popover offers (the desktop app's, observed 2026-11-06: 환경,
@@ -177,6 +179,8 @@ pub struct OfferStart {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OfferChoices {
     pub folder: String,
+    /// The saved environments as (id, name, first folder); this computer comes first in the menu.
+    pub environments: Vec<(String, String, String)>,
     pub models: Vec<(String, String)>,
     pub efforts: Vec<(String, String)>,
     pub modes: Vec<(String, String)>,
