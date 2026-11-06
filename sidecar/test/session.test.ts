@@ -55,6 +55,7 @@ describe("SidecarSession", () => {
     await session.handle({
       ...startCommand,
       turn_tools: true,
+      browser_tools: true,
       mcp_servers: { files: { command: "npx", args: ["files-mcp"] } },
       allowed_tools: ["Read"],
     });

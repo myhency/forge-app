@@ -458,12 +458,12 @@ export function settingsTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
 
 /** The four servers, each with the tools above. Not `alwaysLoad`: like the desktop app's, they are
  *  found through tool search when needed. */
-export function createAppToolsServers(ask: AskApp): Record<string, McpSdkServerConfigWithInstance> {
+export function createAppToolsServers(ask: AskApp, options: { browser?: boolean } = {}): Record<string, McpSdkServerConfigWithInstance> {
   return {
     [SESSION_MGMT_SERVER]: createSdkMcpServer({ name: SESSION_MGMT_SERVER, tools: sessionMgmtTools(ask) }),
     [SIDEBAR_SERVER]: createSdkMcpServer({ name: SIDEBAR_SERVER, tools: sidebarTools(ask) }),
     [VIEW_SERVER]: createSdkMcpServer({ name: VIEW_SERVER, tools: viewTools(ask) }),
     [SETTINGS_SERVER]: createSdkMcpServer({ name: SETTINGS_SERVER, tools: settingsTools(ask) }),
-    [BROWSER_SERVER]: createSdkMcpServer({ name: BROWSER_SERVER, tools: browserTools(ask) }),
+    ...(options.browser ? { [BROWSER_SERVER]: createSdkMcpServer({ name: BROWSER_SERVER, tools: browserTools(ask) }) } : {}),
   };
 }

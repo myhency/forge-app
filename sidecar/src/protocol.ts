@@ -65,6 +65,8 @@ export type SidecarCommand =
       turn_tools?: boolean;
       // Offers Claude the generate_sandboxed_ui tool (a parent that omits it means off).
       generative_ui?: boolean;
+      // The Browser pane tools (Claude_Browser); off unless the parent says so.
+      browser_tools?: boolean;
       // Offers Claude the agent_desktop tool, asked on every call (a parent that omits it means off).
       desktop_control?: boolean;
       // What Claude does when asked for unrelated work: "ask" (omitted), "here" or "new_session".

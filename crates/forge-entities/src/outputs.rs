@@ -37,6 +37,22 @@ fn last_texts(messages: &[Message]) -> Vec<usize> {
 /// (an edit to a file that was there is a change, not an output: the desktop app's card listed the
 /// written `summary.md` and not the edited `stats.py`, round 37), and files of a document type
 /// named in the last assistant text of each turn.
+/// The files Claude wrote that the Preview pane shows (HTML, pictures, PDFs, videos), with the id of
+/// the `Write` call: `Claude가 작성한 파일 자동으로 열기`. Failed writes are left out.
+pub fn written_media(messages: &[Message]) -> Vec<(String, String)> {
+    const SHOWN: [&str; 12] = ["html", "htm", "png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "mp4", "webm", "mov"];
+    messages
+        .iter()
+        .flat_map(|message| message.tool_calls())
+        .filter(|call| call.name == "Write" && call.result.as_ref().is_some_and(|result| !result.is_error))
+        .filter_map(|call| {
+            let path = call.input.get("file_path")?.as_str()?;
+            let extension = path.rsplit_once('.')?.1.to_ascii_lowercase();
+            (is_absolute_path(path) && SHOWN.contains(&extension.as_str())).then(|| (call.id.clone(), path.to_string()))
+        })
+        .collect()
+}
+
 pub fn output_paths(messages: &[Message]) -> Vec<String> {
     let closing = last_texts(messages);
     let mut mentions: Vec<String> = Vec::new();
@@ -79,6 +95,17 @@ mod tests {
         let mut message = Message::new(MessageRole::Assistant);
         message.blocks = vec![Block::Tool(ToolCall { id: "t".to_string(), name: name.to_string(), input: json!({ key: path }), result: None })];
         message
+    }
+
+    #[test]
+    fn only_finished_writes_of_pages_pictures_pdfs_and_videos_open() {
+        let done = |id: &str, path: &str, is_error: bool| {
+            let mut message = Message::new(MessageRole::Assistant);
+            message.blocks = vec![Block::Tool(ToolCall { id: id.to_string(), name: "Write".to_string(), input: json!({ "file_path": path }), result: Some(forge_domain::ToolResult { output: String::new(), is_error }) })];
+            message
+        };
+        let messages = vec![user(), done("1", "/p/index.HTML", false), done("2", "/p/notes.md", false), done("3", "/p/chart.png", true), tool("Write", "file_path", "/p/report.pdf"), done("5", "/p/clip.mp4", false)];
+        assert_eq!(written_media(&messages), vec![("1".to_string(), "/p/index.HTML".to_string()), ("5".to_string(), "/p/clip.mp4".to_string())]);
     }
 
     #[test]

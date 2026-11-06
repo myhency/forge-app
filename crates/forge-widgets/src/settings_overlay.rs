@@ -466,6 +466,17 @@ fn CodeSection() -> Element {
             description: tr!("Claude can draw a small interactive page in the chat, such as a calculator or a chart, when text would explain less."),
             Switch { on: settings.generative_ui(), onchange: move |on| settings.set_generative_ui(on) }
         }
+        // The desktop app's `브라우저` rows (Settings, Claude Code; observed 2026-11-06).
+        SettingRow {
+            title: tr!("Browser tools"),
+            description: tr!("Claude can start dev servers, browse in the built-in browser and check changes with screenshots and DOM inspection. Applies to new sessions."),
+            Switch { on: settings.browser_tools(), onchange: move |on| settings.set_browser_tools(on) }
+        }
+        SettingRow {
+            title: tr!("Open files Claude writes"),
+            description: tr!("HTML, images, PDFs and videos Claude writes open in the built-in browser."),
+            Switch { on: settings.auto_open_outputs(), onchange: move |on| settings.set_auto_open_outputs(on) }
+        }
         SettingRow {
             title: tr!("Control other apps"),
             description: tr!("Claude can read and press other desktop apps through the accessibility tree. Needs the agent-desktop program (install it below); every action asks first."),

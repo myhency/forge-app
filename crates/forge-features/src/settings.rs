@@ -62,6 +62,8 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::UnrelatedTask(choice) => config.unrelated_task = choice,
         CodeChange::ClassifySessions(on) => config.classify_sessions = on,
         CodeChange::GenerativeUi(on) => config.generative_ui = on,
+        CodeChange::BrowserTools(on) => config.browser_tools = on,
+        CodeChange::AutoOpenOutputs(on) => config.auto_open_outputs = on,
         CodeChange::DesktopControl(on) => config.desktop_control = on,
         CodeChange::WorktreeLocation(value) => config.worktree_location = value,
         CodeChange::AutoArchiveDays(days) => config.auto_archive_days = days,
@@ -120,6 +122,8 @@ pub(crate) enum CodeChange {
     UnrelatedTask(forge_domain::UnrelatedTask),
     ClassifySessions(bool),
     GenerativeUi(bool),
+    BrowserTools(bool),
+    AutoOpenOutputs(bool),
     DesktopControl(bool),
     WorktreeLocation(WorktreeLocation),
     AutoArchiveDays(Option<u32>),
@@ -367,6 +371,22 @@ impl Settings {
 
     pub fn set_generative_ui(&self, on: bool) {
         self.change_code(CodeChange::GenerativeUi(on));
+    }
+
+    pub fn browser_tools(&self) -> bool {
+        self.saved.read().browser_tools
+    }
+
+    pub fn set_browser_tools(&self, on: bool) {
+        self.change_code(CodeChange::BrowserTools(on));
+    }
+
+    pub fn auto_open_outputs(&self) -> bool {
+        self.saved.read().auto_open_outputs
+    }
+
+    pub fn set_auto_open_outputs(&self, on: bool) {
+        self.change_code(CodeChange::AutoOpenOutputs(on));
     }
 
     pub fn desktop_tool_view(&self) -> DesktopToolView {
@@ -842,6 +862,8 @@ impl Settings {
             current.unrelated_task = config.unrelated_task;
             current.classify_sessions = config.classify_sessions;
             current.generative_ui = config.generative_ui;
+            current.browser_tools = config.browser_tools;
+            current.auto_open_outputs = config.auto_open_outputs;
             current.desktop_control = config.desktop_control;
             current.worktree_location = config.worktree_location;
             current.auto_archive_days = config.auto_archive_days;

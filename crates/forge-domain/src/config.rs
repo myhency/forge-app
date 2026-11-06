@@ -438,6 +438,12 @@ pub struct AppConfig {
     /// Whether Claude gets the `generate_sandboxed_ui` tool: an interactive page drawn in the chat.
     #[serde(default = "default_generative_ui")]
     pub generative_ui: bool,
+    /// Whether Claude gets the Browser pane tools (`Claude_Browser`: dev servers, pages, screenshots).
+    #[serde(default = "default_true", deserialize_with = "lenient")]
+    pub browser_tools: bool,
+    /// HTML, pictures, PDFs and videos Claude writes open in the Preview pane.
+    #[serde(default = "default_true", deserialize_with = "lenient")]
+    pub auto_open_outputs: bool,
     /// Whether Claude gets the `agent_desktop` tool (read and press other apps through the accessibility
     /// tree). Off until the person turns it on; every call still asks first.
     #[serde(default)]
@@ -545,6 +551,8 @@ impl Default for AppConfig {
             unrelated_task: crate::UnrelatedTask::Ask,
             classify_sessions: true,
             generative_ui: default_generative_ui(),
+            browser_tools: true,
+            auto_open_outputs: true,
             desktop_control: false,
             appearance: Appearance::default(),
             code_look: crate::CodeLook::default(),

@@ -17,6 +17,8 @@ pub struct SessionDefaults {
     pub turn_tools: bool,
     /// Whether the session gets the tool that draws an interactive page in the chat.
     pub generative_ui: bool,
+    /// The Browser pane tools (`Claude_Browser`).
+    pub browser_tools: bool,
     /// Whether the session gets the tool that reads and presses other apps (each call asks first).
     pub desktop_control: bool,
     /// What Claude does when the person asks for something unrelated to the session's work.
@@ -62,13 +64,13 @@ impl UnrelatedTask {
 
 impl Default for SessionDefaults {
     fn default() -> Self {
-        Self { output_style: None, auto_mode_model: None, prompt_suggestions: true, allow_bypass: false, dynamic_workflows: false, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false, unrelated_task: UnrelatedTask::Ask, classify_status: true }
+        Self { output_style: None, auto_mode_model: None, prompt_suggestions: true, allow_bypass: false, dynamic_workflows: false, auto_memory: true, turn_tools: true, generative_ui: true, browser_tools: true, desktop_control: false, unrelated_task: UnrelatedTask::Ask, classify_status: true }
     }
 }
 
 impl SessionDefaults {
     pub fn from_config(config: &AppConfig) -> Self {
-        Self { output_style: config.output_style.clone(), auto_mode_model: config.auto_mode_model, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, auto_memory: config.auto_memory, turn_tools: config.turn_tools, generative_ui: config.generative_ui, desktop_control: config.desktop_control, unrelated_task: config.unrelated_task, classify_status: config.classify_sessions }
+        Self { output_style: config.output_style.clone(), auto_mode_model: config.auto_mode_model, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, auto_memory: config.auto_memory, turn_tools: config.turn_tools, generative_ui: config.generative_ui, browser_tools: config.browser_tools, desktop_control: config.desktop_control, unrelated_task: config.unrelated_task, classify_status: config.classify_sessions }
     }
 }
 
@@ -100,7 +102,7 @@ mod tests {
         let config = AppConfig { output_style: Some(OutputStyle::Learning), auto_mode_model: None, prompt_suggestions: false, allow_bypass_mode: true, dynamic_workflows: true, ..AppConfig::default() };
         assert_eq!(
             SessionDefaults::from_config(&config),
-            SessionDefaults { output_style: Some(OutputStyle::Learning), auto_mode_model: None, prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false, unrelated_task: UnrelatedTask::Ask, classify_status: true }
+            SessionDefaults { output_style: Some(OutputStyle::Learning), auto_mode_model: None, prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, browser_tools: true, desktop_control: false, unrelated_task: UnrelatedTask::Ask, classify_status: true }
         );
     }
 }
