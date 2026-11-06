@@ -711,7 +711,6 @@ pub static KO: &[(&str, &str)] = &[
     ("Plugin", "플러그인"),
     ("Plugin {plugin}", "플러그인 {plugin}"),
     ("Plugins", "플러그인"),
-    ("Press Enter to send, ⌘Enter to queue it and send later", "↵ 키로 보내기, ⌘↵ 키로 대기열에 추가하여 나중에 보내기"),
     ("Press ⌘⏎ to add it to the queue", "⌘⏎ 키를 눌러 대기열에 추가하세요"),
     ("Preview", "미리보기"),
     ("Preview tabs", "미리보기 탭"),

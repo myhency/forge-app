@@ -64,7 +64,8 @@ pub fn SidePanel(id: LiveSessionId) -> Element {
         }
     };
     let placeholder = if pending {
-        tr!("Press Enter to send, ⌘Enter to queue it and send later")
+        // The side box is narrow: the desktop app shows the short queue hint in a narrow box.
+        tr!("Press ⌘⏎ to add it to the queue")
     } else if turns.is_empty() {
         tr!("Ask a quick question")
     } else {
