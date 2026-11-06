@@ -95,6 +95,9 @@ pub struct SidebarPrefs {
     /// Chapters the person pinned on an answer (the desktop app's `챕터로 고정`).
     #[serde(default)]
     pub chapter_pins: Vec<ChapterPin>,
+    /// What the person did with the proposed-session cards, kept across a restart.
+    #[serde(default)]
+    pub offer_marks: Vec<OfferMarkRef>,
     /// Top rows the person took off the sidebar with `사이드바 편집` (`scheduled`, `customize`).
     #[serde(default)]
     pub hidden_links: Vec<String>,
@@ -145,6 +148,16 @@ pub struct StatusMark {
 /// A chapter the person set on an answer: the session, the id of the message that began the turn,
 /// and the heading.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OfferMarkRef {
+    /// The Claude session the card is in.
+    pub session_id: String,
+    /// The `start_session` call's id.
+    pub call_id: String,
+    /// `dismissed`, `here`, `started` or `drafted`.
+    pub mark: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChapterPin {
     pub session_id: String,
     pub anchor: String,
@@ -166,6 +179,7 @@ impl Default for SidebarPrefs {
             hidden: false,
             pinned: Vec::new(),
             chapter_pins: Vec::new(),
+            offer_marks: Vec::new(),
             hidden_links: Vec::new(),
             session_status: Vec::new(),
             sections: Vec::new(),
@@ -632,6 +646,17 @@ impl Default for TerminalPrefs {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn proposal_card_marks_are_saved_and_read_back() {
+        let mut prefs = SidebarPrefs::default();
+        prefs.offer_marks.push(OfferMarkRef { session_id: "s1".into(), call_id: "toolu_1".into(), mark: "dismissed".into() });
+        let json = serde_json::to_string(&prefs).unwrap();
+        let back: SidebarPrefs = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.offer_marks, prefs.offer_marks);
+        let old: SidebarPrefs = serde_json::from_str("{}").unwrap();
+        assert!(old.offer_marks.is_empty(), "prefs written before the field read as none");
+    }
+
     use super::*;
 
     #[test]
@@ -795,6 +820,7 @@ mod tests {
             hidden: true,
             pinned: Vec::new(),
             chapter_pins: Vec::new(),
+            offer_marks: Vec::new(),
             hidden_links: Vec::new(),
             session_status: Vec::new(),
             sections: Vec::new(),

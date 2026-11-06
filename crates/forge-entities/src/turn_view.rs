@@ -171,6 +171,8 @@ pub struct OfferStart {
     pub mode: String,
     /// A saved environment's id, or empty for this session's folder on this computer.
     pub environment: String,
+    /// Start it in a new Git worktree of the folder (the desktop app's `워크트리`).
+    pub worktree: bool,
 }
 
 /// What a proposed session's `옵션` popover offers (the desktop app's, observed 2026-11-06: 환경,
@@ -185,6 +187,8 @@ pub struct OfferChoices {
     pub efforts: Vec<(String, String)>,
     pub modes: Vec<(String, String)>,
     pub current: OfferStart,
+    /// The folder is a Git repository, so `워크트리` can be offered.
+    pub git: bool,
 }
 
 /// What became of a proposed session's card.

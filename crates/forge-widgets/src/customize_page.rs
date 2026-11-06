@@ -43,9 +43,30 @@ pub fn CustomizePage() -> Element {
     let tab = customize.tab();
     let mode = customize.mode();
     let mut add_menu = use_signal(|| false);
+    let mut drop_over = use_signal(|| false);
+    let connectors = tab == CustomizeTab::Connectors;
 
     rsx! {
-        div { class: "customize",
+        div { class: if connectors && drop_over() { "customize drop-over" } else { "customize" },
+            // A desktop extension dragged onto the connectors tab installs it, as Settings › 확장 프로그램 does.
+            ondragover: move |event| {
+                if connectors {
+                    event.prevent_default();
+                    if !drop_over() {
+                        drop_over.set(true);
+                    }
+                }
+            },
+            ondragleave: move |_| drop_over.set(false),
+            ondrop: move |event| {
+                drop_over.set(false);
+                if connectors {
+                    event.prevent_default();
+                    if let Some(file) = event.data_transfer().files().into_iter().next() {
+                        customize.install_extension_from(file.path());
+                    }
+                }
+            },
             h1 { class: "customize-title", {tr!("Customize")} }
             div { class: "customize-bar",
                 div { class: "customize-tabs",
@@ -148,6 +169,7 @@ pub fn CustomizePage() -> Element {
             }
             if tab == CustomizeTab::Connectors {
                 ConnectorNotes {}
+                div { class: "extension-drop-hint", {tr!("Drag a .MCPB or .DXT file here to install it")} }
             }
             match tab {
                 CustomizeTab::Plugins => rsx! { PluginsTab {} },

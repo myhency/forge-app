@@ -41,7 +41,7 @@ mod msg;
 pub mod i18n;
 pub use command::SlashCommand;
 pub use config::{
-    normalize_setting, AppConfig, TerminalCursor, TerminalPrefs, TERMINAL_SCROLLBACKS, CONFIG_INCOMPLETE, Appearance, ArchivedRef, ChapterPin, SessionStatus, SidebarSection, StatusMark, ChangeModeRef, SavedChangeView, ChangesViewPrefs, ChatWidth, FileListPosition, FontChoice, Language, MotionPref, NotificationPrefs, TextSize, Theme, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,
+    normalize_setting, AppConfig, TerminalCursor, TerminalPrefs, TERMINAL_SCROLLBACKS, CONFIG_INCOMPLETE, Appearance, ArchivedRef, ChapterPin, OfferMarkRef, SessionStatus, SidebarSection, StatusMark, ChangeModeRef, SavedChangeView, ChangesViewPrefs, ChatWidth, FileListPosition, FontChoice, Language, MotionPref, NotificationPrefs, TextSize, Theme, EditorPrefs, GroupBy, SidebarPrefs, SortBy, StatusFilter, DEFAULT_SIDEBAR_WIDTH, DEFAULT_TAB_SIZE,
     MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
 };
 pub use effort::{AvailableModel, EffortLevel};

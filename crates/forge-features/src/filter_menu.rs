@@ -371,6 +371,7 @@ mod tests {
             hidden: true,
             pinned: Vec::new(),
             chapter_pins: Vec::new(),
+            offer_marks: Vec::new(),
             hidden_links: Vec::new(),
             session_status: Vec::new(),
             sections: Vec::new(),

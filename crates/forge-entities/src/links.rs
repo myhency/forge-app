@@ -198,6 +198,18 @@ fn resolve_escaped<'a>(escaped_text: &str, known: &'a [String]) -> Option<&'a st
             if matches.len() == 1 {
                 found = Some(matches[0]);
             }
+        } else if !escaped_text.starts_with(['/', '\\']) && !escaped_text.contains("..") {
+            // A path relative to the session folder (`calc/stats.py`): the one known path it ends.
+            let tail = escaped_text.trim_start_matches("./");
+            let matches: Vec<usize> = escaped_known
+                .iter()
+                .enumerate()
+                .filter(|(_, path)| path.ends_with(&format!("/{tail}")) || path.ends_with(&format!("\\{}", tail.replace('/', "\\"))))
+                .map(|(index, _)| index)
+                .collect();
+            if matches.len() == 1 {
+                found = Some(matches[0]);
+            }
         }
         found?
     };
@@ -248,6 +260,14 @@ mod tests {
         let html = render_markdown_linked("saved to `guide.md`", &known());
         assert!(html.contains(r#"data-path="/p/docs/guide.md""#), "{html}");
         assert!(html.contains("<code>guide.md</code>"), "{html}");
+    }
+
+    #[test]
+    fn a_relative_path_that_ends_one_known_path_becomes_a_link() {
+        let html = render_markdown_linked("look at `docs/guide.md` and `./docs/guide.md`", &known());
+        assert_eq!(html.matches(r#"data-path="/p/docs/guide.md""#).count(), 2, "{html}");
+        let up = render_markdown_linked("see `../docs/guide.md`", &known());
+        assert!(!up.contains("file-link"), "a path that climbs out is left plain: {up}");
     }
 
     #[test]
