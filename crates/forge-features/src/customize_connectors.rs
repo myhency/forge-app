@@ -390,11 +390,24 @@ impl Customize {
             return;
         }
         let picker = (*self.file_picker.peek()).clone();
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            if let Some(archive) = picker.pick_files().await.into_iter().next() {
+                this.install_extension_from(archive);
+            }
+        });
+    }
+
+    /// Installs the extension at `archive`: the file picked in `install_extension`, or one dragged onto
+    /// the connectors tab (the desktop app's `.MCPB 또는 .DXT 파일을 여기에 드래그해서 설치`).
+    pub fn install_extension_from(&self, archive: std::path::PathBuf) {
+        if self.connectors_busy() {
+            return;
+        }
         let bundles = (*self.connectors.bundles.peek()).clone();
         let this = *self;
         let mut busy = self.connectors.busy;
         dioxus::core::spawn_forever(async move {
-            let Some(archive) = picker.pick_files().await.into_iter().next() else { return };
             let known = archive.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("mcpb") || ext.eq_ignore_ascii_case("dxt"));
             if !known {
                 this.set_error(Some(tr!("Choose a desktop extension (.mcpb or .dxt).").to_string()));
