@@ -40,11 +40,18 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${BROWSER_SERVER}__get_page_text`,
   `mcp__${BROWSER_SERVER}__read_console_messages`,
   `mcp__${BROWSER_SERVER}__read_page`,
+  `mcp__${BROWSER_SERVER}__computer`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
 
-function answer(result: AppAnswer) {
+/** An answer that is a picture: the app sends `forge-image:png;base64,<data>` (the browser screenshot). */
+export const IMAGE_ANSWER = "forge-image:png;base64,";
+
+export function answer(result: AppAnswer) {
+  if (!result.is_error && result.output.startsWith(IMAGE_ANSWER)) {
+    return { content: [{ type: "image" as const, data: result.output.slice(IMAGE_ANSWER.length), mimeType: "image/png" }] };
+  }
   return { content: [{ type: "text" as const, text: result.output }], ...(result.is_error ? { isError: true } : {}) };
 }
 
@@ -322,6 +329,17 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
       "Extract the text of the page in a Browser pane tab, its article or main content when it has one. Returns plain text with the title and URL first.",
       { tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab.") },
       forward(ask, "get_page_text"),
+    ),
+    tool(
+      "computer",
+      'See the page of a Browser pane tab. Forge supports action "screenshot" (a picture of the visible page) and "scroll" (scroll_direction up/down/left/right, scroll_amount in ticks); to click or type, use read_page with form_input, or javascript_tool.',
+      {
+        action: z.enum(["screenshot", "scroll"]).describe('"screenshot" or "scroll".'),
+        tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
+        scroll_direction: z.enum(["up", "down", "left", "right"]).optional(),
+        scroll_amount: z.number().optional().describe("Scroll ticks (100 px each). Default 3."),
+      },
+      forward(ask, "computer"),
     ),
     tool(
       "read_page",

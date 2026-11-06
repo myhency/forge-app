@@ -231,6 +231,8 @@ fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
         "mcp__Claude_Browser__navigate" => (tr!("Opened a page").to_string(), text("url")),
         "mcp__Claude_Browser__get_page_text" => (tr!("Read a page").to_string(), String::new()),
         "mcp__Claude_Browser__read_console_messages" => (tr!("Read the console").to_string(), text("pattern")),
+        "mcp__Claude_Browser__computer" if call.input.get("action").and_then(Value::as_str) == Some("screenshot") => (tr!("Took a screenshot").to_string(), String::new()),
+        "mcp__Claude_Browser__computer" => (tr!("Scrolled a page").to_string(), String::new()),
         "mcp__Claude_Browser__read_page" => (tr!("Read a page").to_string(), String::new()),
         "mcp__Claude_Browser__form_input" => (tr!("Filled in a field").to_string(), text("ref")),
         "mcp__Claude_Browser__javascript_tool" => (tr!("Ran a script in a page").to_string(), first_line(text("text"))),

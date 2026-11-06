@@ -53,6 +53,16 @@ const CONSOLE_SCRIPT: &str = r#"(function () {
   window.addEventListener('unhandledrejection', function (e) { keep('exception', ['Unhandled rejection: ' + (e.reason && (e.reason.stack || e.reason.message) || String(e.reason))]); });
 })();"#;
 
+// An AppKit image as PNG bytes.
+#[cfg(target_os = "macos")]
+fn png_of(image: &objc2_app_kit::NSImage) -> Option<Vec<u8>> {
+    let tiff = image.TIFFRepresentation()?;
+    let bitmap = objc2_app_kit::NSBitmapImageRep::imageRepWithData(&tiff)?;
+    // SAFETY: an empty property dictionary is a valid one.
+    let png = unsafe { bitmap.representationUsingType_properties(objc2_app_kit::NSBitmapImageFileType::PNG, &objc2_foundation::NSDictionary::new()) }?;
+    Some(png.to_vec())
+}
+
 // A random token for one web view: two numbers from the standard library's randomly keyed hasher.
 fn fresh_nonce() -> String {
     use std::hash::{BuildHasher, Hasher};
@@ -222,6 +232,39 @@ impl WebViewPort for WryWebViews {
                 let _ = reply.send(Err(message));
             }
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn snapshot(&self, tab: WebViewTabId, reply: tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>) {
+        use wry::WebViewExtMacOS;
+        let reply = Arc::new(Mutex::new(Some(reply)));
+        let answer = reply.clone();
+        let started = VIEWS.with(|views| match views.borrow().get(&tab.0) {
+            Some(view) => {
+                let page = view.webview();
+                let handler = block2::RcBlock::new(move |image: *mut objc2_app_kit::NSImage, _error: *mut objc2_foundation::NSError| {
+                    // SAFETY: WebKit hands a valid image or null for the length of the call.
+                    let png = unsafe { image.as_ref() }.and_then(png_of).ok_or_else(|| "The page could not be captured.".to_string());
+                    if let Some(reply) = answer.lock().ok().and_then(|mut reply| reply.take()) {
+                        let _ = reply.send(png);
+                    }
+                });
+                // SAFETY: called on the window thread with a live web view; no configuration means the whole visible page.
+                unsafe { page.takeSnapshotWithConfiguration_completionHandler(None, &handler) };
+                Ok(())
+            }
+            None => Err("This tab has no page on screen. Open the session and its Preview tab.".to_string()),
+        });
+        if let Err(message) = started {
+            if let Some(reply) = reply.lock().ok().and_then(|mut reply| reply.take()) {
+                let _ = reply.send(Err(message));
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn snapshot(&self, _tab: WebViewTabId, reply: tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>) {
+        let _ = reply.send(Err("Screenshots of the Browser pane are only available on macOS.".to_string()));
     }
 
     fn back(&self, tab: WebViewTabId) {

@@ -66,6 +66,9 @@ pub trait WebViewPort: Send + Sync {
     /// Runs `script` in the tab's page and hands `reply` its result as JSON (the browser tools:
     /// reading the page, running a script). `reply` gets an error when the tab has no page.
     fn evaluate(&self, tab: WebViewTabId, script: &str, reply: tokio::sync::oneshot::Sender<Result<String, String>>);
+    /// A picture of the tab's page as PNG bytes (the browser tool's screenshot). macOS only; elsewhere,
+    /// or when the tab has no page, `reply` gets an error.
+    fn snapshot(&self, tab: WebViewTabId, reply: tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>);
     /// The stream of page events. It can be taken once; later calls give `None`.
     fn take_events(&self) -> Option<UnboundedReceiver<WebViewEvent>>;
 }

@@ -1740,8 +1740,13 @@ dependencies = [
 name = "forge-adapter-webview"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "forge-entities",
  "forge-ports",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-web-kit",
  "serde_json",
  "tao",
  "tokio",

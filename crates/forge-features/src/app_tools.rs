@@ -102,6 +102,20 @@ impl Workspace {
             }
             "navigate" => self.navigate_by_tool(id, input.get("tabId").and_then(Value::as_u64), text("url").unwrap_or_default()),
             "get_page_text" => return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), PAGE_TEXT_SCRIPT.to_string()),
+            "computer" => match text("action").unwrap_or_default() {
+                "screenshot" => return self.screenshot_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64)),
+                "scroll" => {
+                    let ticks = input.get("scroll_amount").and_then(Value::as_i64).unwrap_or(3).clamp(1, 50) * 100;
+                    let (x, y) = match text("scroll_direction").unwrap_or("down") {
+                        "up" => (0, -ticks),
+                        "left" => (-ticks, 0),
+                        "right" => (ticks, 0),
+                        _ => (0, ticks),
+                    };
+                    return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), format!("(function(){{window.scrollBy({x},{y});return 'Scrolled to '+Math.round(window.scrollX)+','+Math.round(window.scrollY)+' of '+document.documentElement.scrollWidth+'x'+document.documentElement.scrollHeight;}})()"));
+                }
+                other => Err(format!("Forge's browser tool does not do \"{other}\"; take a screenshot, or use read_page with form_input, or javascript_tool.")),
+            },
             "read_page" => {
                 let args = json!({
                     "interactive": text("filter") == Some("interactive"),
@@ -785,6 +799,28 @@ impl Workspace {
         });
     }
 
+    /// `computer` `screenshot`: a picture of the tab's page, sent to Claude as an image.
+    fn screenshot_by_tool(&self, id: LiveSessionId, request: AppRequest, wanted: Option<u64>) {
+        let tab = match self.tool_tab(id, wanted) {
+            Ok(tab) => tab,
+            Err(message) => return self.answer(id, &request, Err(message)),
+        };
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        self.webviews().snapshot(forge_ports::WebViewTabId(tab.0), sender);
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            use base64::Engine;
+            let result = match tokio::time::timeout(std::time::Duration::from_secs(20), receiver).await {
+                // A covered or hidden pane gives a picture a few pixels wide.
+                Ok(Ok(Ok(png))) if png_width(&png).is_some_and(|width| width < 16) => Err("The Browser pane is covered or hidden, so its page cannot be pictured now. Ask the user to bring it into view, or use get_page_text or read_page.".to_string()),
+                Ok(Ok(Ok(png))) => Ok(format!("forge-image:png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png))),
+                Ok(Ok(Err(message))) => Err(message),
+                _ => Err("The page did not answer in time.".to_string()),
+            };
+            this.answer(id, &request, result);
+        });
+    }
+
     fn preview_list_json(&self, id: LiveSessionId) -> String {
         let servers: Vec<Value> = self
             .detect_dev_servers(id)
@@ -969,6 +1005,11 @@ fn console_script(pattern: &str, only_errors: bool, clear: bool, limit: u64) -> 
     )
 }
 
+/// The width a PNG's header gives.
+fn png_width(png: &[u8]) -> Option<u32> {
+    (png.len() >= 24 && png.starts_with(b"\x89PNG")).then(|| u32::from_be_bytes([png[16], png[17], png[18], png[19]]))
+}
+
 /// What a page script returned: wry hands it over as JSON, so a string comes back quoted.
 fn page_result(json: &str) -> String {
     match serde_json::from_str::<Value>(json) {
@@ -1044,6 +1085,14 @@ mod export_limit_tests {
         assert_eq!(super::page_result("42"), "42");
         let script = super::script_runner("document.title + \"'\"");
         assert!(script.contains(r#"(0,eval)("document.title + \"'\"")"#), "{script}");
+    }
+
+    #[test]
+    fn a_png_header_gives_its_width() {
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        png.extend_from_slice(&[0, 0, 2, 0, 0, 0, 1, 0]);
+        assert_eq!(super::png_width(&png), Some(512));
+        assert_eq!(super::png_width(b"nope"), None);
     }
 
     #[test]
