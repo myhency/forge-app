@@ -267,7 +267,8 @@ pub fn TerminalPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
     let tools = rsx! {
         for (index, tab) in tab_ids.iter().copied().enumerate() {
             span { key: "{tab.0}", class: if Some(tab) == active { "terminal-tab active" } else { "terminal-tab" },
-                button { class: "terminal-tab-label", r#type: "button", onclick: move |_| tabs.write().select(tab), {tr!("Shell {n}", n = index + 1)} }
+                // Named after the session's folder, as in the desktop app; later tabs are numbered.
+                button { class: "terminal-tab-label", r#type: "button", title: "{cwd.display()}", onclick: move |_| tabs.write().select(tab), {tab_label(&cwd, index)} }
                 button {
                     class: "terminal-tab-close",
                     r#type: "button",
@@ -396,6 +397,15 @@ fn TerminalOptions() -> Element {
                 }
             }
         }
+    }
+}
+
+// The folder's name for the first tab, then "name 2", "name 3"; a folder without a name: "Shell n".
+fn tab_label(cwd: &std::path::Path, index: usize) -> String {
+    match cwd.file_name().map(|name| name.to_string_lossy().into_owned()) {
+        Some(name) if index == 0 => name,
+        Some(name) => format!("{name} {}", index + 1),
+        None => tr!("Shell {n}", n = index + 1),
     }
 }
 
