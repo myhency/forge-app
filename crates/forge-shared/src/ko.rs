@@ -720,6 +720,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Read another session", "다른 세션 읽음"),
     ("Read by Claude", "Claude가 읽음"),
     ("Read the commits of the last 24 hours in this folder. Summarise what changed, point out risky patterns or changes that have no test, and note anything that needs a follow-up. Do not change any file.", "이 폴더의 최근 24시간 커밋을 읽어 주세요. 바뀐 내용을 요약하고, 위험한 패턴이나 테스트가 없는 변경을 짚고, 후속 조치가 필요한 것을 적어 주세요. 파일은 바꾸지 마세요."),
+    ("Read the console", "콘솔 읽음"),
     ("Read the plan, then answer in the card below.", "계획을 읽고 아래 카드에서 답하세요."),
     ("Read the settings", "설정 확인함"),
     ("Read {count} file", "파일 {count}개 읽기"),

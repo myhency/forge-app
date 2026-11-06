@@ -33,6 +33,26 @@ fn key_script(nonce: &str) -> String {
     )
 }
 
+// Keeps the page's console messages (the last 500) and uncaught errors for the browser tool
+// `read_console_messages`, which reads them back with a script. The page's own console still gets them.
+const CONSOLE_SCRIPT: &str = r#"(function () {
+  if (window.__forgeConsole) return;
+  const kept = [];
+  Object.defineProperty(window, '__forgeConsole', { value: kept, enumerable: false });
+  const keep = function (level, args) {
+    let text;
+    try { text = Array.prototype.map.call(args, function (a) { return typeof a === 'string' ? a : (a instanceof Error ? a.stack || a.message : JSON.stringify(a)); }).join(' '); } catch (e) { text = String(args[0]); }
+    kept.push({ level: level, text: String(text).slice(0, 2000), time: Date.now() });
+    if (kept.length > 500) kept.shift();
+  };
+  ['log', 'info', 'warn', 'error', 'debug'].forEach(function (level) {
+    const original = console[level].bind(console);
+    console[level] = function () { keep(level, arguments); return original.apply(null, arguments); };
+  });
+  window.addEventListener('error', function (e) { keep('exception', [e.message + (e.filename ? ' (' + e.filename + ':' + e.lineno + ')' : '')]); });
+  window.addEventListener('unhandledrejection', function (e) { keep('exception', ['Unhandled rejection: ' + (e.reason && (e.reason.stack || e.reason.message) || String(e.reason))]); });
+})();"#;
+
 // A random token for one web view: two numbers from the standard library's randomly keyed hasher.
 fn fresh_nonce() -> String {
     use std::hash::{BuildHasher, Hasher};
@@ -132,6 +152,7 @@ impl WebViewPort for WryWebViews {
             .with_bounds(rect(surface))
             .with_devtools(cfg!(debug_assertions))
             .with_initialization_script(key_script(&nonce))
+            .with_initialization_script(CONSOLE_SCRIPT)
             .with_navigation_handler(|url| navigation_allowed(&url))
             .with_new_window_req_handler(move |url, _| {
                 if web_address(&url) {

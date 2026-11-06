@@ -38,6 +38,7 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${BROWSER_SERVER}__preview_logs`,
   `mcp__${BROWSER_SERVER}__tabs_context_mcp`,
   `mcp__${BROWSER_SERVER}__get_page_text`,
+  `mcp__${BROWSER_SERVER}__read_console_messages`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -320,6 +321,18 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
       "Extract the text of the page in a Browser pane tab, its article or main content when it has one. Returns plain text with the title and URL first.",
       { tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab.") },
       forward(ask, "get_page_text"),
+    ),
+    tool(
+      "read_console_messages",
+      "Read browser console messages (console.log, console.error, console.warn, etc.) and uncaught errors from a Browser pane tab, kept since its page loaded (the last 500). Always provide a pattern to filter messages.",
+      {
+        tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
+        onlyErrors: z.boolean().optional().describe("Only errors and uncaught exceptions. Default false."),
+        clear: z.boolean().optional().describe("Clear the kept messages after reading. Default false."),
+        pattern: z.string().optional().describe("Regex to filter messages (any case), e.g. 'error|warning'."),
+        limit: z.number().optional().describe("Maximum number of messages (the latest). Default 100."),
+      },
+      forward(ask, "read_console_messages"),
     ),
     tool(
       "javascript_tool",

@@ -102,6 +102,13 @@ impl Workspace {
             }
             "navigate" => self.navigate_by_tool(id, input.get("tabId").and_then(Value::as_u64), text("url").unwrap_or_default()),
             "get_page_text" => return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), PAGE_TEXT_SCRIPT.to_string()),
+            "read_console_messages" => {
+                let pattern = text("pattern").unwrap_or_default();
+                let only_errors = input.get("onlyErrors").and_then(Value::as_bool).unwrap_or(false);
+                let clear = input.get("clear").and_then(Value::as_bool).unwrap_or(false);
+                let limit = input.get("limit").and_then(Value::as_u64).unwrap_or(100).clamp(1, 500);
+                return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), console_script(pattern, only_errors, clear, limit));
+            }
             "javascript_tool" => {
                 let code = text("text").unwrap_or_default();
                 if code.trim().is_empty() {
@@ -930,6 +937,14 @@ const PAGE_TEXT_SCRIPT: &str = "(function(){var root=document.querySelector('art
 fn script_runner(code: &str) -> String {
     let quoted = serde_json::to_string(code).unwrap_or_else(|_| "\"\"".to_string());
     format!("(function(){{try{{var value=(0,eval)({quoted});if(value===undefined)return 'undefined';var json=JSON.stringify(value);return (json===undefined?String(value):json).slice(0,20000);}}catch(error){{return 'Error: '+(error&&error.message||String(error));}}}})()")
+}
+
+/// `read_console_messages`: the kept messages that match, oldest first, one per line.
+fn console_script(pattern: &str, only_errors: bool, clear: bool, limit: u64) -> String {
+    let quoted = serde_json::to_string(pattern).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        "(function(){{var kept=window.__forgeConsole||[];var re=null;try{{re={quoted}?new RegExp({quoted},'i'):null;}}catch(e){{return 'Error: the pattern is not a valid regular expression';}}var out=kept.filter(function(m){{return (!{only_errors}||m.level==='error'||m.level==='exception')&&(!re||re.test(m.text));}});out=out.slice(-{limit});if({clear})kept.length=0;if(!out.length)return 'No console messages'+(re?' match the pattern.':'.');return out.map(function(m){{return '['+m.level+'] '+m.text;}}).join('\\n');}})()"
+    )
 }
 
 /// What a page script returned: wry hands it over as JSON, so a string comes back quoted.

@@ -230,6 +230,7 @@ fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
         "mcp__Claude_Browser__tabs_context_mcp" => (tr!("Listed the browser tabs").to_string(), String::new()),
         "mcp__Claude_Browser__navigate" => (tr!("Opened a page").to_string(), text("url")),
         "mcp__Claude_Browser__get_page_text" => (tr!("Read a page").to_string(), String::new()),
+        "mcp__Claude_Browser__read_console_messages" => (tr!("Read the console").to_string(), text("pattern")),
         "mcp__Claude_Browser__javascript_tool" => (tr!("Ran a script in a page").to_string(), first_line(text("text"))),
         "mcp__Claude_Browser__preview_stop" => (tr!("Stopped a dev server").to_string(), String::new()),
         "mcp__Claude_Browser__preview_logs" => (tr!("Read a dev server's output").to_string(), text("search")),
