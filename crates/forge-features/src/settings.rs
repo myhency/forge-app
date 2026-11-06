@@ -64,6 +64,7 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::GenerativeUi(on) => config.generative_ui = on,
         CodeChange::BrowserTools(on) => config.browser_tools = on,
         CodeChange::AutoOpenOutputs(on) => config.auto_open_outputs = on,
+        CodeChange::Terminal(prefs) => config.terminal = prefs,
         CodeChange::DesktopControl(on) => config.desktop_control = on,
         CodeChange::WorktreeLocation(value) => config.worktree_location = value,
         CodeChange::AutoArchiveDays(days) => config.auto_archive_days = days,
@@ -124,6 +125,7 @@ pub(crate) enum CodeChange {
     GenerativeUi(bool),
     BrowserTools(bool),
     AutoOpenOutputs(bool),
+    Terminal(forge_domain::TerminalPrefs),
     DesktopControl(bool),
     WorktreeLocation(WorktreeLocation),
     AutoArchiveDays(Option<u32>),
@@ -379,6 +381,14 @@ impl Settings {
 
     pub fn set_browser_tools(&self, on: bool) {
         self.change_code(CodeChange::BrowserTools(on));
+    }
+
+    pub fn terminal_prefs(&self) -> forge_domain::TerminalPrefs {
+        self.saved.read().terminal
+    }
+
+    pub fn set_terminal_prefs(&self, prefs: forge_domain::TerminalPrefs) {
+        self.change_code(CodeChange::Terminal(prefs));
     }
 
     pub fn auto_open_outputs(&self) -> bool {
@@ -864,6 +874,7 @@ impl Settings {
             current.generative_ui = config.generative_ui;
             current.browser_tools = config.browser_tools;
             current.auto_open_outputs = config.auto_open_outputs;
+            current.terminal = config.terminal;
             current.desktop_control = config.desktop_control;
             current.worktree_location = config.worktree_location;
             current.auto_archive_days = config.auto_archive_days;

@@ -444,6 +444,9 @@ pub struct AppConfig {
     /// HTML, pictures, PDFs and videos Claude writes open in the Preview pane.
     #[serde(default = "default_true", deserialize_with = "lenient")]
     pub auto_open_outputs: bool,
+    /// The Terminal panel's `⋯` menu: cursor, blinking, copy on select, scrollback.
+    #[serde(default, deserialize_with = "lenient")]
+    pub terminal: TerminalPrefs,
     /// Whether Claude gets the `agent_desktop` tool (read and press other apps through the accessibility
     /// tree). Off until the person turns it on; every call still asks first.
     #[serde(default)]
@@ -553,6 +556,7 @@ impl Default for AppConfig {
             generative_ui: default_generative_ui(),
             browser_tools: true,
             auto_open_outputs: true,
+            terminal: TerminalPrefs::default(),
             desktop_control: false,
             appearance: Appearance::default(),
             code_look: crate::CodeLook::default(),
@@ -580,6 +584,49 @@ pub fn normalize_setting(value: &str) -> Option<String> {
         None
     } else {
         Some(trimmed.to_string())
+    }
+}
+
+/// The cursor of the Terminal panel (the desktop app's 블록, 막대, 밑줄).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalCursor {
+    #[default]
+    Block,
+    Bar,
+    Underline,
+}
+
+impl TerminalCursor {
+    pub const ALL: [TerminalCursor; 3] = [TerminalCursor::Block, TerminalCursor::Bar, TerminalCursor::Underline];
+
+    /// xterm.js's name for it.
+    pub fn xterm(self) -> &'static str {
+        match self {
+            TerminalCursor::Block => "block",
+            TerminalCursor::Bar => "bar",
+            TerminalCursor::Underline => "underline",
+        }
+    }
+}
+
+/// The scrollback lengths the menu offers, as the desktop app does.
+pub const TERMINAL_SCROLLBACKS: [u32; 3] = [1_000, 5_000, 10_000];
+
+/// The Terminal panel's options, the desktop app's `⋯` menu (observed 2026-11-06).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TerminalPrefs {
+    pub cursor: TerminalCursor,
+    pub blink: bool,
+    pub copy_on_select: bool,
+    /// Lines kept above the screen.
+    pub scrollback: u32,
+}
+
+impl Default for TerminalPrefs {
+    fn default() -> Self {
+        Self { cursor: TerminalCursor::Block, blink: true, copy_on_select: false, scrollback: 10_000 }
     }
 }
 

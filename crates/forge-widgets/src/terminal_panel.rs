@@ -26,7 +26,22 @@ enum FromPage {
 // reports nothing; a size is sent 150 ms after the last change. It cleans itself up when its element leaves the page.
 const BRIDGE_JS: &str = r#"
 const host = document.getElementById("__HOST__");
-const term = new Terminal({ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 12, cursorBlink: true });
+const opts = __OPTS__;
+const term = new Terminal({ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: 12, cursorBlink: opts.blink, cursorStyle: opts.cursor, scrollback: opts.scrollback });
+let copyOnSelect = opts.copy;
+// The panel's `⋯` menu changes every open terminal at once.
+const onOptions = (e) => {
+    const o = e.detail;
+    term.options.cursorBlink = o.blink;
+    term.options.cursorStyle = o.cursor;
+    term.options.scrollback = o.scrollback;
+    copyOnSelect = o.copy;
+};
+window.addEventListener("forge-terminal-options", onOptions);
+term.onSelectionChange(() => {
+    const text = term.getSelection();
+    if (copyOnSelect && text) navigator.clipboard.writeText(text).catch(() => {});
+});
 const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
 term.open(host);
@@ -60,7 +75,7 @@ term.onData((d) => dioxus.send({ t: "data", d }));
 const observer = new ResizeObserver(report);
 observer.observe(host);
 const watch = setInterval(() => {
-    if (!host.isConnected) { clearInterval(watch); observer.disconnect(); term.dispose(); }
+    if (!host.isConnected) { clearInterval(watch); observer.disconnect(); window.removeEventListener("forge-terminal-options", onOptions); term.dispose(); }
 }, 2000);
 report();
 term.focus();
@@ -77,8 +92,18 @@ while (true) {
 }
 "#;
 
-fn bridge_js(host_id: &str) -> String {
-    BRIDGE_JS.replace("__HOST__", host_id)
+fn bridge_js(host_id: &str, prefs: forge_domain::TerminalPrefs) -> String {
+    BRIDGE_JS.replace("__HOST__", host_id).replace("__OPTS__", &options_json(prefs))
+}
+
+// The options as the page reads them.
+fn options_json(prefs: forge_domain::TerminalPrefs) -> String {
+    serde_json::json!({ "cursor": prefs.cursor.xterm(), "blink": prefs.blink, "copy": prefs.copy_on_select, "scrollback": prefs.scrollback }).to_string()
+}
+
+/// Gives every open terminal the panel's options.
+fn apply_options(prefs: forge_domain::TerminalPrefs) {
+    document::eval(&format!("window.dispatchEvent(new CustomEvent('forge-terminal-options', {{ detail: {} }}));", options_json(prefs)));
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,8 +124,9 @@ async fn drive(
     mut phase: Signal<Phase>,
     running: Rc<Cell<Option<TerminalId>>>,
     tap: Option<TapHandle>,
+    prefs: forge_domain::TerminalPrefs,
 ) {
-    let mut page = document::eval(&bridge_js(&host_id));
+    let mut page = document::eval(&bridge_js(&host_id, prefs));
     // The page reports its size first; the shell is started at that size.
     let size = loop {
         match page.recv::<FromPage>().await {
@@ -172,6 +198,7 @@ async fn drive(
 #[component]
 fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<TabId>, #[props(default)] tap: Option<TapHandle>, #[props(default)] runs: Option<CodeRuns>) -> Element {
     let workspace = use_workspace();
+    let settings = forge_features::use_settings();
     let host_id = format!("forge-terminal-{}", tab.0);
     let phase = use_signal(|| Phase::Starting);
     // Not a signal: `use_drop` runs while the component's own signals may already be gone.
@@ -187,7 +214,8 @@ fn TerminalTab(tab: TabId, cwd: PathBuf, active: bool, on_restart: EventHandler<
         let running = running.clone();
         use_future(move || {
             let (host_id, cwd, running, tap) = (host_id.clone(), cwd.clone(), running.clone(), tap.clone());
-            async move { drive(workspace.terminal(), host_id, cwd, phase, running, tap).await }
+            let prefs = settings.terminal_prefs();
+            async move { drive(workspace.terminal(), host_id, cwd, phase, running, tap, prefs).await }
         });
     }
     {
@@ -265,6 +293,7 @@ pub fn TerminalPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             },
             "+"
         }
+        TerminalOptions {}
     };
 
     rsx! {
@@ -285,6 +314,102 @@ pub fn TerminalPanel(id: LiveSessionId, cwd: PathBuf) -> Element {
             }
         }
     }
+}
+
+/// The Terminal panel's `⋯` menu, as in the desktop app (observed 2026-11-06): cursor style, cursor
+/// blinking, copy on select and scrollback. A change reaches every open terminal at once.
+#[component]
+fn TerminalOptions() -> Element {
+    let settings = forge_features::use_settings();
+    let mut open = use_signal(|| false);
+    // Where the menu goes: the tools row scrolls sideways and would clip a menu inside it, so the
+    // menu is placed in the window under the button that opened it.
+    let mut at = use_signal(|| (0.0f64, 0.0f64));
+    let prefs = settings.terminal_prefs();
+    use_effect(move || apply_options(settings.terminal_prefs()));
+    let set = move |prefs: forge_domain::TerminalPrefs| settings.set_terminal_prefs(prefs);
+    let cursor_label = |cursor: forge_domain::TerminalCursor| match cursor {
+        forge_domain::TerminalCursor::Block => tr!("Block"),
+        forge_domain::TerminalCursor::Bar => tr!("Bar|cursor"),
+        forge_domain::TerminalCursor::Underline => tr!("Underline"),
+    };
+    rsx! {
+        span { class: "terminal-options",
+            button {
+                class: "icon-button",
+                r#type: "button",
+                title: tr!("Terminal options"),
+                "aria-label": tr!("Terminal options"),
+                "aria-haspopup": "menu",
+                onclick: move |event: MouseEvent| {
+                    let point = event.client_coordinates();
+                    at.set((point.x, point.y));
+                    open.set(!open());
+                },
+                Icon { kind: IconKind::More, size: IconSize::Small }
+            }
+            if open() {
+                div { class: "menu-backdrop", onclick: move |_| open.set(false) }
+                div { class: "row-menu terminal-options-menu", role: "menu", style: "top: {at().1 + 14.0}px; left: {(at().0 - 200.0).max(8.0)}px;",
+                    div { class: "row-menu-note", {tr!("Cursor style")} }
+                    for cursor in forge_domain::TerminalCursor::ALL {
+                        button {
+                            key: "{cursor.xterm()}",
+                            class: "row-menu-item",
+                            role: "menuitemradio",
+                            "aria-checked": "{prefs.cursor == cursor}",
+                            onclick: move |_| set(forge_domain::TerminalPrefs { cursor, ..prefs }),
+                            span { {cursor_label(cursor)} }
+                            if prefs.cursor == cursor { span { class: "menu-key", Icon { kind: IconKind::Check, size: IconSize::Small } } }
+                        }
+                    }
+                    div { class: "row-menu-separator" }
+                    button {
+                        class: "row-menu-item",
+                        role: "menuitemcheckbox",
+                        "aria-checked": "{prefs.blink}",
+                        onclick: move |_| set(forge_domain::TerminalPrefs { blink: !prefs.blink, ..prefs }),
+                        span { {tr!("Cursor blinking")} }
+                        if prefs.blink { span { class: "menu-key", Icon { kind: IconKind::Check, size: IconSize::Small } } }
+                    }
+                    button {
+                        class: "row-menu-item",
+                        role: "menuitemcheckbox",
+                        "aria-checked": "{prefs.copy_on_select}",
+                        onclick: move |_| set(forge_domain::TerminalPrefs { copy_on_select: !prefs.copy_on_select, ..prefs }),
+                        span { {tr!("Copy on select")} }
+                        if prefs.copy_on_select { span { class: "menu-key", Icon { kind: IconKind::Check, size: IconSize::Small } } }
+                    }
+                    div { class: "row-menu-separator" }
+                    div { class: "row-menu-note", {tr!("Scrollback")} }
+                    for lines in forge_domain::TERMINAL_SCROLLBACKS {
+                        button {
+                            key: "{lines}",
+                            class: "row-menu-item",
+                            role: "menuitemradio",
+                            "aria-checked": "{prefs.scrollback == lines}",
+                            onclick: move |_| set(forge_domain::TerminalPrefs { scrollback: lines, ..prefs }),
+                            span { {tr!("{n} lines", n = group_digits(lines))} }
+                            if prefs.scrollback == lines { span { class: "menu-key", Icon { kind: IconKind::Check, size: IconSize::Small } } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 10000 → "10,000".
+fn group_digits(n: u32) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (at, c) in digits.chars().enumerate() {
+        if at > 0 && (digits.len() - at) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// A tab id no dock terminal uses, so the page element ids do not meet.
