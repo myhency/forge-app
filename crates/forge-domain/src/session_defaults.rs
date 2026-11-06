@@ -1,7 +1,7 @@
 use crate::{AppConfig, AutoModeModel, OutputStyle};
 
 /// What the Code tab of Settings decides for a session at the moment its sidecar starts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionDefaults {
     pub output_style: Option<OutputStyle>,
     /// The model that approves tool calls in auto mode (`None`: Claude Code decides).
@@ -68,7 +68,7 @@ impl Default for SessionDefaults {
 
 impl SessionDefaults {
     pub fn from_config(config: &AppConfig) -> Self {
-        Self { output_style: config.output_style, auto_mode_model: config.auto_mode_model, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, auto_memory: config.auto_memory, turn_tools: config.turn_tools, generative_ui: config.generative_ui, desktop_control: config.desktop_control, unrelated_task: config.unrelated_task, classify_status: config.classify_sessions }
+        Self { output_style: config.output_style.clone(), auto_mode_model: config.auto_mode_model, prompt_suggestions: config.prompt_suggestions, allow_bypass: config.allow_bypass_mode, dynamic_workflows: config.dynamic_workflows, auto_memory: config.auto_memory, turn_tools: config.turn_tools, generative_ui: config.generative_ui, desktop_control: config.desktop_control, unrelated_task: config.unrelated_task, classify_status: config.classify_sessions }
     }
 }
 

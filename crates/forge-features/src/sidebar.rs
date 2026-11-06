@@ -726,6 +726,8 @@ mod tests {
             app_requests: Vec::new(),
             classified: None,
             output_style: None,
+            available_output_styles: Vec::new(),
+            style_draft: Default::default(),
             rewind: None,
         }
     }

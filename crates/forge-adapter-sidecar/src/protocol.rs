@@ -62,6 +62,8 @@ pub enum SidecarCommand {
     SetEffort { id: String, effort: Option<forge_domain::EffortLevel> },
     /// `None` is the default style.
     SetOutputStyle { id: String, style: Option<String> },
+    /// `name` is the one the person typed; without it Claude suggests one.
+    CreateOutputStyle { id: String, description: String, name: Option<String> },
     Shutdown { id: String },
 }
 

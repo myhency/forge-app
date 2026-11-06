@@ -2235,13 +2235,32 @@ impl Workspace {
         }
     }
 
-    /// Changes the effort of the open session (`None`: the SDK's default), from its next turn on.
     /// The title menu's `출력 스타일`: this session's style from its next answer on.
     pub fn set_output_style(&self, id: LiveSessionId, style: Option<forge_domain::OutputStyle>) {
         if let Some(handle) = self.handle(id) {
             handle.set_output_style(style);
         }
     }
+
+    /// The output styles the SDK lists for the session (`default` first); empty until it reports them.
+    pub fn available_output_styles(&self, id: LiveSessionId) -> Vec<String> {
+        self.live_view(id).map(|view| view.peek().available_output_styles.clone()).unwrap_or_default()
+    }
+
+    /// `새 스타일...`: Claude drafts a style from what the person wrote; it is saved and chosen for the session.
+    pub fn create_output_style(&self, id: LiveSessionId, description: String, name: Option<String>) {
+        if let Some(handle) = self.handle(id) {
+            handle.create_output_style(description, name);
+        }
+    }
+
+    pub fn clear_style_draft(&self, id: LiveSessionId) {
+        if let Some(handle) = self.handle(id) {
+            handle.clear_style_draft();
+        }
+    }
+
+    /// Changes the effort of the open session (`None`: the SDK's default), from its next turn on.
 
     pub fn set_effort(&self, id: LiveSessionId, effort: Option<EffortLevel>) {
         if let Some(handle) = self.handle(id) {
@@ -4314,6 +4333,8 @@ mod plan_text_tests {
             app_requests: Vec::new(),
             classified: None,
             output_style: None,
+            available_output_styles: Vec::new(),
+            style_draft: Default::default(),
             rewind: None,
         }
     }

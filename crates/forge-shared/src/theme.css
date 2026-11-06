@@ -1661,6 +1661,11 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .env-variables { box-sizing: border-box; width: 100%; min-height: 180px; padding: var(--sp-10); border: 1px solid var(--border); border-radius: var(--r-10); font-family: var(--mono, monospace); font-size: var(--text-base); background: transparent; color: inherit; resize: vertical; }
 .env-buttons { display: flex; align-items: center; gap: var(--sp-8); margin-top: var(--sp-18); }
 .env-buttons .spacer { flex: 1; }
+.style-dialog .hint { margin: 0; }
+.style-description { box-sizing: border-box; width: 100%; min-height: 96px; padding: var(--sp-10) var(--sp-12); border: 1px solid var(--border); border-radius: var(--r-10); font: inherit; font-size: var(--text-base); background: transparent; color: inherit; resize: vertical; }
+.style-description:focus { outline: none; border-color: var(--accent); }
+.style-name { box-sizing: border-box; width: 100%; }
+.style-name-error { margin-top: var(--sp-6) !important; color: var(--danger); }
 .env-delete { border: 0; background: transparent; color: var(--danger); cursor: pointer; }
 .env-ask-backdrop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--fg) 20%, transparent); border-radius: 16px; }
 .env-ask { width: min(440px, 90%); padding: var(--sp-18) var(--sp-20); border-radius: var(--r-14); background: var(--bg-elevated, var(--bg)); box-shadow: var(--shadow-3); }

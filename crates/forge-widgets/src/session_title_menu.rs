@@ -1,8 +1,8 @@
 use dioxus::prelude::*;
-use forge_application::LiveSessionId;
+use forge_application::{LiveSessionId, StyleDraft};
 use forge_domain::TranscriptView;
 use forge_features::{menu_key_action, refocus_workspace, use_workspace, ArchiveAction, DeleteAction, MenuKeyAction, RowActions};
-use forge_shared::{tr, Icon, IconKind, IconSize};
+use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
 
 /// What the title menu shows: its rows, the transcript-view choices, or the delete question.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,14 +16,31 @@ enum MenuPage {
 /// The chevron after the title of the open session and its menu, laid out like the desktop app's
 /// (round 37): `이름 변경 R`, `포크 F`, then `트랜스크립트 보기 ›` (normal, thinking, detailed), then
 /// `보관 A` and `삭제 D`. Delete asks first, then closes the session and moves it to the trash.
-/// `출력 스타일 ›` changes this session's output style. `다음에서 열기` (new window, cloud) is left out.
+/// `출력 스타일 ›` changes this session's output style, and its `새 스타일...` has Claude write a new
+/// one. `다음에서 열기` (new window, cloud) is left out.
 #[component]
-pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: TranscriptView, #[props(default)] style: Option<forge_domain::OutputStyle>) -> Element {
+pub fn SessionTitleMenu(
+    id: LiveSessionId,
+    actions: RowActions,
+    mode: TranscriptView,
+    #[props(default)] style: Option<forge_domain::OutputStyle>,
+    /// The styles the SDK lists for the session (`default` first); empty until it reports them.
+    #[props(default)] styles: Vec<String>,
+    #[props(default)] draft: StyleDraft,
+) -> Element {
     let workspace = use_workspace();
     let mut open = use_signal(|| false);
+    let mut new_style = use_signal(|| false);
     let mut page = use_signal(|| MenuPage::Main);
     if actions.archive == ArchiveAction::Unavailable && !actions.can_rename && !actions.can_fork {
         return rsx! {};
+    }
+    // Claude Code's four styles, then the person's own in the order the SDK lists them.
+    let mut choices: Vec<Option<forge_domain::OutputStyle>> = vec![None];
+    choices.extend(forge_domain::OutputStyle::ALL.into_iter().map(Some));
+    choices.extend(styles.iter().filter_map(|name| forge_domain::OutputStyle::from_name(name)).filter(|choice| choice.is_custom()).map(Some));
+    if let Some(current) = style.as_ref().filter(|current| current.is_custom() && !choices.contains(&Some((*current).clone()))) {
+        choices.push(Some(current.clone()));
     }
     let archive_label = if actions.archive == ArchiveAction::Archive { tr!("Archive") } else { tr!("Unarchive") };
     let can_delete = actions.delete == DeleteAction::Allowed;
@@ -33,6 +50,9 @@ pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: Transcript
         refocus_workspace();
     };
     rsx! {
+        if new_style() {
+            NewStyleDialog { id, draft: draft.clone(), on_close: move |_| new_style.set(false) }
+        }
         div { class: "title-menu",
             button {
                 class: if open() { "title-chevron open" } else { "title-chevron" },
@@ -202,19 +222,22 @@ pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: Transcript
                                 Icon { kind: IconKind::ChevronLeft, size: IconSize::Small }
                                 span { {tr!("Output style")} }
                             }
-                            for option in std::iter::once(None).chain(forge_domain::OutputStyle::ALL.into_iter().map(Some)) {
+                            for option in choices.iter().cloned() {
                                 button {
-                                    key: "{option.map(|style| style.name()).unwrap_or(\"default\")}",
+                                    key: "{option.as_ref().map(|style| style.name().to_string()).unwrap_or_else(|| \"default\".to_string())}",
                                     class: "row-menu-item",
                                     role: "menuitemradio",
                                     "aria-checked": "{option == style}",
-                                    onclick: move |_| {
-                                        workspace.set_output_style(id, option);
-                                        close();
+                                    onclick: {
+                                        let option = option.clone();
+                                        move |_| {
+                                            workspace.set_output_style(id, option.clone());
+                                            close();
+                                        }
                                     },
                                     span {
-                                        match option {
-                                            Some(choice) => forge_shared::i18n::text(choice.label()).to_string(),
+                                        match option.as_ref() {
+                                            Some(choice) => choice.display(),
                                             None => tr!("Default").to_string(),
                                         }
                                     }
@@ -222,6 +245,18 @@ pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: Transcript
                                         span { class: "menu-key", Icon { kind: IconKind::Check, size: IconSize::Small } }
                                     }
                                 }
+                            }
+                            // The desktop app's `새 스타일...` (observed 2026-11-06): describe a style and Claude drafts it.
+                            div { class: "row-menu-separator" }
+                            button {
+                                class: "row-menu-item",
+                                role: "menuitem",
+                                onclick: move |_| {
+                                    close();
+                                    workspace.clear_style_draft(id);
+                                    new_style.set(true);
+                                },
+                                span { {tr!("New style…")} }
                             }
                         },
                         MenuPage::ConfirmDelete => rsx! {
@@ -246,5 +281,145 @@ pub fn SessionTitleMenu(id: LiveSessionId, actions: RowActions, mode: Transcript
                 }
             }
         }
+    }
+}
+
+/// The desktop app's `새 출력 스타일` dialog (observed 2026-11-06): what the person wants and an
+/// optional name. Claude drafts the style; it is saved in their `output-styles` folder and chosen for
+/// this session, and the dialog closes.
+#[component]
+fn NewStyleDialog(id: LiveSessionId, draft: StyleDraft, on_close: EventHandler<()>) -> Element {
+    let workspace = use_workspace();
+    let mut description = use_signal(String::new);
+    let mut name = use_signal(String::new);
+    let mut asked = use_signal(|| false);
+    let drafting = draft == StyleDraft::Drafting;
+    let name_ok = style_name_ok(&name());
+    let can_create = !drafting && !description().trim().is_empty() && name_ok;
+    let created = asked() && matches!(draft, StyleDraft::Created(_));
+    use_effect(use_reactive!(|created| {
+        if created {
+            on_close.call(());
+        }
+    }));
+    let failure = match (&draft, asked()) {
+        (StyleDraft::Failed(reason), true) => Some(reason.clone()),
+        _ => None,
+    };
+    let mut create = move || {
+        if !can_create {
+            return;
+        }
+        asked.set(true);
+        let typed = name().trim().to_string();
+        workspace.create_output_style(id, description().trim().to_string(), (!typed.is_empty()).then_some(typed));
+    };
+    rsx! {
+        div {
+            class: "settings-backdrop",
+            onclick: move |_| on_close.call(()),
+            div {
+                class: "env-dialog style-dialog",
+                role: "dialog",
+                "aria-label": tr!("New output style"),
+                onclick: move |event| event.stop_propagation(),
+                onkeydown: move |event: KeyboardEvent| {
+                    if event.key() == Key::Escape {
+                        event.stop_propagation();
+                        on_close.call(());
+                    }
+                },
+                div { class: "env-head",
+                    h2 { {tr!("New output style")} }
+                    button { class: "settings-close", r#type: "button", title: tr!("Close (Esc)"), onclick: move |_| on_close.call(()), Icon { kind: IconKind::Close } }
+                }
+                p { class: "hint", {tr!("Describe the style you want and Claude will draft it.")} }
+                label { class: "env-label", {tr!("What style do you want?")} }
+                textarea {
+                    class: "style-description",
+                    placeholder: tr!("Short answer first, then the details. No filler."),
+                    maxlength: "2000",
+                    disabled: drafting,
+                    value: "{description}",
+                    onmounted: move |mounted| async move {
+                        let _ = mounted.set_focus(true).await;
+                    },
+                    oninput: move |event| description.set(event.value()),
+                }
+                label { class: "env-label", {tr!("Name (optional)")} }
+                input {
+                    class: "customize-field style-name",
+                    maxlength: "64",
+                    disabled: drafting,
+                    value: "{name}",
+                    oninput: move |event| name.set(event.value()),
+                    onkeydown: move |event: KeyboardEvent| {
+                        if event.key() == Key::Enter {
+                            event.prevent_default();
+                            create();
+                        }
+                    },
+                }
+                if !name_ok {
+                    p { class: "hint style-name-error", {tr!("Use letters, numbers, spaces and hyphens only.")} }
+                }
+                if let Some(reason) = failure {
+                    div { class: "banner error", {style_failure_text(&reason)} }
+                }
+                div { class: "env-buttons",
+                    span { class: "spacer" }
+                    Button { label: tr!("Cancel"), onclick: move |_| on_close.call(()) }
+                    Button {
+                        label: if drafting { tr!("Creating…") } else { tr!("Create style") },
+                        kind: ButtonKind::Primary,
+                        disabled: !can_create,
+                        onclick: move |_| create(),
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The sidecar's and the session's reasons in the person's language; anything else (an SDK error) as it came.
+fn style_failure_text(reason: &str) -> String {
+    let known = [
+        ("Describe the style in up to 2,000 characters.", tr!("Describe the style in up to 2,000 characters.")),
+        ("Use letters, numbers, spaces and hyphens only.", tr!("Use letters, numbers, spaces and hyphens only.")),
+        ("Styles cannot be saved here.", tr!("Styles cannot be saved here.")),
+        ("A style is already being drafted.", tr!("A style is already being drafted.")),
+        ("Claude took too long to draft the style.", tr!("Claude took too long to draft the style.")),
+        ("Claude's draft could not be read. Try again.", tr!("Claude's draft could not be read. Try again.")),
+        ("The style could not be saved under a free name.", tr!("The style could not be saved under a free name.")),
+        ("The session stopped before the style was saved. Try again.", tr!("The session stopped before the style was saved. Try again.")),
+    ];
+    if let Some((_, shown)) = known.iter().find(|(english, _)| *english == reason) {
+        return shown.to_string();
+    }
+    if let Some(name) = reason.strip_prefix("A style called ").and_then(|rest| rest.strip_suffix(" already exists.")) {
+        return tr!("A style called {name} already exists.", name = name);
+    }
+    reason.to_string()
+}
+
+/// A name the person may give a style (it becomes a file name): letters, digits, spaces and hyphens,
+/// at most 64 characters. Empty is fine (Claude suggests one).
+fn style_name_ok(name: &str) -> bool {
+    let name = name.trim();
+    name.chars().count() <= 64 && name.chars().all(|c| c.is_alphanumeric() || c == ' ' || c == '-')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::style_name_ok;
+
+    #[test]
+    fn a_style_name_is_letters_digits_spaces_and_hyphens() {
+        assert!(style_name_ok(""));
+        assert!(style_name_ok("Pirate talk-2"));
+        assert!(style_name_ok("간결한 리뷰"));
+        assert!(!style_name_ok("../escape"));
+        assert!(!style_name_ok("a/b"));
+        assert!(!style_name_ok(&"x".repeat(65)));
     }
 }

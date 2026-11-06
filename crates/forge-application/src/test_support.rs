@@ -37,6 +37,7 @@ pub(crate) enum Call {
     SetModel(Option<String>),
     SetEffort(Option<forge_domain::EffortLevel>),
     SetOutputStyle(Option<String>),
+    CreateOutputStyle(String, Option<String>),
     Shutdown,
 }
 
@@ -189,6 +190,11 @@ impl SidecarPort for FakeSidecar {
 
     async fn set_output_style(&self, style: Option<String>) -> Result<(), SidecarError> {
         self.control.record(Call::SetOutputStyle(style));
+        Ok(())
+    }
+
+    async fn create_output_style(&self, description: String, name: Option<String>) -> Result<(), SidecarError> {
+        self.control.record(Call::CreateOutputStyle(description, name));
         Ok(())
     }
 

@@ -360,9 +360,14 @@ fn CodeSection() -> Element {
     location_options.push((CUSTOM_LOCATION.to_string(), tr!("Custom…").to_string()));
     let mut auto_mode_options = vec![(DEFAULT_STYLE_VALUE.to_string(), tr!("Default").to_string())];
     auto_mode_options.extend(forge_domain::AutoModeModel::ALL.iter().map(|model| (model.id().to_string(), model.label().to_string())));
-    let style_value = settings.output_style().map_or(DEFAULT_STYLE_VALUE, OutputStyle::name).to_string();
+    let current_style = settings.output_style();
+    let style_value = current_style.as_ref().map(|style| style.name().to_string()).unwrap_or_else(|| DEFAULT_STYLE_VALUE.to_string());
     let mut style_options = vec![(DEFAULT_STYLE_VALUE.to_string(), tr!("Default").to_string())];
-    style_options.extend(OutputStyle::ALL.iter().map(|style| (style.name().to_string(), forge_shared::i18n::text(style.label()).to_string())));
+    style_options.extend(OutputStyle::ALL.iter().map(|style| (style.name().to_string(), style.display())));
+    // A style of the person's own chosen as the default (by a tool) stays in the list.
+    if let Some(mine) = current_style.filter(OutputStyle::is_custom) {
+        style_options.push((mine.name().to_string(), mine.display()));
+    }
     rsx! {
         h2 { {tr!("Code")} }
         SettingRow {

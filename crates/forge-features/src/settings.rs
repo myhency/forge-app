@@ -326,7 +326,7 @@ impl Settings {
     }
 
     pub fn output_style(&self) -> Option<OutputStyle> {
-        self.saved.read().output_style
+        self.saved.read().output_style.clone()
     }
 
     pub fn prompt_suggestions(&self) -> bool {

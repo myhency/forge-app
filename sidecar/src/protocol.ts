@@ -85,6 +85,8 @@ export type SidecarCommand =
   | { type: "set_model"; id: string; model: string | null }
   | { type: "set_effort"; id: string; effort: WireEffort | null }
   | { type: "set_output_style"; id: string; style: string | null }
+  // The title menu's `새 스타일...`: Claude drafts a style; it is saved and the session switches to it.
+  | { type: "create_output_style"; id: string; description: string; name: string | null }
   // The app's answer to an `app_request`.
   | { type: "app_response"; id: string; request_id: string; output: string; is_error: boolean }
   | { type: "shutdown"; id: string };
@@ -128,6 +130,10 @@ export type SidecarEvent =
   | { type: "model_set"; model: string | null }
   | { type: "effort_set"; effort: WireEffort | null }
   | { type: "output_style_set"; style: string | null }
+  // The output styles the SDK knows (`default` first), and how a create_output_style ended.
+  | { type: "output_styles_available"; styles: string[] }
+  | { type: "output_style_created"; name: string }
+  | { type: "output_style_create_failed"; reason: string }
   // The SDK's full set of background tasks (replace semantics), a finished one, and a predicted next prompt.
   | { type: "background_tasks"; tasks: WireBackgroundTask[] }
   | { type: "task_progress"; task_id: string; total_tokens: number }

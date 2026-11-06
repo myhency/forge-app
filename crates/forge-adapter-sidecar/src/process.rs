@@ -203,6 +203,11 @@ impl SidecarPort for SidecarProcess {
         self.send_command(SidecarCommand::SetOutputStyle { id, style })
     }
 
+    async fn create_output_style(&self, description: String, name: Option<String>) -> Result<(), SidecarError> {
+        let id = self.next_id();
+        self.send_command(SidecarCommand::CreateOutputStyle { id, description, name })
+    }
+
     async fn set_effort(&self, effort: Option<forge_domain::EffortLevel>) -> Result<(), SidecarError> {
         let id = self.next_id();
         self.send_command(SidecarCommand::SetEffort { id, effort })

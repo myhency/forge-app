@@ -119,6 +119,13 @@ pub enum SidecarEvent {
         #[serde(default)]
         style: Option<String>,
     },
+    /// The output styles the SDK knows for this session (`default` first), sent after the start and
+    /// after a style is created.
+    OutputStylesAvailable { styles: Vec<String> },
+    /// A `create_output_style` wrote the person's new style; `name` is the SDK's name for it.
+    OutputStyleCreated { name: String },
+    /// A `create_output_style` wrote nothing; `reason` says why, for the person.
+    OutputStyleCreateFailed { reason: String },
     /// The models the SDK lists for this session and the effort levels each takes. Sent once after the start.
     ModelsAvailable { models: Vec<AvailableModel> },
     /// The SDK refused a `set_permission_mode`, `set_model` or `set_effort`. The session goes on.
@@ -248,6 +255,10 @@ pub trait SidecarPort: Send + Sync {
     /// Asks for an output style change in the running session (`None`: the default). The answer
     /// comes back as an event.
     async fn set_output_style(&self, style: Option<String>) -> Result<(), SidecarError>;
+    /// The title menu's `새 스타일...`: Claude drafts a style from `description`, the sidecar saves it
+    /// in the person's `output-styles` folder and switches the session to it. The outcome comes back
+    /// as an event.
+    async fn create_output_style(&self, description: String, name: Option<String>) -> Result<(), SidecarError>;
     async fn shutdown(&self) -> Result<(), SidecarError>;
     async fn next_event(&self) -> Option<SidecarEvent>;
 }

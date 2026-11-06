@@ -43,6 +43,10 @@ pub enum SessionUpdate {
     EffortChanged { effort: Option<EffortLevel> },
     /// The SDK accepted an output style change (`None`: the default).
     OutputStyleChanged(Option<forge_domain::OutputStyle>),
+    /// The output styles the SDK knows for this session.
+    OutputStylesAvailable(Vec<String>),
+    /// A new style was saved (`Ok`, its SDK name) or not (`Err`, why).
+    OutputStyleCreated(Result<String, String>),
     /// The models the SDK listed for this session.
     ModelsAvailable(Vec<AvailableModel>),
     /// The SDK refused a mode, model or effort change. The session goes on.
@@ -235,6 +239,9 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
         SidecarEvent::ModelSet { model } => SessionUpdate::ModelChanged { model: model.clone() },
         SidecarEvent::EffortSet { effort } => SessionUpdate::EffortChanged { effort: *effort },
         SidecarEvent::OutputStyleSet { style } => SessionUpdate::OutputStyleChanged(style.as_deref().and_then(forge_domain::OutputStyle::from_name)),
+        SidecarEvent::OutputStylesAvailable { styles } => SessionUpdate::OutputStylesAvailable(styles.clone()),
+        SidecarEvent::OutputStyleCreated { name } => SessionUpdate::OutputStyleCreated(Ok(name.clone())),
+        SidecarEvent::OutputStyleCreateFailed { reason } => SessionUpdate::OutputStyleCreated(Err(reason.clone())),
         SidecarEvent::ModelsAvailable { models } => SessionUpdate::ModelsAvailable(models.clone()),
         SidecarEvent::SettingFailed { message } => SessionUpdate::SettingFailed { message: message.clone() },
         SidecarEvent::BackgroundTasks { tasks } => SessionUpdate::BackgroundTasks(tasks.clone()),

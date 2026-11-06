@@ -132,7 +132,7 @@ impl Workspace {
                     (_, None) => Err("Say unread: true or false.".to_string()),
                 }
             }
-            "set_setting" => set_setting(settings, config, text("key").unwrap_or_default(), input.get("value")),
+            "set_setting" => set_setting(settings, config, &self.available_output_styles(id), text("key").unwrap_or_default(), input.get("value")),
             "list_events" => return self.list_events(id, request.clone(), text("session_id").unwrap_or_default().to_string(), input.get("limit").and_then(Value::as_u64).map(|n| n.clamp(1, 200) as usize).unwrap_or(40)),
             "get_usage" => self.usage_json(id, text("session_id").unwrap_or("self")),
             "set_session_title" => self.rename_by_tool(id, text("session_id").unwrap_or("self"), text("title").unwrap_or_default()),
@@ -158,12 +158,14 @@ impl Workspace {
             "set_session_output_style" => {
                 let wanted = text("session_id").unwrap_or("self");
                 let name = text("style").unwrap_or_default();
-                let style = if name.eq_ignore_ascii_case("default") { Ok(None) } else { forge_domain::OutputStyle::ALL.into_iter().find(|style| style.name().eq_ignore_ascii_case(name)).map(Some).ok_or_else(|| format!("No output style called {name}.")) };
+                let available = self.available_output_styles(id);
+                let style = if name.eq_ignore_ascii_case("default") { Ok(None) } else { forge_domain::OutputStyle::find(name, &available).map(Some).ok_or_else(|| format!("No output style called {name}.")) };
                 style.and_then(|style| {
                     let row = self.find_row(id, wanted).ok_or_else(|| format!("No session {wanted}."))?;
                     let handle = row.live.and_then(|live| self.handle(live)).ok_or_else(|| format!("{} is not open; open it first.", row.title))?;
+                    let shown = style.as_ref().map(|style| style.display()).unwrap_or_else(|| "default".to_string());
                     handle.set_output_style(style);
-                    Ok(format!("{} answers in the {} style from now on.", row.title, style.map(|style| style.name()).unwrap_or("default")))
+                    Ok(format!("{} answers in the {shown} style from now on.", row.title))
                 })
             }
             "unarchive_session" => self.unarchive_by_tool(id, text("session_id").unwrap_or_default()),
@@ -674,7 +676,7 @@ impl Workspace {
 }
 
 /// Changes one setting for `set_setting`; refuses a value that is not allowed or already set.
-fn set_setting(settings: crate::Settings, config: &AppConfig, key: &str, value: Option<&Value>) -> Result<String, String> {
+fn set_setting(settings: crate::Settings, config: &AppConfig, available: &[String], key: &str, value: Option<&Value>) -> Result<String, String> {
     let value = value.ok_or_else(|| "Give the new value.".to_string())?;
     let switch = || value.as_bool().ok_or_else(|| format!("{key} takes true or false."));
     let same = || Err(format!("{key} already has that value."));
@@ -717,7 +719,7 @@ fn set_setting(settings: crate::Settings, config: &AppConfig, key: &str, value: 
         }
         "output_style" => {
             let name = value.as_str().ok_or_else(|| "output_style takes a style name, or \"default\".".to_string())?;
-            let style = if name.eq_ignore_ascii_case("default") { None } else { Some(forge_domain::OutputStyle::from_name(name).ok_or_else(|| format!("No output style called {name}."))?) };
+            let style = if name.eq_ignore_ascii_case("default") { None } else { Some(forge_domain::OutputStyle::find(name, available).ok_or_else(|| format!("No output style called {name}."))?) };
             if style == config.output_style {
                 return same();
             }
@@ -736,7 +738,7 @@ fn settings_json(config: &AppConfig) -> String {
         "autoArchiveDays": row(json!(config.auto_archive_days), "Archives local sessions after this many idle days (null: never)."),
         "worktreeLocation": row(json!(format!("{:?}", config.worktree_location)), "Where isolated sessions keep their Git worktrees."),
         "promptSuggestions": row(json!(config.prompt_suggestions), "Shows a suggested next prompt after Claude answers."),
-        "outputStyle": row(json!(config.output_style.map(|style| style.name().to_string()).unwrap_or_else(|| "default".to_string())), "The output style of new sessions."),
+        "outputStyle": row(json!(config.output_style.as_ref().map(|style| style.name().to_string()).unwrap_or_else(|| "default".to_string())), "The output style of new sessions."),
         "dynamicWorkflows": row(json!(config.dynamic_workflows), "Lets Claude run several agents in parallel."),
         "taskListAndNextStep": row(json!(config.turn_tools), "Claude shows its plan as a list and ends a turn with a summary."),
         "unrelatedRequests": row(json!(config.unrelated_task.value()), "What happens when the user asks for unrelated work: ask, here or new_session."),

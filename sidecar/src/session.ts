@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { buildContent, type ContentBlock } from "./content.js";
 import { buildSkillsPlugin } from "./skills_plugin.js";
+import { buildStylesPlugin, cleanName, draftStyle, saveStyle, STYLES_PLUGIN_NAME, styleNameOk } from "./output_styles.js";
 import { turnUsage } from "./usage.js";
 import { createDesktopServer, DESKTOP_SERVER_NAME } from "./agent_desktop.js";
 import { createGenerativeUiServer, GENERATE_UI_TOOL, UI_GUIDE_TOOL, UI_SERVER_NAME } from "./generative_ui.js";
@@ -54,6 +55,8 @@ export type QueryHandle = AsyncIterable<unknown> & {
   supportedModels?: () => Promise<unknown>;
   stopTask?: (taskId: string) => Promise<void>;
   askSideQuestion?: (question: string) => Promise<{ response: string; synthetic?: boolean } | null>;
+  initializationResult?: () => Promise<{ available_output_styles?: unknown; output_style?: unknown }>;
+  reloadOutputStyles?: () => Promise<{ available_output_styles?: unknown }>;
   generateSessionTitle?: (description: string, options?: { persist?: boolean }) => Promise<string | null>;
   rewindFiles?: (
     userMessageId: string,
@@ -218,6 +221,8 @@ export class SidecarSession {
   private readonly detailTimeoutMs: number;
   private readonly queryWaitMs: number;
   private readonly log: (line: string) => void;
+  private readonly stylesDir: string | null;
+  private creatingStyle = false;
 
   constructor(
     private readonly queryFn: QueryFn,
@@ -228,6 +233,8 @@ export class SidecarSession {
       detailTimeoutMs?: number;
       queryWaitMs?: number;
       log?: (line: string) => void;
+      /** The person's `output-styles` folder (index.ts passes it); without it their styles are left out. */
+      stylesDir?: string | null;
     } = {},
   ) {
     this.contextUsageTimeoutMs = options.contextUsageTimeoutMs ?? CONTEXT_USAGE_TIMEOUT_MS;
@@ -235,6 +242,7 @@ export class SidecarSession {
     this.detailTimeoutMs = options.detailTimeoutMs ?? DETAIL_TIMEOUT_MS;
     this.queryWaitMs = options.queryWaitMs ?? 10000;
     this.log = options.log ?? ((line) => process.stderr.write(`${line}\n`));
+    this.stylesDir = options.stylesDir ?? null;
   }
 
   async handle(command: SidecarCommand): Promise<void> {
@@ -298,6 +306,9 @@ export class SidecarSession {
               : Promise.reject(new Error("this version of the SDK cannot change the effort")),
           { type: "effort_set", effort: command.effort },
         );
+        return;
+      case "create_output_style":
+        await this.createOutputStyle(command.description, command.name ?? undefined);
         return;
       case "set_output_style":
         await this.change(
@@ -397,6 +408,54 @@ export class SidecarSession {
       });
     } catch (err) {
       this.emit({ type: "rewind_result", request_id: requestId, can_rewind: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  /** The styles the SDK knows for the session, for the title menu's `출력 스타일`; quiet when it cannot say. */
+  private async emitOutputStyles(read: (() => Promise<{ available_output_styles?: unknown }>) | undefined): Promise<void> {
+    if (!read) return;
+    try {
+      const listed = (await read()).available_output_styles;
+      if (Array.isArray(listed) && !this.shuttingDown) {
+        this.emit({ type: "output_styles_available", styles: listed.filter((name): name is string => typeof name === "string").slice(0, 256) });
+      }
+    } catch {
+      // The menu keeps Claude Code's own styles.
+    }
+  }
+
+  /**
+   * The title menu's `새 스타일...`, as the desktop app does it: Claude drafts the style in one turn with
+   * no tools, it is saved in the person's `output-styles` folder, the SDK reloads its styles and the
+   * session switches to the new one.
+   */
+  private async createOutputStyle(description: string, name: string | undefined): Promise<void> {
+    const fail = (reason: string) => this.emit({ type: "output_style_create_failed", reason });
+    const wanted = description.trim();
+    if (wanted.length === 0 || wanted.length > 2000) return fail("Describe the style in up to 2,000 characters.");
+    if (name !== undefined && !styleNameOk(name)) return fail("Use letters, numbers, spaces and hyphens only.");
+    if (this.stylesDir === null) return fail("Styles cannot be saved here.");
+    if (this.creatingStyle) return fail("A style is already being drafted.");
+    this.creatingStyle = true;
+    try {
+      const drafted = await draftStyle(this.queryFn, wanted, name?.trim());
+      if (!drafted.ok) return fail(drafted.reason);
+      const base = name?.trim() ?? cleanName(drafted.draft.suggestedName) ?? "Custom style";
+      const saved = await saveStyle(this.stylesDir, base, drafted.draft, name !== undefined);
+      if (!saved.ok) return fail(saved.reason);
+      const sdkName = `${STYLES_PLUGIN_NAME}:${saved.name}`;
+      const query = this.activeQuery;
+      if (query?.reloadOutputStyles) {
+        await this.emitOutputStyles(() => query.reloadOutputStyles!());
+      }
+      this.emit({ type: "output_style_created", name: sdkName });
+      if (query?.applyFlagSettings) {
+        await this.handle({ type: "set_output_style", id: "", style: sdkName });
+      }
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    } finally {
+      this.creatingStyle = false;
     }
   }
 
@@ -535,14 +594,21 @@ export class SidecarSession {
     // Forge's toggles are the only source of truth (spec §17.1). The `??` guards a command from an
     // older parent that omits the fields: that must mean nothing enabled, never the SDK's defaults.
     const skillsPlugin = await buildSkillsPlugin(command.skills ?? {});
-    if (this.shuttingDown) {
+    // The person's own output styles (`새 스타일...` writes there); a failure only leaves them out.
+    const stylesPlugin = this.stylesDir === null ? null : await buildStylesPlugin(this.stylesDir).catch(() => null);
+    const cleanupPlugins = async () => {
       await skillsPlugin?.cleanup().catch(() => {});
+      await stylesPlugin?.cleanup().catch(() => {});
+    };
+    if (this.shuttingDown) {
+      await cleanupPlugins();
       this.emit({ type: "session_ended" });
       return;
     }
     const plugins = [
       ...(command.plugins ?? []).map((path) => ({ type: "local" as const, path })),
       ...(skillsPlugin ? [{ type: "local" as const, path: skillsPlugin.path }] : []),
+      ...(stylesPlugin ? [{ type: "local" as const, path: stylesPlugin.path }] : []),
     ];
 
     // The task list and next-step tools: an in-process server, approved in canUseTool so no question appears.
@@ -604,13 +670,14 @@ export class SidecarSession {
         },
       });
     } catch (err) {
-      await skillsPlugin?.cleanup().catch(() => {});
+      await cleanupPlugins();
       throw err;
     }
     this.activeQuery = query;
     if (this.titleText !== null) void this.askTitle();
     void this.emitSupportedCommands();
     void this.emitSupportedModels();
+    void this.emitOutputStyles(query.initializationResult?.bind(query));
 
     try {
       for await (const message of query) {
@@ -625,7 +692,7 @@ export class SidecarSession {
       }
     } finally {
       // A failing cleanup must not replace the session's real outcome.
-      await skillsPlugin?.cleanup().catch(() => {});
+      await cleanupPlugins();
     }
   }
 

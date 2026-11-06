@@ -24,6 +24,17 @@ pub enum Phase {
 }
 
 /// Everything the UI needs to draw one open session.
+/// Where a new output style the person asked for stands.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum StyleDraft {
+    #[default]
+    Idle,
+    Drafting,
+    /// Saved and chosen for the session; the SDK name.
+    Created(String),
+    Failed(String),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiveSessionView {
     pub id: LiveSessionId,
@@ -88,6 +99,10 @@ pub struct LiveSessionView {
     /// The output style the person chose for this session in its title menu; `None` until then
     /// (the session then runs on the Settings default).
     pub output_style: Option<Option<forge_domain::OutputStyle>>,
+    /// The output styles the SDK lists for this session (`default` first); empty until it reports them.
+    pub available_output_styles: Vec<String>,
+    /// The title menu's `새 스타일...` while Claude drafts it, and how it ended.
+    pub style_draft: StyleDraft,
     /// The `/rewind` the person is looking at: a preview of what would change, then the result.
     pub rewind: Option<RewindState>,
 }
@@ -178,6 +193,10 @@ pub enum LiveCommand {
     SetEffort(Option<EffortLevel>),
     /// The session's output style from its next answer on (`None`: the default).
     SetOutputStyle(Option<forge_domain::OutputStyle>),
+    /// `새 스타일...`: what the person wants and the name they gave, if any.
+    CreateOutputStyle { description: String, name: Option<String> },
+    /// The dialog closed: forget how the last draft ended.
+    ClearStyleDraft,
     Close,
 }
 
@@ -341,6 +360,15 @@ impl LiveSessionHandle {
         let _ = self.commands.send(LiveCommand::SetOutputStyle(style));
     }
 
+    /// `새 스타일...`: Claude drafts a style from `description`, it is saved and the session switches to it.
+    pub fn create_output_style(&self, description: String, name: Option<String>) {
+        let _ = self.commands.send(LiveCommand::CreateOutputStyle { description, name });
+    }
+
+    pub fn clear_style_draft(&self) {
+        let _ = self.commands.send(LiveCommand::ClearStyleDraft);
+    }
+
     pub fn close(&self) {
         let _ = self.commands.send(LiveCommand::Close);
     }
@@ -417,6 +445,8 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         app_requests: Vec::new(),
         classified: None,
         output_style: None,
+        available_output_styles: Vec::new(),
+        style_draft: StyleDraft::Idle,
         rewind: None,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
