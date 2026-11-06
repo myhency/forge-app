@@ -53,6 +53,23 @@ const CONSOLE_SCRIPT: &str = r#"(function () {
   window.addEventListener('unhandledrejection', function (e) { keep('exception', ['Unhandled rejection: ' + (e.reason && (e.reason.stack || e.reason.message) || String(e.reason))]); });
 })();"#;
 
+// Everything a COM stream holds, from its start.
+#[cfg(windows)]
+fn stream_bytes(stream: &windows::Win32::System::Com::IStream) -> Result<Vec<u8>, String> {
+    use windows::Win32::System::Com::{STATFLAG_NONAME, STATSTG, STREAM_SEEK_SET};
+    // SAFETY: plain COM calls on a stream this function holds; the buffer is as long as the read asks.
+    unsafe {
+        let mut stat = STATSTG::default();
+        stream.Stat(&mut stat, STATFLAG_NONAME).map_err(|error| error.to_string())?;
+        stream.Seek(0, STREAM_SEEK_SET, None).map_err(|error| error.to_string())?;
+        let mut bytes = vec![0u8; stat.cbSize as usize];
+        let mut read = 0u32;
+        stream.Read(bytes.as_mut_ptr().cast(), bytes.len() as u32, Some(&mut read)).ok().map_err(|error| error.to_string())?;
+        bytes.truncate(read as usize);
+        Ok(bytes)
+    }
+}
+
 // An AppKit image as PNG bytes.
 #[cfg(target_os = "macos")]
 fn png_of(image: &objc2_app_kit::NSImage) -> Option<Vec<u8>> {
@@ -290,9 +307,43 @@ impl WebViewPort for WryWebViews {
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
+    // WebView2's CapturePreview writes a PNG of the visible page into a memory stream.
+    #[cfg(windows)]
+    fn snapshot(&self, tab: WebViewTabId, reply: tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>) {
+        use webview2_com::CapturePreviewCompletedHandler;
+        use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG;
+        use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
+        use wry::WebViewExtWindows;
+
+        let reply = Arc::new(Mutex::new(Some(reply)));
+        let answer = reply.clone();
+        let started: Result<(), String> = VIEWS.with(|views| {
+            let views = views.borrow();
+            let view = views.get(&tab.0).ok_or_else(|| "This tab has no page on screen. Open the session and its Preview tab.".to_string())?;
+            let page = view.webview();
+            // SAFETY: a null global handle asks for a new one, freed with the stream.
+            let stream = unsafe { CreateStreamOnHGlobal(windows::Win32::Foundation::HGLOBAL::default(), true) }.map_err(|error| error.to_string())?;
+            let read_from = stream.clone();
+            let handler = CapturePreviewCompletedHandler::create(Box::new(move |result| {
+                let png = result.map_err(|error| error.to_string()).and_then(|()| stream_bytes(&read_from));
+                if let Some(reply) = answer.lock().ok().and_then(|mut reply| reply.take()) {
+                    let _ = reply.send(png);
+                }
+                Ok(())
+            }));
+            // SAFETY: called on the window thread with a live web view; the stream and handler outlive the call.
+            unsafe { page.CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, &stream, &handler) }.map_err(|error| error.to_string())
+        });
+        if let Err(message) = started {
+            if let Some(reply) = reply.lock().ok().and_then(|mut reply| reply.take()) {
+                let _ = reply.send(Err(message));
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", windows)))]
     fn snapshot(&self, _tab: WebViewTabId, reply: tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>) {
-        let _ = reply.send(Err("Screenshots of the Browser pane are only available on macOS.".to_string()));
+        let _ = reply.send(Err("Screenshots of the Browser pane are not available on this system.".to_string()));
     }
 
     fn back(&self, tab: WebViewTabId) {
