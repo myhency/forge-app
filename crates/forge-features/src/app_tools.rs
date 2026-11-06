@@ -57,12 +57,12 @@ fn view_name(view: TranscriptView) -> &'static str {
 
 impl Workspace {
     /// Answers every app tool call the open sessions are waiting on. Called by the session watcher.
-    pub fn serve_app_requests(&self, id: LiveSessionId, config: &AppConfig) {
+    pub fn serve_app_requests(&self, id: LiveSessionId, config: &AppConfig, settings: crate::Settings) {
         let Some(view) = self.live_view(id) else { return };
         let requests: Vec<AppRequest> = view.peek().app_requests.clone();
         for request in requests {
             if first_time(&request.id) {
-                self.serve(id, request, config);
+                self.serve(id, request, config, settings);
             }
         }
     }
@@ -75,7 +75,7 @@ impl Workspace {
         }
     }
 
-    fn serve(&self, id: LiveSessionId, request: AppRequest, config: &AppConfig) {
+    fn serve(&self, id: LiveSessionId, request: AppRequest, config: &AppConfig, settings: crate::Settings) {
         let input = &request.input;
         let text = |key: &str| input.get(key).and_then(Value::as_str).map(str::trim).filter(|text| !text.is_empty());
         let flag = |key: &str| input.get(key).and_then(Value::as_bool).unwrap_or(false);
@@ -88,6 +88,48 @@ impl Workspace {
             "set_pinned" => self.set_pinned_by_tool(id, text("session_id").unwrap_or("self"), input.get("pinned").and_then(Value::as_bool)),
             "set_transcript_view" => self.set_view_by_tool(id, text("session_id").unwrap_or("self"), text("view").unwrap_or_default()),
             "get_settings" => Ok(settings_json(config)),
+            "list_sections" => Ok(self.sections_json()),
+            "create_section" => self.create_section_by_tool(text("name").unwrap_or_default()),
+            "rename_section" => {
+                let section = text("section_id").unwrap_or_default().to_string();
+                let name = text("name").unwrap_or_default().to_string();
+                if !self.prefs().sections.iter().any(|known| known.id == section) {
+                    Err("Only a section you or the user made can be renamed.".to_string())
+                } else if name.is_empty() {
+                    Err("Give the new name.".to_string())
+                } else {
+                    self.rename_section(&section, name.clone());
+                    Ok(format!("The section is now called {name}."))
+                }
+            }
+            "delete_section" => {
+                let section = text("section_id").unwrap_or_default().to_string();
+                if !self.prefs().sections.iter().any(|known| known.id == section) {
+                    Err("Only a section you or the user made can be deleted.".to_string())
+                } else {
+                    self.delete_section(&section);
+                    Ok("Deleted the section; its sessions are back in their usual groups.".to_string())
+                }
+            }
+            "move_sessions" => self.move_sessions_by_tool(id, input),
+            "set_unread" => {
+                let wanted = text("session_id").unwrap_or("self");
+                match (self.find_row(id, wanted), input.get("unread").and_then(Value::as_bool)) {
+                    (Some(row), Some(unread)) => match row.session_id.clone() {
+                        Some(session) => {
+                            let now = self.is_unread(&session);
+                            if now != unread {
+                                self.toggle_unread(session);
+                            }
+                            Ok(format!("{} is {}.", row.title, if unread { "unread" } else { "read" }))
+                        }
+                        None => Err("That session has no transcript yet.".to_string()),
+                    },
+                    (None, _) => Err(format!("No session {wanted}.")),
+                    (_, None) => Err("Say unread: true or false.".to_string()),
+                }
+            }
+            "set_setting" => set_setting(settings, config, text("key").unwrap_or_default(), input.get("value")),
             "list_events" => return self.list_events(id, request.clone(), text("session_id").unwrap_or_default().to_string(), input.get("limit").and_then(Value::as_u64).map(|n| n.clamp(1, 200) as usize).unwrap_or(40)),
             "get_usage" => self.usage_json(id, text("session_id").unwrap_or("self")),
             "set_session_title" => self.rename_by_tool(id, text("session_id").unwrap_or("self"), text("title").unwrap_or_default()),
@@ -493,6 +535,107 @@ fn render_events(messages: &[forge_domain::Message], limit: usize) -> String {
     } else {
         out
     }
+}
+
+impl Workspace {
+    fn sections_json(&self) -> String {
+        let prefs = self.prefs();
+        let mut out = vec![json!({ "id": "pinned", "kind": "builtin", "name": "", "order": 0, "session_count": prefs.pinned.len() })];
+        for (index, section) in prefs.sections.iter().enumerate() {
+            out.push(json!({ "id": section.id, "kind": "manual", "name": section.name, "order": index + 1, "session_count": section.sessions.len() }));
+        }
+        out.push(json!({ "id": "sessions", "kind": "builtin", "name": "", "order": prefs.sections.len() + 1 }));
+        Value::Array(out).to_string()
+    }
+
+    fn create_section_by_tool(&self, name: &str) -> Result<String, String> {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 200 {
+            return Err("A section's name is 1 to 200 characters.".to_string());
+        }
+        let id = format!("section-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis()).unwrap_or(0));
+        let name = name.to_string();
+        let made = id.clone();
+        self.update_prefs(|prefs| prefs.sections.push(forge_domain::SidebarSection { id: made, name, sessions: Vec::new() }));
+        Ok(json!({ "section_id": id }).to_string())
+    }
+
+    fn move_sessions_by_tool(&self, id: LiveSessionId, input: &Value) -> Result<String, String> {
+        let target = input.get("section_id").and_then(Value::as_str).unwrap_or("sessions").to_string();
+        let target = (target != "sessions").then_some(target);
+        if let Some(section) = &target {
+            if !self.prefs().sections.iter().any(|known| known.id == *section) {
+                return Err(format!("No section {section}; list_sections names them."));
+            }
+        }
+        let wanted: Vec<String> = input.get("session_ids").and_then(Value::as_array).map(|ids| ids.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+        if wanted.is_empty() || wanted.len() > 100 {
+            return Err("Name 1 to 100 sessions.".to_string());
+        }
+        let mut moved = Vec::new();
+        for each in wanted {
+            let row = self.find_row(id, &each).ok_or_else(|| format!("No session {each}."))?;
+            let session = row.session_id.clone().ok_or_else(|| format!("{} has no transcript yet.", row.title))?;
+            self.move_to_section(session, target.clone());
+            moved.push(row.title);
+        }
+        Ok(format!("Moved {}.", moved.join(", ")))
+    }
+}
+
+/// Changes one setting for `set_setting`; refuses a value that is not allowed or already set.
+fn set_setting(settings: crate::Settings, config: &AppConfig, key: &str, value: Option<&Value>) -> Result<String, String> {
+    let value = value.ok_or_else(|| "Give the new value.".to_string())?;
+    let switch = || value.as_bool().ok_or_else(|| format!("{key} takes true or false."));
+    let same = || Err(format!("{key} already has that value."));
+    match key {
+        "prompt_suggestions" => {
+            let on = switch()?;
+            if on == config.prompt_suggestions {
+                return same();
+            }
+            settings.set_prompt_suggestions(on);
+        }
+        "auto_archive_inactive_days" => {
+            let days = value.as_u64().ok_or_else(|| "auto_archive_inactive_days takes a whole number of days (0: never).".to_string())?;
+            let days = (days > 0).then_some(days as u32);
+            if days == config.auto_archive_days {
+                return same();
+            }
+            settings.set_auto_archive_days(days);
+        }
+        "task_complete_notifications" => {
+            let on = switch()?;
+            if on == config.notifications.reply_done {
+                return same();
+            }
+            settings.set_notification(crate::NotificationKind::ReplyDone, on);
+        }
+        "permission_request_notifications" => {
+            let on = switch()?;
+            if on == config.notifications.permission_request {
+                return same();
+            }
+            settings.set_notification(crate::NotificationKind::PermissionRequest, on);
+        }
+        "draw_attention_on_notifications" => {
+            let on = switch()?;
+            if on == config.attention_bounce {
+                return same();
+            }
+            settings.set_attention_bounce(on);
+        }
+        "output_style" => {
+            let name = value.as_str().ok_or_else(|| "output_style takes a style name, or \"default\".".to_string())?;
+            let style = if name.eq_ignore_ascii_case("default") { None } else { Some(forge_domain::OutputStyle::from_name(name).ok_or_else(|| format!("No output style called {name}."))?) };
+            if style == config.output_style {
+                return same();
+            }
+            settings.set_output_style(style);
+        }
+        other => return Err(format!("{other} cannot be changed here; the user changes it in Settings.")),
+    }
+    Ok(format!("{key} is changed; it applies from the next session where it is a session setting."))
 }
 
 /// The settings `get_settings` reports, each with its value and one line on what it does.

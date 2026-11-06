@@ -82,6 +82,15 @@ pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
         "mcp__ccd_session_mgmt__archive_session" => Some((tr!("Allow Claude to archive a session?").to_string(), text("reason"))),
         "mcp__ccd_session_mgmt__unarchive_session" => Some((tr!("Allow Claude to restore an archived session?").to_string(), None)),
         "mcp__ccd_session_mgmt__stop_session" => Some((tr!("Allow Claude to stop another session's turn?").to_string(), None)),
+        "mcp__ccd_sidebar__create_section" => Some((tr!("Allow Claude to make a sidebar section?").to_string(), text("name"))),
+        "mcp__ccd_sidebar__rename_section" => Some((tr!("Allow Claude to rename a sidebar section?").to_string(), text("name"))),
+        "mcp__ccd_sidebar__delete_section" => Some((tr!("Allow Claude to delete a sidebar section?").to_string(), None)),
+        "mcp__ccd_sidebar__move_sessions" => Some((tr!("Allow Claude to move sessions to another section?").to_string(), None)),
+        "mcp__ccd_sidebar__set_unread" => Some((tr!("Allow Claude to mark a session read or unread?").to_string(), None)),
+        "mcp__ccd_settings__set_setting" => Some((
+            tr!("Allow Claude to change a setting?").to_string(),
+            text("key").map(|key| format!("{key}: {}", input.get("value").map(|value| value.to_string()).unwrap_or_default())),
+        )),
         _ => None,
     };
     if let Some((title, description)) = app_ask {

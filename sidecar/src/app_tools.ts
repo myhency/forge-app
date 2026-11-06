@@ -27,6 +27,7 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${SESSION_MGMT_SERVER}__get_usage`,
   `mcp__${VIEW_SERVER}__set_transcript_view`,
   `mcp__${SETTINGS_SERVER}__get_settings`,
+  `mcp__${SIDEBAR_SERVER}__list_sections`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -162,6 +163,48 @@ export function sessionMgmtTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
 export function sidebarTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
   return [
     tool(
+      "list_sections",
+      'List the sidebar\'s sections in order: the built-in ones (ids "pinned" and "sessions") plus one per section the user made (kind "manual").\n\nReturns a JSON array of {id, kind, name, order, session_count}. Built-ins have an empty name (the app labels them).',
+      {},
+      forward(ask, "list_sections"),
+    ),
+    tool(
+      "create_section",
+      "Create a sidebar section the user can file sessions under and return its id. It starts empty; file sessions into it with move_sessions (section_id). Prefer an existing section (list_sections) over a near-duplicate, and use the name the user asked for.",
+      { name: z.string().describe("Display name (1–200 characters).") },
+      forward(ask, "create_section"),
+    ),
+    tool(
+      "rename_section",
+      'Rename a section you or the user created (kind "manual" in list_sections); the built-in sections cannot be renamed.',
+      { section_id: z.string().describe("Section id from list_sections."), name: z.string().describe("New display name (1–200 characters).") },
+      forward(ask, "rename_section"),
+    ),
+    tool(
+      "delete_section",
+      'Delete a section you or the user created (kind "manual" in list_sections); its sessions move back to their usual groups and nothing else is deleted. Built-ins cannot be deleted. Only call it when the user asked to remove that section.',
+      { section_id: z.string().describe("Section id from list_sections.") },
+      forward(ask, "delete_section"),
+    ),
+    tool(
+      "move_sessions",
+      'File one or more sessions under a section the user or you created, or pass section_id "sessions" to move them back to their usual groups. Accepts up to 100 session ids from list_sessions ("self" for this session). Moving any session but this one asks the user first in default mode.',
+      {
+        session_ids: z.array(z.string()).describe('Session ids from list_sessions ("self" for this session).'),
+        section_id: z.string().describe('Destination section id from list_sections (a "manual" section), or "sessions" for their usual groups.'),
+      },
+      forward(ask, "move_sessions"),
+    ),
+    tool(
+      "set_unread",
+      'Mark a session unread (blue dot) or read in the sidebar ("self" for this session).',
+      {
+        session_id: z.string().describe('A sessionId from list_sessions, or the literal string "self" for this session. Changing another session asks the user first in default mode.'),
+        unread: z.boolean(),
+      },
+      forward(ask, "set_unread"),
+    ),
+    tool(
       "set_pinned",
       'Pin or unpin a session in the sidebar ("self" for this session). A pinned session is shown under Pinned above every group.',
       {
@@ -189,6 +232,15 @@ export function viewTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
 
 export function settingsTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
   return [
+    tool(
+      "set_setting",
+      'Change ONE of the user\'s preferences in this app, by its get_settings key: for example key "prompt_suggestions", value false after the user says "stop suggesting prompts". Only these keys can be changed here; security and trust settings (permission modes, trusted folders, other apps) cannot — tell the user where in Settings instead. The user approves each change, so call it only for a change the user asked for. It is refused, with the reason, when the value isn\'t allowed or it already has that value.',
+      {
+        key: z.enum(["prompt_suggestions", "auto_archive_inactive_days", "task_complete_notifications", "permission_request_notifications", "draw_attention_on_notifications", "output_style"]).describe("The setting to change, as get_settings names it."),
+        value: z.union([z.boolean(), z.number(), z.string()]).describe('The new value: true or false for switches, a whole number of days for auto_archive_inactive_days (0: never), or an output style name ("default" for none).'),
+      },
+      forward(ask, "set_setting"),
+    ),
     tool(
       "get_settings",
       "Read the user's Claude Code preferences in this app: the default transcript view, auto-archiving, worktree location, prompt suggestions, the default output style, dynamic workflows, the task list, what to do with unrelated requests, and notifications. Read-only here; the user changes them in Settings. No approval is needed.",

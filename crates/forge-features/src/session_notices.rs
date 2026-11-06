@@ -126,7 +126,7 @@ pub fn use_session_notices(workspace: Workspace, settings: Settings) {
                     }
                     // Claude's calls to the app's own tools (list_sessions, set_pinned, ...).
                     if !view.peek().app_requests.is_empty() {
-                        workspace.serve_app_requests(id, &settings.saved_config());
+                        workspace.serve_app_requests(id, &settings.saved_config(), settings);
                     }
                     if workspace.is_routine_session(id) {
                         continue;

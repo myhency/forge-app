@@ -1727,3 +1727,105 @@ Export a CCD session's transcript, like the session menu's Export: writes a zip 
 ```json
 {"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"session_id": {"description": "The sessionId of the session to export (from list_sessions / search_session_transcripts), or the literal string \"self\" for this session.", "type": "string"}}, "required": ["session_id"], "type": "object"}
 ```
+
+### Sidebar and setting tool schemas (read 2026-11-06, same way)
+
+#### mcp__ccd_sidebar__list_sections
+
+##### Description
+
+```
+List the Code-tab sidebar's sections in order: the built-in sections (ids "pinned", "routines" for scheduled tasks, and "sessions") plus one section per custom group (kind "manual"; its id is the group's id, so list_groups ids work here too).
+
+Returns a JSON array of {id, kind, name, order, session_count, group_by, sort_by, ascending, collapsed, shown}. Built-ins have an empty name (the app labels them). shown is false for a section the user has switched off: the sidebar does not draw it, so don't point the user at it. Fails while no app window is open.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {}, "type": "object"}
+```
+
+#### mcp__ccd_sidebar__create_section
+
+##### Description
+
+```
+Create a sidebar section the user can file sessions under (the same record as create_group: a custom group, shown as its own headed section where the sidebar lays sessions out in sections) and return its id. It starts empty; file sessions into it with move_sessions (section_id). Prefer an existing section (list_sections) over a near-duplicate, and use the name the user asked for.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"name": {"description": "Display name (1–200 characters).", "type": "string"}}, "required": ["name"], "type": "object"}
+```
+
+#### mcp__ccd_sidebar__rename_section
+
+##### Description
+
+```
+Rename a section you or the user created (kind "manual" in list_sections); the built-in sections cannot be renamed. Asks the user exactly as rename_group does.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"name": {"description": "New display name (1–200 characters).", "type": "string"}, "section_id": {"description": "Section id from list_sections.", "type": "string"}}, "required": ["section_id", "name"], "type": "object"}
+```
+
+#### mcp__ccd_sidebar__delete_section
+
+##### Description
+
+```
+Delete a section you or the user created (kind "manual" in list_sections); its sessions move back to Sessions (Ungrouped) and nothing else is deleted. Built-ins cannot be deleted. Gated exactly as delete_group: only call it when the user asked to remove that section.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"section_id": {"description": "Section id from list_sections.", "type": "string"}}, "required": ["section_id"], "type": "object"}
+```
+
+#### mcp__ccd_sidebar__move_sessions
+
+##### Description
+
+```
+File one or more sessions under a custom sidebar group, or pass group_id null to move them back to Ungrouped. Accepts up to 100 session ids from list_sessions ("self" for this session). Moving any session but this one asks the user first in default mode. Moving a pinned session into a group unpins it so the move is visible; moving to Ungrouped keeps a pin. If the sidebar is not grouped in a way that shows custom groups, it switches to one that does. section_id may be passed instead of group_id: a section from list_sections that you or the user created (its id is its group's), or "sessions" for Ungrouped.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"group_id": {"description": "Destination group id from list_groups, or null for Ungrouped. Optional when section_id is given."}, "section_id": {"description": "Destination section id from list_sections (a \"manual\" section), or \"sessions\" for Ungrouped. Use instead of group_id.", "type": "string"}, "session_ids": {"description": "Session ids from list_sessions (\"self\" for this session).", "items": {"type": "string"}, "type": "array"}}, "required": ["session_ids"], "type": "object"}
+```
+
+#### mcp__ccd_sidebar__set_unread
+
+##### Description
+
+```
+Mark a session unread (blue dot) or read in the sidebar ("self" for this session). Marking read also clears a dot the user set by hand.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"session_id": {"description": "A sessionId from list_sessions, or the literal string \"self\" for this session. Changing another session asks the user first in default mode.", "type": "string"}, "unread": {"type": "boolean"}}, "required": ["session_id", "unread"], "type": "object"}
+```
+
+#### mcp__ccd_settings__set_setting
+
+##### Description
+
+```
+Change ONE of the user's Code tab preferences, by its get_settings key: for example key "auto_archive_on_pr_close", value true after the user says "archive my sessions once their PRs merge". Only the keys get_settings lists as settable. Security and trust settings (permission modes, sandboxing, browser tools, allowed sites, trusted hosts, computer use) can't be changed here; tell the user where in Settings instead. The user approves each change on a card showing the setting with its current and new value (in auto mode the app may decide from the conversation; in bypass permissions mode it does not ask), so call it only for a change the user asked for. It is refused, with the reason, when the value isn't allowed, the setting is locked by the organization or unavailable here, or it already has that value.
+```
+
+##### Parameters
+
+```json
+{"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"_consent": {"description": "Set by the app. Never set this yourself.", "type": "string"}, "key": {"description": "The setting to change, as get_settings names it.", "enum": ["auto_archive_on_pr_close", "auto_archive_inactive_days", "branch_prefix", "permission_request_notifications", "question_notifications", "task_complete_notifications", "connect_new_sessions_to_remote_control", "output_style", "draw_attention_on_notifications", "notification_sound", "keep_awake_while_working", "keep_awake_on_battery", "prompt_suggestions"], "type": "string"}, "value": {"description": "The new value: true or false for switches, a whole number of days for auto_archive_inactive_days, or a string (a notification level, a branch prefix, an output style name). get_settings lists what each key accepts."}}, "required": ["key", "value"], "type": "object"}
+```

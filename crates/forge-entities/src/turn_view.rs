@@ -231,6 +231,13 @@ fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
         "mcp__ccd_session_mgmt__archive_session" => (tr!("Archived a session").to_string(), text("reason")),
         "mcp__ccd_session_mgmt__unarchive_session" => (tr!("Restored a session").to_string(), String::new()),
         "mcp__ccd_session_mgmt__stop_session" => (tr!("Stopped a session").to_string(), String::new()),
+        "mcp__ccd_sidebar__list_sections" => (tr!("Listed the sections").to_string(), String::new()),
+        "mcp__ccd_sidebar__create_section" => (tr!("Made a section").to_string(), text("name")),
+        "mcp__ccd_sidebar__rename_section" => (tr!("Renamed a section").to_string(), text("name")),
+        "mcp__ccd_sidebar__delete_section" => (tr!("Deleted a section").to_string(), String::new()),
+        "mcp__ccd_sidebar__move_sessions" => (tr!("Moved sessions").to_string(), String::new()),
+        "mcp__ccd_sidebar__set_unread" => (tr!("Marked a session").to_string(), String::new()),
+        "mcp__ccd_settings__set_setting" => (tr!("Changed a setting").to_string(), text("key")),
         _ => return None,
     })
 }
