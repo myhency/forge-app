@@ -4124,6 +4124,16 @@ impl Workspace {
             Shortcut::CycleTranscript => self.cycle_transcript_view(),
             Shortcut::ToggleFileList => self.toggle_file_list(),
             Shortcut::ExpandPanel => self.toggle_panel_expanded(),
+            Shortcut::Dictate => {
+                if !self.dictation_available() {
+                    return false;
+                }
+                let this = *self;
+                dioxus::core::spawn(async move {
+                    let _ = dioxus::document::eval("document.querySelector('.pane.focused .composer-field textarea, .composer-field textarea')?.focus()").await;
+                    this.start_dictation();
+                });
+            }
             // The composer handles ⌘U itself, and the Preview panel its own keys.
             Shortcut::AddFiles | Shortcut::Preview(_) => return false,
         }
