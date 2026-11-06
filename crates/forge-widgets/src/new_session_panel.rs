@@ -5,6 +5,7 @@ use crate::environment_chip::EnvironmentChip;
 use crate::new_session_controls::{FolderChip, WorktreeCheckbox, NewModePicker, NewModelPicker};
 use crate::plus_menu::PlusMenu;
 use crate::auto_mode_card::AutoModeCard;
+use crate::offer_chips::OfferChips;
 use crate::environment_card::EnvironmentCard;
 use forge_shared::tr;
 
@@ -19,7 +20,7 @@ pub fn NewSessionPanel() -> Element {
                 h1 { class: "greeting", {tr!("{name}, what's next?", name = name)} }
             }
             div { class: "env-shortcut-slot",
-                div { class: "env-shortcut-stack", EnvironmentCard {} AutoModeCard {} }
+                div { class: "env-shortcut-stack", EnvironmentCard {} AutoModeCard {} OfferChips {} }
             }
             NewSessionComposer {
                 leading: rsx! { PlusMenu { project: workspace.chosen_new_folder(), add_folder_enabled: true } },

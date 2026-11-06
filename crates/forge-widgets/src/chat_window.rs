@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use forge_application::{LiveSessionId, Phase};
-use forge_entities::{live_state, CardMark, TranscriptView, Turns};
+use forge_entities::{live_state, CardMark, Turns};
 use forge_features::{use_settings, SettingsSection, use_workspace, Panel, SendMessageBox};
 
 use crate::composer_controls::{ModePicker, ModelPicker};
@@ -11,7 +11,7 @@ use crate::plus_menu::PlusMenu;
 use crate::question_panel::QuestionPanel;
 use crate::session_title_menu::SessionTitleMenu;
 use crate::session_tools::SessionTools;
-use crate::sidebar::project_label_in;
+
 use crate::fork_line::ForkLine;
 use crate::local_card::LocalCards;
 use crate::start_line::StartLine;
@@ -42,6 +42,73 @@ fn ScrollToEnd() -> Element {
     }
 }
 
+/// The floating table of contents of a session with chapters (the desktop app's, observed 2026-11-06):
+/// short lines at the top left of the chat, one per chapter, the current one longer; the pointer on
+/// them opens a list (`세션 시작`, then each chapter, the current one in bold), and a click scrolls there.
+#[component]
+fn ChapterToc(chapters: Vec<forge_entities::Chapter>) -> Element {
+    let pane = forge_features::use_pane_index();
+    let mut open = use_signal(|| false);
+    // -1 is the session's start, before the first chapter.
+    let mut current = use_signal(|| -1_i64);
+    if chapters.is_empty() {
+        return rsx! {};
+    }
+    let find_current = move || async move {
+        let mut probe = document::eval(&format!(
+            "const list = document.querySelector('[data-pane=\"{pane}\"] .messages'); let cur = -1; if (list) {{ const top = list.getBoundingClientRect().top + 48; for (const h of list.querySelectorAll('.chapter-heading')) {{ if (h.getBoundingClientRect().top <= top) cur = Number(h.dataset.chapter); }} }} dioxus.send(cur);"
+        ));
+        if let Ok(value) = probe.recv::<i64>().await {
+            current.set(value);
+        }
+    };
+    let go = move |index: i64| {
+        let script = if index < 0 {
+            format!("document.querySelector('[data-pane=\"{pane}\"] .messages')?.scrollTo({{ top: 0, behavior: 'smooth' }});")
+        } else {
+            format!("document.querySelector('[data-pane=\"{pane}\"] .chapter-heading[data-chapter=\"{index}\"]')?.scrollIntoView({{ behavior: 'smooth', block: 'start' }});")
+        };
+        document::eval(&script);
+        let mut current = current;
+        current.set(index);
+    };
+    let entries: Vec<(i64, String, Option<String>)> = std::iter::once((-1, tr!("Session start").to_string(), None))
+        .chain(chapters.iter().map(|chapter| (chapter.index as i64, chapter.title.clone(), chapter.summary.clone())))
+        .collect();
+    let marks = entries.len();
+    rsx! {
+        div {
+            class: "chapter-toc",
+            onmouseenter: move |_| {
+                open.set(true);
+                spawn(find_current());
+            },
+            onmouseleave: move |_| open.set(false),
+            div { class: "chapter-toc-marks", "aria-label": tr!("Chapters"),
+                for index in 0..marks {
+                    span { key: "{index}", class: if index as i64 - 1 == current() { "chapter-toc-mark current" } else { "chapter-toc-mark" } }
+                }
+            }
+            if open() {
+                div { class: "chapter-toc-list", role: "menu",
+                    for (index, title, summary) in entries.clone() {
+                        button {
+                            key: "{index}",
+                            class: if index == current() { "chapter-toc-item current" } else { "chapter-toc-item" },
+                            r#type: "button",
+                            role: "menuitem",
+                            title: summary.unwrap_or_default(),
+                            onclick: move |_| go(index),
+                            span { class: "chapter-toc-dash" }
+                            span { "{title}" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// One open session: its messages, any permission request waiting for an answer, and the message box.
 #[component]
 pub fn ChatWindow(id: LiveSessionId) -> Element {
@@ -53,14 +120,38 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
     };
     let view = view_signal.read();
     let mode = workspace.transcript_view(id, settings.default_transcript_view());
-    let mode_index = TranscriptView::ALL.iter().position(|option| *option == mode).unwrap_or(0);
     let archived = view
         .claude_session_id
         .as_ref()
         .is_some_and(|session| workspace.is_archived(&view.project_path, session));
     let dock_expanded = workspace.dock(id).expanded.is_some() && !archived;
+    // What a proposed session's `옵션` offers, starting from this session's own choices.
+    let offer_choices = {
+        let mut models: Vec<(String, String)> = vec![(String::new(), tr!("Default").to_string())];
+        models.extend(view.available_models.iter().filter(|model| model.value != "default").map(|model| (model.value.clone(), model.display_name.clone())));
+        if let Some(own) = view.model.clone().filter(|own| !models.iter().any(|(value, _)| value == own)) {
+            models.push((own.clone(), own));
+        }
+        let mut efforts: Vec<(String, String)> = vec![(String::new(), tr!("Default").to_string())];
+        efforts.extend(forge_domain::EffortLevel::ALL.into_iter().map(|level| (forge_features::effort_value(level).to_string(), forge_shared::i18n::text(level.label()).to_string())));
+        forge_entities::OfferChoices {
+            folder: view.project_path.display().to_string(),
+            environments: workspace.environments().into_iter().filter_map(|env| env.folders.first().map(|folder| (env.id.clone(), env.name.clone(), folder.display().to_string()))).collect(),
+            models,
+            efforts,
+            modes: forge_features::mode_options(settings.allow_bypass_mode()),
+            current: forge_entities::OfferStart {
+                model: view.model.clone().unwrap_or_default(),
+                effort: view.effort.map(|level| forge_features::effort_value(level).to_string()).unwrap_or_default(),
+                mode: forge_features::mode_value(view.session.permission_mode).to_string(),
+                environment: String::new(),
+            },
+        }
+    };
+    // Chapters the person pinned are drawn as Claude's own.
+    let chapter_pins = view.claude_session_id.as_ref().map(|session| workspace.chapter_pins(session)).unwrap_or_default();
+    let shown_messages = forge_entities::with_pinned_chapters(&view.session.messages, &chapter_pins);
     let heading = view.session.title.as_deref().unwrap_or(tr!("Session")).to_string();
-    let folder = project_label_in(workspace.scratch_root().as_deref(), &workspace.origin_of(&view.project_path));
     let title_menu = workspace.active_title_menu();
     let tag = workspace.worktree_tag(&view.project_path).map(|tag| match tag.branch {
         Some(branch) => format!("{} · {}", tr!("Worktree"), branch),
@@ -73,48 +164,40 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                 div { class: "pane-titlebox",
                     span { class: "pane-title", "{heading}" }
                     if let Some(actions) = title_menu {
-                        SessionTitleMenu { actions }
+                        SessionTitleMenu { id, actions, mode, style: view.output_style.clone().unwrap_or(settings.output_style()), styles: view.available_output_styles.clone(), draft: view.style_draft.clone() }
                     }
-                    span { class: "pane-tag", "{folder}" }
                     if let Some(tag) = tag {
                         span { class: "pane-tag", "{tag}" }
                     }
                 }
-                // One compact dropdown instead of three buttons: the header keeps its width for the title.
-                select {
-                    class: "select view-select",
-                    "aria-label": tr!("Transcript view"),
-                    value: "{mode_index}",
-                    onchange: move |evt| {
-                        if let Some(option) = evt.value().parse::<usize>().ok().and_then(|i| TranscriptView::ALL.get(i).copied()) {
-                            workspace.set_transcript_view(id, option);
-                        }
-                    },
-                    for (index, option) in TranscriptView::ALL.into_iter().enumerate() {
-                        option {
-                            key: "{option.label()}",
-                            value: "{index}",
-                            selected: option == mode,
-                            {forge_shared::i18n::text(option.label())}
-                        }
-                    }
-                }
+                forge_features::DragSpacer {}
                 SessionTools { id, terminal: !archived }
             }
             div { class: "messages",
                 StartLine { id }
                 ForkLine { id }
                 Turns {
-                    messages: view.session.messages.clone(),
+                    messages: shown_messages.clone(),
+                    pinned_chapters: chapter_pins.iter().map(|(anchor, _)| anchor.clone()).collect::<Vec<_>>(),
+                    on_pin_chapter: view.claude_session_id.clone().map(|session| EventHandler::new(move |(anchor, title): (String, String)| workspace.toggle_chapter_pin(session.clone(), anchor, title))),
                     view: mode,
-                    live: (view.phase == Phase::Running).then(|| live_state(view.turn_started, view.pending_permissions.front())),
+                    live: (view.phase == Phase::Running).then(|| live_state(view.turn_started, view.pending_permissions.front(), view.turn_output_tokens)),
                     on_open_file: move |path: String| workspace.open_file(id, path),
                     workflows: workflows(),
                     finished: view.session.finished_tasks.clone(),
                     on_open_tasks: move |_| workspace.change_dock(id, |dock| if !dock.is_open(Panel::Tasks) { dock.toggle(Panel::Tasks) }),
                     on_open_plan: move |_| workspace.change_dock(id, |dock| dock.open(Panel::Plan)),
+                    on_open_changes: EventHandler::new(move |_| workspace.change_dock(id, |dock| dock.open(Panel::Changes))),
+                    offer_marks: workspace.offer_marks(id),
+                    offer_choices: offer_choices.clone(),
+                    // No buttons on an archived or view-only session.
+                    on_offer: (!archived && view.can_send).then(|| {
+                        EventHandler::new(move |(offer, action): (forge_entities::SessionOffer, forge_entities::OfferAction)| workspace.act_on_offer(id, offer, action))
+                    }),
                     on_rewind: move |uuid: String| workspace.request_rewind(id, uuid),
                     on_fork: move |uuid: String| workspace.fork_from_message(id, uuid),
+                    // Only a session that is on disk can be copied.
+                    on_fork_here: view.claude_session_id.is_some().then(|| EventHandler::new(move |next: Option<String>| workspace.fork_after(id, next))),
                     // No buttons on an archived or view-only session: it cannot send.
                     on_send: (!archived && view.can_send).then(|| {
                         EventHandler::new(move |text: String| {
@@ -136,8 +219,16 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
                     },
                 }
                 LocalCards { id }
+                // A permission card sits in the conversation, under the turn that asks, as in the desktop
+                // app (round 37); a question keeps its place above the box.
+                if let Some(request) = view.pending_permissions.front().filter(|request| request.tool_name != forge_entities::QUESTION_TOOL) {
+                    div { class: "inline-permission",
+                        PermissionPanel { key: "{request.id}", id, request: request.clone() }
+                    }
+                }
             }
             ScrollToEnd {}
+            ChapterToc { chapters: forge_entities::chapters(&shown_messages) }
             if let Some(error) = view.last_error.as_ref() {
                 if error.contains(forge_domain::CONFIG_INCOMPLETE) {
                     div { class: "banner error",
@@ -171,8 +262,6 @@ pub fn ChatWindow(id: LiveSessionId) -> Element {
             if let Some(request) = view.pending_permissions.front() {
                 if request.tool_name == forge_entities::QUESTION_TOOL {
                     QuestionPanel { key: "{request.id}", id, request: request.clone() }
-                } else {
-                    PermissionPanel { key: "{request.id}", id, request: request.clone() }
                 }
             }
             if archived {

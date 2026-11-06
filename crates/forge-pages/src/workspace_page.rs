@@ -1,8 +1,8 @@
 use dioxus::prelude::*;
-use forge_domain::{keep_peek, pane_class, rail_floats, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO, SIDEBAR_RAIL_WIDTH};
+use forge_domain::{keep_peek, pane_class, rail_floats, sidebar_mode_for, workspace_class, SidebarMode, SIDEBAR_OVERLAY_UP_TO};
 use forge_features::{drag_ratio, Panel, PaneWidth, refocus_workspace, watch_focus, use_customize_provider, use_routines_provider, use_session_notices, use_settings, use_settings_provider, use_window_height, use_window_width, use_workspace, use_workspace_provider, Active, Dir, PaneIndex, Rect, Workspace};
 use forge_widgets::{ChatWindow, OutsideFileDialog, CustomizePage, RoutinesPage, SessionsPage, Lightbox, WebViewHost, FileLinkWatcher, CodeRunWatcher, NavButtons, NewSessionPanel, PaneClose, SearchPalette, SettingsOverlay, EnvironmentDialog, ShortcutsDialog, Sidebar, WorkspaceTrustDialog};
-use forge_shared::{tr, Icon, IconKind, IconSize};
+use forge_shared::{tr, Icon, IconKind};
 
 /// Makes the state the whole window shares (settings, customize, the workspace, routines, notices).
 /// Call it once, in the root component: the tasks these start run in the root scope, and a signal
@@ -17,6 +17,31 @@ pub fn use_workspace_providers() {
 
 /// The whole screen: the sidebar on the left and, on the right, either the new-session panel or
 /// the active session. The root also catches the session shortcuts.
+/// The sidebar toggle and back / forward at the top left while the sidebar is hidden or an overlay,
+/// in the row of the chat header, as the desktop app draws them (round 37).
+#[component]
+fn CollapsedTools(on_toggle: EventHandler<()>, #[props(default)] on_hover: Option<EventHandler<()>>, expanded: bool) -> Element {
+    rsx! {
+        div { class: "sidebar-collapsed-tools",
+            button {
+                class: "icon-button",
+                r#type: "button",
+                title: tr!("Show the sidebar"),
+                "aria-label": tr!("Show the sidebar"),
+                "aria-expanded": "{expanded}",
+                onmouseenter: move |_| {
+                    if let Some(on_hover) = on_hover {
+                        on_hover.call(());
+                    }
+                },
+                onclick: move |_| on_toggle.call(()),
+                Icon { kind: IconKind::Sidebar }
+            }
+            NavButtons {}
+        }
+    }
+}
+
 #[component]
 pub fn WorkspacePage() -> Element {
     let settings = use_settings();
@@ -62,7 +87,15 @@ pub fn WorkspacePage() -> Element {
 
     let prefs = workspace.prefs();
     let hidden = prefs.hidden;
-    let docked_sidebar = if hidden { SIDEBAR_RAIL_WIDTH } else { prefs.clamped_width() };
+    // The hidden sidebar shown for a moment: the desktop app floats it over the chat while the pointer
+    // is on the sidebar toggle or on the sidebar, and puts it away when the pointer leaves (round 37).
+    let mut hover_peek = use_signal(|| false);
+    use_effect(use_reactive!(|hidden| {
+        let _ = hidden;
+        hover_peek.set(false);
+    }));
+    // A hidden sidebar leaves no rail: its toggle and back / forward move into the top row (the desktop app).
+    let docked_sidebar = if hidden { 0 } else { prefs.clamped_width() };
     let window_height = use_window_height();
     let main_height = window_height();
     let sidebar_mode = sidebar_mode_for(window_width());
@@ -91,7 +124,13 @@ pub fn WorkspacePage() -> Element {
 
     rsx! {
         div {
-            class: workspace_class(sidebar_mode, dragging() || pane_dragging().is_some()),
+            class: {
+                let mut class = workspace_class(sidebar_mode, dragging() || pane_dragging().is_some());
+                if sidebar_mode == SidebarMode::Overlay || hidden {
+                    class.push_str(" sidebar-collapsed");
+                }
+                class
+            },
             tabindex: "0",
             // Key events only reach the root while something inside it has focus.
             onmounted: move |mounted| async move {
@@ -154,15 +193,15 @@ pub fn WorkspacePage() -> Element {
             },
             match sidebar_mode {
                 SidebarMode::Docked => rsx! {
-                    if hidden {
-                        div { class: "sidebar-rail",
-                            button {
-                                class: "icon-button",
-                                title: tr!("Show the sidebar"),
-                                onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = false),
-                                Icon { kind: IconKind::Chevron, size: IconSize::Small }
-                            }
-                            NavButtons {}
+                    if hidden && hover_peek() {
+                        div { class: "sidebar-peek", onmouseleave: move |_| hover_peek.set(false),
+                            Sidebar {}
+                        }
+                    } else if hidden {
+                        CollapsedTools {
+                            on_toggle: move |_| workspace.update_prefs(|prefs| prefs.hidden = false),
+                            on_hover: move |_| hover_peek.set(true),
+                            expanded: false,
                         }
                     } else {
                         Sidebar {}
@@ -176,15 +215,7 @@ pub fn WorkspacePage() -> Element {
                     }
                 },
                 SidebarMode::Overlay => rsx! {
-                    button {
-                        class: "icon-button sidebar-toggle",
-                        r#type: "button",
-                        title: tr!("Toggle the sidebar"),
-                        "aria-label": "Toggle the sidebar",
-                        "aria-expanded": "{peek()}",
-                        onclick: move |_| peek.set(!peek()),
-                        Icon { kind: IconKind::Menu }
-                    }
+                    CollapsedTools { on_toggle: move |_| peek.set(!peek()), expanded: peek() }
                     if peek() {
                         div { class: "sidebar-backdrop", onclick: move |_| peek.set(false) }
                         Sidebar {}
@@ -194,6 +225,7 @@ pub fn WorkspacePage() -> Element {
             {pane_row(workspace, main_area, main_height, pane_dragging)}
             SettingsOverlay {}
             SearchPalette {}
+            forge_widgets::LowDiskBanner {}
             ShortcutsDialog {}
             EnvironmentDialog {}
             WorkspaceTrustDialog {}

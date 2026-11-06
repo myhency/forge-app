@@ -3,8 +3,10 @@ use forge_shared::{tr, Icon, IconKind};
 use forge_application::LiveSessionId;
 use forge_features::{use_workspace, Dir, Panel};
 
-/// The icons at the right of the chat header: the terminal toggle (hidden when `terminal` is
-/// false, as for an archived session) and the `⋮` menu with the panel switches.
+/// The icons at the right of the chat header, as in the desktop app: details, terminal, changes,
+/// preview (globe), files (folder), then `⋯` with the side chat and background tasks. All but `⋯`
+/// are hidden when `terminal` is false (an archived session). In a very narrow pane the panel
+/// icons move into `⋯`.
 #[component]
 pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
     let workspace = use_workspace();
@@ -61,7 +63,19 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                     "aria-label": tr!("Preview"),
                     "aria-pressed": "{preview_open}",
                     onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Preview)),
-                    Icon { kind: IconKind::Target }
+                    Icon { kind: IconKind::Globe }
+                }
+            }
+            // Files is a button of its own in the desktop app's header (a folder), not a menu row.
+            if terminal {
+                button {
+                    class: if files_open { "icon-button active" } else { "icon-button" },
+                    r#type: "button",
+                    title: tr!("Files"),
+                    "aria-label": tr!("Files"),
+                    "aria-pressed": "{files_open}",
+                    onclick: move |_| workspace.change_dock(id, |dock| dock.toggle(Panel::Files)),
+                    Icon { kind: IconKind::Folder }
                 }
             }
             div { class: "picker",
@@ -138,7 +152,7 @@ pub fn SessionTools(id: LiveSessionId, terminal: bool) -> Element {
                         }
                         if terminal {
                             button {
-                                class: "picker-item",
+                                class: "picker-item menu-narrow",
                                 r#type: "button",
                                 role: "menuitemcheckbox",
                                 "aria-checked": "{files_open}",

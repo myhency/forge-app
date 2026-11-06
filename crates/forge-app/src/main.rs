@@ -121,14 +121,24 @@ fn app_menu() -> Menu {
 }
 
 fn window_config() -> Config {
+    let window = WindowBuilder::new()
+        .with_title("Forge")
+        .with_inner_size(LogicalSize::new(1200.0, 800.0))
+        // The real Claude window refuses to go below 600 pt wide.
+        .with_min_inner_size(LogicalSize::new(600.0, 400.0));
+    // The desktop app has no title bar on the Mac: the traffic lights sit in the sidebar's top row
+    // and the page runs to the top edge (round 37). The empty parts of the top rows move the window.
+    #[cfg(target_os = "macos")]
+    let window = {
+        use dioxus::desktop::tao::platform::macos::WindowBuilderExtMacOS;
+        window
+            .with_titlebar_transparent(true)
+            .with_title_hidden(true)
+            .with_fullsize_content_view(true)
+            .with_traffic_light_inset(dioxus::desktop::LogicalPosition::new(16.0, 18.0))
+    };
     Config::new()
-        .with_window(
-            WindowBuilder::new()
-                .with_title("Forge")
-                .with_inner_size(LogicalSize::new(1200.0, 800.0))
-                // The real Claude window refuses to go below 600 pt wide.
-                .with_min_inner_size(LogicalSize::new(600.0, 400.0)),
-        )
+        .with_window(window)
         .with_menu(app_menu())
         .with_custom_head(format!("{}{}{}{}", forge_shared::ime_guard_head(), forge_shared::xterm_head(), forge_shared::editor_head(), forge_shared::office_head()))
 }
@@ -255,6 +265,13 @@ fn build_services() -> WorkspaceServices {
         git: git.clone(),
         files: Arc::new(LocalFiles::new()),
         browser: Arc::new(SystemBrowser::new()),
+        dictation: Arc::new(forge_adapter_dictation::SystemDictation),
+        background: Arc::new(forge_adapter_terminal::BackgroundPrograms::new()),
+        // Desktop extensions live beside the config, so the harness's moved config moves them too.
+        bundles: Arc::new(forge_adapter_claude_fs::ExtensionBundles::new(
+            config_path_for_tools.parent().unwrap_or_else(|| std::path::Path::new(".")).join("extensions"),
+            Some(std::path::PathBuf::from(&node)),
+        )),
         webviews: webviews(),
         usage_stats: Arc::new(ClaudeUsageStatsAdapter::new(claude_home.clone())),
         mcp_logs: Arc::new(ClaudeMcpLogAdapter::new(default_cli_cache_dir(), claude_json)),
@@ -297,6 +314,18 @@ fn notifier() -> Arc<dyn forge_ports::NotifyPort> {
     return Arc::new(NoNotify);
 }
 
+/// The Mac window without a title bar: room for the traffic lights at the left of the sidebar's top
+/// row, and the top rows as tall as the desktop app's (the lights are centred in them).
+const MAC_CHROME_CSS: &str = "
+.sidebar { padding-top: 0; }
+.sidebar-top { height: 36px; padding-left: 70px; margin-bottom: var(--sp-6); }
+.pane-header { min-height: 36px; padding-top: 0; padding-bottom: 0; }
+.chat-narrow .pane-header { padding-top: 0; padding-bottom: 0; }
+.sidebar-collapsed-tools { top: 2px; left: 76px; }
+.workspace.sidebar-collapsed .pane:first-child .pane-header, .workspace.sidebar-collapsed .pane:first-child.chat-narrow .pane-header { padding-left: 184px; }
+.sidebar-overlay .sidebar { padding-top: 0; }
+";
+
 #[component]
 fn App() -> Element {
     // The web views of the Preview panel are children of this window.
@@ -319,9 +348,28 @@ fn App() -> Element {
             }
         });
     }
+    #[cfg(target_os = "macos")]
+    use_context_provider(|| forge_features::WindowDrag(Callback::new(|_| dioxus::desktop::window().drag())));
     use_workspace_providers();
+    // How much room the home disk has left, looked at now and every half hour (the low-disk banner).
+    let disk = use_context_provider(|| forge_features::DiskSpace(Signal::new(None)));
+    use_future(move || async move {
+        let mut space = disk.0;
+        loop {
+            let home = directories::UserDirs::new().map(|dirs| dirs.home_dir().to_path_buf());
+            if let Some(home) = home {
+                if let Ok(free) = tokio::task::spawn_blocking(move || forge_adapter_report::free_space(&home)).await {
+                    space.set(free);
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;
+        }
+    });
     rsx! {
         style { "{THEME_CSS}" }
+        if cfg!(target_os = "macos") {
+            style { "{MAC_CHROME_CSS}" }
+        }
         WorkspacePage {}
     }
 }

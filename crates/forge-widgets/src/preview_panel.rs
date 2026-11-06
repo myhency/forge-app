@@ -233,6 +233,9 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                     div { class: "preview-surface",
                         if current.is_none() {
                             div { class: "dock-note", {tr!("Enter an address above.")} }
+                            if let Some(tab) = active {
+                                DevServerFinder { id, tab }
+                            }
                         }
                     }
                 }
@@ -241,5 +244,81 @@ pub fn PreviewPanel(id: LiveSessionId) -> Element {
                 }
             }
         }
+    }
+}
+
+/// The desktop app's `앱을 미리 볼까요? 개발 서버 감지` in an empty tab (observed in round 36): the
+/// servers the folder offers, each with its command and `이것 사용`, which saves it in
+/// `.claude/launch.json`, starts it and shows it here.
+#[component]
+fn DevServerFinder(id: LiveSessionId, tab: forge_features::PreviewTabId) -> Element {
+    let workspace = use_workspace();
+    let mut found = use_signal(|| None::<Vec<forge_domain::ServerCandidate>>);
+    let mut starting = use_signal(|| None::<String>);
+    let mut problem = use_signal(|| None::<String>);
+    match found() {
+        None => rsx! {
+            div { class: "dev-servers",
+                p { class: "dev-servers-ask", {tr!("Preview your app?")} }
+                button {
+                    class: "preview-open",
+                    r#type: "button",
+                    onclick: move |_| found.set(Some(workspace.detect_dev_servers(id))),
+                    {tr!("Detect dev server")}
+                }
+            }
+        },
+        Some(servers) => rsx! {
+            div { class: "dev-servers",
+                if servers.is_empty() {
+                    p { class: "dev-servers-ask", {tr!("No dev server was found in this folder. Enter its address above.")} }
+                }
+                for server in servers {
+                    div { key: "{server.name}-{server.command_line()}", class: "dev-server",
+                        div { class: "dev-server-text",
+                            div { class: "dev-server-name",
+                                {match server.framework {
+                                    Some(framework) => tr!("{framework} · port {port}", framework = framework, port = server.port),
+                                    None => tr!("{name} · port {port}", name = server.name.clone(), port = server.port),
+                                }}
+                            }
+                            code { class: "dev-server-command", "{server.command_line()}" }
+                        }
+                        button {
+                            class: "preview-open",
+                            r#type: "button",
+                            disabled: starting().is_some(),
+                            onclick: {
+                                let server = server.clone();
+                                move |_| {
+                                    problem.set(None);
+                                    match workspace.use_dev_server(id, tab, server.clone()) {
+                                        Ok(()) => starting.set(Some(server.command_line())),
+                                        Err(message) => problem.set(Some(message)),
+                                    }
+                                }
+                            },
+                            {tr!("Use this")}
+                        }
+                    }
+                }
+                if let Some(command) = starting() {
+                    p { class: "dock-note", {tr!("Starting {command}. The page opens here once it answers.", command = command)} }
+                }
+                if let Some(message) = problem() {
+                    p { class: "dock-note error", "{message}" }
+                }
+                button {
+                    class: "dev-servers-back",
+                    r#type: "button",
+                    onclick: move |_| {
+                        found.set(None);
+                        starting.set(None);
+                        problem.set(None);
+                    },
+                    {tr!("Back to browsing")}
+                }
+            }
+        },
     }
 }

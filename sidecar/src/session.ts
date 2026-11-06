@@ -1,14 +1,30 @@
 import { randomUUID } from "node:crypto";
 import { buildContent, type ContentBlock } from "./content.js";
 import { buildSkillsPlugin } from "./skills_plugin.js";
+import { buildStylesPlugin, cleanName, draftStyle, saveStyle, STYLES_PLUGIN_NAME, styleNameOk } from "./output_styles.js";
 import { turnUsage } from "./usage.js";
 import { createDesktopServer, DESKTOP_SERVER_NAME } from "./agent_desktop.js";
 import { createGenerativeUiServer, GENERATE_UI_TOOL, UI_GUIDE_TOOL, UI_SERVER_NAME } from "./generative_ui.js";
 import { createTurnToolsServer, TURN_SERVER_NAME, UPDATE_PLAN_TOOL, WRAP_UP_TOOL } from "./turn_tools.js";
+import { type AppAnswer, createAppToolsServers, READ_ONLY_APP_TOOLS } from "./app_tools.js";
+import { createSessionToolsServer, DISMISS_TASK_TOOL, HAND_OFF_TOOL, MARK_CHAPTER_TOOL, SESSION_SERVER_NAME, START_SESSION_TOOL, unrelatedTaskFrom, unrelatedTaskPrompt } from "./session_tools.js";
 import type { SidecarCommand, SidecarEvent, WireAvailableModel, WireEffort, WirePermissionDecision, WireSlashCommand } from "./protocol.js";
 
 // The model Forge shows as `Default` in its picker (forge-entities model_catalog.rs DEFAULT_MODEL_ID). With no model
 // given the SDK picks its own (the packaged app got Opus), so the default is named here.
+/** The side question that sorts a session after a turn (the desktop app's `세션 상태 분류`: 차단됨,
+ *  검토 준비됨, 완료됨). It is not added to the conversation. */
+export const CLASSIFY_PROMPT =
+  "Sort this session for the user's sidebar by where it stands now. Reply with exactly one word: blocked (you cannot go on without the user: a question, a decision, an approval or missing access), review (the work is finished and waits for the user to look at or test it), or done (the request is fully answered and nothing is pending).";
+
+/** The status a reply names, or null when it names none. */
+export function parseStatus(reply: string): "blocked" | "review" | "done" | null {
+  const word = reply.trim().toLowerCase().match(/blocked|review|done/);
+  return word ? (word[0] as "blocked" | "review" | "done") : null;
+}
+
+// How long an app tool waits for the app before it gives up.
+const APP_ANSWER_TIMEOUT_MS = 60_000;
 const DEFAULT_MODEL = "claude-sonnet-5-5";
 
 export type QueryHandle = AsyncIterable<unknown> & {
@@ -19,6 +35,7 @@ export type QueryHandle = AsyncIterable<unknown> & {
     categories?: Array<{ name: string; tokens: number; kind: string }>;
     mcpTools?: Array<{ name: string; serverName: string; tokens: number }>;
     agents?: Array<{ agentType: string; tokens: number }>;
+    memoryFiles?: Array<{ path: string; tokens: number }>;
   }>;
   mcpServerStatus?: () => Promise<
     Array<{
@@ -38,6 +55,8 @@ export type QueryHandle = AsyncIterable<unknown> & {
   supportedModels?: () => Promise<unknown>;
   stopTask?: (taskId: string) => Promise<void>;
   askSideQuestion?: (question: string) => Promise<{ response: string; synthetic?: boolean } | null>;
+  initializationResult?: () => Promise<{ available_output_styles?: unknown; output_style?: unknown }>;
+  reloadOutputStyles?: () => Promise<{ available_output_styles?: unknown }>;
   generateSessionTitle?: (description: string, options?: { persist?: boolean }) => Promise<string | null>;
   rewindFiles?: (
     userMessageId: string,
@@ -168,6 +187,10 @@ export class SidecarSession {
   private queuedMessages: unknown[] = [];
   private waitingResolvers: Array<(msg: unknown) => void> = [];
   private pendingPermissions = new Map<string, PendingPermission>();
+  // App tool calls waiting for the app's answer, by request id.
+  private pendingApp = new Map<string, (answer: AppAnswer) => void>();
+  // Sort the session after each turn (`세션 상태 분류`).
+  private classifyStatus = false;
   private abortController = new AbortController();
   private started = false;
   private shuttingDown = false;
@@ -180,6 +203,17 @@ export class SidecarSession {
   private mainModel: string | null = null;
   // Web searches the WebSearch tool reported since the last result (that tool's own request is not in `result.usage`).
   private pendingSearches = 0;
+  // Whether this turn has already sent the details panel its context and connectors early. The
+  // desktop app fills both in seconds after a send (round 37), not only when the turn ends.
+  private turnDetailSent = false;
+  // The running turn's output tokens, for the progress line (the desktop app: `•• 3초 · 7 토큰`).
+  // Finished messages count exactly (their `message_delta` usage); the one streaming is estimated
+  // from its characters until its own count comes.
+  private outputFinished = 0;
+  private outputCurrentExact: number | null = null;
+  private outputCurrentChars = 0;
+  private outputSentAt = 0;
+  private outputSent = -1;
   private lastCommandsKey: string | null = null;
   private knownCommands = new Map<string, WireSlashCommand>();
   private readonly contextUsageTimeoutMs: number;
@@ -187,6 +221,8 @@ export class SidecarSession {
   private readonly detailTimeoutMs: number;
   private readonly queryWaitMs: number;
   private readonly log: (line: string) => void;
+  private readonly stylesDir: string | null;
+  private creatingStyle = false;
 
   constructor(
     private readonly queryFn: QueryFn,
@@ -197,6 +233,8 @@ export class SidecarSession {
       detailTimeoutMs?: number;
       queryWaitMs?: number;
       log?: (line: string) => void;
+      /** The person's `output-styles` folder (index.ts passes it); without it their styles are left out. */
+      stylesDir?: string | null;
     } = {},
   ) {
     this.contextUsageTimeoutMs = options.contextUsageTimeoutMs ?? CONTEXT_USAGE_TIMEOUT_MS;
@@ -204,6 +242,7 @@ export class SidecarSession {
     this.detailTimeoutMs = options.detailTimeoutMs ?? DETAIL_TIMEOUT_MS;
     this.queryWaitMs = options.queryWaitMs ?? 10000;
     this.log = options.log ?? ((line) => process.stderr.write(`${line}\n`));
+    this.stylesDir = options.stylesDir ?? null;
   }
 
   async handle(command: SidecarCommand): Promise<void> {
@@ -268,6 +307,18 @@ export class SidecarSession {
           { type: "effort_set", effort: command.effort },
         );
         return;
+      case "create_output_style":
+        await this.createOutputStyle(command.description, command.name ?? undefined);
+        return;
+      case "set_output_style":
+        await this.change(
+          (query) =>
+            query.applyFlagSettings
+              ? query.applyFlagSettings({ outputStyle: command.style ?? "default" })
+              : Promise.reject(new Error("this version of the SDK cannot change the output style")),
+          { type: "output_style_set", style: command.style },
+        );
+        return;
       case "stop_task": {
         const query = this.activeQuery;
         if (!query?.stopTask) {
@@ -281,9 +332,18 @@ export class SidecarSession {
         }
         return;
       }
+      case "app_response": {
+        const resolve = this.pendingApp.get(command.request_id);
+        if (!resolve) return;
+        this.pendingApp.delete(command.request_id);
+        resolve({ output: command.output, is_error: command.is_error });
+        return;
+      }
       case "shutdown":
         this.shuttingDown = true;
         this.abortController.abort();
+        for (const resolve of this.pendingApp.values()) resolve({ output: "Sidecar is shutting down", is_error: true });
+        this.pendingApp.clear();
         for (const pending of this.pendingPermissions.values()) {
           pending.resolve({ behavior: "deny", message: "Sidecar is shutting down" });
         }
@@ -291,6 +351,20 @@ export class SidecarSession {
         return;
     }
   }
+
+  /** Asks the app to run one of its tools and waits for the answer (at most a minute). */
+  readonly askApp = (tool: string, input: Record<string, unknown>): Promise<AppAnswer> =>
+    new Promise((resolve) => {
+      const requestId = randomUUID();
+      const timer = setTimeout(() => {
+        if (this.pendingApp.delete(requestId)) resolve({ output: "The app did not answer in time.", is_error: true });
+      }, APP_ANSWER_TIMEOUT_MS);
+      this.pendingApp.set(requestId, (answer) => {
+        clearTimeout(timer);
+        resolve(answer);
+      });
+      this.emit({ type: "app_request", request_id: requestId, tool, input });
+    });
 
   private async askTitle(): Promise<void> {
     const text = this.titleText;
@@ -334,6 +408,67 @@ export class SidecarSession {
       });
     } catch (err) {
       this.emit({ type: "rewind_result", request_id: requestId, can_rewind: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  /** The styles the SDK knows for the session, for the title menu's `출력 스타일`; quiet when it cannot say. */
+  private async emitOutputStyles(read: (() => Promise<{ available_output_styles?: unknown }>) | undefined): Promise<void> {
+    if (!read) return;
+    try {
+      const listed = (await read()).available_output_styles;
+      if (Array.isArray(listed) && !this.shuttingDown) {
+        this.emit({ type: "output_styles_available", styles: listed.filter((name): name is string => typeof name === "string").slice(0, 256) });
+      }
+    } catch {
+      // The menu keeps Claude Code's own styles.
+    }
+  }
+
+  /**
+   * The title menu's `새 스타일...`, as the desktop app does it: Claude drafts the style in one turn with
+   * no tools, it is saved in the person's `output-styles` folder, the SDK reloads its styles and the
+   * session switches to the new one.
+   */
+  private async createOutputStyle(description: string, name: string | undefined): Promise<void> {
+    const fail = (reason: string) => this.emit({ type: "output_style_create_failed", reason });
+    const wanted = description.trim();
+    if (wanted.length === 0 || wanted.length > 2000) return fail("Describe the style in up to 2,000 characters.");
+    if (name !== undefined && !styleNameOk(name)) return fail("Use letters, numbers, spaces and hyphens only.");
+    if (this.stylesDir === null) return fail("Styles cannot be saved here.");
+    if (this.creatingStyle) return fail("A style is already being drafted.");
+    this.creatingStyle = true;
+    try {
+      const drafted = await draftStyle(this.queryFn, wanted, name?.trim());
+      if (!drafted.ok) return fail(drafted.reason);
+      const base = name?.trim() ?? cleanName(drafted.draft.suggestedName) ?? "Custom style";
+      const saved = await saveStyle(this.stylesDir, base, drafted.draft, name !== undefined);
+      if (!saved.ok) return fail(saved.reason);
+      const sdkName = `${STYLES_PLUGIN_NAME}:${saved.name}`;
+      const query = this.activeQuery;
+      if (query?.reloadOutputStyles) {
+        await this.emitOutputStyles(() => query.reloadOutputStyles!());
+      }
+      this.emit({ type: "output_style_created", name: sdkName });
+      if (query?.applyFlagSettings) {
+        await this.handle({ type: "set_output_style", id: "", style: sdkName });
+      }
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    } finally {
+      this.creatingStyle = false;
+    }
+  }
+
+  /** Sorts the session after a turn and says so with `session_status`; quiet when it cannot. */
+  private async classify(): Promise<void> {
+    const query = this.activeQuery;
+    if (!query?.askSideQuestion) return;
+    try {
+      const result = await query.askSideQuestion(CLASSIFY_PROMPT);
+      const status = parseStatus(result?.response ?? "");
+      if (status) this.emit({ type: "session_status", status });
+    } catch {
+      // A failed sort leaves the last one standing.
     }
   }
 
@@ -418,10 +553,11 @@ export class SidecarSession {
 
   private async run(command: Extract<SidecarCommand, { type: "start_session" }>): Promise<void> {
     const turnTools = command.turn_tools === true;
+    this.classifyStatus = command.classify_status === true;
     const generativeUi = command.generative_ui === true;
     // Forge's own tools never ask. They are approved here, not in `allowedTools`, because the SDK warns
     // that a bare `allowedTools` entry shadows `canUseTool`.
-    const ownTools = new Set([...(turnTools ? [UPDATE_PLAN_TOOL, WRAP_UP_TOOL] : []), ...(generativeUi ? [UI_GUIDE_TOOL, GENERATE_UI_TOOL] : [])]);
+    const ownTools = new Set([...(turnTools ? [UPDATE_PLAN_TOOL, WRAP_UP_TOOL, MARK_CHAPTER_TOOL, START_SESSION_TOOL, DISMISS_TASK_TOOL, HAND_OFF_TOOL, ...READ_ONLY_APP_TOOLS] : []), ...(generativeUi ? [UI_GUIDE_TOOL, GENERATE_UI_TOOL] : [])]);
     const canUseTool = async (
       toolName: string,
       input: Record<string, unknown>,
@@ -458,14 +594,21 @@ export class SidecarSession {
     // Forge's toggles are the only source of truth (spec §17.1). The `??` guards a command from an
     // older parent that omits the fields: that must mean nothing enabled, never the SDK's defaults.
     const skillsPlugin = await buildSkillsPlugin(command.skills ?? {});
-    if (this.shuttingDown) {
+    // The person's own output styles (`새 스타일...` writes there); a failure only leaves them out.
+    const stylesPlugin = this.stylesDir === null ? null : await buildStylesPlugin(this.stylesDir).catch(() => null);
+    const cleanupPlugins = async () => {
       await skillsPlugin?.cleanup().catch(() => {});
+      await stylesPlugin?.cleanup().catch(() => {});
+    };
+    if (this.shuttingDown) {
+      await cleanupPlugins();
       this.emit({ type: "session_ended" });
       return;
     }
     const plugins = [
       ...(command.plugins ?? []).map((path) => ({ type: "local" as const, path })),
       ...(skillsPlugin ? [{ type: "local" as const, path: skillsPlugin.path }] : []),
+      ...(stylesPlugin ? [{ type: "local" as const, path: stylesPlugin.path }] : []),
     ];
 
     // The task list and next-step tools: an in-process server, approved in canUseTool so no question appears.
@@ -493,7 +636,11 @@ export class SidecarSession {
           thinking: { type: "adaptive", display: "summarized" },
           // Claude Code's own system prompt: it carries the instructions for auto memory (without it the SDK
           // gives the model no memory directory at all).
-          systemPrompt: { type: "preset", preset: "claude_code" },
+          // With the session tools, the desktop app's rule for unrelated requests is added to it.
+          systemPrompt: (() => {
+            const append = turnTools ? unrelatedTaskPrompt(unrelatedTaskFrom(command.unrelated_task)) : "";
+            return append === "" ? { type: "preset" as const, preset: "claude_code" as const } : { type: "preset" as const, preset: "claude_code" as const, append };
+          })(),
           settingSources: ["project"],
           strictMcpConfig: true,
           skills: skillsPlugin?.skills ?? [],
@@ -509,7 +656,7 @@ export class SidecarSession {
                 },
               }
             : {}),
-          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer() } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}), ...(desktopControl ? { [DESKTOP_SERVER_NAME]: createDesktopServer() } : {}) },
+          mcpServers: { ...(command.mcp_servers ?? {}), ...(turnTools ? { [TURN_SERVER_NAME]: createTurnToolsServer(), [SESSION_SERVER_NAME]: createSessionToolsServer(unrelatedTaskFrom(command.unrelated_task)), ...createAppToolsServers(this.askApp, { browser: command.browser_tools === true }) } : {}), ...(generativeUi ? { [UI_SERVER_NAME]: createGenerativeUiServer() } : {}), ...(desktopControl ? { [DESKTOP_SERVER_NAME]: createDesktopServer() } : {}) },
           additionalDirectories: command.additional_directories ?? [],
           allowedTools: command.allowed_tools ?? [],
           // Variables of the environment the session starts from, over Forge's own (the SDK would
@@ -523,13 +670,14 @@ export class SidecarSession {
         },
       });
     } catch (err) {
-      await skillsPlugin?.cleanup().catch(() => {});
+      await cleanupPlugins();
       throw err;
     }
     this.activeQuery = query;
     if (this.titleText !== null) void this.askTitle();
     void this.emitSupportedCommands();
     void this.emitSupportedModels();
+    void this.emitOutputStyles(query.initializationResult?.bind(query));
 
     try {
       for await (const message of query) {
@@ -544,7 +692,7 @@ export class SidecarSession {
       }
     } finally {
       // A failing cleanup must not replace the session's real outcome.
-      await skillsPlugin?.cleanup().catch(() => {});
+      await cleanupPlugins();
     }
   }
 
@@ -643,7 +791,10 @@ export class SidecarSession {
     const agents = (Array.isArray(context.agents) ? context.agents : [])
       .filter((a) => a && typeof a.agentType === "string" && tokensOk(a.tokens))
       .map((a) => ({ name: a.agentType, tokens: Math.round(a.tokens) }));
-    this.emit({ type: "context_detail", categories, mcp_tools, agents });
+    const memory_files = (Array.isArray(context.memoryFiles) ? context.memoryFiles : [])
+      .filter((m) => m && typeof m.path === "string" && tokensOk(m.tokens))
+      .map((m) => ({ name: m.path, tokens: Math.round(m.tokens) }));
+    this.emit({ type: "context_detail", categories, mcp_tools, agents, memory_files });
   }
 
   // Same rule as the context value: a failure or a slow answer only means no event this turn.
@@ -674,6 +825,30 @@ export class SidecarSession {
     } catch (error) {
       this.log(`forge-sidecar: mcpServerStatus failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private countOutput(event: any): void {
+    if (event?.type === "message_start") {
+      this.outputFinished += this.outputCurrentExact ?? Math.round(this.outputCurrentChars / 4);
+      this.outputCurrentExact = null;
+      this.outputCurrentChars = 0;
+      return;
+    } else if (event?.type === "content_block_delta") {
+      const delta = event.delta;
+      const text = delta?.text ?? delta?.thinking ?? delta?.partial_json;
+      if (typeof text === "string") this.outputCurrentChars += text.length;
+    } else if (event?.type === "message_delta" && typeof event.usage?.output_tokens === "number") {
+      this.outputCurrentExact = event.usage.output_tokens;
+    } else {
+      return;
+    }
+    const tokens = this.outputFinished + (this.outputCurrentExact ?? Math.round(this.outputCurrentChars / 4));
+    const now = Date.now();
+    // At most twice a second, and never the same number twice.
+    if (tokens === this.outputSent || (now - this.outputSentAt < 500 && event?.type === "content_block_delta")) return;
+    this.outputSent = tokens;
+    this.outputSentAt = now;
+    this.emit({ type: "output_tokens", tokens });
   }
 
   private forwardMessage(message: any): void {
@@ -738,6 +913,7 @@ export class SidecarSession {
         return;
       case "stream_event": {
         const event = message.event;
+        if (!message.parent_tool_use_id) this.countOutput(event);
         if (event?.type === "content_block_delta" && event.delta?.type === "text_delta") {
           this.emit({ type: "assistant_delta", text: event.delta.text });
         } else if (event?.type === "content_block_delta" && event.delta?.type === "thinking_delta" && typeof event.delta.thinking === "string") {
@@ -746,6 +922,11 @@ export class SidecarSession {
         return;
       }
       case "assistant": {
+        if (!message.parent_tool_use_id && !this.turnDetailSent) {
+          this.turnDetailSent = true;
+          void this.emitContextUsage();
+          void this.emitMcpStatus();
+        }
         const model = message.message?.model;
         if (!message.parent_tool_use_id && typeof model === "string" && model !== "" && !model.startsWith("<")) {
           this.mainModel = model;
@@ -791,8 +972,15 @@ export class SidecarSession {
         // total, includes helper models and sub-agents, and after a resume already holds the
         // earlier turns (spec §20.10).
         this.emit({ type: "turn_complete", usage: turnUsage(this.mainModel, message.usage, this.pendingSearches) });
+        if (this.classifyStatus) void this.classify();
         this.mainModel = null;
         this.pendingSearches = 0;
+        this.turnDetailSent = false;
+        this.outputFinished = 0;
+        this.outputCurrentExact = null;
+        this.outputCurrentChars = 0;
+        this.outputSent = -1;
+        this.outputSentAt = 0;
         void this.emitContextUsage();
         void this.emitMcpStatus();
         return;

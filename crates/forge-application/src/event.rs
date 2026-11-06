@@ -6,9 +6,15 @@ pub enum SessionUpdate {
     SessionStarted { session_id: SessionId },
     MessageDelta { text: String },
     ThinkingDelta { text: String },
+    /// The running turn's output tokens so far.
+    OutputTokens(u64),
     /// A compaction line was added to the transcript.
     Compacted,
     SideAnswer { request_id: String, result: Result<String, String> },
+    /// What Claude sorted the session into after a turn.
+    StatusClassified(Option<forge_domain::SessionStatus>),
+    /// Claude called one of the app's tools; the app answers it.
+    AppRequest(crate::live_session::AppRequest),
     RewindResult { request_id: String, outcome: forge_domain::RewindOutcome },
     /// A user message got its id.
     UserMessageId,
@@ -35,6 +41,12 @@ pub enum SessionUpdate {
     ModelChanged { model: Option<String> },
     /// The SDK accepted an effort change (`None`: its default).
     EffortChanged { effort: Option<EffortLevel> },
+    /// The SDK accepted an output style change (`None`: the default).
+    OutputStyleChanged(Option<forge_domain::OutputStyle>),
+    /// The output styles the SDK knows for this session.
+    OutputStylesAvailable(Vec<String>),
+    /// A new style was saved (`Ok`, its SDK name) or not (`Err`, why).
+    OutputStyleCreated(Result<String, String>),
     /// The models the SDK listed for this session.
     ModelsAvailable(Vec<AvailableModel>),
     /// The SDK refused a mode, model or effort change. The session goes on.
@@ -189,17 +201,21 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
             }
             SessionUpdate::TurnCompleted
         }
+        SidecarEvent::OutputTokens { tokens } => SessionUpdate::OutputTokens(*tokens),
+        SidecarEvent::SessionStatus { status } => SessionUpdate::StatusClassified(forge_domain::SessionStatus::from_value(status)),
+        SidecarEvent::AppRequest { request_id, tool, input } => SessionUpdate::AppRequest(crate::live_session::AppRequest { id: request_id.clone(), tool: tool.clone(), input: input.clone() }),
         SidecarEvent::ContextUsage { total_tokens, max_tokens } => SessionUpdate::ContextUsage(ContextUsage {
             total_tokens: *total_tokens,
             max_tokens: *max_tokens,
         }),
-        SidecarEvent::ContextDetail { categories, mcp_tools, agents } => SessionUpdate::ContextDetail(ContextBreakdown {
+        SidecarEvent::ContextDetail { categories, mcp_tools, agents, memory_files } => SessionUpdate::ContextDetail(ContextBreakdown {
             rows: categories
                 .iter()
                 .filter_map(|c| Some(ContextRow { name: c.name.clone(), tokens: c.tokens, kind: ContextKind::from_sdk(&c.kind)? }))
                 .collect(),
             mcp_tools: mcp_tools.iter().map(context_item).collect(),
             agents: agents.iter().map(context_item).collect(),
+            memory_files: memory_files.iter().map(context_item).collect(),
         }),
         SidecarEvent::McpStatus { servers } => SessionUpdate::McpStatus(
             servers
@@ -222,6 +238,10 @@ pub fn apply_sidecar_event(session: &mut Session, event: &SidecarEvent) -> Sessi
         }
         SidecarEvent::ModelSet { model } => SessionUpdate::ModelChanged { model: model.clone() },
         SidecarEvent::EffortSet { effort } => SessionUpdate::EffortChanged { effort: *effort },
+        SidecarEvent::OutputStyleSet { style } => SessionUpdate::OutputStyleChanged(style.as_deref().and_then(forge_domain::OutputStyle::from_name)),
+        SidecarEvent::OutputStylesAvailable { styles } => SessionUpdate::OutputStylesAvailable(styles.clone()),
+        SidecarEvent::OutputStyleCreated { name } => SessionUpdate::OutputStyleCreated(Ok(name.clone())),
+        SidecarEvent::OutputStyleCreateFailed { reason } => SessionUpdate::OutputStyleCreated(Err(reason.clone())),
         SidecarEvent::ModelsAvailable { models } => SessionUpdate::ModelsAvailable(models.clone()),
         SidecarEvent::SettingFailed { message } => SessionUpdate::SettingFailed { message: message.clone() },
         SidecarEvent::BackgroundTasks { tasks } => SessionUpdate::BackgroundTasks(tasks.clone()),

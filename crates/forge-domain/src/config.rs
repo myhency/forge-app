@@ -89,6 +89,66 @@ pub struct SidebarPrefs {
     pub collapsed: Vec<String>,
     pub width: u32,
     pub hidden: bool,
+    /// Pinned sessions, in the order pinned: the desktop app's `고정` lists them in a `고정됨` group at
+    /// the top of the sidebar.
+    pub pinned: Vec<ArchivedRef>,
+    /// Chapters the person pinned on an answer (the desktop app's `챕터로 고정`).
+    #[serde(default)]
+    pub chapter_pins: Vec<ChapterPin>,
+    /// Top rows the person took off the sidebar with `사이드바 편집` (`scheduled`, `customize`).
+    #[serde(default)]
+    pub hidden_links: Vec<String>,
+    /// What Claude last sorted each session into (`세션 상태 분류`), by session id.
+    #[serde(default)]
+    pub session_status: Vec<StatusMark>,
+    /// Sections the person made (`섹션으로 이동 › 새 섹션`), in the order made.
+    #[serde(default)]
+    pub sections: Vec<SidebarSection>,
+}
+
+/// A group of sessions the person named; its sessions leave their usual group for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SidebarSection {
+    pub id: String,
+    pub name: String,
+    pub sessions: Vec<String>,
+}
+
+/// The state Claude sorts an idle session into (the desktop app's `세션 상태 분류`: 차단됨, 검토
+/// 준비됨, 완료됨).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionStatus {
+    Blocked,
+    Review,
+    Done,
+}
+
+impl SessionStatus {
+    pub fn from_value(value: &str) -> Option<SessionStatus> {
+        match value.trim().trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase().as_str() {
+            "blocked" => Some(SessionStatus::Blocked),
+            "review" => Some(SessionStatus::Review),
+            "done" => Some(SessionStatus::Done),
+            _ => None,
+        }
+    }
+}
+
+/// One session's last classification.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatusMark {
+    pub session_id: String,
+    pub status: SessionStatus,
+}
+
+/// A chapter the person set on an answer: the session, the id of the message that began the turn,
+/// and the heading.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChapterPin {
+    pub session_id: String,
+    pub anchor: String,
+    pub title: String,
 }
 
 impl Default for SidebarPrefs {
@@ -104,6 +164,11 @@ impl Default for SidebarPrefs {
             collapsed: Vec::new(),
             width: DEFAULT_SIDEBAR_WIDTH,
             hidden: false,
+            pinned: Vec::new(),
+            chapter_pins: Vec::new(),
+            hidden_links: Vec::new(),
+            session_status: Vec::new(),
+            sections: Vec::new(),
         }
     }
 }
@@ -364,15 +429,33 @@ pub struct AppConfig {
     /// next-step card at the end of a turn.
     #[serde(default = "default_true")]
     pub turn_tools: bool,
+    /// What Claude does when asked for something unrelated to the session's work.
+    #[serde(default, deserialize_with = "lenient")]
+    pub unrelated_task: crate::UnrelatedTask,
+    /// Claude sorts a session into blocked, ready for review or done after each turn.
+    #[serde(default = "default_true", deserialize_with = "lenient")]
+    pub classify_sessions: bool,
     /// Whether Claude gets the `generate_sandboxed_ui` tool: an interactive page drawn in the chat.
     #[serde(default = "default_generative_ui")]
     pub generative_ui: bool,
+    /// Whether Claude gets the Browser pane tools (`Claude_Browser`: dev servers, pages, screenshots).
+    #[serde(default = "default_true", deserialize_with = "lenient")]
+    pub browser_tools: bool,
+    /// HTML, pictures, PDFs and videos Claude writes open in the Preview pane.
+    #[serde(default = "default_true", deserialize_with = "lenient")]
+    pub auto_open_outputs: bool,
+    /// The Terminal panel's `⋯` menu: cursor, blinking, copy on select, scrollback.
+    #[serde(default, deserialize_with = "lenient")]
+    pub terminal: TerminalPrefs,
     /// Whether Claude gets the `agent_desktop` tool (read and press other apps through the accessibility
     /// tree). Off until the person turns it on; every call still asks first.
     #[serde(default)]
     pub desktop_control: bool,
     #[serde(default)]
     pub appearance: Appearance,
+    /// Code colours, font and size (the desktop app's `코드 모양`).
+    #[serde(default)]
+    pub code_look: crate::CodeLook,
     #[serde(default)]
     pub notifications: NotificationPrefs,
     /// Bounce the Dock icon when a notification says Claude needs the person.
@@ -414,6 +497,15 @@ fn default_generative_ui() -> bool {
 
 // A value this Forge does not know (a hand edit, or a newer Forge) reads as the default, so the
 // rest of the config still loads.
+/// `lenient` for other modules of the crate.
+pub(crate) fn lenient_value<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    lenient(deserializer)
+}
+
 fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -459,9 +551,15 @@ impl Default for AppConfig {
             dynamic_workflows: false,
             auto_memory: true,
             turn_tools: true,
+            unrelated_task: crate::UnrelatedTask::Ask,
+            classify_sessions: true,
             generative_ui: default_generative_ui(),
+            browser_tools: true,
+            auto_open_outputs: true,
+            terminal: TerminalPrefs::default(),
             desktop_control: false,
             appearance: Appearance::default(),
+            code_look: crate::CodeLook::default(),
             notifications: NotificationPrefs::default(),
             attention_bounce: false,
             language: None,
@@ -486,6 +584,49 @@ pub fn normalize_setting(value: &str) -> Option<String> {
         None
     } else {
         Some(trimmed.to_string())
+    }
+}
+
+/// The cursor of the Terminal panel (the desktop app's 블록, 막대, 밑줄).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalCursor {
+    #[default]
+    Block,
+    Bar,
+    Underline,
+}
+
+impl TerminalCursor {
+    pub const ALL: [TerminalCursor; 3] = [TerminalCursor::Block, TerminalCursor::Bar, TerminalCursor::Underline];
+
+    /// xterm.js's name for it.
+    pub fn xterm(self) -> &'static str {
+        match self {
+            TerminalCursor::Block => "block",
+            TerminalCursor::Bar => "bar",
+            TerminalCursor::Underline => "underline",
+        }
+    }
+}
+
+/// The scrollback lengths the menu offers, as the desktop app does.
+pub const TERMINAL_SCROLLBACKS: [u32; 3] = [1_000, 5_000, 10_000];
+
+/// The Terminal panel's options, the desktop app's `⋯` menu (observed 2026-11-06).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TerminalPrefs {
+    pub cursor: TerminalCursor,
+    pub blink: bool,
+    pub copy_on_select: bool,
+    /// Lines kept above the screen.
+    pub scrollback: u32,
+}
+
+impl Default for TerminalPrefs {
+    fn default() -> Self {
+        Self { cursor: TerminalCursor::Block, blink: true, copy_on_select: false, scrollback: 10_000 }
     }
 }
 
@@ -652,6 +793,11 @@ mod tests {
             collapsed: vec!["folder:/work/a".to_string()],
             width: 300,
             hidden: true,
+            pinned: Vec::new(),
+            chapter_pins: Vec::new(),
+            hidden_links: Vec::new(),
+            session_status: Vec::new(),
+            sections: Vec::new(),
         };
         let config = AppConfig { sidebar: prefs.clone(), ..AppConfig::default() };
 

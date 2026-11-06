@@ -8,6 +8,10 @@ pub enum AccountAction {
     OpenSettings,
     SetLanguage(Language),
     ShowShortcuts,
+    /// The usage of the session on screen (its `/usage` card).
+    ShowUsage,
+    /// A page of Anthropic's, opened in the browser (the desktop app's help, policies, changelog, API key).
+    OpenPage(&'static str),
     /// A row that is shown but does nothing yet: it only closes the menu.
     Close,
 }
@@ -31,29 +35,37 @@ fn language_item(language: Language, current: Language) -> AccountRow {
 }
 
 /// The menu for `user`, with the check on `current`.
+/// Where the desktop app's account menu rows lead (observed 2026-11-06).
+pub const HELP_URL: &str = "https://support.claude.com";
+pub const CHANGELOG_URL: &str = "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md";
+pub const USAGE_POLICY_URL: &str = "https://www.anthropic.com/legal/aup";
+pub const PRIVACY_URL: &str = "https://www.anthropic.com/legal/privacy";
+pub const API_KEY_URL: &str = "https://console.anthropic.com/settings/keys";
+
 pub fn account_rows(user: &str, current: Language) -> Vec<AccountRow> {
     vec![
         AccountRow::Heading(user.to_string()),
         AccountRow::Divider,
         AccountRow::Item { label: msg!("Settings"), keys: Some(KEY_SETTINGS), action: AccountAction::OpenSettings, check: None },
-        item(msg!("Usage"), AccountAction::Close),
+        item(msg!("Usage"), AccountAction::ShowUsage),
         AccountRow::Submenu {
             label: msg!("Language"),
             rows: vec![language_item(Language::Korean, current), language_item(Language::English, current)],
         },
-        item(msg!("Get help"), AccountAction::Close),
+        item(msg!("Get help"), AccountAction::OpenPage(HELP_URL)),
         AccountRow::Divider,
+        item(msg!("View changelog"), AccountAction::OpenPage(CHANGELOG_URL)),
         AccountRow::Submenu {
             label: msg!("Learn more"),
             rows: vec![
-                item(msg!("Usage policy"), AccountAction::Close),
-                item(msg!("Privacy policy"), AccountAction::Close),
+                item(msg!("Usage policy"), AccountAction::OpenPage(USAGE_POLICY_URL)),
+                item(msg!("Privacy policy"), AccountAction::OpenPage(PRIVACY_URL)),
                 AccountRow::Divider,
                 AccountRow::Item { label: msg!("Keyboard shortcuts"), keys: Some(KEY_SHORTCUTS), action: AccountAction::ShowShortcuts, check: None },
             ],
         },
         AccountRow::Divider,
-        item(msg!("Get API key"), AccountAction::Close),
+        item(msg!("Get API key"), AccountAction::OpenPage(API_KEY_URL)),
     ]
 }
 
@@ -116,6 +128,7 @@ mod tests {
                 "  English ✓".into(),
                 "Get help".into(),
                 "—".into(),
+                "View changelog".into(),
                 "Learn more >".into(),
                 "  Usage policy".into(),
                 "  Privacy policy".into(),
@@ -138,7 +151,7 @@ mod tests {
             match row {
                 AccountRow::Item { label, action, .. } if *label == wanted => return *action,
                 AccountRow::Submenu { rows, .. } => {
-                    if let found @ (AccountAction::OpenSettings | AccountAction::SetLanguage(_) | AccountAction::ShowShortcuts) = find(rows, wanted) {
+                    if let found @ (AccountAction::OpenSettings | AccountAction::SetLanguage(_) | AccountAction::ShowShortcuts | AccountAction::OpenPage(_)) = find(rows, wanted) {
                         return found;
                     }
                 }
@@ -155,9 +168,12 @@ mod tests {
         assert_eq!(find(&rows, "Keyboard shortcuts"), AccountAction::ShowShortcuts);
         assert_eq!(find(&rows, "한국어"), AccountAction::SetLanguage(Language::Korean));
         assert_eq!(find(&rows, "English"), AccountAction::SetLanguage(Language::English));
-        for shown_only in ["Usage", "Get help", "Get API key", "Usage policy", "Privacy policy"] {
-            assert_eq!(find(&rows, shown_only), AccountAction::Close, "{shown_only}");
-        }
+        assert_eq!(find(&rows, "Usage"), AccountAction::ShowUsage);
+        assert_eq!(find(&rows, "Get help"), AccountAction::OpenPage(HELP_URL));
+        assert_eq!(find(&rows, "View changelog"), AccountAction::OpenPage(CHANGELOG_URL));
+        assert_eq!(find(&rows, "Get API key"), AccountAction::OpenPage(API_KEY_URL));
+        assert_eq!(find(&rows, "Usage policy"), AccountAction::OpenPage(USAGE_POLICY_URL));
+        assert_eq!(find(&rows, "Privacy policy"), AccountAction::OpenPage(PRIVACY_URL));
     }
 
     #[test]

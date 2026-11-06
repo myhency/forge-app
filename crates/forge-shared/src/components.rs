@@ -220,8 +220,18 @@ pub enum IconKind {
     ArrowLeft,
     ArrowRight,
     Send,
+    /// The message box's dictation button.
+    Mic,
     More,
     Target,
+    /// The Preview panel's button in the chat header (the desktop app draws a globe).
+    Globe,
+    /// The sidebar toggle at the top of the sidebar (a window with a left column).
+    Sidebar,
+    /// The composer `+` menu's file row.
+    Paperclip,
+    /// The composer `+` menu's slash-command row.
+    Slash,
     Chevron,
     ChevronLeft,
     Check,
@@ -243,10 +253,19 @@ pub enum IconKind {
     Laptop,
     FastForward,
     Filter,
+    /// A speaker with sound waves: read aloud.
+    Speaker,
+    /// A push pin (pin as chapter), and the same filled once pinned.
+    Pin,
+    PinFilled,
+    /// A warning triangle with an exclamation mark.
+    Alert,
+    /// Two ticks: Claude has read a message.
+    DoubleCheck,
 }
 
 impl IconKind {
-    pub const ALL: [IconKind; 41] = [
+    pub const ALL: [IconKind; 51] = [
         IconKind::Close,
         IconKind::Search,
         IconKind::Sparkle,
@@ -265,8 +284,13 @@ impl IconKind {
         IconKind::ArrowLeft,
         IconKind::ArrowRight,
         IconKind::Send,
+        IconKind::Mic,
         IconKind::More,
         IconKind::Target,
+        IconKind::Globe,
+        IconKind::Sidebar,
+        IconKind::Paperclip,
+        IconKind::Slash,
         IconKind::Chevron,
         IconKind::ChevronLeft,
         IconKind::Check,
@@ -288,6 +312,11 @@ impl IconKind {
         IconKind::Laptop,
         IconKind::FastForward,
         IconKind::Filter,
+        IconKind::Speaker,
+        IconKind::Pin,
+        IconKind::PinFilled,
+        IconKind::Alert,
+        IconKind::DoubleCheck,
     ];
 
     pub fn shapes(self) -> &'static [Shape] {
@@ -310,9 +339,19 @@ impl IconKind {
             IconKind::ArrowDown => &[Shape::Path("M8 3v10M8 13L4 9M8 13l4-4")],
             IconKind::ArrowLeft => &[Shape::Path("M13 8H3M3 8l4-4M3 8l4 4")],
             IconKind::ArrowRight => &[Shape::Path("M3 8h10M13 8l-4-4M13 8l-4 4")],
+            IconKind::Mic => &[Shape::Rect { x: 6.0, y: 1.5, width: 4.0, height: 8.0, rx: 2.0 }, Shape::Path("M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5")],
             IconKind::Send => &[Shape::Path("M12.5 3.5v5h-9M3.5 8.5l3-3M3.5 8.5l3 3")],
-            IconKind::More => &[Shape::Dot { cx: 8.0, cy: 3.5 }, Shape::Dot { cx: 8.0, cy: 8.0 }, Shape::Dot { cx: 8.0, cy: 12.5 }],
+            IconKind::More => &[Shape::Dot { cx: 3.5, cy: 8.0 }, Shape::Dot { cx: 8.0, cy: 8.0 }, Shape::Dot { cx: 12.5, cy: 8.0 }],
             IconKind::Target => &[Shape::Circle { cx: 8.0, cy: 8.0, r: 6.0 }, Shape::Circle { cx: 8.0, cy: 8.0, r: 2.0 }],
+            IconKind::DoubleCheck => &[Shape::Path("M1.5 8.5l3 3 6.5-7"), Shape::Path("M7.5 11l.5.5 6.5-7")],
+            IconKind::Alert => &[Shape::Path("M8 2.2l6.2 11H1.8z"), Shape::Path("M8 6.5v3"), Shape::Dot { cx: 8.0, cy: 11.3 }],
+            IconKind::Pin => &[Shape::Path("M9.8 2.4l3.8 3.8-1.5.8-2.5 2.5.4 2.8-1 1-6.3-6.3 1-1 2.8.4 2.5-2.5z"), Shape::Path("M5.8 10.2L2.5 13.5")],
+            IconKind::PinFilled => &[Shape::Solid("M9.8 2.4l3.8 3.8-1.5.8-2.5 2.5.4 2.8-1 1-6.3-6.3 1-1 2.8.4 2.5-2.5z"), Shape::Path("M5.8 10.2L2.5 13.5")],
+            IconKind::Speaker => &[Shape::Path("M2.5 6.2h2.3l3.2-2.7v9l-3.2-2.7H2.5z"), Shape::Path("M10.6 5.8c.9 1.2.9 3.2 0 4.4M12.6 4.2c1.8 2.1 1.8 5.5 0 7.6")],
+            IconKind::Paperclip => &[Shape::Path("M12.5 7.5l-4.6 4.6a2.6 2.6 0 0 1-3.7-3.7l5-5a1.75 1.75 0 0 1 2.5 2.5l-5 5a.9.9 0 0 1-1.3-1.3l4.6-4.6")],
+            IconKind::Slash => &[Shape::Rect { x: 2.5, y: 2.5, width: 11.0, height: 11.0, rx: 2.5 }, Shape::Path("M9.5 5L6.5 11")],
+            IconKind::Sidebar => &[Shape::Rect { x: 2.0, y: 3.0, width: 12.0, height: 10.0, rx: 2.0 }, Shape::Path("M6 3v10")],
+            IconKind::Globe => &[Shape::Circle { cx: 8.0, cy: 8.0, r: 6.0 }, Shape::Path("M2 8h12M8 2c-1.8 1.7-2.7 3.7-2.7 6s.9 4.3 2.7 6M8 2c1.8 1.7 2.7 3.7 2.7 6s-.9 4.3-2.7 6")],
             IconKind::Chevron => &[Shape::Path("M6 3.5L10.5 8 6 12.5")],
             IconKind::ChevronLeft => &[Shape::Path("M10 3.5L5.5 8 10 12.5")],
             IconKind::Check => &[Shape::Path("M3.5 8.5l3 3 6-7")],

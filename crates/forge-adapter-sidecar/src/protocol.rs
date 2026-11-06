@@ -32,7 +32,10 @@ pub enum SidecarCommand {
         auto_memory: bool,
         turn_tools: bool,
         generative_ui: bool,
+        browser_tools: bool,
         desktop_control: bool,
+        unrelated_task: &'static str,
+        classify_status: bool,
     },
     SendMessage {
         id: String,
@@ -50,6 +53,7 @@ pub enum SidecarCommand {
     AnswerQuestion { id: String, permission_request_id: String, answers: BTreeMap<String, String> },
     Interrupt { id: String },
     SideQuestion { id: String, request_id: String, question: String },
+    AppResponse { id: String, request_id: String, output: String, is_error: bool },
     RewindFiles { id: String, request_id: String, message_uuid: String, dry_run: bool },
     StopTask { id: String, task_id: String },
     SetPermissionMode { id: String, mode: WireMode },
@@ -57,6 +61,10 @@ pub enum SidecarCommand {
     SetModel { id: String, model: Option<String> },
     /// `None` is the SDK's default effort.
     SetEffort { id: String, effort: Option<forge_domain::EffortLevel> },
+    /// `None` is the default style.
+    SetOutputStyle { id: String, style: Option<String> },
+    /// `name` is the one the person typed; without it Claude suggests one.
+    CreateOutputStyle { id: String, description: String, name: Option<String> },
     Shutdown { id: String },
 }
 
@@ -146,7 +154,10 @@ impl SidecarCommand {
             auto_memory: params.defaults.auto_memory,
             turn_tools: params.defaults.turn_tools,
             generative_ui: params.defaults.generative_ui,
+            browser_tools: params.defaults.browser_tools,
             desktop_control: params.defaults.desktop_control,
+            unrelated_task: params.defaults.unrelated_task.value(),
+            classify_status: params.defaults.classify_status,
         }
     }
 
@@ -256,7 +267,10 @@ mod tests {
             auto_memory: false,
             turn_tools: false,
             generative_ui: false,
+            browser_tools: false,
             desktop_control: true,
+            unrelated_task: forge_domain::UnrelatedTask::Ask,
+            classify_status: false,
         };
         let json = serde_json::to_value(SidecarCommand::start_session("1".to_string(), params)).unwrap();
         assert_eq!(json["output_style"], serde_json::json!("Concise"));
@@ -266,6 +280,7 @@ mod tests {
         assert_eq!(json["auto_mode_model"], serde_json::json!("claude-sonnet-5-5"));
         assert_eq!(json["auto_memory"], serde_json::json!(false));
         assert_eq!(json["turn_tools"], serde_json::json!(false));
+        assert_eq!(json["unrelated_task"], serde_json::json!("ask"));
         assert_eq!(json["generative_ui"], serde_json::json!(false));
         assert_eq!(json["desktop_control"], serde_json::json!(true));
     }
@@ -381,7 +396,10 @@ mod tests {
                 "auto_memory": true,
                 "turn_tools": true,
                 "generative_ui": true,
-                "desktop_control": false
+                "browser_tools": true,
+                "desktop_control": false,
+                "unrelated_task": "ask",
+                "classify_status": true
             })
         );
     }

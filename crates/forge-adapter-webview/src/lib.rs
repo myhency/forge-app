@@ -33,6 +33,80 @@ fn key_script(nonce: &str) -> String {
     )
 }
 
+// Keeps the page's console messages (the last 500) and uncaught errors for the browser tool
+// `read_console_messages`, which reads them back with a script. The page's own console still gets them.
+const CONSOLE_SCRIPT: &str = r#"(function () {
+  if (window.__forgeConsole) return;
+  const kept = [];
+  Object.defineProperty(window, '__forgeConsole', { value: kept, enumerable: false });
+  const keep = function (level, args) {
+    let text;
+    try { text = Array.prototype.map.call(args, function (a) { return typeof a === 'string' ? a : (a instanceof Error ? a.stack || a.message : JSON.stringify(a)); }).join(' '); } catch (e) { text = String(args[0]); }
+    kept.push({ level: level, text: String(text).slice(0, 2000), time: Date.now() });
+    if (kept.length > 500) kept.shift();
+  };
+  ['log', 'info', 'warn', 'error', 'debug'].forEach(function (level) {
+    const original = console[level].bind(console);
+    console[level] = function () { keep(level, arguments); return original.apply(null, arguments); };
+  });
+  window.addEventListener('error', function (e) { keep('exception', [e.message + (e.filename ? ' (' + e.filename + ':' + e.lineno + ')' : '')]); });
+  window.addEventListener('unhandledrejection', function (e) { keep('exception', ['Unhandled rejection: ' + (e.reason && (e.reason.stack || e.reason.message) || String(e.reason))]); });
+})();"#;
+
+// Everything a COM stream holds, from its start.
+#[cfg(windows)]
+fn stream_bytes(stream: &windows::Win32::System::Com::IStream) -> Result<Vec<u8>, String> {
+    use windows::Win32::System::Com::{STATFLAG_NONAME, STATSTG, STREAM_SEEK_SET};
+    // SAFETY: plain COM calls on a stream this function holds; the buffer is as long as the read asks.
+    unsafe {
+        let mut stat = STATSTG::default();
+        stream.Stat(&mut stat, STATFLAG_NONAME).map_err(|error| error.to_string())?;
+        stream.Seek(0, STREAM_SEEK_SET, None).map_err(|error| error.to_string())?;
+        let mut bytes = vec![0u8; stat.cbSize as usize];
+        let mut read = 0u32;
+        stream.Read(bytes.as_mut_ptr().cast(), bytes.len() as u32, Some(&mut read)).ok().map_err(|error| error.to_string())?;
+        bytes.truncate(read as usize);
+        Ok(bytes)
+    }
+}
+
+// An AppKit image as PNG bytes.
+#[cfg(target_os = "macos")]
+fn png_of(image: &objc2_app_kit::NSImage) -> Option<Vec<u8>> {
+    let tiff = image.TIFFRepresentation()?;
+    let bitmap = objc2_app_kit::NSBitmapImageRep::imageRepWithData(&tiff)?;
+    // SAFETY: an empty property dictionary is a valid one.
+    let png = unsafe { bitmap.representationUsingType_properties(objc2_app_kit::NSBitmapImageFileType::PNG, &objc2_foundation::NSDictionary::new()) }?;
+    Some(png.to_vec())
+}
+
+// Keeps the page's network requests (the last 500) for `read_network_requests`: fetch and XHR with
+// their method and status, and every other load the page made (documents, scripts, images) from
+// the resource timing list when asked. Query values named like credentials are shown as REDACTED.
+const NETWORK_SCRIPT: &str = r#"(function () {
+  if (window.__forgeNetwork) return;
+  const kept = [];
+  Object.defineProperty(window, '__forgeNetwork', { value: kept, enumerable: false });
+  const redact = function (url) {
+    try { const u = new URL(url, location.href); u.searchParams.forEach(function (v, k) { if (/token|key|secret|pass|auth|session|sig/i.test(k)) u.searchParams.set(k, 'REDACTED'); }); return u.href; } catch (e) { return String(url); }
+  };
+  const keep = function (entry) { kept.push(entry); if (kept.length > 500) kept.shift(); return entry; };
+  const fetchOriginal = window.fetch && window.fetch.bind(window);
+  if (fetchOriginal) {
+    window.fetch = function (input, init) {
+      const url = redact(typeof input === 'string' ? input : (input && input.url) || String(input));
+      const entry = keep({ type: 'fetch', method: ((init && init.method) || (input && input.method) || 'GET').toUpperCase(), url: url, status: null, time: Date.now() });
+      return fetchOriginal(input, init).then(function (r) { entry.status = r.status; entry.ms = Date.now() - entry.time; return r; }, function (e) { entry.status = 'failed: ' + (e && e.message || e); throw e; });
+    };
+  }
+  const open = XMLHttpRequest.prototype.open, send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (method, url) { this.__forge = { type: 'xhr', method: String(method).toUpperCase(), url: redact(url), status: null }; return open.apply(this, arguments); };
+  XMLHttpRequest.prototype.send = function () {
+    const entry = this.__forge; if (entry) { entry.time = Date.now(); keep(entry); this.addEventListener('loadend', function () { entry.status = this.status || 'failed'; entry.ms = Date.now() - entry.time; }); }
+    return send.apply(this, arguments);
+  };
+})();"#;
+
 // A random token for one web view: two numbers from the standard library's randomly keyed hasher.
 fn fresh_nonce() -> String {
     use std::hash::{BuildHasher, Hasher};
@@ -132,6 +206,8 @@ impl WebViewPort for WryWebViews {
             .with_bounds(rect(surface))
             .with_devtools(cfg!(debug_assertions))
             .with_initialization_script(key_script(&nonce))
+            .with_initialization_script(CONSOLE_SCRIPT)
+            .with_initialization_script(NETWORK_SCRIPT)
             .with_navigation_handler(|url| navigation_allowed(&url))
             .with_new_window_req_handler(move |url, _| {
                 if web_address(&url) {
@@ -180,6 +256,94 @@ impl WebViewPort for WryWebViews {
             Some(view) => view.load_url(url).map_err(|error| error.to_string()),
             None => Err("This tab has no page".to_string()),
         })
+    }
+
+    fn evaluate(&self, tab: WebViewTabId, script: &str, reply: tokio::sync::oneshot::Sender<Result<String, String>>) {
+        // wry calls back with the result serialised as JSON; the callback may be called once only here.
+        let reply = Arc::new(Mutex::new(Some(reply)));
+        let answer = reply.clone();
+        let started = VIEWS.with(|views| match views.borrow().get(&tab.0) {
+            Some(view) => view
+                .evaluate_script_with_callback(script, move |result| {
+                    if let Some(reply) = answer.lock().ok().and_then(|mut reply| reply.take()) {
+                        let _ = reply.send(Ok(result));
+                    }
+                })
+                .map_err(|error| error.to_string()),
+            None => Err("This tab has no page on screen. Open the session and its Preview tab.".to_string()),
+        });
+        if let Err(message) = started {
+            if let Some(reply) = reply.lock().ok().and_then(|mut reply| reply.take()) {
+                let _ = reply.send(Err(message));
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn snapshot(&self, tab: WebViewTabId, reply: tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>) {
+        use wry::WebViewExtMacOS;
+        let reply = Arc::new(Mutex::new(Some(reply)));
+        let answer = reply.clone();
+        let started = VIEWS.with(|views| match views.borrow().get(&tab.0) {
+            Some(view) => {
+                let page = view.webview();
+                let handler = block2::RcBlock::new(move |image: *mut objc2_app_kit::NSImage, _error: *mut objc2_foundation::NSError| {
+                    // SAFETY: WebKit hands a valid image or null for the length of the call.
+                    let png = unsafe { image.as_ref() }.and_then(png_of).ok_or_else(|| "The page could not be captured.".to_string());
+                    if let Some(reply) = answer.lock().ok().and_then(|mut reply| reply.take()) {
+                        let _ = reply.send(png);
+                    }
+                });
+                // SAFETY: called on the window thread with a live web view; no configuration means the whole visible page.
+                unsafe { page.takeSnapshotWithConfiguration_completionHandler(None, &handler) };
+                Ok(())
+            }
+            None => Err("This tab has no page on screen. Open the session and its Preview tab.".to_string()),
+        });
+        if let Err(message) = started {
+            if let Some(reply) = reply.lock().ok().and_then(|mut reply| reply.take()) {
+                let _ = reply.send(Err(message));
+            }
+        }
+    }
+
+    // WebView2's CapturePreview writes a PNG of the visible page into a memory stream.
+    #[cfg(windows)]
+    fn snapshot(&self, tab: WebViewTabId, reply: tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>) {
+        use webview2_com::CapturePreviewCompletedHandler;
+        use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG;
+        use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
+        use wry::WebViewExtWindows;
+
+        let reply = Arc::new(Mutex::new(Some(reply)));
+        let answer = reply.clone();
+        let started: Result<(), String> = VIEWS.with(|views| {
+            let views = views.borrow();
+            let view = views.get(&tab.0).ok_or_else(|| "This tab has no page on screen. Open the session and its Preview tab.".to_string())?;
+            let page = view.webview();
+            // SAFETY: a null global handle asks for a new one, freed with the stream.
+            let stream = unsafe { CreateStreamOnHGlobal(windows::Win32::Foundation::HGLOBAL::default(), true) }.map_err(|error| error.to_string())?;
+            let read_from = stream.clone();
+            let handler = CapturePreviewCompletedHandler::create(Box::new(move |result| {
+                let png = result.map_err(|error| error.to_string()).and_then(|()| stream_bytes(&read_from));
+                if let Some(reply) = answer.lock().ok().and_then(|mut reply| reply.take()) {
+                    let _ = reply.send(png);
+                }
+                Ok(())
+            }));
+            // SAFETY: called on the window thread with a live web view; the stream and handler outlive the call.
+            unsafe { page.CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, &stream, &handler) }.map_err(|error| error.to_string())
+        });
+        if let Err(message) = started {
+            if let Some(reply) = reply.lock().ok().and_then(|mut reply| reply.take()) {
+                let _ = reply.send(Err(message));
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", windows)))]
+    fn snapshot(&self, _tab: WebViewTabId, reply: tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>) {
+        let _ = reply.send(Err("Screenshots of the Browser pane are not available on this system.".to_string()));
     }
 
     fn back(&self, tab: WebViewTabId) {

@@ -1,0 +1,15 @@
+[package]
+name = "forge-adapter-dictation"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+forge-ports = { path = "../forge-ports" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse"] }

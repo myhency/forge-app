@@ -44,6 +44,8 @@ pub struct ContextCardView {
     pub deferred: Vec<ContextRowView>,
     pub mcp_tools: Vec<ContextItemView>,
     pub agents: Vec<ContextItemView>,
+    /// The memory files in the context, by file name (the desktop app's `메모리 파일` fold).
+    pub memory_files: Vec<ContextItemView>,
     /// The used part of the window in per-mille, for the folded card's small bar.
     pub folded_bar: u16,
 }
@@ -77,6 +79,17 @@ fn strip_mcp_prefix<'a>(name: &'a str, server: &str) -> &'a str {
     match name.strip_prefix("mcp__").and_then(|r| r.split_once("__")) {
         Some((_, rest)) if !rest.is_empty() => rest,
         _ => name,
+    }
+}
+
+/// A memory file by its folder and name (`forge/CLAUDE.md`, `.claude/CLAUDE.md`): most are named
+/// CLAUDE.md, so the name alone would not tell them apart.
+fn memory_label(path: &str) -> String {
+    let mut parts = path.rsplit(['/', '\\']).filter(|part| !part.is_empty());
+    match (parts.next(), parts.next()) {
+        (Some(name), Some(folder)) => format!("{folder}/{name}"),
+        (Some(name), None) => name.to_string(),
+        _ => path.to_string(),
     }
 }
 
@@ -134,6 +147,7 @@ pub fn context_card(usage: Option<ContextUsage>, detail: Option<&ContextBreakdow
         deferred,
         mcp_tools: detail.mcp_tools.iter().map(item_view).collect(),
         agents: detail.agents.iter().map(item_view).collect(),
+        memory_files: detail.memory_files.iter().map(|item| ContextItemView { label: memory_label(&item.name), tokens: format_tokens_short(item.tokens) }).collect(),
         folded_bar: per_mille(used_total, window) as u16,
     })
 }
@@ -157,8 +171,10 @@ pub enum RowLink {
 pub fn row_link(name: &str) -> Option<RowLink> {
     const MCP_TOOLS: &str = "MCP tools";
     const SKILLS: &str = "Skills";
+    // Underlined in the desktop app too (2026-11-06).
+    const MCP_INSTRUCTIONS: &str = "MCP server instructions";
     match name {
-        MCP_TOOLS => Some(RowLink::Connectors),
+        MCP_TOOLS | MCP_INSTRUCTIONS => Some(RowLink::Connectors),
         SKILLS => Some(RowLink::Skills),
         _ => None,
     }
@@ -199,8 +215,14 @@ fn capitalized(name: &str) -> String {
 }
 
 /// Servers that need action first, then the rest in the SDK's order, `claudeai` ones last.
+/// Forge's own tool servers (the turn tools, the app tools, the browser tools, interactive pages,
+/// app control): part of the app, not connectors, so the desktop app does not list its own either.
+pub fn is_app_server(name: &str) -> bool {
+    name.starts_with("ccd_") || matches!(name, "forge_ui" | "forge_desktop" | "Claude_Browser")
+}
+
 pub fn connector_rows(servers: &[McpServerState]) -> Vec<ConnectorRowView> {
-    let mut ordered: Vec<&McpServerState> = servers.iter().collect();
+    let mut ordered: Vec<&McpServerState> = servers.iter().filter(|server| !is_app_server(&server.name)).collect();
     ordered.sort_by_key(|server| {
         if matches!(server.status, McpStatus::NeedsAuth | McpStatus::Failed) {
             0
@@ -282,7 +304,7 @@ mod tests {
     }
 
     fn detail(rows: Vec<ContextRow>) -> ContextBreakdown {
-        ContextBreakdown { rows, mcp_tools: vec![], agents: vec![] }
+        ContextBreakdown { rows, mcp_tools: vec![], agents: vec![], memory_files: vec![] }
     }
 
     fn server(name: &str, status: McpStatus, scope: Option<&str>) -> McpServerState {
@@ -290,8 +312,23 @@ mod tests {
     }
 
     #[test]
+    fn forges_own_tool_servers_are_not_listed_as_connectors() {
+        let servers = vec![server("ccd_turn", McpStatus::Connected, None), server("Claude_Browser", McpStatus::Connected, None), server("forge_ui", McpStatus::Connected, None), server("figma", McpStatus::Connected, None)];
+        let rows = connector_rows(&servers);
+        assert_eq!(rows.iter().map(|row| row.name.as_str()).collect::<Vec<_>>(), vec!["Figma"]);
+    }
+
+    #[test]
+    fn a_memory_file_is_named_by_its_folder_and_name() {
+        assert_eq!(memory_label("/Users/me/work/forge/CLAUDE.md"), "forge/CLAUDE.md");
+        assert_eq!(memory_label("/Users/me/.claude/CLAUDE.md"), ".claude/CLAUDE.md");
+        assert_eq!(memory_label("CLAUDE.md"), "CLAUDE.md");
+    }
+
+    #[test]
     fn only_the_mcp_tools_and_skills_rows_link() {
         assert_eq!(row_link("MCP tools"), Some(RowLink::Connectors));
+        assert_eq!(row_link("MCP server instructions"), Some(RowLink::Connectors));
         assert_eq!(row_link("Skills"), Some(RowLink::Skills));
         assert_eq!(row_link("Messages"), None);
         assert_eq!(row_link("MCP tools (deferred)"), None);

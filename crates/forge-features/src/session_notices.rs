@@ -111,10 +111,34 @@ pub fn use_session_notices(workspace: Workspace, settings: Settings) {
         });
         dioxus::core::spawn_forever(async move {
             let mut before: HashMap<LiveSessionId, Snapshot> = HashMap::new();
+            // The `Write` calls of each session already seen: only a new one opens in the Preview pane.
+            let mut seen_writes: HashMap<LiveSessionId, std::collections::HashSet<String>> = HashMap::new();
             loop {
                 let views = workspace.live_views();
                 before.retain(|id, _| views.iter().any(|(open, _)| open == id));
+                seen_writes.retain(|id, _| views.iter().any(|(open, _)| open == id));
                 for (id, view) in views {
+                    let written = forge_entities::written_media(&view.peek().session.messages);
+                    let first_look = !seen_writes.contains_key(&id);
+                    let seen = seen_writes.entry(id).or_default();
+                    for (call, path) in written {
+                        if seen.insert(call) && !first_look && settings.saved_config().auto_open_outputs && std::path::Path::new(&path).is_file() {
+                            workspace.open_in_preview(id, &path);
+                        }
+                    }
+                    workspace.start_requested_offers(id);
+                    // What Claude sorted the session into after its turn (`세션 상태 분류`).
+                    let classified = {
+                        let view = view.peek();
+                        view.classified.zip(view.claude_session_id.clone())
+                    };
+                    if let Some((status, session)) = classified {
+                        workspace.mark_session_status(&session, status);
+                    }
+                    // Claude's calls to the app's own tools (list_sessions, set_pinned, ...).
+                    if !view.peek().app_requests.is_empty() {
+                        workspace.serve_app_requests(id, &settings.saved_config(), settings);
+                    }
                     if workspace.is_routine_session(id) {
                         continue;
                     }
@@ -128,6 +152,10 @@ pub fn use_session_notices(workspace: Workspace, settings: Settings) {
                     let config = settings.saved_config();
                     let focused = document::eval("return document.hasFocus();").join::<bool>().await.unwrap_or(true);
                     let in_view = focused && workspace.active() == Active::Live(id);
+                    // A reply the person did not see leaves the row unread (the desktop app's blue dot).
+                    if notice == Notice::ReplyDone && workspace.active() != Active::Live(id) {
+                        workspace.mark_unread_live(id);
+                    }
                     if !should_send(notice, &config.notifications, in_view) {
                         continue;
                     }

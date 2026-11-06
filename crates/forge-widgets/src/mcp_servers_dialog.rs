@@ -20,7 +20,7 @@ pub fn McpServersDialog(id: LiveSessionId, on_close: EventHandler<()>) -> Elemen
     let Some(view) = workspace.live_view(id) else { return rsx! {} };
     let (folder, servers) = {
         let view = view.read();
-        (view.project_path.display().to_string(), view.mcp_servers.clone().unwrap_or_default())
+        (view.project_path.display().to_string(), view.mcp_servers.clone().unwrap_or_default().into_iter().filter(|server| !forge_entities::is_app_server(&server.name)).collect::<Vec<_>>())
     };
     // The workspace has no lookup from a server to its plugin's name, so the subtitle is left out.
     let table = connector_table(&servers, &|_| None);

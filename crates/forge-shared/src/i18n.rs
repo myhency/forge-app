@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(translate(Language::English, "Sample|context"), "Sample");
         assert_eq!(translate(Language::Korean, "Sample|context"), "Sample", "no table entry: the English word, without the context");
         assert_eq!(translate(Language::English, "Plain"), "Plain");
-        assert_eq!(translate(Language::Korean, "Created|tool"), "생성");
+        assert_eq!(translate(Language::Korean, "Created|tool"), "생성됨");
         assert_eq!(translate(Language::Korean, "Created"), "생성 날짜");
     }
 

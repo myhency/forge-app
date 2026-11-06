@@ -263,6 +263,7 @@ mod tests {
             available_models: Vec::new(),
             phase,
             turn_started: None,
+            turn_output_tokens: None,
             background_tasks: Vec::new(),
             suggestion: None,
             pending_permissions: VecDeque::from(vec![request; pending]),
@@ -279,6 +280,11 @@ mod tests {
             queued: Vec::new(),
             rate_limit: None,
             side_thread: Vec::new(),
+            app_requests: Vec::new(),
+            classified: None,
+            output_style: None,
+            available_output_styles: Vec::new(),
+            style_draft: Default::default(),
             rewind: None,
         }
     }

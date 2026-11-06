@@ -9,6 +9,8 @@ use crate::event::{apply_sidecar_event, SessionUpdate};
 use crate::live_session::{LiveCommand, LiveSessionView, Phase, QueuedMessage, RewindState, SideAnswer, SideQuestion};
 use crate::use_cases::{AnswerQuestionUseCase, ApprovePermissionUseCase, StopTaskUseCase, ExtensionsUseCase, InterruptTurnUseCase, SendMessageUseCase};
 
+/// Shown in the `새 출력 스타일` dialog when the session's sidecar stops while Claude drafts.
+pub const STYLE_DRAFT_CUT: &str = "The session stopped before the style was saved. Try again.";
 const CANNOT_SEND: &str = "the project folder no longer exists, so this session can only be viewed";
 
 /// The one task that owns a session. It `select!`s between UI commands and the sidecar's event
@@ -162,10 +164,19 @@ impl Actor {
             LiveCommand::Approve { id, decision, reason } => self.approve(id, decision, reason).await,
             LiveCommand::AnswerQuestion { id, answers } => self.answer_question(id, answers).await,
             LiveCommand::StopTask { task_id } => self.stop_task(task_id).await,
+            LiveCommand::AnswerApp { id, output, is_error } => self.answer_app(id, output, is_error).await,
             LiveCommand::Interrupt => self.interrupt().await,
             LiveCommand::SetMode(mode) => self.set_mode(mode).await,
             LiveCommand::SetModel(model) => self.set_model(model).await,
             LiveCommand::SetEffort(effort) => self.set_effort(effort).await,
+            LiveCommand::SetOutputStyle(style) => self.set_output_style(style).await,
+            LiveCommand::CreateOutputStyle { description, name } => self.create_output_style(description, name).await,
+            LiveCommand::ClearStyleDraft => {
+                if self.view.style_draft != crate::StyleDraft::Drafting {
+                    self.view.style_draft = crate::StyleDraft::Idle;
+                    self.dirty = true;
+                }
+            }
             LiveCommand::SetTitle(title) => {
                 self.view.session.title = Some(title);
                 self.dirty = true;
@@ -366,6 +377,7 @@ impl Actor {
             Ok(()) => {
                 self.view.phase = Phase::Running;
                 self.view.turn_started = Some(std::time::SystemTime::now());
+                self.view.turn_output_tokens = None;
                 self.view.suggestion = None;
                 self.view.last_error = None;
                 self.refusal_shown = false;
@@ -395,14 +407,18 @@ impl Actor {
     // Resolving comes first so a failing reader spawns no process. The sidecar is only kept once
     // both steps succeed; otherwise it is dropped, which ends its process.
     async fn start_sidecar(&mut self) -> Result<(), String> {
-        let (extensions, configured) = match (&self.active, self.defaults) {
-            (Some(active), Some(defaults)) => (active.clone(), defaults),
+        let (extensions, configured) = match (&self.active, &self.defaults) {
+            (Some(active), Some(defaults)) => (active.clone(), defaults.clone()),
             _ => self.extensions.resolve_start(&self.view.project_path).await.map_err(|e| e.to_string())?,
         };
         // A session already in bypass mode (resumed, or switched before the switch went off) must
         // still start: the SDK refuses that mode unless it is allowed up front.
-        let mut defaults = configured;
+        let mut defaults = configured.clone();
         defaults.allow_bypass |= self.view.session.permission_mode == PermissionMode::BypassPermissions;
+        // A style chosen in the title menu outlives a restart of the sidecar.
+        if let Some(style) = &self.view.output_style {
+            defaults.output_style = style.clone();
+        }
         forge_log::info("session", &format!("{}: starting a sidecar (resume: {}, mode {:?}, model {})", self.view.id.0, self.view.claude_session_id.is_some(), self.view.session.permission_mode, self.model.as_deref().unwrap_or("default")));
         let sidecar = self.factory.spawn().await.map_err(|e| e.to_string())?;
         sidecar
@@ -424,6 +440,18 @@ impl Actor {
         self.defaults = Some(configured);
         self.sidecar = Some(sidecar);
         Ok(())
+    }
+
+    async fn answer_app(&mut self, id: String, output: String, is_error: bool) {
+        let before = self.view.app_requests.len();
+        self.view.app_requests.retain(|request| request.id != id);
+        if self.view.app_requests.len() == before {
+            return;
+        }
+        self.dirty = true;
+        if let Some(sidecar) = self.sidecar.clone() {
+            let _ = sidecar.answer_app_request(id, output, is_error).await;
+        }
     }
 
     async fn stop_task(&mut self, task_id: String) {
@@ -504,6 +532,40 @@ impl Actor {
         }
     }
 
+    async fn set_output_style(&mut self, style: Option<forge_domain::OutputStyle>) {
+        let Some(sidecar) = self.sidecar.clone() else {
+            // No sidecar yet: the next start takes it.
+            self.view.output_style = Some(style);
+            self.dirty = true;
+            return;
+        };
+        if let Err(error) = sidecar.set_output_style(style.map(|style| style.name().to_string())).await {
+            self.fail(error.to_string(), false).await;
+        }
+    }
+
+    // A session with no sidecar yet gets one first: the sidecar saves the style where the SDK finds it
+    // and switches the running session to it.
+    async fn create_output_style(&mut self, description: String, name: Option<String>) {
+        if self.view.style_draft == crate::StyleDraft::Drafting {
+            return;
+        }
+        self.view.style_draft = crate::StyleDraft::Drafting;
+        self.dirty = true;
+        if self.sidecar.is_none() {
+            self.warm_only = true;
+            if let Err(message) = self.start_sidecar().await {
+                self.warm_only = false;
+                self.view.style_draft = crate::StyleDraft::Failed(message);
+                return;
+            }
+        }
+        let Some(sidecar) = self.sidecar.clone() else { return };
+        if let Err(error) = sidecar.create_output_style(description, name).await {
+            self.view.style_draft = crate::StyleDraft::Failed(error.to_string());
+        }
+    }
+
     async fn set_effort(&mut self, effort: Option<EffortLevel>) {
         let Some(sidecar) = self.sidecar.clone() else {
             self.effort = effort;
@@ -567,6 +629,8 @@ impl Actor {
             SessionUpdate::TurnCompleted => {
                 self.view.phase = Phase::Idle;
                 self.view.turn_started = None;
+        self.view.turn_output_tokens = None;
+                self.view.turn_output_tokens = None;
                 // The next queued message starts the next turn.
                 if !self.view.queued.is_empty() {
                     let message = self.view.queued.remove(0);
@@ -609,6 +673,7 @@ impl Actor {
             }
             SessionUpdate::PromptSuggestion(text) => self.view.suggestion = Some(text),
             SessionUpdate::ContextUsage(context) => self.view.context = Some(context),
+            SessionUpdate::OutputTokens(tokens) => self.view.turn_output_tokens = Some(tokens),
             // A breakdown with no rows is "nothing measured", not a value: the last good one stays.
             SessionUpdate::ContextDetail(detail) => {
                 if !detail.rows.is_empty() {
@@ -624,6 +689,19 @@ impl Actor {
                 self.model = model.clone();
                 self.view.model = model;
                 self.clear_refusal();
+            }
+            SessionUpdate::OutputStyleChanged(style) => {
+                self.view.output_style = Some(style);
+                self.clear_refusal();
+            }
+            SessionUpdate::OutputStylesAvailable(styles) => {
+                self.view.available_output_styles = styles;
+            }
+            SessionUpdate::OutputStyleCreated(outcome) => {
+                self.view.style_draft = match outcome {
+                    Ok(name) => crate::StyleDraft::Created(name),
+                    Err(reason) => crate::StyleDraft::Failed(reason),
+                };
             }
             SessionUpdate::EffortChanged { effort } => {
                 self.effort = effort;
@@ -653,6 +731,12 @@ impl Actor {
             SessionUpdate::RewindResult { request_id, outcome } => {
                 if let Some(state) = self.view.rewind.as_mut().filter(|state| state.request_id == request_id) {
                     state.outcome = Some(outcome);
+                }
+            }
+            SessionUpdate::AppRequest(request) => self.view.app_requests.push(request),
+            SessionUpdate::StatusClassified(status) => {
+                if status.is_some() {
+                    self.view.classified = status;
                 }
             }
             SessionUpdate::SideAnswer { request_id, result } => {
@@ -702,6 +786,7 @@ impl Actor {
         self.discard_sidecar(shutdown).await;
         self.view.phase = Phase::Failed;
         self.view.turn_started = None;
+        self.view.turn_output_tokens = None;
         self.view.last_error = Some(message);
         self.refusal_shown = false;
         self.view.pending_permissions.clear();
@@ -715,6 +800,10 @@ impl Actor {
         }
         self.view.background_tasks.clear();
         self.vanished.clear();
+        // The drafter runs in the sidecar: it ends with it.
+        if self.view.style_draft == crate::StyleDraft::Drafting {
+            self.view.style_draft = crate::StyleDraft::Failed(STYLE_DRAFT_CUT.to_string());
+        }
         if let Some(sidecar) = self.sidecar.take() {
             if shutdown {
                 let _ = sidecar.shutdown().await;

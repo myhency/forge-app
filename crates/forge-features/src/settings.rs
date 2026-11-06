@@ -59,7 +59,12 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::DynamicWorkflows(on) => config.dynamic_workflows = on,
         CodeChange::AutoMemory(on) => config.auto_memory = on,
         CodeChange::TurnTools(on) => config.turn_tools = on,
+        CodeChange::UnrelatedTask(choice) => config.unrelated_task = choice,
+        CodeChange::ClassifySessions(on) => config.classify_sessions = on,
         CodeChange::GenerativeUi(on) => config.generative_ui = on,
+        CodeChange::BrowserTools(on) => config.browser_tools = on,
+        CodeChange::AutoOpenOutputs(on) => config.auto_open_outputs = on,
+        CodeChange::Terminal(prefs) => config.terminal = prefs,
         CodeChange::DesktopControl(on) => config.desktop_control = on,
         CodeChange::WorktreeLocation(value) => config.worktree_location = value,
         CodeChange::AutoArchiveDays(days) => config.auto_archive_days = days,
@@ -68,6 +73,10 @@ pub(crate) fn apply_code_change(config: &mut AppConfig, change: CodeChange) {
         CodeChange::TextSize(value) => config.appearance.text_size = value,
         CodeChange::ChatWidth(value) => config.appearance.chat_width = value,
         CodeChange::Motion(value) => config.appearance.motion = value,
+        CodeChange::CodeThemeLight(theme) => config.code_look.light = theme,
+        CodeChange::CodeThemeDark(theme) => config.code_look.dark = theme,
+        CodeChange::CodeFont(font) => config.code_look.font = font.as_deref().and_then(forge_domain::clean_font_name),
+        CodeChange::CodeSize(size) => config.code_look.size = size,
         CodeChange::Notification(kind, on) => match kind {
             NotificationKind::ReplyDone => config.notifications.reply_done = on,
             NotificationKind::ScheduledTask => config.notifications.scheduled_task = on,
@@ -111,7 +120,12 @@ pub(crate) enum CodeChange {
     DynamicWorkflows(bool),
     AutoMemory(bool),
     TurnTools(bool),
+    UnrelatedTask(forge_domain::UnrelatedTask),
+    ClassifySessions(bool),
     GenerativeUi(bool),
+    BrowserTools(bool),
+    AutoOpenOutputs(bool),
+    Terminal(forge_domain::TerminalPrefs),
     DesktopControl(bool),
     WorktreeLocation(WorktreeLocation),
     AutoArchiveDays(Option<u32>),
@@ -120,6 +134,10 @@ pub(crate) enum CodeChange {
     TextSize(TextSize),
     ChatWidth(ChatWidth),
     Motion(MotionPref),
+    CodeThemeLight(forge_domain::CodeTheme),
+    CodeThemeDark(forge_domain::CodeTheme),
+    CodeFont(Option<String>),
+    CodeSize(Option<u8>),
     Notification(NotificationKind, bool),
     AttentionBounce(bool),
     Language(Language),
@@ -314,7 +332,7 @@ impl Settings {
     }
 
     pub fn output_style(&self) -> Option<OutputStyle> {
-        self.saved.read().output_style
+        self.saved.read().output_style.clone()
     }
 
     pub fn prompt_suggestions(&self) -> bool {
@@ -333,12 +351,52 @@ impl Settings {
         self.change_code(CodeChange::TurnTools(on));
     }
 
+    pub fn classify_sessions(&self) -> bool {
+        self.saved.read().classify_sessions
+    }
+
+    pub fn set_classify_sessions(&self, on: bool) {
+        self.change_code(CodeChange::ClassifySessions(on));
+    }
+
+    pub fn unrelated_task(&self) -> forge_domain::UnrelatedTask {
+        self.saved.read().unrelated_task
+    }
+
+    pub fn set_unrelated_task(&self, choice: forge_domain::UnrelatedTask) {
+        self.change_code(CodeChange::UnrelatedTask(choice));
+    }
+
     pub fn generative_ui(&self) -> bool {
         self.saved.read().generative_ui
     }
 
     pub fn set_generative_ui(&self, on: bool) {
         self.change_code(CodeChange::GenerativeUi(on));
+    }
+
+    pub fn browser_tools(&self) -> bool {
+        self.saved.read().browser_tools
+    }
+
+    pub fn set_browser_tools(&self, on: bool) {
+        self.change_code(CodeChange::BrowserTools(on));
+    }
+
+    pub fn terminal_prefs(&self) -> forge_domain::TerminalPrefs {
+        self.saved.read().terminal
+    }
+
+    pub fn set_terminal_prefs(&self, prefs: forge_domain::TerminalPrefs) {
+        self.change_code(CodeChange::Terminal(prefs));
+    }
+
+    pub fn auto_open_outputs(&self) -> bool {
+        self.saved.read().auto_open_outputs
+    }
+
+    pub fn set_auto_open_outputs(&self, on: bool) {
+        self.change_code(CodeChange::AutoOpenOutputs(on));
     }
 
     pub fn desktop_tool_view(&self) -> DesktopToolView {
@@ -518,6 +576,22 @@ impl Settings {
 
     pub fn set_motion(&self, value: MotionPref) {
         self.change_code(CodeChange::Motion(value));
+    }
+
+    pub fn code_look(&self) -> forge_domain::CodeLook {
+        self.saved.read().code_look.clone()
+    }
+
+    pub fn set_code_theme(&self, dark: bool, theme: forge_domain::CodeTheme) {
+        self.change_code(if dark { CodeChange::CodeThemeDark(theme) } else { CodeChange::CodeThemeLight(theme) });
+    }
+
+    pub fn set_code_font(&self, font: Option<String>) {
+        self.change_code(CodeChange::CodeFont(font));
+    }
+
+    pub fn set_code_size(&self, size: Option<u8>) {
+        self.change_code(CodeChange::CodeSize(size));
     }
 
     pub fn set_notification(&self, kind: NotificationKind, on: bool) {
@@ -752,6 +826,7 @@ impl Settings {
         let mut base_url = self.base_url;
         let mut api_key = self.api_key;
         crate::appearance::apply_appearance(&config.appearance);
+        crate::appearance::apply_code_look(&config.code_look);
         forge_shared::i18n::set_current(forge_shared::i18n::effective_language(config.language));
         saved.set(config);
         base_url.set(draft.base_url);
@@ -794,17 +869,24 @@ impl Settings {
             current.dynamic_workflows = config.dynamic_workflows;
             current.auto_memory = config.auto_memory;
             current.turn_tools = config.turn_tools;
+            current.unrelated_task = config.unrelated_task;
+            current.classify_sessions = config.classify_sessions;
             current.generative_ui = config.generative_ui;
+            current.browser_tools = config.browser_tools;
+            current.auto_open_outputs = config.auto_open_outputs;
+            current.terminal = config.terminal;
             current.desktop_control = config.desktop_control;
             current.worktree_location = config.worktree_location;
             current.auto_archive_days = config.auto_archive_days;
             current.appearance = config.appearance;
+            current.code_look = config.code_look.clone();
             current.notifications = config.notifications;
             current.attention_bounce = config.attention_bounce;
             current.language = config.language;
             current.trusted_folders = config.trusted_folders;
         }
         crate::appearance::apply_appearance(&config.appearance);
+        crate::appearance::apply_code_look(&config.code_look);
         status.set(Some((*self.section.peek(), SettingsStatus::Saved)));
     }
 
@@ -946,6 +1028,13 @@ mod tests {
         apply_code_change(&mut config, CodeChange::GenerativeUi(false));
         assert!(!config.generative_ui);
         assert!(config.turn_tools);
+    }
+
+    #[test]
+    fn the_unrelated_task_choice_is_saved() {
+        let mut config = AppConfig::default();
+        apply_code_change(&mut config, CodeChange::UnrelatedTask(forge_domain::UnrelatedTask::NewSession));
+        assert_eq!(config.unrelated_task, forge_domain::UnrelatedTask::NewSession);
     }
 
     #[test]

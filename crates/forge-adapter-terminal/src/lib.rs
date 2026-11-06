@@ -1,3 +1,5 @@
+mod background;
+pub use background::BackgroundPrograms;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::Path;

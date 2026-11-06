@@ -33,7 +33,7 @@ pub fn end_card_reply(card: Option<&forge_entities::EndCard>, draft_empty: bool,
 mod tests {
     use super::*;
 
-    const DEFAULT: &str = "Message Claude…";
+    const DEFAULT: &str = "Type / for commands";
 
     fn card(actions: &[(&str, &str)]) -> forge_entities::EndCard {
         forge_entities::EndCard {

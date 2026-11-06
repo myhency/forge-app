@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use forge_features::{use_workspace, Active, EntryKey, Heading};
-use forge_shared::{tr, Button, ButtonKind, Icon, IconKind, IconSize};
+use forge_shared::{tr, Button, Icon, IconKind, IconSize};
 
 use crate::account_menu::AccountMenu;
 use crate::filter_menu::{use_filter_ui_provider, FilterButton, SidebarFilterMenu};
@@ -100,7 +100,7 @@ pub fn NavButtons() -> Element {
             "aria-label": "Back",
             disabled: !workspace.can_go_back(),
             onclick: move |_| workspace.go_back(),
-            Icon { kind: IconKind::ArrowLeft }
+            Icon { kind: IconKind::ChevronLeft }
         }
         button {
             class: "icon-button nav-button",
@@ -109,7 +109,7 @@ pub fn NavButtons() -> Element {
             "aria-label": "Forward",
             disabled: !workspace.can_go_forward(),
             onclick: move |_| workspace.go_forward(),
-            Icon { kind: IconKind::ArrowRight }
+            Icon { kind: IconKind::Chevron }
         }
     }
 }
@@ -120,7 +120,47 @@ pub fn Sidebar() -> Element {
     let workspace = use_workspace();
     let _filter_ui = use_filter_ui_provider();
     let prefs = workspace.prefs();
-    let groups = workspace.arranged_sidebar(forge_features::now_local());
+    let mut groups = workspace.arranged_sidebar(forge_features::now_local());
+    // Pinned sessions leave their group for the `고정됨` group at the top, in the order pinned (the
+    // desktop app's 고정, observed 2026-11-06). A group that only held pinned sessions goes.
+    let mut pinned_items: Vec<forge_features::ArrangedEntry> = Vec::new();
+    for group in groups.iter_mut() {
+        let before = group.entries.len();
+        group.entries.retain(|item| {
+            let pinned = item.depth == 0 && item.entry.session_id.as_ref().is_some_and(|id| workspace.is_pinned(&item.project.path, id));
+            if pinned {
+                pinned_items.push(item.clone());
+            }
+            !pinned
+        });
+        if before > 0 && group.entries.is_empty() {
+            group.id.clear();
+        }
+    }
+    // Sessions the person filed in a section leave their group for it, as pinned ones do.
+    let mut section_items: Vec<(forge_domain::SidebarSection, Vec<forge_features::ArrangedEntry>)> = prefs.sections.iter().cloned().map(|section| (section, Vec::new())).collect();
+    for group in groups.iter_mut() {
+        if group.id.is_empty() {
+            continue;
+        }
+        let before = group.entries.len();
+        group.entries.retain(|item| {
+            let Some(id) = item.entry.session_id.as_ref().filter(|_| item.depth == 0) else { return true };
+            match section_items.iter_mut().find(|(section, _)| section.sessions.iter().any(|known| *known == id.0)) {
+                Some((_, list)) => {
+                    list.push(item.clone());
+                    false
+                }
+                None => true,
+            }
+        });
+        if before > 0 && group.entries.is_empty() {
+            group.id.clear();
+        }
+    }
+    groups.retain(|group| !group.id.is_empty());
+    let pin_order = prefs.pinned.clone();
+    pinned_items.sort_by_key(|item| pin_order.iter().position(|pin| Some(pin.session_id.as_str()) == item.entry.session_id.as_ref().map(|id| id.0.as_str())).unwrap_or(usize::MAX));
     // Headings of folder groups are told apart when two folders share a name; rows in a date
     // list show their folder's plain name.
     let paths: Vec<PathBuf> = groups
@@ -135,46 +175,58 @@ pub fn Sidebar() -> Element {
     let active = workspace.active();
     let shown_targets = workspace.pane_targets();
     let notice = workspace.notice();
+    // Groups the person opened with `더 보기`; kept while the app runs.
+    let mut expanded_groups = use_signal(std::collections::HashSet::<String>::new);
 
     rsx! {
         div { class: "sidebar", style: "width: {prefs.clamped_width()}px",
             SidebarFilterMenu {}
+            // The desktop app's sidebar top (round 37): the sidebar toggle and back / forward in one
+            // row, then plain rows `+ 새로 만들기 ⌘N`, `검색`, `예약됨`, `사용자 지정`.
             div { class: "sidebar-top",
-                NavButtons {}
-                button {
-                    class: "sidebar-search",
-                    title: tr!("Search sessions ({key})", key = forge_domain::KEY_SEARCH),
-                    onclick: move |_| workspace.open_search(),
-                    span { Icon { kind: IconKind::Search } }
-                    span { {tr!("Search")} }
-                    span { class: "keys", "{forge_domain::KEY_SEARCH}" }
-                }
                 button {
                     class: "icon-button sidebar-hide",
                     title: tr!("Hide the sidebar"),
-                    onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = true),
-                    Icon { kind: IconKind::ChevronLeft }
+                    "aria-label": tr!("Hide the sidebar"),
+                    // On a hidden sidebar shown for a moment (pointer on the toggle), a click keeps it open.
+                    onclick: move |_| workspace.update_prefs(|prefs| prefs.hidden = !prefs.hidden),
+                    Icon { kind: IconKind::Sidebar }
                 }
-            }
-            div { class: "sidebar-new",
-                Button {
-                    label: tr!("+ New session"),
-                    kind: ButtonKind::Primary,
-                    onclick: move |_| workspace.show_new_session(),
-                }
+                NavButtons {}
+                forge_features::DragSpacer {}
             }
             button {
-                class: if active == Active::Customize { "sidebar-link active" } else { "sidebar-link" },
-                onclick: move |_| workspace.show_customize(),
-                span { Icon { kind: IconKind::Sparkle } }
-                span { {tr!("Customize")} }
+                class: "sidebar-link sidebar-new-row",
+                onclick: move |_| workspace.show_new_session(),
+                span { Icon { kind: IconKind::Plus } }
+                span { {tr!("New")} }
+                span { class: "sidebar-link-keys", "{forge_domain::KEY_NEW_SESSION}" }
             }
             button {
-                class: if active == Active::Routines { "sidebar-link active" } else { "sidebar-link" },
-                onclick: move |_| workspace.show_routines(),
-                span { Icon { kind: IconKind::Clock } }
-                span { {tr!("Routines")} }
+                class: "sidebar-link",
+                title: tr!("Search sessions ({key})", key = forge_domain::KEY_SEARCH),
+                onclick: move |_| workspace.open_search(),
+                span { Icon { kind: IconKind::Search } }
+                span { {tr!("Search")} }
+                span { class: "sidebar-link-keys", "{forge_domain::KEY_SEARCH}" }
             }
+            if !prefs.hidden_links.iter().any(|link| link == "scheduled") {
+                button {
+                    class: if active == Active::Routines { "sidebar-link active" } else { "sidebar-link" },
+                    onclick: move |_| workspace.show_routines(),
+                    span { Icon { kind: IconKind::Clock } }
+                    span { {tr!("Scheduled")} }
+                }
+            }
+            if !prefs.hidden_links.iter().any(|link| link == "customize") {
+                button {
+                    class: if active == Active::Customize { "sidebar-link active" } else { "sidebar-link" },
+                    onclick: move |_| workspace.show_customize(),
+                    span { Icon { kind: IconKind::Sparkle } }
+                    span { {tr!("Customize")} }
+                }
+            }
+            SidebarMore {}
             div { class: "sidebar-scroll",
             if let Some(message) = notice {
                 div { class: if workspace.notice_is_info() { "banner info" } else { "banner error" },
@@ -185,6 +237,37 @@ pub fn Sidebar() -> Element {
             if groups.is_empty() {
                 // Without a session there is no heading to carry the menu, and the empty groups may be what the person wants.
                 div { class: "sidebar-group-header empty", FilterButton {} }
+            }
+            if !pinned_items.is_empty() {
+                div { class: "pinned-group",
+                    div { class: "sidebar-group-header",
+                        span { class: "group-toggle pinned-heading",
+                            span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: true } }
+                            span { class: "sidebar-group-title", {tr!("Pinned")} }
+                        }
+                    }
+                    for item in pinned_items.iter() {
+                        SessionRow {
+                            key: "pin-{item.entry.key.dom_key()}",
+                            project: item.project.path.clone(),
+                            entry: item.entry.clone(),
+                            active: matches!(&item.entry.key, EntryKey::Live(id) if active == Active::Live(*id)),
+                            onopen: {
+                                let project = item.project.clone();
+                                let key = item.entry.key.clone();
+                                move |beside: bool| match (&key, beside) {
+                                    (EntryKey::Live(id), false) => workspace.open_session(*id),
+                                    (EntryKey::Live(id), true) => workspace.add_session(*id),
+                                    (EntryKey::Past { session, .. }, false) => workspace.open_past_clicked(project.clone(), session.clone()),
+                                    (EntryKey::Past { session, .. }, true) => workspace.add_past(project.clone(), session.clone()),
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+            for (section, items) in section_items.into_iter() {
+                SidebarSectionGroup { key: "{section.id}", section, items }
             }
             for group in groups {
                 div { key: "{group.id}",
@@ -201,9 +284,9 @@ pub fn Sidebar() -> Element {
                                 FilterButton {}
                             }
                         },
-                        Heading::Status(marker) => rsx! {
+                        Heading::Status(status) => rsx! {
                             div { class: "sidebar-group-header",
-                                {group_toggle(workspace, &group.id, group.collapsed, forge_features::status_heading(*marker).to_string(), String::new(), false)}
+                                {group_toggle(workspace, &group.id, group.collapsed, forge_features::status_heading(*status).to_string(), String::new(), false)}
                                 FilterButton {}
                             }
                         },
@@ -247,7 +330,17 @@ pub fn Sidebar() -> Element {
                             }
                         },
                     }
-                    for item in group.entries.iter().filter(|item| prefs.show_side_chats || !is_side_chat_session(&item.entry)) {
+                    {
+                        let visible: Vec<&forge_features::ArrangedEntry> = group.entries.iter().filter(|item| prefs.show_side_chats || !is_side_chat_session(&item.entry)).collect();
+                        let depths: Vec<u8> = visible.iter().map(|item| item.depth).collect();
+                        let active_at = visible.iter().position(|item| matches!(&item.entry.key, EntryKey::Live(id) if active == Active::Live(*id)));
+                        let expanded = expanded_groups.read().contains(&group.id);
+                        let cut = forge_features::group_cut(&depths, active_at, expanded);
+                        let foldable = forge_features::group_cut(&depths, None, false).is_some();
+                        let shown_rows: Vec<forge_features::ArrangedEntry> = visible.iter().take(cut.unwrap_or(visible.len())).map(|item| (*item).clone()).collect();
+                        let group_id = group.id.clone();
+                        rsx! {
+                    for item in shown_rows.iter() {
                         SessionRow {
                             key: "{item.entry.key.dom_key()}",
                             project: item.project.path.clone(),
@@ -292,6 +385,24 @@ pub fn Sidebar() -> Element {
                         }
                         if item.hidden_forks > 0 {
                             div { class: "fork-hidden", style: "margin-left: {fork_indent(item.depth.saturating_add(1))}px", {nested_label(item.hidden_forks)} }
+                        }
+                    }
+                    if foldable && !group.collapsed {
+                        button {
+                            class: "sidebar-more",
+                            r#type: "button",
+                            onclick: {
+                                let group_id = group_id.clone();
+                                move |_| {
+                                    let mut set = expanded_groups.write();
+                                    if !set.remove(&group_id) {
+                                        set.insert(group_id.clone());
+                                    }
+                                }
+                            },
+                            if cut.is_some() { {tr!("Show more")} } else { {tr!("Show less|connectors")} }
+                        }
+                    }
                         }
                     }
                 }
@@ -474,5 +585,176 @@ mod tests {
             labels(&["/a/app", "/b/app", "/c/app"]),
             ["app (a)", "app (b)", "app (c)"]
         );
+    }
+}
+
+/// The desktop app's `··· 더 보기` row (observed 2026-11-06): a menu with `사이드바 편집…`, which
+/// opens a dialog to choose the top rows the sidebar shows (Forge has 예약됨 and 사용자 지정; the
+/// desktop's 아티팩트 is claude.ai's).
+#[component]
+fn SidebarMore() -> Element {
+    let workspace = use_workspace();
+    let mut menu = use_signal(|| false);
+    let mut editing = use_signal(|| false);
+    let hidden = workspace.prefs().hidden_links;
+    let rows: [(&'static str, IconKind, String); 2] = [("scheduled", IconKind::Clock, tr!("Scheduled").to_string()), ("customize", IconKind::Sparkle, tr!("Customize").to_string())];
+    rsx! {
+        div { class: "sidebar-more-wrap",
+            button {
+                class: "sidebar-link",
+                "aria-haspopup": "menu",
+                "aria-expanded": "{menu()}",
+                onclick: move |_| menu.set(!menu()),
+                span { Icon { kind: IconKind::MoreHorizontal } }
+                span { {tr!("More")} }
+            }
+            if menu() {
+                div { class: "menu-backdrop", onclick: move |_| menu.set(false) }
+                div { class: "row-menu sidebar-more-menu", role: "menu",
+                    button {
+                        class: "row-menu-item",
+                        role: "menuitem",
+                        onclick: move |_| {
+                            menu.set(false);
+                            editing.set(true);
+                        },
+                        span { {tr!("Edit sidebar…")} }
+                    }
+                }
+            }
+        }
+        if editing() {
+            div { class: "settings-backdrop edit-sidebar-backdrop", onclick: move |_| editing.set(false),
+                div { class: "shortcuts-panel edit-sidebar", role: "dialog", "aria-label": tr!("Edit sidebar"),
+                    onclick: move |event| event.stop_propagation(),
+                    button { class: "settings-close", title: tr!("Close"), onclick: move |_| editing.set(false), Icon { kind: IconKind::Close } }
+                    h2 { {tr!("Edit sidebar")} }
+                    p { class: "edit-sidebar-note", {tr!("Choose what the sidebar shows.")} }
+                    for (id, icon, label) in rows {
+                        label { key: "{id}", class: "edit-sidebar-row",
+                            input {
+                                r#type: "checkbox",
+                                checked: !hidden.iter().any(|link| link == id),
+                                onchange: move |event: Event<FormData>| {
+                                    let show = event.checked();
+                                    workspace.update_prefs(|prefs| {
+                                        prefs.hidden_links.retain(|link| link != id);
+                                        if !show {
+                                            prefs.hidden_links.push(id.to_string());
+                                        }
+                                    });
+                                },
+                            }
+                            Icon { kind: icon }
+                            span { "{label}" }
+                        }
+                    }
+                    div { class: "edit-sidebar-actions",
+                        button { class: "button primary", r#type: "button", onclick: move |_| editing.set(false), {tr!("Done")} }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A section the person made (`섹션으로 이동 › 새 섹션`): its name over its sessions, and a menu to
+/// rename or remove it. An empty section still shows, so it can be filled or removed.
+#[component]
+fn SidebarSectionGroup(section: forge_domain::SidebarSection, items: Vec<forge_features::ArrangedEntry>) -> Element {
+    let workspace = use_workspace();
+    let active = workspace.active();
+    let mut open = use_signal(|| true);
+    let mut menu = use_signal(|| false);
+    let mut renaming: Signal<Option<String>> = use_signal(|| None);
+    let id = section.id.clone();
+    rsx! {
+        div { class: "section-group",
+            div { class: "sidebar-group-header",
+                if let Some(draft) = renaming() {
+                    input {
+                        class: "text-input section-rename",
+                        value: "{draft}",
+                        onmounted: move |mounted| async move {
+                            let _ = mounted.set_focus(true).await;
+                        },
+                        oninput: move |event| renaming.set(Some(event.value())),
+                        onkeydown: {
+                            let id = id.clone();
+                            move |event: KeyboardEvent| match event.key() {
+                                Key::Enter if !event.is_composing() => {
+                                    if let Some(name) = renaming.peek().clone() {
+                                        workspace.rename_section(&id, name);
+                                    }
+                                    renaming.set(None);
+                                }
+                                Key::Escape => renaming.set(None),
+                                _ => {}
+                            }
+                        },
+                    }
+                } else {
+                    button { class: "group-toggle", onclick: move |_| open.set(!open()),
+                        span { class: "chevron", Icon { kind: IconKind::Chevron, size: IconSize::Small, open: open() } }
+                        span { class: "sidebar-group-title", "{section.name}" }
+                    }
+                    div { class: "section-menu-wrap",
+                        button { class: "icon-button section-menu-button", title: tr!("Section menu"), onclick: move |_| menu.set(!menu()),
+                            Icon { kind: IconKind::MoreHorizontal, size: IconSize::Small }
+                        }
+                        if menu() {
+                            div { class: "menu-backdrop", onclick: move |_| menu.set(false) }
+                            div { class: "row-menu", role: "menu",
+                                button {
+                                    class: "row-menu-item",
+                                    onclick: {
+                                        let name = section.name.clone();
+                                        move |_| {
+                                            menu.set(false);
+                                            renaming.set(Some(name.clone()));
+                                        }
+                                    },
+                                    span { {tr!("Rename")} }
+                                }
+                                button {
+                                    class: "row-menu-item danger",
+                                    onclick: {
+                                        let id = id.clone();
+                                        move |_| {
+                                            menu.set(false);
+                                            workspace.delete_section(&id);
+                                        }
+                                    },
+                                    span { {tr!("Delete section")} }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if open() {
+                for item in items.iter() {
+                    SessionRow {
+                        key: "sec-{item.entry.key.dom_key()}",
+                        project: item.project.path.clone(),
+                        entry: item.entry.clone(),
+                        active: matches!(&item.entry.key, EntryKey::Live(id) if active == Active::Live(*id)),
+                        onopen: {
+                            let project = item.project.clone();
+                            let key = item.entry.key.clone();
+                            move |beside: bool| match (&key, beside) {
+                                (EntryKey::Live(id), false) => workspace.open_session(*id),
+                                (EntryKey::Live(id), true) => workspace.add_session(*id),
+                                (EntryKey::Past { session, .. }, false) => workspace.open_past_clicked(project.clone(), session.clone()),
+                                (EntryKey::Past { session, .. }, true) => workspace.add_past(project.clone(), session.clone()),
+                            }
+                        },
+                    }
+                }
+                if items.is_empty() {
+                    div { class: "section-empty", {tr!("Move sessions here from their menu.")} }
+                }
+            }
+        }
     }
 }

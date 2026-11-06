@@ -24,6 +24,17 @@ pub enum Phase {
 }
 
 /// Everything the UI needs to draw one open session.
+/// Where a new output style the person asked for stands.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum StyleDraft {
+    #[default]
+    Idle,
+    Drafting,
+    /// Saved and chosen for the session; the SDK name.
+    Created(String),
+    Failed(String),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiveSessionView {
     pub id: LiveSessionId,
@@ -44,6 +55,8 @@ pub struct LiveSessionView {
     pub phase: Phase,
     /// When the running turn was sent; `None` while no turn runs.
     pub turn_started: Option<std::time::SystemTime>,
+    /// The running turn's output tokens so far, for the progress line; `None` until the first count.
+    pub turn_output_tokens: Option<u64>,
     /// The background tasks the SDK reports as running, with when each was first seen.
     pub background_tasks: Vec<forge_domain::RunningTask>,
     /// The SDK's guess at the next prompt; cleared by a send.
@@ -79,6 +92,17 @@ pub struct LiveSessionView {
     pub rate_limit: Option<forge_domain::RateLimit>,
     /// The `/btw` questions and answers, oldest first; they are not part of the session.
     pub side_thread: Vec<SideQuestion>,
+    /// App tool calls waiting for the app's answer (list_sessions, set_pinned, ...).
+    pub app_requests: Vec<AppRequest>,
+    /// What Claude sorted the session into after its last turn (`세션 상태 분류`).
+    pub classified: Option<forge_domain::SessionStatus>,
+    /// The output style the person chose for this session in its title menu; `None` until then
+    /// (the session then runs on the Settings default).
+    pub output_style: Option<Option<forge_domain::OutputStyle>>,
+    /// The output styles the SDK lists for this session (`default` first); empty until it reports them.
+    pub available_output_styles: Vec<String>,
+    /// The title menu's `새 스타일...` while Claude drafts it, and how it ended.
+    pub style_draft: StyleDraft,
     /// The `/rewind` the person is looking at: a preview of what would change, then the result.
     pub rewind: Option<RewindState>,
 }
@@ -118,6 +142,15 @@ pub struct QueuedMessage {
     pub attachments: Vec<Attachment>,
 }
 
+/// One call Claude made to an app tool, waiting for the app.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppRequest {
+    pub id: String,
+    /// The tool's short name (`list_sessions`).
+    pub tool: String,
+    pub input: serde_json::Value,
+}
+
 #[derive(Debug)]
 pub enum LiveCommand {
     Send { text: String, attachments: Vec<Attachment> },
@@ -151,11 +184,19 @@ pub enum LiveCommand {
     Approve { id: String, decision: PermissionDecision, reason: Option<String> },
     AnswerQuestion { id: String, answers: std::collections::BTreeMap<String, String> },
     StopTask { task_id: String },
+    /// The app's answer to an app tool call.
+    AnswerApp { id: String, output: String, is_error: bool },
     Interrupt,
     SetTitle(String),
     SetMode(PermissionMode),
     SetModel(Option<String>),
     SetEffort(Option<EffortLevel>),
+    /// The session's output style from its next answer on (`None`: the default).
+    SetOutputStyle(Option<forge_domain::OutputStyle>),
+    /// `새 스타일...`: what the person wants and the name they gave, if any.
+    CreateOutputStyle { description: String, name: Option<String> },
+    /// The dialog closed: forget how the last draft ended.
+    ClearStyleDraft,
     Close,
 }
 
@@ -293,6 +334,11 @@ impl LiveSessionHandle {
         let _ = self.commands.send(LiveCommand::Interrupt);
     }
 
+    /// Answers an app tool call Claude made (see `LiveSessionView::app_requests`).
+    pub fn answer_app_request(&self, id: String, output: String, is_error: bool) {
+        let _ = self.commands.send(LiveCommand::AnswerApp { id, output, is_error });
+    }
+
     /// Changes the permission mode from the next turn on. With a sidecar running the view follows
     /// once the SDK accepts it; without one the view changes now and the next start uses it.
     pub fn set_permission_mode(&self, mode: PermissionMode) {
@@ -307,6 +353,20 @@ impl LiveSessionHandle {
     /// Changes the effort (`None`: the default) the same way.
     pub fn set_effort(&self, effort: Option<EffortLevel>) {
         let _ = self.commands.send(LiveCommand::SetEffort(effort));
+    }
+
+    /// The title menu's `출력 스타일`: changes this session's output style.
+    pub fn set_output_style(&self, style: Option<forge_domain::OutputStyle>) {
+        let _ = self.commands.send(LiveCommand::SetOutputStyle(style));
+    }
+
+    /// `새 스타일...`: Claude drafts a style from `description`, it is saved and the session switches to it.
+    pub fn create_output_style(&self, description: String, name: Option<String>) {
+        let _ = self.commands.send(LiveCommand::CreateOutputStyle { description, name });
+    }
+
+    pub fn clear_style_draft(&self) {
+        let _ = self.commands.send(LiveCommand::ClearStyleDraft);
     }
 
     pub fn close(&self) {
@@ -365,6 +425,7 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         available_models: Vec::new(),
         phase: Phase::Idle,
         turn_started: None,
+        turn_output_tokens: None,
         background_tasks: Vec::new(),
         suggestion: None,
         pending_permissions: VecDeque::new(),
@@ -381,6 +442,11 @@ pub(crate) fn spawn_live_session(init: LiveSessionInit) -> LiveSessionHandle {
         queued: Vec::new(),
         rate_limit: None,
         side_thread: Vec::new(),
+        app_requests: Vec::new(),
+        classified: None,
+        output_style: None,
+        available_output_styles: Vec::new(),
+        style_draft: StyleDraft::Idle,
         rewind: None,
     };
     let (view_tx, view_rx) = watch::channel(view.clone());
@@ -494,7 +560,7 @@ mod tests {
 
         assert_eq!(
             started_defaults(control.calls()),
-            SessionDefaults { output_style: Some(OutputStyle::Concise), auto_mode_model: None, prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, desktop_control: false }
+            SessionDefaults { output_style: Some(OutputStyle::Concise), auto_mode_model: None, prompt_suggestions: false, allow_bypass: true, dynamic_workflows: true, auto_memory: true, turn_tools: true, generative_ui: true, browser_tools: true, desktop_control: false, unrelated_task: forge_domain::UnrelatedTask::Ask, classify_status: true }
         );
     }
 
@@ -1197,6 +1263,24 @@ mod tests {
         assert_eq!(after.unsent.as_deref(), Some("rewound text"));
         assert_eq!(after.failed_sends, 1, "the box takes the text back as it does for a send that failed");
         assert!(after.side_thread.is_empty() && after.queued.is_empty() && after.rewind.is_none());
+    }
+
+    #[tokio::test]
+    async fn an_app_tool_call_waits_in_the_view_until_the_app_answers_it() {
+        let (sidecar, control) = fake_sidecar();
+        let (factory, _spawns) = factory_returning(vec![Ok(sidecar)]);
+        let handle = spawn_live_session(new_init(factory));
+        let mut view = handle.subscribe();
+        handle.send("hi".to_string());
+        wait_for(&mut view, "the turn", |v| v.phase == Phase::Running).await;
+
+        control.push(SidecarEvent::AppRequest { request_id: "r1".to_string(), tool: "list_sessions".to_string(), input: serde_json::json!({"limit": 3}) });
+        let waiting = wait_for(&mut view, "the request", |v| !v.app_requests.is_empty()).await;
+        assert_eq!(waiting.app_requests[0], AppRequest { id: "r1".to_string(), tool: "list_sessions".to_string(), input: serde_json::json!({"limit": 3}) });
+
+        handle.answer_app_request("r1".to_string(), "[]".to_string(), false);
+        wait_for(&mut view, "the request to go", |v| v.app_requests.is_empty()).await;
+        assert!(control.calls().contains(&Call::AppAnswer("r1".to_string(), "[]".to_string(), false)));
     }
 
     #[tokio::test]
@@ -2029,6 +2113,7 @@ mod tests {
             categories: vec![ContextCategory { name: name.to_string(), tokens: 5, kind: kind.to_string() }],
             mcp_tools: vec![ContextItemReport { server: Some("figma".to_string()), name: "t".to_string(), tokens: 3 }],
             agents: vec![ContextItemReport { server: None, name: "Explore".to_string(), tokens: 2 }],
+            memory_files: vec![],
         }
     }
 
@@ -2065,7 +2150,7 @@ mod tests {
         assert_eq!(breakdown.agents[0].group, None);
 
         // An empty list, or only rows of an unknown kind, is no value and keeps the good one.
-        control.push(SidecarEvent::ContextDetail { categories: vec![], mcp_tools: vec![], agents: vec![] });
+        control.push(SidecarEvent::ContextDetail { categories: vec![], mcp_tools: vec![], agents: vec![], memory_files: vec![] });
         control.push(detail("weird", "Mystery"));
         control.push(SidecarEvent::ContextUsage { total_tokens: 1, max_tokens: 2 });
         let seen = wait_for(&mut view, "the marker", |v| v.context.is_some()).await;
@@ -2079,6 +2164,7 @@ mod tests {
             ],
             mcp_tools: vec![],
             agents: vec![],
+            memory_files: vec![],
         });
         let seen = wait_for(&mut view, "the buffer breakdown", |v| {
             v.context_detail.as_ref().is_some_and(|d| d.rows[0].name == "Autocompact buffer")

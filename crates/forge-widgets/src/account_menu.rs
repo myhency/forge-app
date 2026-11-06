@@ -47,6 +47,15 @@ pub fn AccountMenu() -> Element {
             AccountAction::OpenSettings => settings.open(),
             AccountAction::SetLanguage(language) => settings.set_language(language),
             AccountAction::ShowShortcuts => workspace.open_shortcuts(),
+            AccountAction::ShowUsage => match workspace.active() {
+                forge_features::Active::Live(id) => workspace.run_local_command(id, forge_entities::LocalCommand::Usage),
+                _ => workspace.report(tr!("Open a session to see its usage, or type /stats in one.").to_string()),
+            },
+            AccountAction::OpenPage(url) => {
+                if let Err(message) = workspace.browser().open(url) {
+                    workspace.report(message);
+                }
+            }
             AccountAction::Close => {}
         }
     };

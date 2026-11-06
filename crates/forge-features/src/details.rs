@@ -59,6 +59,27 @@ pub fn change_counts(files: &[ChangedFile]) -> Option<ChangeCounts> {
     })
 }
 
+/// What the session's own file tools changed, for a folder git cannot read (not a repository): one
+/// file per path, the lines each finished Edit, MultiEdit or Write added and removed. The desktop
+/// app's Changes card showed `+2 −2` in such a folder after one edit (round 37). `None` when the
+/// session changed nothing.
+pub fn session_edit_counts(messages: &[forge_domain::Message]) -> Option<ChangeCounts> {
+    let mut files: Vec<String> = Vec::new();
+    let (mut added, mut removed) = (0, 0);
+    for call in messages.iter().flat_map(|message| message.tool_calls()) {
+        if !call.result.as_ref().is_some_and(|result| !result.is_error) {
+            continue;
+        }
+        let Some(diff) = forge_entities::diff_for_tool_call(call) else { continue };
+        if !files.contains(&diff.path) {
+            files.push(diff.path.clone());
+        }
+        added += diff.added;
+        removed += diff.removed;
+    }
+    (!files.is_empty()).then_some(ChangeCounts { files: files.len(), added, removed })
+}
+
 /// Whether a card is folded; cards start open.
 pub fn card_folded(flags: &HashMap<(LiveSessionId, DetailsCard), bool>, id: LiveSessionId, card: DetailsCard) -> bool {
     flags.get(&(id, card)).copied().unwrap_or(false)
@@ -71,7 +92,33 @@ pub fn forget_card_flags(flags: &mut HashMap<(LiveSessionId, DetailsCard), bool>
 
 #[cfg(test)]
 mod tests {
+    use forge_domain::{Block, Message, MessageRole, ToolCall, ToolResult};
     use forge_ports::ChangeStatus;
+    use serde_json::json;
+
+    fn finished(name: &str, input: serde_json::Value, is_error: bool) -> Message {
+        let mut message = Message::new(MessageRole::Assistant);
+        message.blocks = vec![Block::Tool(ToolCall {
+            id: "t".to_string(),
+            name: name.to_string(),
+            input,
+            result: Some(ToolResult { output: String::new(), is_error }),
+        })];
+        message
+    }
+
+    #[test]
+    fn the_sessions_own_edits_count_when_git_cannot() {
+        let messages = vec![
+            finished("Edit", json!({"file_path": "/p/a.py", "old_string": "a\nb", "new_string": "c\nd"}), false),
+            finished("Write", json!({"file_path": "/p/s.md", "content": "1\n2\n3\n"}), false),
+            finished("Edit", json!({"file_path": "/p/a.py", "old_string": "x", "new_string": "y"}), false),
+            finished("Edit", json!({"file_path": "/p/b.py", "old_string": "x", "new_string": "y"}), true),
+            finished("Bash", json!({"command": "ls"}), false),
+        ];
+        assert_eq!(session_edit_counts(&messages), Some(ChangeCounts { files: 2, added: 6, removed: 3 }));
+        assert_eq!(session_edit_counts(&[]), None);
+    }
 
     use super::*;
 

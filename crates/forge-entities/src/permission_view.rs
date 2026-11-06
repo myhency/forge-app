@@ -9,8 +9,11 @@ use forge_shared::tr;
 /// What a permission card says about a request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionView {
-    /// "Claude wants to create obs.txt?"
+    /// The question in the card's header strip, as the desktop app words it: "Allow Claude to edit
+    /// stats.py?", "Allow Claude to run this command?".
     pub title: String,
+    /// A grey line under the header: a command's own description (the Bash `description` input).
+    pub description: Option<String>,
     /// The file name, the command's description (else the command), or the tool name.
     pub subject: String,
     /// The full path of a file tool.
@@ -54,12 +57,46 @@ pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
             return PermissionView {
                 title: tr!("Allow Claude to run the workflow {name}?", name = meta.name),
                 subject: meta.name,
+                description: None,
                 path: None,
                 command: None,
                 workflow: Some(WorkflowAsk { description: meta.description }),
                 plan: None,
             };
         }
+    }
+    // The app's own tools that change another session or the sidebar: say what they do.
+    let app_ask = match tool_name {
+        "mcp__ccd_session_mgmt__send_message" => Some((
+            tr!("Allow Claude to send a message to another session?").to_string(),
+            text("message"),
+        )),
+        "mcp__ccd_sidebar__set_pinned" => Some((
+            if input.get("pinned").and_then(Value::as_bool) == Some(false) { tr!("Allow Claude to unpin a session?") } else { tr!("Allow Claude to pin a session?") }.to_string(),
+            None,
+        )),
+        "mcp__Claude_Browser__preview_start" => Some((tr!("Allow Claude to open a preview?").to_string(), text("name").or_else(|| text("url")))),
+        "mcp__ccd_session_mgmt__set_session_title" => Some((tr!("Allow Claude to rename a session?").to_string(), text("title"))),
+        "mcp__ccd_session_mgmt__set_session_model" => Some((tr!("Allow Claude to change another session's model?").to_string(), text("model"))),
+        "mcp__ccd_session_mgmt__set_session_effort" => Some((tr!("Allow Claude to change another session's effort?").to_string(), text("effort"))),
+        "mcp__ccd_session_mgmt__set_session_permission_mode" => Some((tr!("Allow Claude to change a session's permission mode?").to_string(), text("mode"))),
+        "mcp__ccd_session_mgmt__set_session_output_style" => Some((tr!("Allow Claude to change a session's output style?").to_string(), text("style"))),
+        "mcp__ccd_session_mgmt__archive_session" => Some((tr!("Allow Claude to archive a session?").to_string(), text("reason"))),
+        "mcp__ccd_session_mgmt__unarchive_session" => Some((tr!("Allow Claude to restore an archived session?").to_string(), None)),
+        "mcp__ccd_session_mgmt__stop_session" => Some((tr!("Allow Claude to stop another session's turn?").to_string(), None)),
+        "mcp__ccd_sidebar__create_section" => Some((tr!("Allow Claude to make a sidebar section?").to_string(), text("name"))),
+        "mcp__ccd_sidebar__rename_section" => Some((tr!("Allow Claude to rename a sidebar section?").to_string(), text("name"))),
+        "mcp__ccd_sidebar__delete_section" => Some((tr!("Allow Claude to delete a sidebar section?").to_string(), None)),
+        "mcp__ccd_sidebar__move_sessions" => Some((tr!("Allow Claude to move sessions to another section?").to_string(), None)),
+        "mcp__ccd_sidebar__set_unread" => Some((tr!("Allow Claude to mark a session read or unread?").to_string(), None)),
+        "mcp__ccd_settings__set_setting" => Some((
+            tr!("Allow Claude to change a setting?").to_string(),
+            text("key").map(|key| format!("{key}: {}", input.get("value").map(|value| value.to_string()).unwrap_or_default())),
+        )),
+        _ => None,
+    };
+    if let Some((title, description)) = app_ask {
+        return PermissionView { title, subject: tool_name.to_string(), description, path: None, command: None, workflow: None, plan: None };
     }
     let kind = tool_kind(tool_name);
     let (verb, subject, path, command) = match kind {
@@ -75,15 +112,21 @@ pub fn permission_view(tool_name: &str, input: &Value) -> PermissionView {
         }
         ToolKind::Other => (kind, tool_name.to_string(), None, None),
     };
+    // Seen in the desktop app (round 37): the command question and the edit question. Create, read
+    // and other tools follow the edit pattern; their wording was not seen.
     let title = match verb {
-        ToolKind::Created => tr!("Claude wants to create {subject}?", subject = subject),
-        ToolKind::Edited => tr!("Claude wants to edit {subject}?", subject = subject),
-        ToolKind::Read => tr!("Claude wants to read {subject}?", subject = subject),
-        ToolKind::Command => tr!("Claude wants to run {subject}?", subject = subject),
-        ToolKind::Other => tr!("Claude wants to use {subject}?", subject = subject),
+        ToolKind::Created => tr!("Allow Claude to create {subject}?", subject = subject),
+        ToolKind::Edited => tr!("Allow Claude to edit {subject}?", subject = subject),
+        ToolKind::Read => tr!("Allow Claude to read {subject}?", subject = subject),
+        ToolKind::Command => tr!("Allow Claude to run this command?").to_string(),
+        ToolKind::Other => tr!("Allow Claude to use {subject}?", subject = subject),
+    };
+    let description = match verb {
+        ToolKind::Command => text("description"),
+        _ => None,
     };
     let plan = (tool_name == PLAN_TOOL).then(|| text("plan")).flatten().map(|text| PlanAsk { text });
-    PermissionView { title, subject, path, command, workflow: None, plan }
+    PermissionView { title, subject, description, path, command, workflow: None, plan }
 }
 
 /// Whether a card that just appeared may take keyboard focus: not while the person is typing.
@@ -263,7 +306,7 @@ mod tests {
     #[test]
     fn a_write_asks_to_create_the_file_by_name() {
         let view = permission_view("Write", &json!({"file_path": "/private/tmp/forge-observe/obs.txt", "content": "x"}));
-        assert_eq!(view.title, "Claude wants to create obs.txt?");
+        assert_eq!(view.title, "Allow Claude to create obs.txt?");
         assert_eq!(view.subject, "obs.txt");
         assert_eq!(view.path.as_deref(), Some("/private/tmp/forge-observe/obs.txt"));
         assert_eq!(view.command, None);
@@ -271,27 +314,29 @@ mod tests {
 
     #[test]
     fn edits_reads_and_notebooks_use_their_own_verb() {
-        assert_eq!(permission_view("Edit", &json!({"file_path": "/p/a.py"})).title, "Claude wants to edit a.py?");
-        assert_eq!(permission_view("MultiEdit", &json!({"file_path": "/p/a.py"})).title, "Claude wants to edit a.py?");
-        assert_eq!(permission_view("NotebookEdit", &json!({"notebook_path": "/p/n.ipynb"})).title, "Claude wants to edit n.ipynb?");
-        assert_eq!(permission_view("Read", &json!({"file_path": "/p/a.py"})).title, "Claude wants to read a.py?");
+        assert_eq!(permission_view("Edit", &json!({"file_path": "/p/a.py"})).title, "Allow Claude to edit a.py?");
+        assert_eq!(permission_view("MultiEdit", &json!({"file_path": "/p/a.py"})).title, "Allow Claude to edit a.py?");
+        assert_eq!(permission_view("NotebookEdit", &json!({"notebook_path": "/p/n.ipynb"})).title, "Allow Claude to edit n.ipynb?");
+        assert_eq!(permission_view("Read", &json!({"file_path": "/p/a.py"})).title, "Allow Claude to read a.py?");
     }
 
     #[test]
-    fn a_command_asks_to_run_its_description_and_carries_the_command() {
+    fn a_command_asks_about_this_command_and_carries_its_description_and_the_command() {
         let view = permission_view("Bash", &json!({"command": "python3 fizz.py", "description": "Run fizz.py"}));
-        assert_eq!(view.title, "Claude wants to run Run fizz.py?");
+        assert_eq!(view.title, "Allow Claude to run this command?");
+        assert_eq!(view.description.as_deref(), Some("Run fizz.py"));
         assert_eq!(view.command.as_deref(), Some("python3 fizz.py"));
         assert_eq!(view.path, None);
         let bare = permission_view("Bash", &json!({"command": "ls -la"}));
-        assert_eq!(bare.title, "Claude wants to run ls -la?");
+        assert_eq!(bare.title, "Allow Claude to run this command?");
+        assert_eq!(bare.description, None);
     }
 
     #[test]
     fn any_other_tool_is_used_by_name_even_with_an_empty_input() {
         for input in [json!({}), json!(null), json!("x")] {
             let view = permission_view("mcp__thing__go", &input);
-            assert_eq!(view.title, "Claude wants to use mcp__thing__go?");
+            assert_eq!(view.title, "Allow Claude to use mcp__thing__go?");
             assert_eq!(view.path, None);
             assert_eq!(view.command, None);
         }
@@ -314,7 +359,7 @@ mod tests {
     fn a_workflow_without_a_readable_meta_falls_back_to_the_plain_tool_card() {
         for input in [json!({}), json!({"script": "const nothing = 1"}), json!({"script": 7})] {
             let view = permission_view("Workflow", &input);
-            assert_eq!(view.title, "Claude wants to use Workflow?");
+            assert_eq!(view.title, "Allow Claude to use Workflow?");
             assert_eq!(view.workflow, None);
         }
     }
@@ -339,7 +384,7 @@ mod tests {
     #[test]
     fn a_write_with_no_path_still_has_a_title() {
         let view = permission_view("Write", &json!({"content": "x"}));
-        assert_eq!(view.title, "Claude wants to create a file?");
+        assert_eq!(view.title, "Allow Claude to create a file?");
         assert_eq!(view.path, None);
     }
 
@@ -398,7 +443,7 @@ mod tests {
         for input in [json!({}), json!({"plan": ""}), json!({"plan": 3})] {
             let view = permission_view("ExitPlanMode", &input);
             assert_eq!(view.plan, None);
-            assert_eq!(view.title, "Claude wants to use ExitPlanMode?");
+            assert_eq!(view.title, "Allow Claude to use ExitPlanMode?");
         }
         assert_eq!(permission_view("Bash", &json!({"plan": "x"})).plan, None);
     }
@@ -426,5 +471,14 @@ mod tests {
         assert_eq!(plan_reason("  "), DEFAULT_PLAN_REFUSAL);
         assert_eq!(plan_reason(""), DEFAULT_PLAN_REFUSAL);
         assert_eq!(plan_reason(" no "), "no");
+    }
+
+    #[test]
+    fn the_app_tools_that_change_things_say_what_they_do() {
+        let view = permission_view("mcp__ccd_session_mgmt__send_message", &json!({"session_id": "s", "message": "say hi"}));
+        assert_eq!(view.title, "Allow Claude to send a message to another session?");
+        assert_eq!(view.description.as_deref(), Some("say hi"));
+        let unpin = permission_view("mcp__ccd_sidebar__set_pinned", &json!({"session_id": "s", "pinned": false}));
+        assert_eq!(unpin.title, "Allow Claude to unpin a session?");
     }
 }
