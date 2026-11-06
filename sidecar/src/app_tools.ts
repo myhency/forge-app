@@ -36,6 +36,8 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${VIEW_SERVER}__get_layout`,
   `mcp__${BROWSER_SERVER}__preview_list`,
   `mcp__${BROWSER_SERVER}__preview_logs`,
+  `mcp__${BROWSER_SERVER}__tabs_context_mcp`,
+  `mcp__${BROWSER_SERVER}__get_page_text`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -297,6 +299,36 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
       "List this session's dev servers (started by preview_start or the Preview pane, with their serverId and status) and the entries of .claude/launch.json with their command, port, url and whether something already answers on the port. Returns serverIds for preview_stop and preview_logs.",
       {},
       forward(ask, "preview_list"),
+    ),
+    tool(
+      "tabs_context_mcp",
+      "List this session's Browser pane tabs with their tabId, url, title and which one is in front. Call it before the other page tools so you know the tab ids.",
+      { createIfEmpty: z.boolean().optional().describe("Opens the Browser pane with an empty tab when this session has none.") },
+      forward(ask, "tabs_context_mcp"),
+    ),
+    tool(
+      "navigate",
+      'Navigate a Browser pane tab to a URL, or go forward/back in its history. Without tabId the front tab is used (a new one when the session has none). tabId is required for url "back"/"forward" when the session has several tabs.',
+      {
+        url: z.string().describe('The URL to navigate to (http, https or a local address; without a scheme localhost addresses get http://). Use "forward" or "back" to move in history.'),
+        tabId: z.number().optional().describe("The tab to navigate, from tabs_context_mcp."),
+      },
+      forward(ask, "navigate"),
+    ),
+    tool(
+      "get_page_text",
+      "Extract the text of the page in a Browser pane tab, its article or main content when it has one. Returns plain text with the title and URL first.",
+      { tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab.") },
+      forward(ask, "get_page_text"),
+    ),
+    tool(
+      "javascript_tool",
+      "Run JavaScript in the page of a Browser pane tab and get its last value back as JSON (at most 20,000 characters); a thrown error comes back as its message. A promise is not awaited. Use it to inspect the DOM, read state or click things on the user's own app.",
+      {
+        text: z.string().describe("The JavaScript to run; the value of its last expression is returned."),
+        tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
+      },
+      forward(ask, "javascript_tool"),
     ),
     tool(
       "preview_stop",

@@ -182,6 +182,27 @@ impl WebViewPort for WryWebViews {
         })
     }
 
+    fn evaluate(&self, tab: WebViewTabId, script: &str, reply: tokio::sync::oneshot::Sender<Result<String, String>>) {
+        // wry calls back with the result serialised as JSON; the callback may be called once only here.
+        let reply = Arc::new(Mutex::new(Some(reply)));
+        let answer = reply.clone();
+        let started = VIEWS.with(|views| match views.borrow().get(&tab.0) {
+            Some(view) => view
+                .evaluate_script_with_callback(script, move |result| {
+                    if let Some(reply) = answer.lock().ok().and_then(|mut reply| reply.take()) {
+                        let _ = reply.send(Ok(result));
+                    }
+                })
+                .map_err(|error| error.to_string()),
+            None => Err("This tab has no page on screen. Open the session and its Preview tab.".to_string()),
+        });
+        if let Err(message) = started {
+            if let Some(reply) = reply.lock().ok().and_then(|mut reply| reply.take()) {
+                let _ = reply.send(Err(message));
+            }
+        }
+    }
+
     fn back(&self, tab: WebViewTabId) {
         with_view(tab, |view| {
             let _ = view.evaluate_script("history.back()");

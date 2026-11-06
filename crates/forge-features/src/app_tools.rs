@@ -94,6 +94,22 @@ impl Workspace {
             "get_layout" => Ok(self.layout_json(id)),
             "preview_start" => self.preview_start_by_tool(id, text("name"), text("url")),
             "preview_list" => Ok(self.preview_list_json(id)),
+            "tabs_context_mcp" => {
+                if input.get("createIfEmpty").and_then(Value::as_bool) == Some(true) && self.previews(id).is_empty() {
+                    self.open_empty_preview_tab(id);
+                }
+                Ok(self.preview_tabs_json(id))
+            }
+            "navigate" => self.navigate_by_tool(id, input.get("tabId").and_then(Value::as_u64), text("url").unwrap_or_default()),
+            "get_page_text" => return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), PAGE_TEXT_SCRIPT.to_string()),
+            "javascript_tool" => {
+                let code = text("text").unwrap_or_default();
+                if code.trim().is_empty() {
+                    Err("Pass the JavaScript to run as text.".to_string())
+                } else {
+                    return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), script_runner(code));
+                }
+            }
             "preview_stop" => {
                 let server = input.get("serverId").and_then(Value::as_u64).or_else(|| text("serverId").and_then(|id| id.parse().ok()));
                 match server {
@@ -676,6 +692,76 @@ impl Workspace {
         Ok(format!("{} ({}) shows in the Browser pane at {} once it answers.", server.name, server.command_line(), server.url()))
     }
 
+    /// `tabs_context_mcp`: this session's Preview tabs, each with its id, address and title.
+    fn preview_tabs_json(&self, id: LiveSessionId) -> String {
+        let tabs = self.previews(id);
+        let active = tabs.active();
+        let list: Vec<Value> = tabs
+            .ids()
+            .into_iter()
+            .map(|tab| json!({ "tabId": tab.0, "url": tabs.current(tab).unwrap_or_else(|| "about:blank".to_string()), "title": tabs.title(tab).unwrap_or_default(), "active": Some(tab) == active }))
+            .collect();
+        json!({ "tabs": list }).to_string()
+    }
+
+    // The tab a browser tool names, or the session's active tab; a tab of another session is refused.
+    fn tool_tab(&self, id: LiveSessionId, wanted: Option<u64>) -> Result<crate::preview_tabs::PreviewTabId, String> {
+        let tabs = self.previews(id);
+        match wanted {
+            Some(number) => {
+                let tab = crate::preview_tabs::PreviewTabId(number);
+                if tabs.contains(tab) {
+                    Ok(tab)
+                } else {
+                    Err(format!("No tab {number} in this session; tabs_context_mcp lists them."))
+                }
+            }
+            None => tabs.active().ok_or_else(|| "This session has no Browser tab; call tabs_context_mcp with createIfEmpty: true.".to_string()),
+        }
+    }
+
+    /// `navigate`: an address in the tab (the session's active one, or a new one when it has none);
+    /// "back" and "forward" move in its history.
+    fn navigate_by_tool(&self, id: LiveSessionId, wanted: Option<u64>, url: &str) -> Result<String, String> {
+        let tab = match (wanted, self.previews(id).active()) {
+            (None, None) => self.open_empty_preview_tab(id).ok_or_else(|| "This session is not open on screen.".to_string())?,
+            _ => self.tool_tab(id, wanted)?,
+        };
+        match url.trim() {
+            "back" => {
+                self.preview_back(tab);
+                Ok(format!("Tab {} went back.", tab.0))
+            }
+            "forward" => {
+                self.preview_forward(tab);
+                Ok(format!("Tab {} went forward.", tab.0))
+            }
+            "" => Err("Pass url (or \"back\" / \"forward\").".to_string()),
+            address => {
+                self.preview_go(id, tab, address)?;
+                Ok(format!("Tab {} shows {}. {}", tab.0, self.previews(id).current(tab).unwrap_or_else(|| address.to_string()), self.preview_tabs_json(id)))
+            }
+        }
+    }
+
+    /// Runs a script in the tab's page and answers with what it gave back.
+    fn eval_by_tool(&self, id: LiveSessionId, request: AppRequest, wanted: Option<u64>, script: String) {
+        let tab = match self.tool_tab(id, wanted) {
+            Ok(tab) => tab,
+            Err(message) => return self.answer(id, &request, Err(message)),
+        };
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        self.webviews().evaluate(forge_ports::WebViewTabId(tab.0), &script, sender);
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            let result = match tokio::time::timeout(std::time::Duration::from_secs(20), receiver).await {
+                Ok(Ok(result)) => result.map(|json| page_result(&json)),
+                _ => Err("The page did not answer in time.".to_string()),
+            };
+            this.answer(id, &request, result);
+        });
+    }
+
     fn preview_list_json(&self, id: LiveSessionId) -> String {
         let servers: Vec<Value> = self
             .detect_dev_servers(id)
@@ -836,6 +922,26 @@ mod tests {
     }
 }
 
+/// `get_page_text`: the page's text, its article or main part when it has one, at most 50,000 characters.
+const PAGE_TEXT_SCRIPT: &str = "(function(){var root=document.querySelector('article')||document.querySelector('main')||document.body;var text=(root&&root.innerText)||'';return 'Title: '+document.title+'\\nURL: '+location.href+'\\n\\n'+text.slice(0,50000);})()";
+
+/// `javascript_tool`: the code runs as the body of a script; its last value comes back as JSON
+/// (at most 20,000 characters), a thrown error as its message.
+fn script_runner(code: &str) -> String {
+    let quoted = serde_json::to_string(code).unwrap_or_else(|_| "\"\"".to_string());
+    format!("(function(){{try{{var value=(0,eval)({quoted});if(value===undefined)return 'undefined';var json=JSON.stringify(value);return (json===undefined?String(value):json).slice(0,20000);}}catch(error){{return 'Error: '+(error&&error.message||String(error));}}}})()")
+}
+
+/// What a page script returned: wry hands it over as JSON, so a string comes back quoted.
+fn page_result(json: &str) -> String {
+    match serde_json::from_str::<Value>(json) {
+        Ok(Value::String(text)) => text,
+        Ok(Value::Null) | Err(_) if json.trim().is_empty() => "(nothing)".to_string(),
+        Ok(other) => other.to_string(),
+        Err(_) => json.to_string(),
+    }
+}
+
 /// `preview_logs`: the last 8 KB of a server's output, only the lines with an error when `level` is
 /// "error", only those holding `search` when it is given.
 fn server_log(output: &str, level: Option<&str>, search: Option<&str>) -> String {
@@ -894,6 +1000,14 @@ fn export_limits() -> &'static std::sync::Mutex<std::collections::HashMap<String
 #[cfg(test)]
 mod export_limit_tests {
     use super::{server_log, ExportLimit};
+
+    #[test]
+    fn page_results_unquote_strings_and_scripts_are_quoted_safely() {
+        assert_eq!(super::page_result("\"hello\""), "hello");
+        assert_eq!(super::page_result("42"), "42");
+        let script = super::script_runner("document.title + \"'\"");
+        assert!(script.contains(r#"(0,eval)("document.title + \"'\"")"#), "{script}");
+    }
 
     #[test]
     fn server_logs_keep_the_tail_and_filter_errors_or_a_search() {
