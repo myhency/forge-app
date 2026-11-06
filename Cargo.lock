@@ -1731,9 +1731,11 @@ name = "forge-adapter-terminal"
 version = "0.1.0"
 dependencies = [
  "forge-ports",
+ "libc",
  "portable-pty",
  "tempfile",
  "tokio",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -1,3 +1,4 @@
+mod background_port;
 mod browser_port;
 mod config_port;
 mod desktop_tool_port;
@@ -26,6 +27,7 @@ mod usage_stats_port;
 mod webview_port;
 mod worktree_port;
 
+pub use background_port::BackgroundPort;
 pub use browser_port::BrowserPort;
 pub use dictation_port::DictationPort;
 pub use extension_bundle_port::ExtensionBundlePort;

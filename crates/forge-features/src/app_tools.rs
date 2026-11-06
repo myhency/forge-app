@@ -182,6 +182,7 @@ impl Workspace {
             "preview_stop" => {
                 let server = input.get("serverId").and_then(Value::as_u64).or_else(|| text("serverId").and_then(|id| id.parse().ok()));
                 match server {
+                    Some(server) if server > crate::workspace::BACKGROUND_ID_BASE && self.background().stop(server - crate::workspace::BACKGROUND_ID_BASE) => Ok(format!("Server {server} is stopped.")),
                     Some(server) if self.code_runs(id).request_stop(server) => Ok(format!("Server {server} is stopping (Ctrl-C in its terminal).")),
                     Some(server) => Err(format!("No running server {server}; preview_list lists them.")),
                     None => Err("Pass serverId from preview_list.".to_string()),
@@ -189,7 +190,14 @@ impl Workspace {
             }
             "preview_logs" => {
                 let server = input.get("serverId").and_then(Value::as_u64).or_else(|| text("serverId").and_then(|id| id.parse().ok()));
-                match server.and_then(|server| self.code_runs(id).server_output(server)) {
+                let output = server.and_then(|server| {
+                    if server > crate::workspace::BACKGROUND_ID_BASE && self.background_servers_of(id).iter().any(|run| run.id == server - crate::workspace::BACKGROUND_ID_BASE) {
+                        self.background().output(server - crate::workspace::BACKGROUND_ID_BASE)
+                    } else {
+                        self.code_runs(id).server_output(server)
+                    }
+                });
+                match output {
                     Some(output) => Ok(server_log(&output, text("level"), text("search"))),
                     None => Err("No such server; preview_list lists them with their serverId.".to_string()),
                 }
@@ -865,7 +873,16 @@ impl Workspace {
             .filter(|server| server.saved)
             .map(|server| json!({ "name": server.name, "command": server.command_line(), "port": server.port, "url": server.url(), "running": crate::workspace::port_is_answering(server.port) }))
             .collect();
-        let running: Vec<Value> = self
+        let background = self.background();
+        let in_background = self.background_servers_of(id).into_iter().map(|run| {
+            let status = match background.exit_code(run.id) {
+                Some(None) => "running".to_string(),
+                Some(Some(code)) => format!("exited ({code})"),
+                None => "ended".to_string(),
+            };
+            json!({ "serverId": run.id + crate::workspace::BACKGROUND_ID_BASE, "name": run.name, "command": run.command, "status": status })
+        });
+        let running: Vec<Value> = in_background.chain(self
             .code_runs(id)
             .servers()
             .into_iter()
@@ -877,7 +894,7 @@ impl Workspace {
                     crate::code_runs::RunState::Ended => "ended".to_string(),
                 };
                 json!({ "serverId": run.id, "name": run.name, "command": run.command, "status": status })
-            })
+            }))
             .collect();
         json!({ "servers": running, "launch_json": servers }).to_string()
     }

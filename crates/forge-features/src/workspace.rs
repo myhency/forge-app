@@ -94,6 +94,8 @@ pub struct WorkspaceServices {
     pub git: Arc<dyn GitPort>,
     pub files: Arc<dyn FilesPort>,
     pub browser: Arc<dyn BrowserPort>,
+    /// Dev servers started in the background where the Terminal panel cannot run them (Windows).
+    pub background: Arc<dyn forge_ports::BackgroundPort>,
     /// Desktop extensions (`.mcpb`, `.dxt`), installed as connectors.
     pub bundles: Arc<dyn forge_ports::ExtensionBundlePort>,
     /// The system's dictation, for the message box's microphone button.
@@ -244,6 +246,8 @@ pub struct Workspace {
     change_count_tickets: Signal<HashMap<LiveSessionId, u64>>,
     /// The Outputs card's files per session, and the ticket of its latest read.
     outputs: Signal<OutputsStore>,
+    /// Dev servers each session started in the background (see `use_dev_server`).
+    background_servers: Signal<HashMap<LiveSessionId, Vec<BackgroundServer>>>,
     /// The `@` mention's file list per session.
     file_lists: Signal<FileListStore>,
     /// The file outside the session folder that the note asks about.
@@ -349,6 +353,7 @@ pub fn use_workspace_provider() -> Workspace {
             change_counts: root_signal(HashMap::new()),
             change_count_tickets: root_signal(HashMap::new()),
             outputs: root_signal(OutputsStore::default()),
+            background_servers: root_signal(HashMap::new()),
             file_lists: root_signal(FileListStore::default()),
             outside_file: root_signal(None),
             customize_tab_request: root_signal(OneShot::default()),
@@ -1374,11 +1379,16 @@ impl Workspace {
         if port_answers(server.port) {
             return self.preview_load(id, tab, &url);
         }
-        if !self.code_run_available() {
-            return Err(tr!("Run {command} in a terminal, then open {url}.", command = server.command_line(), url = url).to_string());
+        if self.code_run_available() {
+            self.code_runs(id).start_server(&server.command_line(), &server.name, std::time::Instant::now());
+            self.open_terminal_panel(id);
+        } else {
+            // No terminal run here (Windows): the server runs in the background, its output kept for preview_logs.
+            let background = self.services.peek().background.clone();
+            let started = background.start(&folder, &server.command_line()).map_err(|error| tr!("{command} could not start: {error}", command = server.command_line(), error = error).to_string())?;
+            let mut servers = self.background_servers;
+            servers.write().entry(id).or_default().push(BackgroundServer { id: started, name: server.name.clone(), command: server.command_line() });
         }
-        self.code_runs(id).start_server(&server.command_line(), &server.name, std::time::Instant::now());
-        self.open_terminal_panel(id);
         let this = *self;
         let port = server.port;
         dioxus::core::spawn_forever(async move {
@@ -4466,6 +4476,27 @@ pub fn effort_value(level: forge_domain::EffortLevel) -> &'static str {
         forge_domain::EffortLevel::High => "high",
         forge_domain::EffortLevel::XHigh => "xhigh",
         forge_domain::EffortLevel::Max => "max",
+    }
+}
+
+/// A dev server started in the background, by its id in `BackgroundPort`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackgroundServer {
+    pub id: u64,
+    pub name: String,
+    pub command: String,
+}
+
+/// Background servers are listed to the browser tools above this number, so their ids never meet a terminal run's.
+pub(crate) const BACKGROUND_ID_BASE: u64 = 1_000_000;
+
+impl Workspace {
+    pub(crate) fn background_servers_of(&self, id: LiveSessionId) -> Vec<BackgroundServer> {
+        self.background_servers.peek().get(&id).cloned().unwrap_or_default()
+    }
+
+    pub(crate) fn background(&self) -> Arc<dyn forge_ports::BackgroundPort> {
+        self.services.peek().background.clone()
     }
 }
 
