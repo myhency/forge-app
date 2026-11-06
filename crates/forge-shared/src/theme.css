@@ -1842,3 +1842,8 @@ html[data-code-run="on"] .messages .code-wrap:has(.code-run) .code-block { paddi
 .palette-row-menu-title { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-row-menu-sub { color: var(--fg-muted); font-size: var(--text-sm); }
 .palette-rename { width: 100%; box-sizing: border-box; }
+
+/* The palette's filter chips (desktop app, 2026-11-06): `오늘 ×` before the search text. */
+.palette-chip { display: inline-flex; align-items: center; gap: var(--sp-4); flex-shrink: 0; padding: var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-8); border: 1px solid var(--border); border-radius: var(--r-6); background: var(--bg-hover); color: var(--fg); font-size: var(--text-sm); }
+.palette-chip.static { padding: var(--sp-2) var(--sp-8); }
+.palette-chip-close { display: inline-flex; padding: 0; border: 0; background: none; color: var(--fg-muted); cursor: pointer; }

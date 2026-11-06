@@ -31,6 +31,41 @@ impl Tab {
     }
 }
 
+/// A filter the palette's `/` puts on the session list (the desktop app's, observed 2026-11-06:
+/// `date:` with 오늘 / 지난 일주일 / 지난 한 달, `project:`, shown as a chip with ×).
+#[derive(Debug, Clone, PartialEq)]
+enum Filter {
+    Days(u8),
+    Project(PathBuf, String),
+}
+
+impl Filter {
+    fn label(&self) -> String {
+        match self {
+            Filter::Days(1) => tr!("Today").to_string(),
+            Filter::Days(7) => tr!("Past week").to_string(),
+            Filter::Days(_) => tr!("Past month").to_string(),
+            Filter::Project(_, name) => name.clone(),
+        }
+    }
+
+    /// Whether a session row passes: updated within the days (today: since local midnight), or in the folder.
+    fn keeps(&self, row: &SearchRow, now: OffsetDateTime) -> bool {
+        match self {
+            Filter::Project(path, _) => row.project.path == *path,
+            Filter::Days(days) => {
+                let Some(at) = row.updated_at.as_deref().and_then(|at| OffsetDateTime::parse(at, &time::format_description::well_known::Rfc3339).ok()) else { return false };
+                let at = at.to_offset(now.offset());
+                if *days == 1 {
+                    at.date() == now.date()
+                } else {
+                    now - at <= time::Duration::days(i64::from(*days))
+                }
+            }
+        }
+    }
+}
+
 /// One row the palette can open.
 #[derive(Debug, Clone, PartialEq)]
 enum Entry {
@@ -38,6 +73,10 @@ enum Entry {
     Project { path: PathBuf, label: String },
     Routine { id: String, name: String },
     NewSession,
+    /// After `/`: a kind of filter to pick (`date`, `project`).
+    FilterKind(&'static str),
+    /// A filter to put on.
+    FilterValue(Filter),
 }
 
 /// The search palette: a box over the dimmed window. Its tabs list sessions (their title or message
@@ -66,15 +105,25 @@ fn PaletteBody() -> Element {
     let mut draft = use_signal(String::new);
     // The highlighted session row's `⋯` menu (the desktop app's, also `작업 ⌥↵`).
     let mut row_menu = use_signal(|| false);
+    let mut filters: Signal<Vec<Filter>> = use_signal(Vec::new);
     let query = workspace.search_query();
     let needle = query.trim().to_lowercase();
     let matches = |text: &str| needle.is_empty() || text.to_lowercase().contains(&needle);
     let scratch = workspace.scratch_root();
 
-    let sessions: Vec<Entry> = workspace.search_rows().into_iter().map(Entry::Session).collect();
+    let now_local = forge_features::now_local();
+    let active_filters = filters();
+    let sessions: Vec<Entry> = workspace
+        .search_rows()
+        .into_iter()
+        .filter(|row| active_filters.iter().all(|filter| filter.keeps(row, now_local)))
+        .map(Entry::Session)
+        .collect();
     // Two folders with the same name are told apart as in the sidebar (`app (a)`, `app (b)`).
     let project_paths: Vec<PathBuf> = workspace.new_session_projects().into_iter().map(|project| project.path).collect();
     let labels = crate::sidebar::project_labels(&project_paths, scratch.as_deref());
+    // Every folder, for the `project:` filter (the list below is narrowed by what is typed).
+    let all_projects: Vec<(PathBuf, String)> = project_paths.iter().cloned().zip(labels.iter().cloned()).collect();
     let projects: Vec<Entry> = project_paths
         .into_iter()
         .zip(labels)
@@ -89,7 +138,26 @@ fn PaletteBody() -> Element {
         .collect();
     // Sections in order: (heading, entries). The 전체 tab with nothing typed is the desktop's
     // "최근 항목" and "작업"; with a query it lists every kind that matches.
-    let sections: Vec<(String, Vec<Entry>)> = match tab() {
+    let picking = query.trim_start();
+    let sections: Vec<(String, Vec<Entry>)> = if picking == "/" {
+        vec![(String::new(), vec![Entry::FilterKind("date"), Entry::FilterKind("project")])]
+    } else if let Some(rest) = picking.strip_prefix("date:") {
+        let rest = rest.trim().to_lowercase();
+        let days: Vec<Entry> = [1u8, 7, 30].into_iter().map(Filter::Days).filter(|filter| filter.label().to_lowercase().contains(&rest)).map(Entry::FilterValue).collect();
+        vec![(tr!("Date").to_string(), days)]
+    } else if let Some(rest) = picking.strip_prefix("project:") {
+        let rest = rest.trim().to_lowercase();
+        let folders: Vec<Entry> = all_projects
+            .iter()
+            .filter(|(_, label)| label.to_lowercase().contains(&rest))
+            .map(|(path, label)| Entry::FilterValue(Filter::Project(path.clone(), label.clone())))
+            .collect();
+        vec![(tr!("Project").to_string(), folders)]
+    } else if !active_filters.is_empty() {
+        // A filter narrows the sessions: only they are listed, as in the desktop app.
+        vec![(String::new(), sessions)]
+    } else {
+        match tab() {
         Tab::All if needle.is_empty() => vec![
             (tr!("Recent items").to_string(), sessions.into_iter().take(8).collect()),
             (tr!("Actions").to_string(), vec![Entry::NewSession]),
@@ -98,6 +166,7 @@ fn PaletteBody() -> Element {
         Tab::Sessions => vec![(String::new(), sessions)],
         Tab::Projects => vec![(String::new(), projects)],
         Tab::Scheduled => vec![(String::new(), scheduled)],
+        }
     };
     let sections: Vec<(String, Vec<Entry>)> = sections.into_iter().filter(|(_, entries)| !entries.is_empty()).collect();
     let flat: Vec<Entry> = sections.iter().flat_map(|(_, entries)| entries.iter().cloned()).collect();
@@ -119,6 +188,13 @@ fn PaletteBody() -> Element {
         Entry::NewSession => {
             workspace.close_search();
             workspace.show_new_session();
+        }
+        Entry::FilterKind(kind) => workspace.set_search_query(format!("{kind}:")),
+        Entry::FilterValue(filter) => {
+            let mut filters = filters;
+            filters.write().retain(|old| std::mem::discriminant(old) != std::mem::discriminant(filter));
+            filters.write().push(filter.clone());
+            workspace.set_search_query(String::new());
         }
     };
     let mut switch_tab = move |step: isize| {
@@ -167,6 +243,21 @@ fn PaletteBody() -> Element {
                             },
                         }
                     } else {
+                    for (index, filter) in filters().into_iter().enumerate() {
+                        span { key: "{index}", class: "palette-chip",
+                            "{filter.label()}"
+                            button {
+                                class: "palette-chip-close",
+                                r#type: "button",
+                                title: tr!("Remove"),
+                                onclick: move |event| {
+                                    event.stop_propagation();
+                                    filters.write().remove(index);
+                                },
+                                Icon { kind: IconKind::Close, size: IconSize::Small }
+                            }
+                        }
+                    }
                     input {
                         class: "palette-input",
                         r#type: "text",
@@ -196,6 +287,10 @@ fn PaletteBody() -> Element {
                                     event.prevent_default();
                                     event.stop_propagation();
                                     highlight.set(selected.saturating_sub(1));
+                                }
+                                Key::Backspace if workspace.search_query().is_empty() && !filters.peek().is_empty() => {
+                                    event.prevent_default();
+                                    filters.write().pop();
                                 }
                                 // The desktop app's `작성 Tab`: write a message for a new session instead.
                                 Key::Tab => {
@@ -271,6 +366,8 @@ fn PaletteBody() -> Element {
                                     Entry::Project { path, .. } => format!("p-{}", path.display()),
                                     Entry::Routine { id, .. } => format!("r-{id}"),
                                     Entry::NewSession => "new".to_string(),
+                                    Entry::FilterKind(kind) => format!("fk-{kind}"),
+                                    Entry::FilterValue(filter) => format!("fv-{}", filter.label()),
                                 };
                                 let clicked = entry.clone();
                                 rsx! {
@@ -325,6 +422,7 @@ fn PaletteBody() -> Element {
                     span { {tr!("Close")} span { class: "palette-key", "Esc" } }
                     span { {tr!("Change type")} span { class: "palette-key", "←" } span { class: "palette-key", "→" } } // icon-ok: key caps
                     span { {tr!("Open")} span { class: "palette-key", "↵" } } // icon-ok: a key cap
+                    span { {tr!("Filter")} span { class: "palette-key", "/" } }
                     span { {tr!("Actions")} span { class: "palette-key", "⌥" } span { class: "palette-key", "↵" } } // icon-ok: key caps
                     span { {tr!("Compose")} span { class: "palette-key", "Tab" } }
                 }
@@ -369,6 +467,20 @@ fn row_body(entry: &Entry, query: &str, now: OffsetDateTime, scratch: Option<&st
         Entry::NewSession => rsx! {
             span { class: "palette-icon", Icon { kind: IconKind::Plus, size: IconSize::Small } }
             div { class: "palette-title", {tr!("New session")} }
+        },
+        Entry::FilterKind(kind) => {
+            let (icon, name) = match *kind {
+                "date" => (IconKind::Clock, "Date"),
+                _ => (IconKind::Folder, "Project"),
+            };
+            rsx! {
+                span { class: "palette-icon", Icon { kind: icon, size: IconSize::Small } }
+                div { class: "palette-title", span { class: "palette-chip static", "{name}" } " " {tr!("filter by")} }
+            }
+        }
+        Entry::FilterValue(filter) => rsx! {
+            span { class: "palette-icon" }
+            div { class: "palette-title", "{filter.label()}" }
         },
     }
 }
@@ -513,5 +625,33 @@ fn PaletteRowMenu(row: SearchRow, on_close: EventHandler<()>) -> Element {
                 },
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+    use forge_domain::SessionId;
+
+    fn row(at: &str, path: &str) -> SearchRow {
+        SearchRow {
+            key: forge_features::EntryKey::Past { project: PathBuf::from(path), session: SessionId("s".into()) },
+            project: forge_domain::ProjectSummary { path: PathBuf::from(path), last_active: String::new(), session_count: 0, exists: true },
+            title: "t".into(),
+            snippet: None,
+            updated_at: Some(at.into()),
+        }
+    }
+
+    #[test]
+    fn date_filters_keep_sessions_from_today_the_week_and_the_month() {
+        let now = OffsetDateTime::parse("2026-11-06T15:00:00Z", &time::format_description::well_known::Rfc3339).unwrap();
+        assert!(Filter::Days(1).keeps(&row("2026-11-06T01:00:00Z", "/p"), now));
+        assert!(!Filter::Days(1).keeps(&row("2026-11-05T23:00:00Z", "/p"), now));
+        assert!(Filter::Days(7).keeps(&row("2026-11-01T00:00:00Z", "/p"), now));
+        assert!(!Filter::Days(7).keeps(&row("2026-10-20T00:00:00Z", "/p"), now));
+        assert!(Filter::Days(30).keeps(&row("2026-10-20T00:00:00Z", "/p"), now));
+        assert!(Filter::Project(PathBuf::from("/p"), "p".into()).keeps(&row("2026-01-01T00:00:00Z", "/p"), now));
+        assert!(!Filter::Project(PathBuf::from("/q"), "q".into()).keeps(&row("2026-01-01T00:00:00Z", "/p"), now));
     }
 }
