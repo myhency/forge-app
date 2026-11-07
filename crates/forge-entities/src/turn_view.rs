@@ -245,6 +245,7 @@ fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
             tr!("Gave the page a file").to_string(),
             call.input.get("paths").and_then(Value::as_array).map(|paths| paths.iter().filter_map(Value::as_str).filter_map(|path| path.rsplit(['/', '\\']).next()).collect::<Vec<_>>().join(", ")).unwrap_or_default(),
         ),
+        "mcp__Claude_Browser__gif_creator" => (tr!("Recorded a page").to_string(), text("action")),
         "mcp__Claude_Browser__form_input" => (tr!("Filled in a field").to_string(), text("ref")),
         "mcp__Claude_Browser__read_network_requests" => (tr!("Read the network requests").to_string(), text("urlPattern")),
         "mcp__Claude_Browser__find" => (tr!("Searched a page").to_string(), text("query")),

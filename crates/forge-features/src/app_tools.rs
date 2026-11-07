@@ -149,6 +149,7 @@ impl Workspace {
                 });
                 return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), READ_PAGE_SCRIPT.replace("__ARGS__", &args.to_string()));
             }
+            "gif_creator" => return self.gif_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), text("action").unwrap_or_default(), text("filename").unwrap_or_default().to_string()),
             "file_upload" => {
                 let paths: Vec<std::path::PathBuf> = input.get("paths").and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(std::path::PathBuf::from).collect()).unwrap_or_default();
                 match (text("ref"), paths.is_empty()) {
@@ -867,6 +868,119 @@ impl Workspace {
     }
 
     /// `computer` `screenshot`: a picture of the tab's page, sent to Claude as an image.
+    /// `gif_creator`: start_recording, stop_recording, export (a GIF in Downloads) and clear.
+    fn gif_by_tool(&self, id: LiveSessionId, request: AppRequest, wanted: Option<u64>, action: &str, filename: String) {
+        use crate::gif_recording::{recordings, Recording};
+        let key = format!("{id:?}");
+        let Ok(mut all) = recordings().lock() else {
+            return self.answer(id, &request, Err("Recording is unavailable just now.".to_string()));
+        };
+        let result = match action {
+            "start_recording" => match self.tool_tab(id, wanted) {
+                Ok(tab) => {
+                    let generation = all.get(&key).map_or(0, |old| old.generation) + 1;
+                    all.insert(key.clone(), Recording { tab: tab.0, running: true, generation, frames: Vec::new() });
+                    drop(all);
+                    self.record_frames(id, key, generation);
+                    return self.answer(id, &request, Ok(format!("Recording tab {}. Take your actions, then stop_recording and export.", tab.0)));
+                }
+                Err(message) => Err(message),
+            },
+            "stop_recording" => match all.get_mut(&key) {
+                Some(recording) => {
+                    // One last picture, so a change made just before stopping is in the GIF.
+                    recording.running = false;
+                    let (tab, generation) = (recording.tab, recording.generation);
+                    drop(all);
+                    let (sender, receiver) = tokio::sync::oneshot::channel();
+                    self.webviews().snapshot(forge_ports::WebViewTabId(tab), sender);
+                    let this = *self;
+                    dioxus::core::spawn_forever(async move {
+                        let last = tokio::time::timeout(std::time::Duration::from_secs(5), receiver).await;
+                        let count = recordings().lock().ok().and_then(|mut all| {
+                            let recording = all.get_mut(&key).filter(|recording| recording.generation == generation)?;
+                            if let Ok(Ok(Ok(png))) = last {
+                                if !png_width(&png).is_some_and(|width| width < 16) {
+                                    crate::gif_recording::push_frame(recording, png);
+                                }
+                            }
+                            Some(recording.frames.len())
+                        });
+                        let result = count.map(|count| format!("Stopped with {count} frames; export writes them as a GIF.")).ok_or_else(|| "The recording was cleared.".to_string());
+                        this.answer(id, &request, result);
+                    });
+                    return;
+                }
+                None => Err("Nothing is being recorded; start_recording first.".to_string()),
+            },
+            "clear" => {
+                all.remove(&key);
+                Ok("Cleared the recording.".to_string())
+            }
+            "export" => match all.get_mut(&key) {
+                Some(recording) if !recording.frames.is_empty() => {
+                    recording.running = false;
+                    let frames = recording.frames.clone();
+                    drop(all);
+                    let this = *self;
+                    dioxus::core::spawn_forever(async move {
+                        let result = crate::run_blocking(move || {
+                            let gif = crate::gif_recording::encode_gif(&frames)?;
+                            let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
+                            let folder = crate::gif_recording::downloads_folder(home, std::env::temp_dir());
+                            let path = crate::gif_recording::free_gif_path(&folder, &filename);
+                            std::fs::write(&path, gif).map_err(|error| format!("The GIF could not be written: {error}"))?;
+                            Ok(format!("Saved a GIF of {} frames to {}", frames.len(), path.display()))
+                        })
+                        .await
+                        .unwrap_or_else(|| Err("The GIF could not be made.".to_string()));
+                        this.answer(id, &request, result);
+                    });
+                    return;
+                }
+                _ => Err("Nothing was recorded; start_recording, take actions, then export.".to_string()),
+            },
+            other => Err(format!("gif_creator does not do \"{other}\"; use start_recording, stop_recording, export or clear.")),
+        };
+        self.answer(id, &request, result);
+    }
+
+    /// Pictures the recorded tab about once a second until the recording stops or another starts.
+    fn record_frames(&self, id: LiveSessionId, key: String, generation: u64) {
+        use crate::gif_recording::recordings;
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            loop {
+                let tab = match recordings().lock().ok().and_then(|all| all.get(&key).filter(|recording| recording.running && recording.generation == generation).map(|recording| recording.tab)) {
+                    Some(tab) => tab,
+                    None => return,
+                };
+                let (sender, receiver) = tokio::sync::oneshot::channel();
+                this.webviews().snapshot(forge_ports::WebViewTabId(tab), sender);
+                if let Ok(Ok(Ok(png))) = tokio::time::timeout(std::time::Duration::from_secs(5), receiver).await {
+                    // A covered pane gives a tiny picture: not a frame.
+                    if !png_width(&png).is_some_and(|width| width < 16) {
+                        if let Ok(mut all) = recordings().lock() {
+                            if let Some(recording) = all.get_mut(&key).filter(|recording| recording.generation == generation) {
+                                crate::gif_recording::push_frame(recording, png);
+                                if recording.frames.len() >= crate::gif_recording::MAX_FRAMES {
+                                    recording.running = false;
+                                }
+                            }
+                        }
+                    }
+                }
+                if this.live_view(id).is_none() {
+                    if let Ok(mut all) = recordings().lock() {
+                        all.remove(&key);
+                    }
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
+    }
+
     fn screenshot_by_tool(&self, id: LiveSessionId, request: AppRequest, wanted: Option<u64>) {
         let tab = match self.tool_tab(id, wanted) {
             Ok(tab) => tab,
