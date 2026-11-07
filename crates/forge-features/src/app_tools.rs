@@ -124,8 +124,8 @@ impl Workspace {
                     });
                     return;
                 }
-                action @ ("left_click" | "double_click" | "triple_click" | "right_click" | "hover" | "type" | "key" | "scroll_to") => {
-                    let args = json!({ "action": action, "coordinate": input.get("coordinate"), "text": text("text"), "ref": text("ref") });
+                action @ ("left_click" | "double_click" | "triple_click" | "right_click" | "hover" | "type" | "key" | "scroll_to" | "left_click_drag") => {
+                    let args = json!({ "action": action, "coordinate": input.get("coordinate"), "start": input.get("start_coordinate"), "text": text("text"), "ref": text("ref") });
                     return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), COMPUTER_SCRIPT.replace("__ARGS__", &args.to_string()));
                 }
                 other => Err(format!("Forge's browser tool does not do \"{other}\"; use read_page with form_input, or javascript_tool.")),
@@ -148,6 +148,29 @@ impl Workspace {
                     "max": input.get("max_chars").and_then(Value::as_u64).unwrap_or(50_000).clamp(1_000, 500_000),
                 });
                 return self.eval_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), READ_PAGE_SCRIPT.replace("__ARGS__", &args.to_string()));
+            }
+            "gif_creator" => return self.gif_by_tool(id, request.clone(), input.get("tabId").and_then(Value::as_u64), text("action").unwrap_or_default(), text("filename").unwrap_or_default().to_string()),
+            "file_upload" => {
+                let paths: Vec<std::path::PathBuf> = input.get("paths").and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(std::path::PathBuf::from).collect()).unwrap_or_default();
+                match (text("ref"), paths.is_empty()) {
+                    (Some(reference), false) => {
+                        let reference = reference.to_string();
+                        let tab = input.get("tabId").and_then(Value::as_u64);
+                        let this = *self;
+                        let request = request.clone();
+                        dioxus::core::spawn_forever(async move {
+                            match crate::run_blocking(move || upload_files(&paths)).await.unwrap_or_else(|| Err("The files could not be read.".to_string())) {
+                                Ok(files) => {
+                                    let args = json!({ "ref": reference, "files": files });
+                                    this.eval_by_tool(id, request, tab, FILE_UPLOAD_SCRIPT.replace("__ARGS__", &args.to_string()));
+                                }
+                                Err(message) => this.answer(id, &request, Err(message)),
+                            }
+                        });
+                        return;
+                    }
+                    _ => Err("Pass ref (a file input, from read_page or find) and paths (absolute paths of files on this computer).".to_string()),
+                }
             }
             "form_input" => match (text("ref"), input.get("value")) {
                 (Some(reference), Some(value)) => {
@@ -845,6 +868,119 @@ impl Workspace {
     }
 
     /// `computer` `screenshot`: a picture of the tab's page, sent to Claude as an image.
+    /// `gif_creator`: start_recording, stop_recording, export (a GIF in Downloads) and clear.
+    fn gif_by_tool(&self, id: LiveSessionId, request: AppRequest, wanted: Option<u64>, action: &str, filename: String) {
+        use crate::gif_recording::{recordings, Recording};
+        let key = format!("{id:?}");
+        let Ok(mut all) = recordings().lock() else {
+            return self.answer(id, &request, Err("Recording is unavailable just now.".to_string()));
+        };
+        let result = match action {
+            "start_recording" => match self.tool_tab(id, wanted) {
+                Ok(tab) => {
+                    let generation = all.get(&key).map_or(0, |old| old.generation) + 1;
+                    all.insert(key.clone(), Recording { tab: tab.0, running: true, generation, frames: Vec::new() });
+                    drop(all);
+                    self.record_frames(id, key, generation);
+                    return self.answer(id, &request, Ok(format!("Recording tab {}. Take your actions, then stop_recording and export.", tab.0)));
+                }
+                Err(message) => Err(message),
+            },
+            "stop_recording" => match all.get_mut(&key) {
+                Some(recording) => {
+                    // One last picture, so a change made just before stopping is in the GIF.
+                    recording.running = false;
+                    let (tab, generation) = (recording.tab, recording.generation);
+                    drop(all);
+                    let (sender, receiver) = tokio::sync::oneshot::channel();
+                    self.webviews().snapshot(forge_ports::WebViewTabId(tab), sender);
+                    let this = *self;
+                    dioxus::core::spawn_forever(async move {
+                        let last = tokio::time::timeout(std::time::Duration::from_secs(5), receiver).await;
+                        let count = recordings().lock().ok().and_then(|mut all| {
+                            let recording = all.get_mut(&key).filter(|recording| recording.generation == generation)?;
+                            if let Ok(Ok(Ok(png))) = last {
+                                if !png_width(&png).is_some_and(|width| width < 16) {
+                                    crate::gif_recording::push_frame(recording, png);
+                                }
+                            }
+                            Some(recording.frames.len())
+                        });
+                        let result = count.map(|count| format!("Stopped with {count} frames; export writes them as a GIF.")).ok_or_else(|| "The recording was cleared.".to_string());
+                        this.answer(id, &request, result);
+                    });
+                    return;
+                }
+                None => Err("Nothing is being recorded; start_recording first.".to_string()),
+            },
+            "clear" => {
+                all.remove(&key);
+                Ok("Cleared the recording.".to_string())
+            }
+            "export" => match all.get_mut(&key) {
+                Some(recording) if !recording.frames.is_empty() => {
+                    recording.running = false;
+                    let frames = recording.frames.clone();
+                    drop(all);
+                    let this = *self;
+                    dioxus::core::spawn_forever(async move {
+                        let result = crate::run_blocking(move || {
+                            let gif = crate::gif_recording::encode_gif(&frames)?;
+                            let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
+                            let folder = crate::gif_recording::downloads_folder(home, std::env::temp_dir());
+                            let path = crate::gif_recording::free_gif_path(&folder, &filename);
+                            std::fs::write(&path, gif).map_err(|error| format!("The GIF could not be written: {error}"))?;
+                            Ok(format!("Saved a GIF of {} frames to {}", frames.len(), path.display()))
+                        })
+                        .await
+                        .unwrap_or_else(|| Err("The GIF could not be made.".to_string()));
+                        this.answer(id, &request, result);
+                    });
+                    return;
+                }
+                _ => Err("Nothing was recorded; start_recording, take actions, then export.".to_string()),
+            },
+            other => Err(format!("gif_creator does not do \"{other}\"; use start_recording, stop_recording, export or clear.")),
+        };
+        self.answer(id, &request, result);
+    }
+
+    /// Pictures the recorded tab about once a second until the recording stops or another starts.
+    fn record_frames(&self, id: LiveSessionId, key: String, generation: u64) {
+        use crate::gif_recording::recordings;
+        let this = *self;
+        dioxus::core::spawn_forever(async move {
+            loop {
+                let tab = match recordings().lock().ok().and_then(|all| all.get(&key).filter(|recording| recording.running && recording.generation == generation).map(|recording| recording.tab)) {
+                    Some(tab) => tab,
+                    None => return,
+                };
+                let (sender, receiver) = tokio::sync::oneshot::channel();
+                this.webviews().snapshot(forge_ports::WebViewTabId(tab), sender);
+                if let Ok(Ok(Ok(png))) = tokio::time::timeout(std::time::Duration::from_secs(5), receiver).await {
+                    // A covered pane gives a tiny picture: not a frame.
+                    if !png_width(&png).is_some_and(|width| width < 16) {
+                        if let Ok(mut all) = recordings().lock() {
+                            if let Some(recording) = all.get_mut(&key).filter(|recording| recording.generation == generation) {
+                                crate::gif_recording::push_frame(recording, png);
+                                if recording.frames.len() >= crate::gif_recording::MAX_FRAMES {
+                                    recording.running = false;
+                                }
+                            }
+                        }
+                    }
+                }
+                if this.live_view(id).is_none() {
+                    if let Ok(mut all) = recordings().lock() {
+                        all.remove(&key);
+                    }
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
+    }
+
     fn screenshot_by_tool(&self, id: LiveSessionId, request: AppRequest, wanted: Option<u64>) {
         let tab = match self.tool_tab(id, wanted) {
             Ok(tab) => tab,
@@ -1019,6 +1155,24 @@ fn settings_json(config: &AppConfig) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn upload_files_reads_absolute_files_within_the_limits() {
+        let dir = std::env::temp_dir().join(format!("forge-upload-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let picture = dir.join("a.PNG");
+        std::fs::write(&picture, b"png").unwrap();
+        let files = upload_files(&[picture.clone()]).unwrap();
+        assert_eq!(files[0]["name"], "a.PNG");
+        assert_eq!(files[0]["type"], "image/png");
+        assert_eq!(files[0]["data"], "cG5n");
+        assert!(upload_files(&[std::path::PathBuf::from("a.png")]).unwrap_err().contains("not an absolute path"));
+        assert!(upload_files(&[dir.clone()]).unwrap_err().contains("not a file"));
+        let big = dir.join("big.bin");
+        std::fs::File::create(&big).unwrap().set_len(UPLOAD_FILE_LIMIT + 1).unwrap();
+        assert!(upload_files(&[big]).unwrap_err().contains("8 MB"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     use super::*;
     use forge_domain::{Block, Message, MessageRole, ToolCall, ToolResult};
 
@@ -1054,6 +1208,57 @@ const COMPUTER_SCRIPT: &str = include_str!("page_scripts/computer.js");
 /// `read_network_requests`: the page's document, its loads from the resource timing list, and the
 /// fetch and XHR calls the start script kept (with method and status), oldest first.
 const NETWORK_READ_SCRIPT: &str = r#"(function(){var A=__ARGS__;var kept=window.__forgeNetwork||[];var rows=[];var nav=performance.getEntriesByType('navigation')[0];rows.push({t:0,line:'document GET '+location.href+(nav&&nav.responseStatus?' '+nav.responseStatus:'')});var seen={};kept.forEach(function(e){seen[e.url]=1;});performance.getEntriesByType('resource').forEach(function(r){if(r.initiatorType==='fetch'||r.initiatorType==='xmlhttprequest')return;rows.push({t:r.startTime,line:r.initiatorType+' GET '+r.name+(r.responseStatus?' '+r.responseStatus:'')+' '+Math.round(r.duration)+'ms'});});var origin=performance.timeOrigin;kept.forEach(function(e){rows.push({t:e.time-origin,line:e.type+' '+e.method+' '+e.url+' '+(e.status===null?'pending':e.status)+(e.ms!=null?' '+e.ms+'ms':'')});});rows.sort(function(a,b){return a.t-b.t;});var out=rows.map(function(r){return r.line;}).filter(function(l){return !A.pattern||l.indexOf(A.pattern)>=0;});out=out.slice(-A.limit);if(A.clear){kept.length=0;if(performance.clearResourceTimings)performance.clearResourceTimings();}return out.length?out.join('\n'):'No requests'+(A.pattern?' match '+A.pattern:'')+'.';})()"#;
+
+/// `file_upload`: puts files into the file input a `ref_N` names and fires its input and change events.
+const FILE_UPLOAD_SCRIPT: &str = include_str!("page_scripts/file_upload.js");
+const UPLOAD_FILE_LIMIT: u64 = 8 * 1024 * 1024;
+const UPLOAD_TOTAL_LIMIT: u64 = 20 * 1024 * 1024;
+
+/// The files for `file_upload`, each as `{name, type, data}` (base64): absolute paths of files, at
+/// most 8 MB each and 20 MB in all (they go into the page as text).
+fn upload_files(paths: &[std::path::PathBuf]) -> Result<Vec<Value>, String> {
+    use base64::Engine;
+    let mut total = 0;
+    let mut files = Vec::new();
+    for path in paths {
+        if !path.is_absolute() {
+            return Err(format!("{} is not an absolute path.", path.display()));
+        }
+        let meta = std::fs::metadata(path).map_err(|_| format!("{} cannot be read.", path.display()))?;
+        if !meta.is_file() {
+            return Err(format!("{} is not a file.", path.display()));
+        }
+        if meta.len() > UPLOAD_FILE_LIMIT {
+            return Err(format!("{} is larger than 8 MB.", path.display()));
+        }
+        total += meta.len();
+        if total > UPLOAD_TOTAL_LIMIT {
+            return Err("The files are larger than 20 MB together.".to_string());
+        }
+        let bytes = std::fs::read(path).map_err(|_| format!("{} cannot be read.", path.display()))?;
+        let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        files.push(json!({ "name": name, "type": upload_type(path), "data": base64::engine::general_purpose::STANDARD.encode(bytes) }));
+    }
+    Ok(files)
+}
+
+/// The media type a browser gives a picked file of this kind; empty when it would not know.
+fn upload_type(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|ext| ext.to_str()).map(str::to_ascii_lowercase).as_deref() {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        Some("pdf") => "application/pdf",
+        Some("txt") => "text/plain",
+        Some("csv") => "text/csv",
+        Some("json") => "application/json",
+        Some("html" | "htm") => "text/html",
+        Some("zip") => "application/zip",
+        _ => "",
+    }
+}
 
 /// `form_input`: sets the field a `ref_N` names and fires its input and change events.
 const FORM_INPUT_SCRIPT: &str = include_str!("page_scripts/form_input.js");

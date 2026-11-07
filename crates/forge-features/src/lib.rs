@@ -12,6 +12,7 @@ mod settings_pages;
 mod window_height;
 mod window_width;
 mod blocking;
+mod gif_recording;
 mod thumbnail;
 mod nav_history;
 mod pane_tree;
