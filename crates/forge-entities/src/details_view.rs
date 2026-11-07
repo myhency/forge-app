@@ -218,7 +218,7 @@ fn capitalized(name: &str) -> String {
 /// Forge's own tool servers (the turn tools, the app tools, the browser tools, interactive pages,
 /// app control): part of the app, not connectors, so the desktop app does not list its own either.
 pub fn is_app_server(name: &str) -> bool {
-    name.starts_with("ccd_") || matches!(name, "forge_ui" | "forge_desktop" | "Claude_Browser")
+    name.starts_with("ccd_") || matches!(name, "forge_ui" | "forge_desktop" | "Claude_Browser" | "forge_browser_files")
 }
 
 pub fn connector_rows(servers: &[McpServerState]) -> Vec<ConnectorRowView> {

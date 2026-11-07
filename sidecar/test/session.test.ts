@@ -59,7 +59,7 @@ describe("SidecarSession", () => {
       mcp_servers: { files: { command: "npx", args: ["files-mcp"] } },
       allowed_tools: ["Read"],
     });
-    expect(Object.keys(captured!.mcpServers).sort()).toEqual(["Claude_Browser", "ccd_session", "ccd_session_mgmt", "ccd_settings", "ccd_sidebar", "ccd_turn", "ccd_view", "files"]);
+    expect(Object.keys(captured!.mcpServers).sort()).toEqual(["Claude_Browser", "ccd_session", "ccd_session_mgmt", "ccd_settings", "ccd_sidebar", "ccd_turn", "ccd_view", "files", "forge_browser_files"]);
     expect(captured!.allowedTools).toEqual(["Read"]);
     const signal = new AbortController().signal;
     for (const tool of ["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up", "mcp__ccd_session__mark_chapter", "mcp__ccd_session__start_session"]) {
