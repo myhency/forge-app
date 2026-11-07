@@ -241,6 +241,10 @@ fn app_tool_words(call: &ToolCall) -> Option<(String, String)> {
         "mcp__Claude_Browser__computer" if call.input.get("action").and_then(Value::as_str).is_some_and(|action| action.starts_with("scroll")) => (tr!("Scrolled a page").to_string(), String::new()),
         "mcp__Claude_Browser__computer" => (tr!("Used a page").to_string(), call.input.get("action").and_then(Value::as_str).unwrap_or_default().to_string()),
         "mcp__Claude_Browser__read_page" => (tr!("Read a page").to_string(), String::new()),
+        "mcp__forge_browser_files__file_upload" => (
+            tr!("Gave the page a file").to_string(),
+            call.input.get("paths").and_then(Value::as_array).map(|paths| paths.iter().filter_map(Value::as_str).filter_map(|path| path.rsplit(['/', '\\']).next()).collect::<Vec<_>>().join(", ")).unwrap_or_default(),
+        ),
         "mcp__Claude_Browser__form_input" => (tr!("Filled in a field").to_string(), text("ref")),
         "mcp__Claude_Browser__read_network_requests" => (tr!("Read the network requests").to_string(), text("urlPattern")),
         "mcp__Claude_Browser__find" => (tr!("Searched a page").to_string(), text("query")),

@@ -13,6 +13,28 @@ if(A.action==='left_click'||A.action==='double_click'||A.action==='triple_click'
   if(times===2)mouse(p.el,'dblclick',p,{detail:2});
   return (times===1?'Clicked ':times===2?'Double-clicked ':'Triple-clicked ')+describe(p.el)+'.';
 }
+if(A.action==='left_click_drag'){
+  if(!A.start||!A.coordinate)return 'Error: pass start_coordinate and coordinate [x, y] in screenshot pixels.';
+  var a={x:A.start[0]/dpr,y:A.start[1]/dpr},b={x:A.coordinate[0]/dpr,y:A.coordinate[1]/dpr};
+  var src=document.elementFromPoint(a.x,a.y);if(!src)return 'Error: nothing at '+A.start.join(',')+'.';
+  function ptr(el,type,p,buttons){try{el.dispatchEvent(new PointerEvent(type,{bubbles:true,cancelable:true,view:window,clientX:p.x,clientY:p.y,button:0,buttons:buttons,pointerId:1,pointerType:'mouse',isPrimary:true}));}catch(e){}}
+  var drag=src.closest&&src.closest('[draggable="true"]');
+  if(drag){
+    var dt=new DataTransfer();
+    function dnd(el,type,p){var e=new DragEvent(type,{bubbles:true,cancelable:true,view:window,clientX:p.x,clientY:p.y,dataTransfer:dt});el.dispatchEvent(e);return e;}
+    if(dnd(drag,'dragstart',a).defaultPrevented)return 'The page refused to drag '+describe(drag)+'.';
+    var over=document.elementFromPoint(b.x,b.y)||document.body;
+    dnd(over,'dragenter',b);var ok=dnd(over,'dragover',b).defaultPrevented;
+    if(ok)dnd(over,'drop',b);
+    dnd(drag,'dragend',b);
+    return ok?'Dragged '+describe(drag)+' onto '+describe(over)+'.':'Dragged '+describe(drag)+', but '+describe(over)+' does not take a drop.';
+  }
+  ptr(src,'pointerdown',a,1);mouse(src,'mousedown',a,{buttons:1});
+  var steps=10,last=src;
+  for(var s=1;s<=steps;s++){var q={x:a.x+(b.x-a.x)*s/steps,y:a.y+(b.y-a.y)*s/steps};var el3=document.elementFromPoint(q.x,q.y)||last;ptr(el3,'pointermove',q,1);mouse(el3,'mousemove',q,{buttons:1});last=el3;}
+  ptr(last,'pointerup',b,0);mouse(last,'mouseup',b,{buttons:0});
+  return 'Dragged from '+describe(src)+' to '+describe(last)+'.';
+}
 if(A.action==='type'){
   var el=document.activeElement;if(!el||el===document.body)return 'Error: nothing has the keyboard; click a field first.';
   var text=String(A.text||'');
