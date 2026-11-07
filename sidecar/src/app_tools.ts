@@ -46,6 +46,7 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${BROWSER_SERVER}__computer`,
   `mcp__${BROWSER_SERVER}__read_network_requests`,
   `mcp__${BROWSER_SERVER}__find`,
+  `mcp__${BROWSER_SERVER}__gif_creator`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -358,6 +359,16 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
         scroll_amount: z.number().optional().describe("Scroll ticks (100 px each). Default 3."),
       },
       forward(ask, "computer"),
+    ),
+    tool(
+      "gif_creator",
+      "Record the page of a Browser pane tab as an animated GIF. start_recording pictures the tab about once a second (unchanged pictures are skipped, at most 60), so take a screenshot right after starting and before stopping to catch the first and last states; stop_recording ends it; export writes a looping GIF into the user's Downloads folder and returns its path; clear drops the frames.",
+      {
+        action: z.enum(["start_recording", "stop_recording", "export", "clear"]).describe("What to do."),
+        tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
+        filename: z.string().optional().describe('For "export": the file name (default recording.gif).'),
+      },
+      forward(ask, "gif_creator"),
     ),
     tool(
       "read_page",

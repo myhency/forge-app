@@ -759,6 +759,7 @@ pub static KO: &[(&str, &str)] = &[
     ("Recent items", "최근 항목"),
     ("Recommended", "추천"),
     ("Reconnect", "다시 연결"),
+    ("Recorded a page", "페이지 녹화"),
     ("Redo", "다시 실행"),
     ("Reduce motion", "동작 줄이기"),
     ("Reduced", "줄임"),
