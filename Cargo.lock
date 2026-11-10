@@ -1844,6 +1844,7 @@ dependencies = [
  "forge-log",
  "forge-ports",
  "forge-shared",
+ "image",
  "serde_json",
  "tempfile",
  "time",
