@@ -19,6 +19,9 @@ export const VIEW_SERVER = "ccd_view";
 export const SETTINGS_SERVER = "ccd_settings";
 /** The desktop app's in-app browser server; Forge offers its dev-server tools. */
 export const BROWSER_SERVER = "Claude_Browser";
+/** `file_upload` sits on a server of its own: the bundled CLI never asks before a `Claude_Browser` tool, and a
+ *  page in the pane must not be able to talk Claude into sending a local file without the person seeing it. */
+export const BROWSER_FILES_SERVER = "forge_browser_files";
 
 /** Tools that only read or change how this session looks: they never ask. */
 export const READ_ONLY_APP_TOOLS = [
@@ -43,6 +46,7 @@ export const READ_ONLY_APP_TOOLS = [
   `mcp__${BROWSER_SERVER}__computer`,
   `mcp__${BROWSER_SERVER}__read_network_requests`,
   `mcp__${BROWSER_SERVER}__find`,
+  `mcp__${BROWSER_SERVER}__gif_creator`,
 ];
 
 const SESSION_ID = 'The sessionId (from list_sessions / search_session_transcripts), or the literal string "self" for this session.';
@@ -339,12 +343,14 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
         '* "screenshot": a picture of the visible page. Coordinates of the other actions are pixels of that picture.',
         '* "left_click", "double_click", "triple_click", "right_click", "hover": at `coordinate` [x, y]. Click the center of an element; consult a screenshot first.',
         '* "type": `text` into the field that has the keyboard (click it first). "key": `text` keys separated by spaces, e.g. "Enter" or "Tab".',
+        '* "left_click_drag": press at `start_coordinate`, move and let go at `coordinate` (an element marked draggable gets drag-and-drop events).',
         '* "scroll": scroll_direction up/down/left/right, scroll_amount in ticks. "scroll_to": bring the element `ref` (from read_page) into view. "wait": `duration` seconds.',
         "The actions are page events, so a page that checks for real (trusted) input may ignore them; read_page with form_input, or javascript_tool, are the other ways.",
       ].join("\n"),
       {
-        action: z.enum(["screenshot", "left_click", "double_click", "triple_click", "right_click", "hover", "type", "key", "scroll", "scroll_to", "wait"]).describe("The action to perform."),
-        coordinate: z.array(z.number()).length(2).optional().describe("[x, y] in screenshot pixels, for clicks and hover."),
+        action: z.enum(["screenshot", "left_click", "double_click", "triple_click", "right_click", "hover", "type", "key", "scroll", "scroll_to", "wait", "left_click_drag"]).describe("The action to perform."),
+        coordinate: z.array(z.number()).length(2).optional().describe("[x, y] in screenshot pixels, for clicks and hover; for left_click_drag, where to let go."),
+        start_coordinate: z.array(z.number()).length(2).optional().describe('For "left_click_drag": [x, y] where the drag starts.'),
         text: z.string().optional().describe('For "type": the text. For "key": the keys, space-separated.'),
         ref: z.string().optional().describe('For "scroll_to": an element ref from read_page.'),
         duration: z.number().optional().describe('For "wait": seconds (at most 30).'),
@@ -353,6 +359,16 @@ export function browserTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
         scroll_amount: z.number().optional().describe("Scroll ticks (100 px each). Default 3."),
       },
       forward(ask, "computer"),
+    ),
+    tool(
+      "gif_creator",
+      "Record the page of a Browser pane tab as an animated GIF. start_recording pictures the tab about once a second (unchanged pictures are skipped, at most 60), so take a screenshot right after starting and before stopping to catch the first and last states; stop_recording ends it; export writes a looping GIF into the user's Downloads folder and returns its path; clear drops the frames.",
+      {
+        action: z.enum(["start_recording", "stop_recording", "export", "clear"]).describe("What to do."),
+        tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
+        filename: z.string().optional().describe('For "export": the file name (default recording.gif).'),
+      },
+      forward(ask, "gif_creator"),
     ),
     tool(
       "read_page",
@@ -458,6 +474,21 @@ export function settingsTools(ask: AskApp): SdkMcpToolDefinition<any>[] {
 
 /** The four servers, each with the tools above. Not `alwaysLoad`: like the desktop app's, they are
  *  found through tool search when needed. */
+function browserFileTools(ask: AskApp) {
+  return [
+    tool(
+      "file_upload",
+      "Put files from this computer into a file input on the page of a Browser pane tab, as if the user picked them: ref is the input (from read_page or find), paths are absolute paths of files (at most 8 MB each, 20 MB in all). The page receives the files' contents.",
+      {
+        paths: z.array(z.string()).min(1).describe("Absolute paths of the files to put into the input."),
+        ref: z.string().describe("The file input's ref, from read_page or find."),
+        tabId: z.number().optional().describe("The tab, from tabs_context_mcp. Default: the front tab."),
+      },
+      forward(ask, "file_upload"),
+    ),
+  ];
+}
+
 export function createAppToolsServers(ask: AskApp, options: { browser?: boolean } = {}): Record<string, McpSdkServerConfigWithInstance> {
   return {
     [SESSION_MGMT_SERVER]: createSdkMcpServer({ name: SESSION_MGMT_SERVER, tools: sessionMgmtTools(ask) }),
@@ -465,5 +496,6 @@ export function createAppToolsServers(ask: AskApp, options: { browser?: boolean 
     [VIEW_SERVER]: createSdkMcpServer({ name: VIEW_SERVER, tools: viewTools(ask) }),
     [SETTINGS_SERVER]: createSdkMcpServer({ name: SETTINGS_SERVER, tools: settingsTools(ask) }),
     ...(options.browser ? { [BROWSER_SERVER]: createSdkMcpServer({ name: BROWSER_SERVER, tools: browserTools(ask) }) } : {}),
+    ...(options.browser ? { [BROWSER_FILES_SERVER]: createSdkMcpServer({ name: BROWSER_FILES_SERVER, tools: browserFileTools(ask) }) } : {}),
   };
 }
